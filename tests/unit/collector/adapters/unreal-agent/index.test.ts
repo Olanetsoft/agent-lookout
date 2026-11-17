@@ -102,23 +102,27 @@ describe("where it looks", () => {
     expect(adapter.lookingIn).toBe(
       "Looking for Unreal Agent sessions in ~/.local/state/unreal-agent/sessions.",
     );
-    expect(unrealAgentSessionsDirFor({}, HOME)).toBe(SESSIONS_DIR);
+    expect(asWritten(unrealAgentSessionsDirFor({}, HOME))).toBe(SESSIONS_DIR);
   });
 
   test("in XDG_STATE_HOME only when it is absolute, and in the folder its own setting names before both", () => {
-    expect(unrealAgentSessionsDirFor({ XDG_STATE_HOME: "/Users/example/state" }, HOME)).toBe(
-      "/Users/example/state/unreal-agent/sessions",
-    );
+    expect(
+      asWritten(unrealAgentSessionsDirFor({ XDG_STATE_HOME: "/Users/example/state" }, HOME)),
+    ).toBe("/Users/example/state/unreal-agent/sessions");
     for (const value of ["", "relative/state", "~/state", " /Users/example/state"]) {
-      expect(unrealAgentSessionsDirFor({ XDG_STATE_HOME: value }, HOME), value).toBe(SESSIONS_DIR);
+      expect(asWritten(unrealAgentSessionsDirFor({ XDG_STATE_HOME: value }, HOME)), value).toBe(
+        SESSIONS_DIR,
+      );
     }
     expect(
-      unrealAgentSessionsDirFor(
-        {
-          AGENT_LOOKOUT_UNREAL_AGENT_SESSION_DIR: " /Users/example/elsewhere ",
-          XDG_STATE_HOME: "/Users/example/state",
-        },
-        HOME,
+      asWritten(
+        unrealAgentSessionsDirFor(
+          {
+            AGENT_LOOKOUT_UNREAL_AGENT_SESSION_DIR: " /Users/example/elsewhere ",
+            XDG_STATE_HOME: "/Users/example/state",
+          },
+          HOME,
+        ),
       ),
     ).toBe("/Users/example/elsewhere");
   });
