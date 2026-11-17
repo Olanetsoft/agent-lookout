@@ -225,6 +225,9 @@ export function autohandStatusOf(evidence: AutohandEvidence): AutohandStatus {
   if (chosen === null && evidence.movedOn) {
     return { status: crashed ? "failed" : "finished", row: 5 };
   }
+  if (evidence.standIn === "needs-you") {
+    return { status: "needs-you", waitingReason: "other", row: 6 };
+  }
   if (evidence.standIn !== null) return { status: evidence.standIn, row: 6 };
   if (chosen?.heartbeatClass === "quiet") return { status: "unknown", row: 7 };
   if (chosen?.heartbeatClass === "just-dead") return { status: "unknown", row: 8 };
