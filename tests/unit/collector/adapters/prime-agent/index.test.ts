@@ -508,6 +508,17 @@ describe("what its worker's journal says", () => {
       status: "idle",
       statusSince: STARTED_AT + 5 * SECOND,
     });
+    at.clock.advance(2 * SECOND);
+    // A goal's purge, and the journal is rewritten to that record alone again.
+    files.write(
+      JOURNAL,
+      recordAt(11, "queue_purged", false) +
+        queueLine({ suspended: false, at: STARTED_AT + 11 * SECOND }),
+    );
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "idle",
+      statusSince: STARTED_AT + 5 * SECOND,
+    });
   });
 
   test("idle from a turn's end that came after a time idle, across Prime Agent's rewrite of its journal", async () => {

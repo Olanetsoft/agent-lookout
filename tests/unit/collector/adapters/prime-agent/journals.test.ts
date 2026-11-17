@@ -311,6 +311,30 @@ describe("reading a journal", () => {
     expect(state?.idleSince).toBe(AT);
   });
 
+  test("keeps when the run of idle records began past a second idle record, added or rewritten, and a rewrite after", async () => {
+    for (const how of ["added", "rewritten"] as const) {
+      const files = primeAgentFiles();
+      const reader = createJournalReader(files.io);
+      files.write(
+        JOURNAL,
+        recordLine({ busy: false, operation: "turn_end", at: AT }) +
+          queueLine({ suspended: false, at: AT }),
+      );
+      await read(files, reader);
+      const purged = recordLine({ busy: false, operation: "queue_purged", at: AT + SECOND });
+      if (how === "added") files.append(JOURNAL, purged);
+      else files.write(JOURNAL, purged + queueLine({ suspended: false, at: AT + SECOND }));
+      expect((await read(files, reader))?.idleSince, how).toBe(AT);
+      // Compaction again: the slot's newest record and the newest queue line, renamed into place.
+      files.write(
+        JOURNAL,
+        recordLine({ busy: false, operation: "queue_cleared", at: AT + 2 * SECOND }) +
+          queueLine({ suspended: false, at: AT + 2 * SECOND }),
+      );
+      expect((await read(files, reader))?.idleSince, how).toBe(AT);
+    }
+  });
+
   test("starts the run of idle records again at a turn's end, added or after a rewrite", async () => {
     for (const how of ["added", "rewritten"] as const) {
       const files = primeAgentFiles();
