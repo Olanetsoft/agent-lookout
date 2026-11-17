@@ -144,12 +144,16 @@ describe("the metadata reader", () => {
     expect(await reader(back).read(SESSION_ID, later)).toMatchObject({ writtenAt: NOW });
   });
 
-  test("never reads one over 1 MiB", async () => {
+  test("never opens one over 1 MiB by its lstat", async () => {
     const files = memoryFiles();
     writeMetadata(files, written({ status: "active", pad: "p".repeat(MAX_METADATA_BYTES) }));
-    expect(await reader(files).read(SESSION_ID, await lstatOf(files))).toEqual({
-      state: "too-large",
-    });
+    const metadataReader = reader(files);
+    for (let read = 0; read < 2; read += 1) {
+      expect(await metadataReader.read(SESSION_ID, await lstatOf(files))).toEqual({
+        state: "too-large",
+      });
+    }
+    expect(files.opened()).toEqual([]);
     expect(files.reads).toEqual([]);
   });
 

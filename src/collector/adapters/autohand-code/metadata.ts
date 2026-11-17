@@ -175,6 +175,12 @@ export function createMetadataReader(options: MetadataReaderOptions): MetadataRe
     async read(sessionId, info) {
       const known = remembered.get(sessionId);
       if (known && sameFile(known.info, info)) return known.read;
+      // One over the most by its `lstat` is never opened. The open file is checked again.
+      if (info.size > MAX_METADATA_BYTES) {
+        const tooLarge: MetadataRead = { state: "too-large" };
+        remembered.set(sessionId, { info, read: tooLarge, stoodIn: false });
+        return tooLarge;
+      }
       const standIn = () => {
         if (known?.read.state !== "ok" || known.stoodIn) return null;
         known.stoodIn = true;

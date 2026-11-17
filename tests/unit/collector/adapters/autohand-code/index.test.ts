@@ -1008,14 +1008,19 @@ describe("the folders", () => {
 });
 
 describe("sizes", () => {
-  test("a metadata.json over 1 MiB is not read, the card says so and the session still shows from its heartbeat", async () => {
+  test("a metadata.json over 1 MiB is not opened, the card says so and the session still shows from its heartbeat", async () => {
     const pc = computer();
     session(pc, written({ ...metadataRecord(), pad: "p".repeat(1_048_576) }));
     writeHeartbeat(pc.files, heartbeat({ phase: "idle" }));
-    const { sessions, health } = await pc.adapter().poll();
-    expect(only(sessions).status).toBe("idle");
-    expect(health.detail).toContain(TOO_LARGE_NOTE);
-    expect(pc.files.reads.map((read) => read.path)).not.toContain(asWritten(metadataPath()));
+    const adapter = pc.adapter();
+    for (let poll = 0; poll < 2; poll += 1) {
+      const { sessions, health } = await adapter.poll();
+      expect(only(sessions).status).toBe("idle");
+      expect(health.detail).toContain(TOO_LARGE_NOTE);
+      pc.clock.advance(2 * SECOND);
+      writeHeartbeat(pc.files, heartbeat({ phase: "idle", updatedAt: pc.clock.now() }));
+    }
+    expect(pc.files.opened()).not.toContain(asWritten(metadataPath()));
   });
 
   test("a heartbeat over 128 KiB is not read and the card says so", async () => {
