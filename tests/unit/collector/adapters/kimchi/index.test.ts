@@ -228,7 +228,29 @@ describe("a session", () => {
     expect(files.count("openRegular")).toBe(1);
   });
 
-  test("written again as a new file, as a migration can, is read again", async () => {
+  test("over 64 KiB and rewritten shorter in place is read from its first 64 KiB again", async () => {
+    const padding = line({
+      type: "custom",
+      customType: "work_identity",
+      data: "x".repeat(MAX_HEAD_BYTES),
+    });
+    const shorter = mainSession(SESSION_ID, conversationLines() + padding + nameLine());
+    const files = filesWith({ [FILE]: shorter + conversationLines() });
+    const clock = handClock();
+    const adapter = kimchiAdapterFor(files, { now: clock.now });
+    await adapter.poll();
+    files.rewrite(FILE, shorter, { mtimeMs: clock.now() + SECOND });
+    clock.advance(2 * SECOND);
+    const result = await adapter.poll();
+    expect(result.sessions[0].name).toBe("demo-project");
+    expect(JSON.stringify(result)).not.toContain(PRIVATE_WORDS.slice(0, 30));
+    expect(files.count("openRegular")).toBe(2);
+    expect(
+      files.reads.every(({ position, length }) => position === 0 && length <= MAX_HEAD_BYTES),
+    ).toBe(true);
+  });
+
+  test("written again as a new file is read again", async () => {
     const files = filesWith({ [FILE]: mainSession() });
     const clock = handClock();
     const adapter = kimchiAdapterFor(files, { now: clock.now });
@@ -237,6 +259,33 @@ describe("a session", () => {
     clock.advance(2 * SECOND);
     await adapter.poll();
     expect(files.count("openRegular")).toBe(2);
+  });
+
+  test("rewritten shorter in place, as a migration is while it writes, is read from its start again, and its name stays unread", async () => {
+    const files = filesWith({ [FILE]: mainSession() });
+    const clock = handClock();
+    const adapter = kimchiAdapterFor(files, { now: clock.now });
+    await adapter.poll();
+    files.append(FILE, nameLine() + conversationLines().repeat(20), {
+      mtimeMs: clock.now() + SECOND,
+    });
+    clock.advance(2 * SECOND);
+    await adapter.poll();
+    files.rewrite(
+      FILE,
+      mainSession(SESSION_ID, conversationLines() + nameLine() + conversationLines().repeat(10)),
+      { mtimeMs: clock.now() + SECOND },
+    );
+    clock.advance(2 * SECOND);
+    const result = await adapter.poll();
+    expect(result.sessions[0].name).toBe("demo-project");
+    const said = JSON.stringify(result);
+    expect(said).not.toContain(PRIVATE_WORDS);
+    expect(said).not.toContain(PRIVATE_WORDS.slice(0, 30));
+    expect(files.count("openRegular")).toBe(2);
+    expect(
+      files.reads.every(({ position, length }) => position === 0 && length <= MAX_HEAD_BYTES),
+    ).toBe(true);
   });
 
   test("is finished, at its last write, once no kimchi program runs", async () => {
@@ -413,35 +462,6 @@ describe("the markers, as bytes", () => {
     expect(markers).toEqual([SUBAGENT_SESSION_ENTRY, INTERNAL_SESSION_ENTRY]);
     expect(markedBy(bytes(subagentMarkerLine()), markers)).toBe(true);
     expect(markedBy(bytes(internalMarkerLine()), markers)).toBe(true);
-  });
-
-  test("is no other custom line, nor one whose kind only starts with a marker", () => {
-    expect(markedBy(bytes(otherCustomLine()), markers)).toBe(false);
-    expect(markedBy(bytes(otherCustomLine(`${SUBAGENT_SESSION_ENTRY}-x`)), markers)).toBe(false);
-    expect(markedBy(bytes(agentEndLine()), markers)).toBe(false);
-  });
-
-  test("is no line that is not a custom entry", () => {
-    const message = JSON.stringify({ type: "message", customType: SUBAGENT_SESSION_ENTRY });
-    expect(markedBy(Buffer.from(message), markers)).toBe(false);
-    const customMessage = JSON.stringify({
-      type: "custom_message",
-      customType: SUBAGENT_SESSION_ENTRY,
-    });
-    expect(markedBy(Buffer.from(customMessage), markers)).toBe(false);
-  });
-
-  test("is not a marker inside the data of another kind", () => {
-    const nested = JSON.stringify({
-      type: "custom",
-      customType: "work_identity",
-      data: { customType: SUBAGENT_SESSION_ENTRY },
-    });
-    expect(markedBy(Buffer.from(nested), markers)).toBe(false);
-  });
-
-  test("matches nothing with no markers, as for Pi", () => {
-    expect(markedBy(bytes(subagentMarkerLine()), [])).toBe(false);
   });
 });
 

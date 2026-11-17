@@ -32,7 +32,8 @@ import type { SessionFileRef } from "./sessionFiles.ts";
  *
  * A profile can ask for less, as Kimchi's does (`profile.ts`). With no names
  * read, no `session_info` line is turned into text, and only the first
- * `MAX_HEAD_BYTES` are read, once: nothing past the first two lines is needed.
+ * `MAX_HEAD_BYTES` are read, and a file found to hold a session is not opened
+ * again while it only grows: nothing past the first two lines is needed.
  * With markers, a file whose second line is a `custom` entry with one of them
  * as its `customType` is left out. That line is compared as bytes, and never
  * turned into text. A file found to be left out is not opened again while it
@@ -305,7 +306,10 @@ export function createSessionFileReader(
     if (parent !== sessionsDir && (await io.lstat(parent)).kind !== "directory") return NONE;
     const file = await io.openRegular(ref.path);
     try {
+      // With no names read, a file that changed other than by growing is read
+      // from its start again, as nothing past its first two lines is read.
       if (
+        readsNames &&
         known?.read.state === "ok" &&
         known.info.ino === file.info.ino &&
         known.readTo <= file.info.size
