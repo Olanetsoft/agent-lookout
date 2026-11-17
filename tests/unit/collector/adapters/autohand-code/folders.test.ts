@@ -136,7 +136,7 @@ describe("what is read", () => {
   const folder = (info: Partial<FileInfo> = {}) =>
     file({ kind: "directory", mode: 0o40700, ...info });
 
-  test("on macOS and Linux, only what is the user's own, as Autohand Code requires", () => {
+  test("on macOS and Linux, only what is the user's own, as Autohand Code requires of a heartbeat", () => {
     for (const platform of ["darwin", "linux"] as const) {
       expect(isTrusted(file(), "heartbeat", platform, 501)).toBe(true);
       expect(isTrusted(file({ uid: 502 }), "heartbeat", platform, 501)).toBe(false);

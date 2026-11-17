@@ -635,7 +635,7 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 
 - Autohand Code's own reader of heartbeats deletes every stale one, so the folder is read here, and nothing is ever deleted.
 - Each field is found as bytes (`jsonBytes.ts`): every writer writes `JSON.stringify(value, null, 2)`, so a line break and two spaces begin only a key of the outer object. A heartbeat's fields are looked for only before `phase`, which comes before the instruction. Nothing else, an instruction, a command, a summary or a title Autohand Code made, is turned into text.
-- A heartbeat or a `metadata.json` is read only as an ordinary file with one name, and on macOS and Linux only one of the user Agent Lookout runs as, a heartbeat only when no one else may read or write it, as Autohand Code requires (`folders.ts`).
+- A heartbeat or a `metadata.json` is read only as an ordinary file with one name, and on macOS and Linux only one of the user Agent Lookout runs as, a heartbeat only when no one else may read or write it, as Autohand Code requires of a heartbeat (`folders.ts`).
 - A fresh heartbeat whose process answers signal 0 gives needs you, working or idle. What the last heartbeat said is kept in memory, so a session whose heartbeat went is finished, or failed when it crashed, once that heartbeat's process is gone (`index.ts`).
 
 **How sure it is.** Not checked against Autohand Code yet. A run with `--no-daemon` writes no heartbeat and shows as unknown once it saves, and until then as the session it resumed showed before. Some prompts, for a commit message, a folder outside the project, a plan or computer-use setup, show as working.

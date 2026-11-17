@@ -124,7 +124,7 @@ export function nameIsSessions(name: string, sessionId: string): boolean {
   return INSTANCE_ID.test(name.slice(prefix.length, -".json".length));
 }
 
-/** What a file or folder must be for this adapter to read it, as Autohand Code requires. */
+/** What a file or folder must be for this adapter to read it, as Autohand Code requires of `active-agents` and a heartbeat. */
 export type Trusted = "heartbeats-folder" | "heartbeat" | "session-folder" | "metadata";
 
 /**
