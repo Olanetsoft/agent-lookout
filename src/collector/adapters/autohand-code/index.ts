@@ -525,6 +525,13 @@ export function createAutohandCodeAdapter(options: AutohandCodeAdapterOptions = 
       // Found ended, until a heartbeat comes back or it is written to after.
       let ended = before?.ended ?? null;
       let lastPid = before?.lastPid ?? null;
+      // A clock set back leaves that moment ahead of this poll. It moves back to
+      // this poll once the session's last save is not ahead of it, so no save
+      // from before it ended counts as one after.
+      const lastSave = facts?.lastActiveAt ?? null;
+      if (ended !== null && ended.at > checkedAt && lastSave !== null && lastSave <= checkedAt) {
+        ended = { at: checkedAt };
+      }
       if (ended !== null && counted.length > 0) {
         ended = null;
       } else if (ended !== null && savedAt !== null && savedAt > ended.at + CLOSE_SLACK_MS) {
@@ -567,8 +574,15 @@ export function createAutohandCodeAdapter(options: AutohandCodeAdapterOptions = 
         }
       }
 
+      // A last heartbeat already found with its process gone is not asked about
+      // again, so a process given its ID later does not bring the session back.
+      const lastFoundGone = before?.lastClass === "just-dead" || before?.lastClass === "gone";
       const lastProcessGone =
-        chosen === null && !movedOn && ended === null && lastPid !== null && !aliveOf(lastPid);
+        chosen === null &&
+        !movedOn &&
+        ended === null &&
+        lastPid !== null &&
+        (lastFoundGone || !aliveOf(lastPid));
       const { status, waitingReason, row } = autohandStatusOf({
         chosen,
         metadata: shownMetadata,
@@ -608,15 +622,25 @@ export function createAutohandCodeAdapter(options: AutohandCodeAdapterOptions = 
         continue;
       }
 
+      // What the heartbeat chosen now says, each field as it is, else what the last one said.
       const heartbeat = chosen?.heartbeat;
+      const said =
+        heartbeat ??
+        (before === undefined
+          ? null
+          : {
+              workspaceRoot: before.lastWorkspaceRoot,
+              mode: before.lastMode,
+              startedAt: before.lastStartedAt,
+            });
       nextMemory.set(id, {
         lastPid: heartbeat?.pid ?? lastPid,
-        lastMode: heartbeat === undefined ? (before?.lastMode ?? null) : heartbeat.mode,
+        lastMode: said?.mode ?? null,
         lastUpdatedAt:
           heartbeat === undefined ? (before?.lastUpdatedAt ?? null) : heartbeat.updatedAt,
         lastClass: chosen?.heartbeatClass ?? before?.lastClass ?? null,
-        lastWorkspaceRoot: heartbeat?.workspaceRoot ?? before?.lastWorkspaceRoot ?? null,
-        lastStartedAt: heartbeat?.startedAt ?? before?.lastStartedAt ?? null,
+        lastWorkspaceRoot: said?.workspaceRoot ?? null,
+        lastStartedAt: said?.startedAt ?? null,
         seenAt: chosen === null ? (before?.seenAt ?? null) : checkedAt,
         lastStatus: status,
         lastStatusSince: statusSince,
@@ -632,14 +656,7 @@ export function createAutohandCodeAdapter(options: AutohandCodeAdapterOptions = 
           statusSince,
           facts,
           writtenAt,
-          heartbeat:
-            heartbeat === undefined && before === undefined
-              ? null
-              : {
-                  workspaceRoot: heartbeat?.workspaceRoot ?? before?.lastWorkspaceRoot ?? null,
-                  mode: heartbeat === undefined ? (before?.lastMode ?? null) : heartbeat.mode,
-                  startedAt: heartbeat?.startedAt ?? before?.lastStartedAt ?? null,
-                },
+          heartbeat: said,
           process: chosen === null ? null : { pid: chosen.pid, alive: chosen.alive },
           now: checkedAt,
         }),

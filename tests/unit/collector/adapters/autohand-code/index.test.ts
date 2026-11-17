@@ -18,6 +18,7 @@ import {
   CREATED_AT,
   DAY,
   HEARTBEATS_DIR,
+  HOUR,
   INSTANCE_ID,
   MINUTE,
   NOW,
@@ -30,6 +31,7 @@ import {
   SESSION_ID,
   heartbeat,
   importedMetadata,
+  iso,
   metadata,
   metadataPath,
   presenceHeartbeat,
@@ -343,6 +345,80 @@ describe("what is remembered once a heartbeat goes", () => {
     expect(only((await adapter.poll()).sessions)).toMatchObject({
       status: "finished",
       statusSince: NOW,
+    });
+  });
+
+  test("a heartbeat found with its process gone and then deleted is finished, even when its process's ID is given to another", async () => {
+    const pc = computer([]);
+    session(pc, metadata({ lastActiveAt: NOW - 30 * SECOND }));
+    writeHeartbeat(pc.files, heartbeat({ updatedAt: NOW - 5 * SECOND }));
+    const adapter = pc.adapter();
+    expect(only((await adapter.poll()).sessions).status).toBe("unknown");
+    removeHeartbeat(pc.files);
+    pc.processes.start(PID);
+    pc.clock.advance(2 * SECOND);
+    expect(only((await adapter.poll()).sessions)).toMatchObject({
+      status: "finished",
+      statusSince: NOW - 5 * SECOND,
+    });
+    pc.clock.advance(2 * SECOND);
+    expect(only((await adapter.poll()).sessions).status).toBe("finished");
+  });
+
+  test("a session found ended stays so when the clock is set back, until a run saves it on the new time", async () => {
+    async function ended() {
+      const pc = computer();
+      session(pc);
+      writeHeartbeat(pc.files, heartbeat());
+      const adapter = pc.adapter();
+      await adapter.poll();
+      pc.processes.stop(PID);
+      removeHeartbeat(pc.files);
+      pc.clock.advance(2 * SECOND);
+      expect(only((await adapter.poll()).sessions).status).toBe("finished");
+      pc.clock.advance(-HOUR);
+      expect(only((await adapter.poll()).sessions).status).toBe("finished");
+      return { pc, adapter };
+    }
+    // Its last save, from before it ended, never counts as one after, even once the clock nears it.
+    const before = await ended();
+    before.pc.clock.set(NOW - 20 * SECOND);
+    expect(only((await before.adapter.poll()).sessions).status).toBe("finished");
+    // Saved on the new time by a run with --no-daemon, it runs again.
+    const { pc, adapter } = await ended();
+    pc.clock.advance(2 * SECOND);
+    session(pc, metadata({ lastActiveAt: pc.clock.now() }));
+    await adapter.poll();
+    pc.clock.advance(2 * SECOND);
+    session(pc, metadata({ lastActiveAt: pc.clock.now() }));
+    expect(only((await adapter.poll()).sessions).status).toBe("unknown");
+  });
+
+  test("takes the folder and the start of the heartbeat chosen now, never of an earlier one", async () => {
+    const pc = computer([PID, OTHER_PID]);
+    // Over 1 MiB, so the session shows from its heartbeat alone.
+    session(pc, written({ ...metadataRecord(), pad: "p".repeat(1_048_576) }));
+    writeHeartbeat(pc.files, heartbeat());
+    const adapter = pc.adapter();
+    expect(only((await adapter.poll()).sessions)).toMatchObject({
+      cwd: PROJECT,
+      startedAt: CREATED_AT,
+    });
+    // Another process takes the session up, with a folder that is no whole path and a time that cannot be read.
+    pc.processes.stop(PID);
+    pc.clock.advance(2 * SECOND);
+    writeHeartbeat(
+      pc.files,
+      heartbeat({
+        pid: OTHER_PID,
+        workspaceRoot: "relative/dir",
+        updatedAt: pc.clock.now(),
+      }).replace(`"startedAt": "${iso(CREATED_AT)}"`, '"startedAt": "not a time"'),
+    );
+    expect(only((await adapter.poll()).sessions)).toMatchObject({
+      status: "working",
+      cwd: null,
+      startedAt: null,
     });
   });
 
