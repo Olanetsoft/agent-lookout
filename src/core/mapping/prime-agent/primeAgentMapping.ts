@@ -202,12 +202,11 @@ export interface JournalFacts {
   idleSince: number | null;
 }
 
-/** Whether a record line is this session's and was written since the lease was taken. */
+/** Whether a record line is this session's, by its ID and the name of its file, and was written since the lease was taken. */
 function counts(record: JournalRecord, facts: JournalFacts): boolean {
   const own =
-    record.sessionFile === null
-      ? record.sessionId === facts.sessionId
-      : record.sessionFile === facts.sessionFile;
+    record.sessionId === facts.sessionId &&
+    (record.sessionFile === null || record.sessionFile === facts.sessionFile);
   return own && record.recordedAt >= facts.createdAt;
 }
 
@@ -220,11 +219,11 @@ function since(queue: QueueState, createdAt: number): QueueState {
 /**
  * A session's status, and since when, from the journal of the worker its
  * lease names, while a process that runs holds the lease. The newest record
- * line counts only if the file it names has the name of the session's file,
- * or it names the session's ID when it names no file, and it was written
- * since the lease was taken: one before is another run's, and a worker can
- * move to another session with `/new`. Otherwise the session is unknown. The newest queue line counts only if it was written
- * since the lease was taken too.
+ * line counts only if it names the session's ID and, when it names a file, a
+ * file with the name of the session's file, and it was written since the
+ * lease was taken: one before is another run's, and a worker can move to
+ * another session with `/new`. Otherwise the session is unknown. The newest
+ * queue line counts only if it was written since the lease was taken too.
  *
  * A working session's time is the first line of the run of lines at the end
  * that each say working. An idle one's is when its run of idle records began,

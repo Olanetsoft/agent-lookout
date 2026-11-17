@@ -180,7 +180,7 @@ describe("a session's status from its worker's journal", () => {
     expect(status(moved)).toEqual({ status: "unknown", since: null });
   });
 
-  test("matches a record by its file's name, and by its session's ID only when it names no file", () => {
+  test("matches a record by its session's ID, and also by its file's name when it names one", () => {
     const named = record("prompt_accepted", true, CREATED + 1_000, {
       sessionFile: `${OTHER}.jsonl`,
     });
@@ -210,6 +210,12 @@ describe("a session's status from its worker's journal", () => {
     expect(primeAgentJournalStatus({ ...facts, sessionFile: `${SESSION}.jsonl` }).status).toBe(
       "unknown",
     );
+    // Another session's file of the same name, outside the sessions folder.
+    const otherId = record("prompt_accepted", true, CREATED + 1_000, {
+      sessionId: OTHER,
+      sessionFile: "demo-project.jsonl",
+    });
+    expect(primeAgentJournalStatus({ ...facts, trail: [entry(otherId)] }).status).toBe("unknown");
   });
 
   test("counts no record written before the lease was taken", () => {

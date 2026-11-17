@@ -164,7 +164,7 @@ First, who holds the session's lease, by the name of its file (`primeAgentHolder
 | H9   | Some lease since the boot cannot be told whose it is, and no lease of this one runs          | unknown |
 | H10  | Two leases name it: it runs if one runs, else it is unknown if one is                        |         |
 
-`none` is `finished`, at the file's last write. `unknown` is `unknown`. While a process that runs holds it, on macOS and Linux, its worker's journal says the rest. The worker is the lease's `activeSessionId`. With none, as for a print or RPC run, no journal, or more than one, the session is unknown. The newest record of the slot counts only if it is this session's, by the name of `sessionFile` against the session file's name or, with none, by `sessionId`, and was written since the lease was taken. The newest queue line counts only if it was written since then too.
+`none` is `finished`, at the file's last write. `unknown` is `unknown`. While a process that runs holds it, on macOS and Linux, its worker's journal says the rest. The worker is the lease's `activeSessionId`. With none, as for a print or RPC run, no journal, or more than one, the session is unknown. The newest record of the slot counts only if it is this session's, by `sessionId` and, when it names one, by the name of `sessionFile` against the session file's name, and was written since the lease was taken. The newest queue line counts only if it was written since then too.
 
 | Newest record                                                                                                     | `busy` | Queue line                  | Status    | Since                                         |
 | ----------------------------------------------------------------------------------------------------------------- | ------ | --------------------------- | --------- | --------------------------------------------- |
@@ -249,6 +249,7 @@ The session files and the leases are read as on any system, from `%USERPROFILE%\
 - A lease that cannot be read keeps every session no running `prime-agent` holds unknown, not finished, until the computer restarts.
 - A journal with more than 256 of the slot's working lines in a row gives the time of the 256th from its end.
 - A turn that starts and ends between two polls after a time idle, and is followed before the next poll by a settle that empties, edits or resumes the queue, such as a goal's purge (`worker.rs:473-497`, `:542-559`), is not seen, and the session stays idle from the start of that time.
+- A session whose file shares its name with another Prime Agent session's file outside the sessions folder shows as unknown while that one runs.
 
 ## Not yet checked
 

@@ -282,7 +282,7 @@ describe("who holds a session", () => {
     expect(at.alive.asked).toEqual([]);
   });
 
-  test("a session's file need not be named for its ID: its lease and its records are matched by the file's name", async () => {
+  test("a session's file need not be named for its ID: its lease is matched by the file's name, and its records by its ID and the file's name", async () => {
     const file = `${SESSIONS_DIR}/demo-project.jsonl`;
     const files = primeAgentFiles();
     files.write(file, sessionText(SESSION_ID), { mtimeMs: NOW - MINUTE });
@@ -302,6 +302,32 @@ describe("who holds a session", () => {
       id: `prime-agent:${SESSION_ID}`,
       status: "working",
       statusSince: STARTED_AT + 2 * SECOND,
+    });
+  });
+
+  test("another session whose file has the same name, outside the sessions folder, never gives a listed session its status", async () => {
+    const elsewhere = "/Users/example/code/demo/scratch.jsonl";
+    const files = primeAgentFiles();
+    files.write(`${SESSIONS_DIR}/scratch.jsonl`, sessionText(SESSION_ID), {
+      mtimeMs: NOW - MINUTE,
+    });
+    files.write(ownerOf(2), ownerText(sessionIdOf(2), { sessionPath: elsewhere }));
+    files.write(workerRecordOf(), workerRecordText());
+    files.write(
+      JOURNAL,
+      checkpoint({
+        busy: true,
+        operation: "prompt_accepted",
+        at: STARTED_AT + 2 * SECOND,
+        sessionId: sessionIdOf(2),
+        sessionFile: elsewhere,
+      }),
+    );
+    const { session } = await statusOf(files);
+    expect(session).toMatchObject({
+      id: `prime-agent:${SESSION_ID}`,
+      status: "unknown",
+      statusSince: null,
     });
   });
 
