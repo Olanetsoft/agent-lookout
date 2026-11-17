@@ -47,8 +47,11 @@ const entry = (one: JournalRecord, queue: QueueState = notParked): TrailEntry =>
   queue,
 });
 
-const status = (trail: TrailEntry[], queue: QueueState = notParked) =>
-  primeAgentJournalStatus({ sessionId: SESSION, createdAt: CREATED, trail, queue });
+const status = (
+  trail: TrailEntry[],
+  queue: QueueState = notParked,
+  idleSince: number | null = null,
+) => primeAgentJournalStatus({ sessionId: SESSION, createdAt: CREATED, trail, queue, idleSince });
 
 describe("whether a lease's process holds it", () => {
   test.each([
@@ -204,6 +207,18 @@ describe("a session's status from its worker's journal", () => {
     expect(status(run)).toEqual({ status: "working", since: CREATED + 1_000 });
     const settled = [...run, entry(record("turn_end", false, CREATED + 3_000))];
     expect(status(settled)).toEqual({ status: "idle", since: CREATED + 3_000 });
+  });
+
+  test("an idle session's time is when its run of idle records began, if that was since the lease was taken", () => {
+    const cleared = [entry(record("queue_cleared", false, CREATED + 2_000))];
+    expect(status(cleared, notParked, CREATED + 1_000)).toEqual({
+      status: "idle",
+      since: CREATED + 1_000,
+    });
+    expect(status(cleared, notParked, CREATED - 1_000)).toEqual({
+      status: "idle",
+      since: CREATED + 2_000,
+    });
   });
 
   test("a run stops at a line that did not say working by the queue line read before it", () => {

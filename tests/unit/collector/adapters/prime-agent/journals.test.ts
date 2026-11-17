@@ -19,6 +19,7 @@ import {
   recordLine,
   SECOND,
   SESSION_ID,
+  sessionIdOf,
   STARTED_AT,
   WORKER_ID,
   workerIdOf,
@@ -250,6 +251,83 @@ describe("reading a journal", () => {
     files.forget();
     expect((await read(files, reader))?.trail).toEqual([]);
     expect(files.reads[0]?.position).toBe(0);
+  });
+
+  test("keeps when the slot's run of idle records of one session began, as lines are added", async () => {
+    const files = primeAgentFiles();
+    const reader = createJournalReader(files.io);
+    files.write(JOURNAL, recordLine({ busy: false, operation: "turn_end", at: AT }));
+    expect((await read(files, reader))?.idleSince).toBe(AT);
+    files.append(JOURNAL, recordLine({ busy: false, operation: "queue_purged", at: AT + SECOND }));
+    files.forget();
+    expect((await read(files, reader))?.idleSince).toBe(AT);
+  });
+
+  test("starts the run of idle records again after a prompt, or a record of another session", async () => {
+    for (const [name, between] of [
+      ["a prompt", recordLine({ busy: true, operation: "prompt_accepted", at: AT + SECOND })],
+      [
+        "another session's record",
+        recordLine({
+          busy: false,
+          operation: "turn_end",
+          at: AT + SECOND,
+          sessionId: sessionIdOf(2),
+          sessionFile: `/x/${sessionIdOf(2)}.jsonl`,
+        }),
+      ],
+    ]) {
+      const files = primeAgentFiles();
+      files.write(
+        JOURNAL,
+        recordLine({ busy: false, operation: "turn_end", at: AT }) +
+          between +
+          recordLine({ busy: false, operation: "queue_purged", at: AT + 2 * SECOND }),
+      );
+      expect((await read(files))?.idleSince, name).toBe(AT + 2 * SECOND);
+    }
+    const working = primeAgentFiles();
+    working.write(JOURNAL, recordLine({ busy: true, operation: "prompt_accepted", at: AT }));
+    expect((await read(working))?.idleSince).toBeNull();
+  });
+
+  test("keeps when the run of idle records began across a rewrite of the file to its newest record", async () => {
+    const files = primeAgentFiles();
+    const reader = createJournalReader(files.io);
+    files.write(
+      JOURNAL,
+      recordLine({ busy: false, operation: "turn_end", at: AT }) +
+        queueLine({ suspended: false, at: AT }),
+    );
+    await read(files, reader);
+    // Compaction: the slot's newest record and the newest queue line, renamed into place.
+    files.write(
+      JOURNAL,
+      recordLine({ busy: false, operation: "queue_cleared", at: AT + SECOND }) +
+        queueLine({ suspended: false, at: AT + SECOND }),
+    );
+    const state = await read(files, reader);
+    expect(state?.trail.map(({ record }) => record.operation)).toEqual(["queue_cleared"]);
+    expect(state?.idleSince).toBe(AT);
+  });
+
+  test("keeps no start of a run of idle records past 8 MiB added on one poll", async () => {
+    const files = primeAgentFiles();
+    const reader = createJournalReader(files.io);
+    files.write(JOURNAL, recordLine({ busy: false, operation: "turn_end", at: AT }));
+    await read(files, reader);
+    const filler = queueLine({
+      suspended: false,
+      at: AT,
+      steering: [{ message: "x".repeat(8000) }],
+    });
+    files.append(
+      JOURNAL,
+      filler.repeat(Math.ceil((MAX_ADDED_BYTES + 1024) / filler.length)) +
+        recordLine({ busy: false, operation: "queue_purged", at: AT + 2 * SECOND }),
+    );
+    files.forget();
+    expect((await read(files, reader))?.idleSince).toBe(AT + 2 * SECOND);
   });
 
   test("past 8 MiB added on one poll, reads its last 1 MiB again and drops what it had", async () => {

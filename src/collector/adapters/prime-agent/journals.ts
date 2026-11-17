@@ -1,4 +1,5 @@
 import {
+  mayBeIdle,
   mayBeWorking,
   type JournalRecord,
   type QueueState,
@@ -48,9 +49,11 @@ import { INSTANT } from "../pi/sessionFile.ts";
  * was added, at most 8 MiB on one poll: past that, the last 1 MiB is read
  * again. Prime Agent rewrites the file whole, under the same name, when every
  * session it holds is idle and when its end was torn, so a file with another
- * identity, or one that shrank, is read from its start again. A last line with
- * no newline yet is left for the next read. Nothing here writes, renames,
- * locks or deletes anything, and the journal's `.writer-lock` is never opened.
+ * identity, or one that shrank, is read from its start again. Only when the
+ * slot's run of idle records began is carried over that rewrite, which leaves
+ * only the slot's newest record. A last line with no newline yet is left for
+ * the next read. Nothing here writes, renames, locks or deletes anything, and
+ * the journal's `.writer-lock` is never opened.
  */
 
 /** A worker's journal, after its ID. */
@@ -201,10 +204,39 @@ export interface JournalState {
   trail: readonly TrailEntry[];
   /** The slot's newest queue line. */
   queue: QueueState;
+  /**
+   * When the slot's run of idle records of one session, to its newest, began,
+   * in epoch milliseconds, or null when its newest is not idle.
+   */
+  idleSince: number | null;
+}
+
+/** What a read keeps as it goes. */
+interface Taking {
+  trail: TrailEntry[];
+  queue: QueueState;
+  idleSince: number | null;
+  /** The slot's newest record before the file was rewritten, until a record is read after it. */
+  carried?: JournalRecord;
+}
+
+/** A read with nothing kept from before. */
+function afresh(): Taking {
+  return { trail: [], queue: null, idleSince: null };
+}
+
+/** A read of a file Prime Agent rewrote, with when the run of idle records began and the newest record before. */
+function carriedOver(known: Taking): Taking {
+  return {
+    trail: [],
+    queue: null,
+    idleSince: known.idleSince,
+    carried: known.trail.at(-1)?.record ?? known.carried,
+  };
 }
 
 /** Takes in one whole line, for one worker's slot. Lines of another slot are left. */
-function take(state: { trail: TrailEntry[]; queue: QueueState }, line: Buffer, slot: string): void {
+function take(state: Taking, line: Buffer, slot: string): void {
   const record = parseRecordLine(line);
   if (record !== null) {
     if (record.slot !== slot) return;
@@ -215,6 +247,17 @@ function take(state: { trail: TrailEntry[]; queue: QueueState }, line: Buffer, s
       operation: record.operation,
       recordedAt: record.recordedAt,
     };
+    // An idle record goes on the run of idle records before it, while that is the same session's.
+    const previous = state.trail.at(-1)?.record ?? state.carried;
+    state.carried = undefined;
+    state.idleSince = !mayBeIdle(kept)
+      ? null
+      : previous !== undefined &&
+          mayBeIdle(previous) &&
+          previous.sessionId === kept.sessionId &&
+          previous.sessionFile === kept.sessionFile
+        ? (state.idleSince ?? previous.recordedAt)
+        : kept.recordedAt;
     const entry = { record: kept, queue: state.queue };
     // A line that cannot say working ends any run before it.
     if (!mayBeWorking(kept)) state.trail = [entry];
@@ -230,12 +273,7 @@ function take(state: { trail: TrailEntry[]; queue: QueueState }, line: Buffer, s
 }
 
 /** Where a read of bytes ends: after its last whole line. */
-function takeLines(
-  state: { trail: TrailEntry[]; queue: QueueState },
-  bytes: Buffer,
-  slot: string,
-  skipFirst: boolean,
-): number {
+function takeLines(state: Taking, bytes: Buffer, slot: string, skipFirst: boolean): number {
   let start = 0;
   if (skipFirst) {
     // The read began inside a line, whose start was not read.
@@ -260,7 +298,7 @@ interface Cached {
   slot: string;
   /** Where the line after the last whole line read begins. */
   readTo: number;
-  state: { trail: TrailEntry[]; queue: QueueState };
+  state: Taking;
 }
 
 export interface JournalReader {
@@ -278,11 +316,10 @@ export function createJournalReader(io: ReadOnlyIo): JournalReader {
   const cached = new Map<string, Cached>();
 
   /** The end of a journal, from at most `FIRST_READ_BYTES` before its end. */
-  async function fromTheEnd(open: OpenFile, slot: string): Promise<Cached> {
+  async function fromTheEnd(open: OpenFile, slot: string, state: Taking): Promise<Cached> {
     const { size } = open.info;
     const start = Math.max(0, size - FIRST_READ_BYTES);
     const bytes = asBuffer(await open.read(start, size - start));
-    const state = { trail: [] as TrailEntry[], queue: null as QueueState };
     const readTo = start + takeLines(state, bytes, slot, start > 0);
     return { info: open.info, slot, readTo, state };
   }
@@ -297,9 +334,19 @@ export function createJournalReader(io: ReadOnlyIo): JournalReader {
         known.info.ino === ino &&
         known.readTo <= size &&
         size - known.readTo <= MAX_ADDED_BYTES;
-      if (!grew) return await fromTheEnd(open, slot);
+      if (!grew) {
+        // Rewritten by Prime Agent, which keeps the slot's newest record. Past
+        // a jump, the lines that were not read could have said anything.
+        const rewritten =
+          known?.slot === slot && (known.info.ino !== ino || size < known.readTo) ? known : null;
+        return await fromTheEnd(
+          open,
+          slot,
+          rewritten === null ? afresh() : carriedOver(rewritten.state),
+        );
+      }
       const bytes = asBuffer(await open.read(known.readTo, size - known.readTo));
-      const state = { trail: [...known.state.trail], queue: known.state.queue };
+      const state: Taking = { ...known.state, trail: [...known.state.trail] };
       const readTo = known.readTo + takeLines(state, bytes, slot, false);
       return { info: open.info, slot, readTo, state };
     } finally {

@@ -151,6 +151,11 @@ export function mayBeWorking(record: JournalRecord): boolean {
   return record.busy && (record.operation === "prompt_accepted" || QUEUED.has(record.operation));
 }
 
+/** Whether a record line shows its session as idle, whatever its queue says. */
+export function mayBeIdle(record: JournalRecord): boolean {
+  return !record.busy && SETTLES.has(record.operation);
+}
+
 /**
  * What one record line says, with the queue line read before it:
  *
@@ -172,7 +177,7 @@ export function primeAgentRecordStatus(
   record: JournalRecord,
   queue: QueueState,
 ): "working" | "idle" | "unknown" {
-  if (!record.busy) return SETTLES.has(record.operation) ? "idle" : "unknown";
+  if (!record.busy) return mayBeIdle(record) ? "idle" : "unknown";
   if (record.operation === "prompt_accepted") return "working";
   if (!QUEUED.has(record.operation)) return "unknown";
   return queue !== null && queue !== "unreadable" && !queue.suspended ? "working" : "unknown";
@@ -188,6 +193,11 @@ export interface JournalFacts {
   trail: readonly TrailEntry[];
   /** The newest queue line of the slot. */
   queue: QueueState;
+  /**
+   * When the slot's run of idle records of one session, to its newest, began,
+   * in epoch milliseconds, or null when its newest is not idle.
+   */
+  idleSince: number | null;
 }
 
 /** Whether a record line is this session's and was written since the lease was taken. */
@@ -215,7 +225,9 @@ function since(queue: QueueState, createdAt: number): QueueState {
  * since the lease was taken too.
  *
  * A working session's time is the first line of the run of lines at the end
- * that each say working, an idle one's is its line's.
+ * that each say working. An idle one's is when its run of idle records began,
+ * which the reader keeps across Prime Agent's rewrite of the journal, when
+ * that was since the lease was taken, else its line's.
  */
 export function primeAgentJournalStatus(facts: JournalFacts): {
   status: "working" | "idle" | "unknown";
@@ -228,7 +240,16 @@ export function primeAgentJournalStatus(facts: JournalFacts): {
   }
   const status = primeAgentRecordStatus(last.record, since(facts.queue, createdAt));
   if (status === "unknown") return { status, since: null };
-  if (status === "idle") return { status, since: last.record.recordedAt };
+  if (status === "idle") {
+    const from = facts.idleSince;
+    return {
+      status,
+      since:
+        from !== null && from >= createdAt && from <= last.record.recordedAt
+          ? from
+          : last.record.recordedAt,
+    };
+  }
   let first = last.record.recordedAt;
   for (let index = trail.length - 2; index >= 0; index -= 1) {
     const { record, queue } = trail[index] as TrailEntry;

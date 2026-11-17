@@ -1152,6 +1152,7 @@ describe("each declaration agrees with what its adapter does", () => {
               createdAt: NOW - 1_000,
               trail: [{ record: record(operation, busy), queue: null }],
               queue: { suspended, recordedAt: NOW },
+              idleSince: null,
             }).status,
           );
         }

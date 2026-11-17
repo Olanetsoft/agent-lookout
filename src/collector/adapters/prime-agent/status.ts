@@ -222,6 +222,7 @@ export function createPrimeAgentStatus(options: PrimeAgentStatusOptions): PiStat
                 createdAt: lease.createdAt,
                 trail: state.trail,
                 queue: state.queue,
+                idleSince: state.idleSince,
               }),
         );
       }

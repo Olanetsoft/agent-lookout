@@ -449,6 +449,31 @@ describe("what its worker's journal says", () => {
     expect(session).not.toHaveProperty("lastWriteAt");
   });
 
+  test("idle from the first of its idle records, across Prime Agent's rewrite of its journal", async () => {
+    const at = machine();
+    const files = heldSession(
+      recordAt(5, "turn_end", false) + queueLine({ suspended: false, at: STARTED_AT + 5 * SECOND }),
+      {},
+      at.clock.now,
+    );
+    const adapter = adapterOn(files, at);
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "idle",
+      statusSince: STARTED_AT + 5 * SECOND,
+    });
+    at.clock.advance(2 * SECOND);
+    // A cancel clears the empty queue, and the journal is rewritten to that record alone.
+    files.write(
+      JOURNAL,
+      recordAt(9, "queue_cleared", false) +
+        queueLine({ suspended: false, at: STARTED_AT + 9 * SECOND }),
+    );
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "idle",
+      statusSince: STARTED_AT + 5 * SECOND,
+    });
+  });
+
   test("working while queued work waits after a turn's end, unless the queue is parked", async () => {
     const waiting = heldSession(
       checkpointAt(2, "prompt_accepted", true) + checkpointAt(9, "turn_end", true),
