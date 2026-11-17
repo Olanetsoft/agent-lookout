@@ -63,7 +63,7 @@ The sessions folder holds each session's file, `<id>.session.jsonl`, `.session-<
 
 | Path                           | How                                                                                    | How often                                                                          |
 | ------------------------------ | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| The sessions folder            | One `lstat`, and listed when its modified time moves                                   | Every poll, and listed once a minute                                               |
+| The sessions folder            | One `lstat`, and listed when its modified time moves. A link at its name is followed   | Every poll, and listed once a minute, or on every poll when it is a link           |
 | Each `<id>.session.jsonl`      | One `lstat`. Only a name of 1 to 241 letters, digits and dashes, then `.session.jsonl` | Every poll, for the files written in the last day, the newest 200                  |
 | Every other session file       | One `lstat`. Never opened                                                              | Once a minute                                                                      |
 | A file written in the last day | Opened read-only, without following a link, as below                                   | When its size, modified time or identity changes, or a held-back whole read is due |
