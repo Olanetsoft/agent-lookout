@@ -366,6 +366,27 @@ describe("the sessions Kimchi makes for itself", () => {
     expect(await listed(files)).toEqual([`kimchi:${SESSION_ID}`]);
   });
 
+  test("a marker line that runs past the first 64 KiB is left out by its start", async () => {
+    const files = filesWith({
+      [FILE]: mainSession(),
+      [childFile]:
+        childHeader(child) + subagentMarkerLine("x".repeat(MAX_HEAD_BYTES)) + conversationLines(),
+    });
+    expect(await listed(files)).toEqual([`kimchi:${SESSION_ID}`]);
+  });
+
+  test("a second line of another kind that runs past the first 64 KiB leaves a session in", async () => {
+    const long = line({
+      type: "custom",
+      customType: "work_identity",
+      data: "x".repeat(MAX_HEAD_BYTES),
+    });
+    const files = filesWith({
+      [FILE]: line(headerFields(SESSION_ID)) + long + conversationLines(),
+    });
+    expect(await listed(files)).toEqual([`kimchi:${SESSION_ID}`]);
+  });
+
   test("a branch the person made names its parent too, and is listed", async () => {
     const files = filesWith({
       [FILE]: mainSession(),

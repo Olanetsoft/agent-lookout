@@ -190,13 +190,13 @@ export function markedBy(line: Buffer, markers: readonly string[]): boolean {
 
 /**
  * The second line of a file, from the bytes of its start, given where the first
- * ends: null when it runs past those bytes, too long to be a marker, and
- * "unwritten" when the file ends before it does, as while a file is made.
+ * ends: only its start when it runs past those bytes, which is where a marker
+ * is, and "unwritten" when the file ends before it does, as while a file is made.
  */
-function secondLine(head: Buffer, firstEnd: number): Buffer | null | "unwritten" {
+function secondLine(head: Buffer, firstEnd: number): Buffer | "unwritten" {
   const end = head.indexOf(NEWLINE, firstEnd + 1);
   if (end >= 0) return head.subarray(firstEnd + 1, end);
-  return head.byteLength < MAX_HEAD_BYTES ? "unwritten" : null;
+  return head.byteLength < MAX_HEAD_BYTES ? "unwritten" : head.subarray(firstEnd + 1);
 }
 
 function sameFile(a: FileInfo, b: FileInfo): boolean {
@@ -282,7 +282,7 @@ export function createSessionFileReader(
       const second = secondLine(head, end);
       // Not listed until the line that can mark it is written, and read again then.
       if (second === "unwritten") return NONE;
-      if (second !== null && markedBy(second, markers)) return HIDDEN;
+      if (markedBy(second, markers)) return HIDDEN;
     }
     const readTo = head.lastIndexOf(NEWLINE) + 1;
     if (!readsNames)
