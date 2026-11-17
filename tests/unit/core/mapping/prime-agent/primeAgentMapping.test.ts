@@ -145,6 +145,12 @@ describe("what one record says", () => {
     ["queue_mutated", false, notParked, "idle"],
     ["queue_resumed", true, notParked, "working"],
     ["queue_resumed", false, notParked, "idle"],
+    ["queue_dropped", true, notParked, "working"],
+    ["queue_dropped", true, parked, "unknown"],
+    ["queue_dropped", false, parked, "idle"],
+    ["actions_restored", true, notParked, "working"],
+    ["actions_restored", true, parked, "unknown"],
+    ["actions_restored", false, notParked, "unknown"],
     ["shutdown", true, notParked, "unknown"],
     ["shutdown", false, notParked, "unknown"],
     ["killed", false, notParked, "unknown"],
@@ -159,6 +165,8 @@ describe("what one record says", () => {
     expect(mayBeWorking(record("prompt_accepted", true))).toBe(true);
     expect(mayBeWorking(record("turn_end", true))).toBe(true);
     expect(mayBeWorking(record("queue_mutated", true))).toBe(true);
+    expect(mayBeWorking(record("queue_dropped", true))).toBe(true);
+    expect(mayBeWorking(record("actions_restored", true))).toBe(true);
     expect(mayBeWorking(record("turn_end", false))).toBe(false);
     expect(mayBeWorking(record("create", true))).toBe(false);
   });

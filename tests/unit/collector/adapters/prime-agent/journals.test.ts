@@ -263,6 +263,16 @@ describe("reading a journal", () => {
     expect((await read(files, reader))?.idleSince).toBe(AT);
   });
 
+  test("keeps when the run of idle records began past a prompt cancelled while it waited", async () => {
+    const files = primeAgentFiles();
+    files.write(
+      JOURNAL,
+      recordLine({ busy: false, operation: "turn_end", at: AT }) +
+        recordLine({ busy: false, operation: "queue_dropped", at: AT + SECOND }),
+    );
+    expect((await read(files))?.idleSince).toBe(AT);
+  });
+
   test("starts the run of idle records again after a prompt, or a record of another session", async () => {
     for (const [name, between] of [
       ["a prompt", recordLine({ busy: true, operation: "prompt_accepted", at: AT + SECOND })],

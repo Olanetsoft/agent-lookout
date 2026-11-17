@@ -614,6 +614,41 @@ describe("what its worker's journal says", () => {
     expect(session).toMatchObject({ status: "working", statusSince: STARTED_AT + 2 * SECOND });
   });
 
+  test("still working from the turn's start when a queued prompt is cancelled during it", async () => {
+    const files = heldSession(
+      checkpointAt(2, "prompt_accepted", true) + checkpointAt(4, "queue_dropped", true),
+    );
+    const { session } = await statusOf(files);
+    expect(session).toMatchObject({ status: "working", statusSince: STARTED_AT + 2 * SECOND });
+  });
+
+  test("idle once the prompt in a parked queue is cancelled, from the cancel", async () => {
+    const files = heldSession(
+      checkpointAt(2, "prompt_accepted", true) +
+        checkpointAt(5, "turn_end", true, true) +
+        checkpointAt(7, "queue_dropped", false),
+    );
+    const { session } = await statusOf(files);
+    expect(session).toMatchObject({ status: "idle", statusSince: STARTED_AT + 7 * SECOND });
+  });
+
+  test("working from the restore once queued actions are restored, unless the queue is parked", async () => {
+    const restored = heldSession(
+      checkpointAt(1, "create", true) + checkpointAt(3, "actions_restored", true),
+    );
+    expect((await statusOf(restored)).session).toMatchObject({
+      status: "working",
+      statusSince: STARTED_AT + 3 * SECOND,
+    });
+    const parked = heldSession(
+      checkpointAt(1, "create", true) + checkpointAt(3, "actions_restored", true, true),
+    );
+    expect((await statusOf(parked)).session).toMatchObject({
+      status: "unknown",
+      statusSince: null,
+    });
+  });
+
   test("unknown right after a create, whose busy flag is always true", async () => {
     const files = heldSession(recordAt(1, "create", true));
     expect((await statusOf(files)).session).toMatchObject({ status: "unknown", statusSince: null });
@@ -734,7 +769,9 @@ describe("what its worker's journal says", () => {
       "queue_purged",
       "queue_cleared",
       "queue_mutated",
+      "queue_dropped",
       "queue_resumed",
+      "actions_restored",
       "shutdown",
       "killed",
       "replaced",
