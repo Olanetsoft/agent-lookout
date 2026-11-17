@@ -804,7 +804,7 @@ export const PRIME_AGENT_CAPABILITIES: SourceCapabilities = {
   "working-and-idle": {
     level: "partly",
     reason:
-      "From the journal of the worker that holds its lease, on macOS and Linux. Unknown before its first prompt, or while parked.",
+      "From its worker's journal, on macOS and Linux. Unknown before its first prompt, or while work waits in a parked queue.",
   },
   "needs-you": {
     level: "no",

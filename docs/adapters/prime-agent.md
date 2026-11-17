@@ -256,7 +256,7 @@ Everything here is read from the source, so each of these is for a person with P
 2. That `ps -o pid=,lstart=,comm= -p <pid>` names a worker `prime-agent`, and that its `lstart` is the `ps:` start in its lease, byte for byte, on macOS.
 3. That `/proc/<pid>/stat` field 22 of a worker is the `proc:` start in its lease on Linux.
 4. That the journal's lines are written with their fields in the order above.
-5. That a turn shows as working and then idle, a parked queue as unknown, and a closed session as finished.
+5. That a turn shows as working and then idle, a parked queue with work in it as unknown, and a closed session as finished.
 6. How often the daemon removes the leases of processes that have gone, and how it treats a crashed worker's journal at its next start.
 7. That a terminal and its daemon keep their files in one agent folder.
 8. The TypeScript build's leases, journals and names.

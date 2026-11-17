@@ -56,7 +56,7 @@ export const PRIME_AGENT_DIR = [".prime", "agent"] as const;
 
 /** Said whenever Prime Agent is watched, because it is what a person would otherwise expect to see. */
 export const STATUS_NOTE =
-  "A Prime Agent session shows as working or idle from the recovery journal its worker keeps, while a running prime-agent holds the session's lease, and as finished once none does. Between its opening and its first prompt, while its queue is parked, and when run with -p or --mode rpc, it shows as unknown.";
+  "A Prime Agent session shows as working or idle from the recovery journal its worker keeps, while a running prime-agent holds the session's lease, and as finished once none does. Between its opening and its first prompt, while work waits in a parked queue, and when run with -p or --mode rpc, it shows as unknown.";
 
 /** Said whenever Prime Agent is watched, until the adapter has been checked on a computer running it. */
 export const UNCHECKED_NOTE =
@@ -86,7 +86,7 @@ export const PRIME_AGENT_CAPABILITIES: SourceCapabilities = {
   "working-and-idle": {
     level: "partly",
     reason:
-      "From the journal of the worker that holds its lease, on macOS and Linux. Unknown before its first prompt, or while parked.",
+      "From its worker's journal, on macOS and Linux. Unknown before its first prompt, or while work waits in a parked queue.",
   },
   "needs-you": {
     level: "no",
