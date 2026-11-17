@@ -454,7 +454,9 @@ export function createAutohandCodeAdapter(options: AutohandCodeAdapterOptions = 
         continue;
       }
       const folder = await lookUpFolder(id);
-      if (folder !== null) folders.set(id, folder);
+      // A name with no folder this reads, as a link or another user's, waits for the sweep too.
+      if (folder === null) stillSettled.add(id);
+      else folders.set(id, folder);
     }
 
     const sessions: Session[] = [];

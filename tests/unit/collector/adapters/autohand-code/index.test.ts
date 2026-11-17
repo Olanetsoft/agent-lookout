@@ -928,6 +928,28 @@ describe("the folders", () => {
     await adapter.poll();
     expect(looks()).toBe(3);
   });
+
+  test("looks up a session folder that is a link or another user's only on a sweep", async () => {
+    for (const how of ["link", "foreign"] as const) {
+      const pc = computer();
+      if (how === "link") {
+        pc.files.special(sessionDir());
+      } else {
+        session(pc);
+        pc.owned.set(sessionDir(), { uid: OTHER_UID });
+      }
+      const adapter = pc.adapter();
+      const looks = () => pc.files.count("lstat", (target) => target === asWritten(sessionDir()));
+      await adapter.poll();
+      expect(looks(), how).toBe(1);
+      pc.clock.advance(2 * SECOND);
+      await adapter.poll();
+      expect(looks(), how).toBe(1);
+      pc.clock.advance(58 * SECOND);
+      await adapter.poll();
+      expect(looks(), how).toBe(2);
+    }
+  });
 });
 
 describe("sizes", () => {
