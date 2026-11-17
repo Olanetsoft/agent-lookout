@@ -98,7 +98,7 @@ Agent Lookout finds sessions by reading what each agent tool already keeps on di
 
 ### The poller
 
-**What it does.** `createPoller` in `src/collector/poller.ts` asks every adapter for its sessions every 2 seconds (`POLL_INTERVAL_MS`). It makes a `SessionsSnapshot`, works out what changed since the last poll, records the changes as events and adds a point to the history behind the charts. `createCollector` in `src/collector/collector.ts` builds the nineteen local adapters (Claude Code, Codex, the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent and status files), adds one adapter for each other machine, and hands them all to the poller.
+**What it does.** `createPoller` in `src/collector/poller.ts` asks every adapter for its sessions every 2 seconds (`POLL_INTERVAL_MS`). It makes a `SessionsSnapshot`, works out what changed since the last poll, records the changes as events and adds a point to the history behind the charts. `createCollector` in `src/collector/collector.ts` builds the twenty local adapters (Claude Code, Codex, the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent and status files), adds one adapter for each other machine, and hands them all to the poller.
 
 **Where it came from.** It was in the first commit, 042ec3e, on 4 October 2026. Later work added reading history back after a restart (#21), an idle time you can set (#12), marking a wait Agent Lookout answered (#9, #11) and other machines over SSH (#57).
 
