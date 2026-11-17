@@ -45,7 +45,8 @@ import {
  * A file is opened only as an ordinary file with one name in a real folder,
  * of 1 MiB or less, read-only and following no link, and on macOS and Linux
  * only one of the user Agent Lookout runs as. It is opened only when its size,
- * modified time or identity changed. One cut off as it was written in place
+ * modified time or identity changed, or after a look that found it or its
+ * folder one it would not read. One cut off as it was written in place
  * stands in from the read before, once. Nothing here writes, renames, locks or
  * deletes anything.
  */
@@ -129,7 +130,7 @@ const sameFile = (a: FileInfo, b: FileInfo) =>
   a.size === b.size && a.mtimeMs === b.mtimeMs && a.ino === b.ino;
 
 export interface MetadataReader {
-  /** What a session's `metadata.json` says, given its `lstat`, opened only when that changed. */
+  /** What a session's `metadata.json` says, given its `lstat`, opened only when that changed or the look before would not read it. */
   read(sessionId: string, info: FileInfo): Promise<MetadataRead>;
   /** Forgets every session not in this set. */
   keepOnly(sessionIds: ReadonlySet<string>): void;
@@ -147,18 +148,17 @@ export function createMetadataReader(options: MetadataReaderOptions): MetadataRe
   const { sessionsDir, io, platform, euid } = options;
   const remembered = new Map<string, Remembered>();
 
-  async function openAndRead(sessionId: string, looked: FileInfo): Promise<Remembered> {
+  /** What was read, or null for a folder or a file this would not read, which is never kept. */
+  async function openAndRead(sessionId: string, looked: FileInfo): Promise<Remembered | null> {
     // A link at the folder's name would lead out of the sessions folder, and
     // opening a file does not look at the names before its own.
     const folder = await io.lstat(path.join(sessionsDir, sessionId));
-    if (!isTrusted(folder, "session-folder", platform, euid)) {
-      return { info: looked, read: { state: "none" }, stoodIn: false };
-    }
+    if (!isTrusted(folder, "session-folder", platform, euid)) return null;
     const handle: OpenFile = await io.openRegular(metadataPathOf(sessionsDir, sessionId));
     try {
       const { info } = handle;
       const remember = (read: MetadataRead): Remembered => ({ info, read, stoodIn: false });
-      if (!isTrusted(info, "metadata", platform, euid)) return remember({ state: "none" });
+      if (!isTrusted(info, "metadata", platform, euid)) return null;
       if (info.size > MAX_METADATA_BYTES) return remember({ state: "too-large" });
       const bytes = Buffer.from(await handle.read(0, info.size));
       const facts = metadataOf(bytes, platform);
@@ -186,13 +186,20 @@ export function createMetadataReader(options: MetadataReaderOptions): MetadataRe
         known.stoodIn = true;
         return known.read;
       };
-      let opened: Remembered;
+      let opened: Remembered | null;
       try {
         opened = await openAndRead(sessionId, info);
       } catch {
         // Gone since its `lstat`, or a read that failed: what was read before
         // stands in, once, and it is opened again on the next poll.
         return standIn() ?? { state: "none" };
+      }
+      // The folder's owner and kind, and the open file's owner and names, are
+      // not in what says the file changed, so a refusal is never kept: what was
+      // read before is forgotten, and the next poll looks again.
+      if (opened === null) {
+        remembered.delete(sessionId);
+        return { state: "none" };
       }
       // Half written, as a read can catch it: what was read before stands in, once.
       if (opened.read.state === "broken") {

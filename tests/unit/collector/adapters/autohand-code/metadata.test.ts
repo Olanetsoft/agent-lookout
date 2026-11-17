@@ -182,6 +182,28 @@ describe("the metadata reader", () => {
     expect(await reader(files).read(SESSION_ID, looked)).toEqual({ state: "none" });
   });
 
+  test("a folder or file found one it would not read as metadata.json is opened is not kept, so it is read once it is the user's again", async () => {
+    const cases: [string, Partial<{ uid: number; nlink: number }>, number][] = [
+      [sessionDir(), { uid: OTHER_UID }, 1],
+      [metadataPath(), { uid: OTHER_UID }, 2],
+      [metadataPath(), { nlink: 2 }, 2],
+    ];
+    for (const [target, mark, opens] of cases) {
+      const files = memoryFiles();
+      const owned = ownedFiles(files);
+      writeMetadata(files, metadata({ status: "crashed" }));
+      const metadataReader = reader(files, owned);
+      const looked = await lstatOf(files, owned);
+      // Another user's, or given a second name, after the poll looked it up.
+      owned.set(target, mark);
+      expect(await metadataReader.read(SESSION_ID, looked), target).toEqual({ state: "none" });
+      owned.clear(target);
+      const back = await metadataReader.read(SESSION_ID, await lstatOf(files, owned));
+      expect(back.state === "ok" && back.facts.status, target).toBe("crashed");
+      expect(files.opened(), target).toHaveLength(opens);
+    }
+  });
+
   test("one cut off as it was written stands in from the read before, once", async () => {
     const files = memoryFiles();
     writeMetadata(files, metadata({ status: "crashed" }));
