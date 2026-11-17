@@ -955,7 +955,7 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(session?.links).toEqual({});
     expect(MIMO_CODE_CAPABILITIES["quiet-for"].level).toBe("no");
     expect(MIMO_CODE_CAPABILITIES.tokens.level).toBe("yes");
-    expect(MIMO_CODE_CAPABILITIES.names.level).toBe("yes");
+    expect(MIMO_CODE_CAPABILITIES.names.level).toBe("partly");
     expect(MIMO_CODE_CAPABILITIES.jump.level).toBe("no");
     expect(MIMO_CODE_CAPABILITIES.stop.level).toBe("no");
     expect(MIMO_CODE_CAPABILITIES.answer.level).toBe("no");

@@ -25,6 +25,7 @@ import {
 import {
   actorRow,
   assistantData,
+  mainActorRow,
   messageId,
   messageRow,
   MINUTE,
@@ -62,6 +63,9 @@ const PROMPT_TITLE = sessionId("c9");
 const NAMED = sessionId("d0");
 const CHILD = sessionId("e1");
 const ARCHIVED = sessionId("f2");
+const FORKED = sessionId("a3");
+const RUN_TITLED = sessionId("b4");
+const NEW_SESSION = sessionId("c5");
 
 /** The rows of every session the database holds, relative to `now`. */
 function rows(now: number): string[] {
@@ -113,6 +117,7 @@ function rows(now: number): string[] {
     tools: { tool: string; status: "pending" | "running" | "completed" | "error" }[],
   ) => [
     sessionRow({ id, title: `Session ${suffix}`, createdAt: at(30), updatedAt: at(2) }),
+    mainActorRow(id, at(1)),
     prompt(id, `${suffix}u`, 3),
     messageRow({
       id: messageId(`${suffix}a`),
@@ -137,11 +142,15 @@ function rows(now: number): string[] {
       }),
     ),
   ];
+  // Every session has a row of `actor_registry` for its main agent, which
+  // MiMo Code makes `pending` with the session and its turns leave so, written
+  // as the main agent last wrote.
   return [
     // Idle: its main agent's last step ended the turn, with token counts. A
     // subagent wrote after it, asked a question and is done: none of its
     // messages decides the status or the counts.
     sessionRow({ id: IDLE, title: "Rename the helper", createdAt: at(30), updatedAt: at(5) }),
+    mainActorRow(IDLE, at(5)),
     prompt(IDLE, "a1u", 6),
     messageRow({
       id: messageId("a1a"),
@@ -170,6 +179,7 @@ function rows(now: number): string[] {
     ...underWay(PLANNING, "d4", [{ tool: "plan_exit", status: "running" }]),
     // The main agent's turn is over, and its subagent still runs.
     sessionRow({ id: SUBAGENT_RUNNING, createdAt: at(30), updatedAt: at(5) }),
+    mainActorRow(SUBAGENT_RUNNING, at(5)),
     prompt(SUBAGENT_RUNNING, "e5u", 6),
     ended(SUBAGENT_RUNNING, "e5a", 5),
     ...subagent(SUBAGENT_RUNNING, "e5"),
@@ -182,6 +192,7 @@ function rows(now: number): string[] {
     }),
     // One whose subagent is still to start.
     sessionRow({ id: SUBAGENT_PENDING, createdAt: at(30), updatedAt: at(5) }),
+    mainActorRow(SUBAGENT_PENDING, at(5)),
     prompt(SUBAGENT_PENDING, "f6u", 6),
     ended(SUBAGENT_PENDING, "f6a", 5),
     actorRow({
@@ -192,8 +203,10 @@ function rows(now: number): string[] {
     }),
     // Failed: its main agent's reply ended on an error, one of OpenCode's and one of MiMo Code's own.
     sessionRow({ id: FAILED, title: "Write the notes", createdAt: at(40), updatedAt: at(10) }),
+    mainActorRow(FAILED, at(10)),
     ended(FAILED, "a7a", 10, "APIError"),
     sessionRow({ id: MODEL_FAILED, createdAt: at(40), updatedAt: at(10) }),
+    mainActorRow(MODEL_FAILED, at(10)),
     ended(MODEL_FAILED, "b8a", 10, "ModelError"),
     // A title MiMo Code took from the first line of the prompt, before a model named the session.
     sessionRow({
@@ -203,19 +216,57 @@ function rows(now: number): string[] {
       createdAt: at(20),
       updatedAt: at(8),
     }),
+    mainActorRow(PROMPT_TITLE, at(8)),
     ended(PROMPT_TITLE, "c9a", 8),
-    // A title the person set.
+    // A title the person renamed the session to, after MiMo Code's first one.
     sessionRow({
       id: NAMED,
       title: "Tidy the tests",
       titleSource: "user",
+      titleRevision: 2,
       createdAt: at(20),
       updatedAt: at(8),
     }),
+    mainActorRow(NAMED, at(8)),
     ended(NAMED, "d0a", 8),
+    // A fork of a session MiMo Code had not named yet: a root session whose
+    // title is the first line of the prompt, copied and marked as the person's.
+    sessionRow({
+      id: FORKED,
+      title: `${PRIVATE_WORDS} (fork #1)`,
+      titleSource: "user",
+      titleRevision: 0,
+      createdAt: at(20),
+      updatedAt: at(7),
+    }),
+    mainActorRow(FORKED, at(7)),
+    ended(FORKED, "a3a", 7),
+    // A title given as the session was made, as `mimo run --title` gives the
+    // start of the prompt.
+    sessionRow({
+      id: RUN_TITLED,
+      title: PRIVATE_WORDS,
+      titleSource: "user",
+      titleRevision: 0,
+      createdAt: at(20),
+      updatedAt: at(7),
+    }),
+    mainActorRow(RUN_TITLED, at(7)),
+    ended(RUN_TITLED, "b4a", 7),
+    // A new session, with nothing but its main agent's row.
+    sessionRow({
+      id: NEW_SESSION,
+      title: "Untitled",
+      titleSource: "fallback",
+      titleRevision: 0,
+      createdAt: at(4),
+    }),
+    mainActorRow(NEW_SESSION, at(4)),
     // A session of its own for a subagent, and an archived one, are left out.
     sessionRow({ id: CHILD, title: "Look around", parentId: IDLE, updatedAt: at(3) }),
+    mainActorRow(CHILD, at(3)),
     sessionRow({ id: ARCHIVED, title: "Old work", archivedAt: at(3), updatedAt: at(3) }),
+    mainActorRow(ARCHIVED, at(3)),
   ];
 }
 
@@ -225,9 +276,13 @@ const WITHOUT_ACTORS = SCHEMA.replace(/CREATE TABLE actor_registry \([^;]*\);/, 
   "",
 );
 
+/** The tables of a MiMo Code whose `session` has no `title_revision`. */
+const WITHOUT_TITLE_REVISION = SCHEMA.replace("title_revision integer DEFAULT 0 NOT NULL, ", "");
+
 /**
  * MiMo Code's data folder, `data` in a home of the test's own, with a closed
- * database of these rows. Without `actor_registry`, its rows are left out.
+ * database of these rows. Without `actor_registry`, its rows are left out, and
+ * without `title_revision`, the sessions' rows.
  */
 async function makeHome(now: number, schema = SCHEMA): Promise<{ home: string; file: string }> {
   const home = await tempDir();
@@ -235,7 +290,9 @@ async function makeHome(now: number, schema = SCHEMA): Promise<{ home: string; f
   await mkdir(data);
   const file = path.join(data, "mimocode.db");
   const written = rows(now).filter(
-    (row) => schema.includes("actor_registry") || !row.startsWith("INSERT INTO actor_registry"),
+    (row) =>
+      (schema.includes("actor_registry") || !row.startsWith("INSERT INTO actor_registry")) &&
+      (schema.includes("title_revision") || !row.startsWith("INSERT INTO session ")),
   );
   // On stdin, since Linux takes no argument longer than 128 KB.
   execFileSync(sqlite as string, ["-bail", "-init", "/dev/null", file], {
@@ -287,12 +344,19 @@ describe.skipIf(sqlite === null)("the MiMo Code adapter, with the real sqlite3",
       [`mimo-code:${MODEL_FAILED}`]: "failed",
       [`mimo-code:${PROMPT_TITLE}`]: "idle",
       [`mimo-code:${NAMED}`]: "idle",
+      [`mimo-code:${FORKED}`]: "idle",
+      [`mimo-code:${RUN_TITLED}`]: "idle",
+      [`mimo-code:${NEW_SESSION}`]: "idle",
     });
     const named = Object.fromEntries(sessions.map((session) => [session.id, session.name]));
     expect(named[`mimo-code:${IDLE}`]).toBe("Rename the helper");
     expect(named[`mimo-code:${NAMED}`]).toBe("Tidy the tests");
-    // A title from the prompt is never read, so the folder names the session.
+    // A title from the prompt is never read, nor one marked the person's
+    // before a rename, so the folder names the session.
     expect(named[`mimo-code:${PROMPT_TITLE}`]).toBe("demo");
+    expect(named[`mimo-code:${FORKED}`]).toBe("demo");
+    expect(named[`mimo-code:${RUN_TITLED}`]).toBe("demo");
+    expect(named[`mimo-code:${NEW_SESSION}`]).toBe("demo");
     const idle = sessions.find((session) => session.id === `mimo-code:${IDLE}`);
     expect(idle).toMatchObject({
       source: "mimo-code",
@@ -337,16 +401,55 @@ describe.skipIf(sqlite === null)("the MiMo Code adapter, with the real sqlite3",
         MODEL_FAILED,
         PROMPT_TITLE,
         NAMED,
+        FORKED,
+        RUN_TITLED,
+        NEW_SESSION,
       ].sort(),
     );
     const read = readSessionRows(printed) ?? [];
     const of = (id: string) => read.find((row) => row.id === id);
-    expect(of(IDLE)?.subagentsAt).toBeNull();
+    // Only a subagent's row is counted, never the main agent's own.
+    for (const row of read) {
+      const working = row.id === SUBAGENT_RUNNING || row.id === SUBAGENT_PENDING;
+      expect(row.subagentsAt === null, row.id).toBe(!working);
+    }
     expect(of(SUBAGENT_RUNNING)?.subagentsAt).toBeGreaterThan(0);
     expect(of(PROMPT_TITLE)?.title).toBeNull();
+    expect(of(FORKED)?.title).toBeNull();
+    expect(of(RUN_TITLED)?.title).toBeNull();
+    expect(of(NAMED)?.title).toBe("Tidy the tests");
     // Nothing of the tables that hold secrets, and no text written, is printed.
     expect(printed).not.toContain(SECRET_WORDS);
     expect(printed).not.toContain(PRIVATE_WORDS);
+  });
+
+  test("the main agent's own row, pending while MiMo Code runs, keeps a session idle once its turn ended", async () => {
+    const now = Date.now();
+    const { file, home } = await makeHome(now);
+    // Each session has one, pending.
+    expect(
+      jsonRows(
+        await ask(
+          file,
+          "SELECT count(*) AS n FROM actor_registry WHERE mode = 'main' AND status = 'pending'",
+        ),
+      ),
+    ).toEqual([{ n: 15 }]);
+    const adapter = createMimoCodeAdapter({
+      env: { MIMOCODE_HOME: home },
+      homeDir: "/Users/example",
+      now: () => now,
+      processes: { read: async () => ({ ok: true, running: true }) },
+    });
+    const { sessions } = await adapter.poll();
+    const status = (id: string) =>
+      sessions.find((session) => session.id === `mimo-code:${id}`)?.status;
+    // The main step ended with finish stop, and a subagent of it is done.
+    expect(status(IDLE)).toBe("idle");
+    // A new session with nothing but its main agent's row.
+    expect(status(NEW_SESSION)).toBe("idle");
+    // A subagent at work still makes a session working.
+    expect(status(SUBAGENT_PENDING)).toBe("working");
   });
 
   test("a database from before MiMo Code kept subagents in actor_registry is a version it does not read, and lists nothing", async () => {
@@ -366,6 +469,24 @@ describe.skipIf(sqlite === null)("the MiMo Code adapter, with the real sqlite3",
     expect(health.detail).toMatch(
       /is laid out as a version of MiMo Code that Agent Lookout does not read\.$/,
     );
+    expect(sessions).toEqual([]);
+  });
+
+  test("a database whose sessions have no title_revision is a version it does not read", async () => {
+    const now = Date.now();
+    const { file, home } = await makeHome(now, WITHOUT_TITLE_REVISION);
+    const probe = probeQueryFor(MIMO_EXTRAS);
+    expect(readSchema(await ask(file, probe), { v2: false, extras: MIMO_EXTRAS })).toEqual({
+      layout: "unsupported",
+    });
+    const adapter = createMimoCodeAdapter({
+      env: { AGENT_LOOKOUT_MIMO_CODE_HOME: path.join(home, "data") },
+      homeDir: "/Users/example",
+      now: () => now,
+      processes: { read: async () => ({ ok: true, running: true }) },
+    });
+    const { health, sessions } = await adapter.poll();
+    expect(health.state).toBe("error");
     expect(sessions).toEqual([]);
   });
 });

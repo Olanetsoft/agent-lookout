@@ -117,8 +117,10 @@ function value(given: string | number | null | undefined): string {
 export interface MimoSessionFields {
   id: string;
   title?: string;
-  /** `title_source`: `fallback` while the title is the first line of the prompt, `generated` once a model wrote it, `user` once the person set it. Left out, `generated`. */
+  /** `title_source`: `fallback` while the title is the first line of the prompt, `generated` once a model wrote it, `user` for one given as the session was made or forked, or a rename. Left out, `generated`. */
   titleSource?: string;
+  /** `title_revision`: 0 as the session is made, and 1 more on each write of its title. Left out, 1. */
+  titleRevision?: number;
   directory?: string;
   createdAt?: number;
   updatedAt?: number;
@@ -137,6 +139,7 @@ export function sessionRow(fields: MimoSessionFields): string {
     directory: fields.directory ?? FOLDER,
     title: fields.title ?? "Rename the helper",
     title_source: fields.titleSource ?? "generated",
+    title_revision: fields.titleRevision ?? 1,
     version: "0.1.17",
     summary_diffs: JSON.stringify([{ file: PRIVATE_WORDS }]),
     revert: JSON.stringify({ messageID: PRIVATE_WORDS }),
@@ -173,23 +176,26 @@ export function messageRow(fields: MimoMessageFields): string {
 export interface ActorFields {
   sessionId: string;
   actorId: string;
+  /** `mode`: `subagent`, or `main` for the row MiMo Code makes for the main agent of each session. Left out, `subagent`. */
+  mode?: "subagent" | "main";
   status: "pending" | "running" | "idle";
   updatedAt: number;
   /** When the subagent last wrote a part. Left out, null, as before it has. */
   lastActivityAt?: number;
 }
 
-/** A subagent's row of `actor_registry`, with words that stand for what was written in every column the adapter must not read. */
+/** An actor's row of `actor_registry`, with words that stand for what was written in every column the adapter must not read. */
 export function actorRow(fields: ActorFields): string {
+  const main = fields.mode === "main";
   const columns = {
     session_id: fields.sessionId,
     actor_id: fields.actorId,
-    mode: "subagent",
-    parent_actor_id: "main",
+    mode: fields.mode ?? "subagent",
+    parent_actor_id: main ? null : "main",
     status: fields.status,
     last_outcome: fields.status === "idle" ? "success" : null,
-    lifecycle: "ephemeral",
-    agent: "explore",
+    lifecycle: main ? "persistent" : "ephemeral",
+    agent: main ? "build" : "explore",
     description: PRIVATE_WORDS,
     context_mode: "none",
     background: 1,
@@ -206,6 +212,22 @@ export function actorRow(fields: ActorFields): string {
   const names = Object.keys(columns).join(", ");
   const values = Object.values(columns).map(value).join(", ");
   return `INSERT INTO actor_registry (${names}) VALUES (${values});`;
+}
+
+/**
+ * The main agent's row of `actor_registry`, which MiMo Code makes `pending`
+ * with each session and its turns leave so, with its times at `at`, the
+ * newest write of the main agent's.
+ */
+export function mainActorRow(sessionId: string, at: number): string {
+  return actorRow({
+    sessionId,
+    actorId: "main",
+    mode: "main",
+    status: "pending",
+    updatedAt: at,
+    lastActivityAt: at,
+  });
 }
 
 /** Columns of `session` MiMo Code v0.1.17 makes, as the probe prints them, the ones asked for among them. */
@@ -238,6 +260,8 @@ export interface ProbeOptions {
   noAgentId?: boolean;
   /** Without `session.title_source`. */
   noTitleSource?: boolean;
+  /** Without `session.title_revision`. */
+  noTitleRevision?: boolean;
 }
 
 /** What the probe prints for MiMo Code's tables: OpenCode 1.x's, `actor_registry`, and the columns asked of them. */
@@ -247,6 +271,7 @@ export function probeJson(options: ProbeOptions = {}): string {
   if (options.withV2) rows.push({ kind: "table", name: "session_v2" });
   for (const name of SESSION_COLUMNS) {
     if (name === "title_source" && options.noTitleSource) continue;
+    if (name === "title_revision" && options.noTitleRevision) continue;
     rows.push({ kind: "session", name });
   }
   for (const name of ["id", "session_id", "agent_id", "time_created", "time_updated", "data"]) {

@@ -649,17 +649,31 @@ describe("readSchema, for an agent that never writes session_v2", () => {
 });
 
 // MiMo Code's database is laid out as OpenCode 1.x's, with its subagents'
-// messages in the session, a row of `actor_registry` for each subagent, and a
-// title taken from the prompt until a model names it (`../mimo-code/index.ts`).
+// messages in the session, a row of `actor_registry` for each actor, the main
+// agent's too, and a title taken from the prompt until a model names it, or
+// copied into a fork (`../mimo-code/index.ts`).
 describe("the 1.x question with extras", () => {
-  const extras = { mainAgent: "main", actors: true, titleSources: ["generated", "user"] };
+  const extras = {
+    mainAgent: "main",
+    actors: true,
+    titleSources: ["generated"],
+    renamedSources: ["user"],
+  };
+  const TITLE =
+    "CASE WHEN s.title_source IN ('generated') OR (s.title_source IN ('user') AND typeof(s.title_revision) = 'integer' AND s.title_revision > 0) THEN substr(s.title, 1, 1000) END AS title";
   const mimo = v1SessionsQuery({ asking: ["question", "plan_exit"], idle: [] }, extras);
 
   test("with none is the question it was, and the probe is PROBE_QUERY", () => {
     expect(v1SessionsQuery(OPENCODE_TOOLS, {})).toBe(SESSIONS_QUERY);
     expect(probeQueryFor({})).toBe(PROBE_QUERY);
     expect(probeQueryFor()).toBe(PROBE_QUERY);
-    for (const never of ["agent_id", "actor_registry", "title_source", "a_active_at"]) {
+    for (const never of [
+      "agent_id",
+      "actor_registry",
+      "title_source",
+      "title_revision",
+      "a_active_at",
+    ]) {
       expect(SESSIONS_QUERY, never).not.toContain(never);
       expect(PROBE_QUERY, never).not.toContain(never);
     }
@@ -680,17 +694,15 @@ describe("the 1.x question with extras", () => {
     expect(
       mimo
         .replaceAll(/ AND [a-z]\.agent_id = 'main'/g, "")
-        .replace(
-          "CASE WHEN s.title_source IN ('generated', 'user') THEN substr(s.title, 1, 1000) END AS title",
-          "substr(s.title, 1, 1000) AS title",
-        )
+        .replace(TITLE, "substr(s.title, 1, 1000) AS title")
         .replace(/\(SELECT max\(max\([^]*?\) AS a_active_at, /, ""),
     ).toBe(SESSIONS_QUERY);
   });
 
-  test("asks of a subagent only its status and two times, and prints only the newest time of those pending or running", () => {
+  test("asks of an actor only its mode, status and two times, and prints only the newest time of the subagents pending or running", () => {
+    // The main agent's own row stays pending, so only a subagent's is counted.
     expect(mimo).toContain(
-      "(SELECT max(max(CASE WHEN typeof(a.time_updated) = 'integer' THEN a.time_updated ELSE 0 END, CASE WHEN typeof(a.last_activity_time) = 'integer' THEN a.last_activity_time ELSE 0 END)) FROM actor_registry a WHERE a.session_id = s.id AND a.status IN ('pending', 'running')) AS a_active_at,",
+      "(SELECT max(max(CASE WHEN typeof(a.time_updated) = 'integer' THEN a.time_updated ELSE 0 END, CASE WHEN typeof(a.last_activity_time) = 'integer' THEN a.last_activity_time ELSE 0 END)) FROM actor_registry a WHERE a.session_id = s.id AND a.mode = 'subagent' AND a.status IN ('pending', 'running')) AS a_active_at,",
     );
     for (const never of ["description", "last_error", "instance_id", "tools", "agent "]) {
       expect(mimo.slice(mimo.indexOf("(SELECT max(max(")), never).not.toMatch(
@@ -699,11 +711,16 @@ describe("the 1.x question with extras", () => {
     }
   });
 
-  test("prints a title only for the sources named, so one taken from the prompt never leaves SQLite", () => {
-    expect(mimo).toContain(
-      "CASE WHEN s.title_source IN ('generated', 'user') THEN substr(s.title, 1, 1000) END AS title,",
-    );
+  test("prints a title only for the sources named, and a user's only once renamed, so one taken from the prompt never leaves SQLite", () => {
+    expect(mimo).toContain(`${TITLE},`);
     expect(mimo).not.toContain("'fallback'");
+    // Each of the two alone.
+    expect(v1SessionsQuery(OPENCODE_TOOLS, { titleSources: ["generated"] })).toContain(
+      "CASE WHEN s.title_source IN ('generated') THEN substr(s.title, 1, 1000) END AS title,",
+    );
+    expect(v1SessionsQuery(OPENCODE_TOOLS, { renamedSources: ["user"] })).toContain(
+      "CASE WHEN (s.title_source IN ('user') AND typeof(s.title_revision) = 'integer' AND s.title_revision > 0) THEN substr(s.title, 1, 1000) END AS title,",
+    );
   });
 
   test("asks nothing but fixed text, and no table that holds secrets", () => {
@@ -726,6 +743,7 @@ describe("the 1.x question with extras", () => {
     for (const word of ["", "Main", "it's", "a b", "x)"]) {
       expect(() => v1SessionsQuery(OPENCODE_TOOLS, { mainAgent: word }), word).toThrow();
       expect(() => v1SessionsQuery(OPENCODE_TOOLS, { titleSources: [word] }), word).toThrow();
+      expect(() => v1SessionsQuery(OPENCODE_TOOLS, { renamedSources: [word] }), word).toThrow();
     }
   });
 
@@ -749,12 +767,13 @@ describe("the 1.x question with extras", () => {
             "directory",
             "title",
             "title_source",
+            "title_revision",
             "time_created",
             "time_updated",
             "time_archived",
           ].map((name) => ({ kind: "session", name })),
           { kind: "message", name: "agent_id" },
-          ...["session_id", "status", "time_updated", "last_activity_time"].map((name) => ({
+          ...["session_id", "mode", "status", "time_updated", "last_activity_time"].map((name) => ({
             kind: "actor_registry",
             name,
           })),
@@ -764,11 +783,24 @@ describe("the 1.x question with extras", () => {
     for (const drop of [
       "table.actor_registry",
       "session.title_source",
+      "session.title_revision",
       "message.agent_id",
+      "actor_registry.mode",
       "actor_registry.status",
       "actor_registry.last_activity_time",
     ]) {
       expect(readSchema(rows([drop]), { v2: false, extras }), drop).toEqual({
+        layout: "unsupported",
+      });
+    }
+    // A source read only once renamed needs the revision, and asks the probe of the extras.
+    const renamed = { renamedSources: ["user"] };
+    expect(probeQueryFor(renamed)).toBe(probeQueryFor(extras));
+    expect(readSchema(rows(["table.actor_registry"]), { v2: false, extras: renamed })).toEqual({
+      layout: "v1",
+    });
+    for (const drop of ["session.title_source", "session.title_revision"]) {
+      expect(readSchema(rows([drop]), { v2: false, extras: renamed }), drop).toEqual({
         layout: "unsupported",
       });
     }

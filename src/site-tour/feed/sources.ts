@@ -731,7 +731,11 @@ export const MIMO_CODE_CAPABILITIES: SourceCapabilities = {
     reason:
       "When a reply ends on an error MiMo Code records. One that fails before its first step shows as working.",
   },
-  names: { level: "yes" },
+  names: {
+    level: "partly",
+    reason:
+      "A model's title or your rename, else the folder's. MiMo Code's first title is the first line of your prompt, never read.",
+  },
   jump: {
     level: "no",
     reason: "MiMo Code's database names no process or terminal.",

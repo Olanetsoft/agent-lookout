@@ -428,6 +428,7 @@ test("PRIVACY.md and the MiMo Code notes name what is read and from which versio
       "agent_id",
       "actor_registry",
       "title_source",
+      "title_revision",
       "account",
       "control_account",
       "ps -A -o comm=",

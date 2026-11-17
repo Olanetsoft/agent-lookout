@@ -24,11 +24,13 @@ export {
  * Its database differs from OpenCode's in three ways the profile's
  * `V1Extras` ask about. Its subagents work in the session itself, so their
  * messages sit beside the main agent's, told apart by `message.agent_id`,
- * and only the main agent's say how the session stands. Each subagent has a
- * row of `actor_registry`, and while one is `pending` or `running` the
- * session is working. And a session's title is the first line of the
- * person's prompt until a model names it, so only a title MiMo Code marks
- * `generated` or `user` is read.
+ * and only the main agent's say how the session stands. Each actor of a
+ * session has a row of `actor_registry`, the main agent's too, and while a
+ * subagent's is `pending` or `running` the session is working. And a
+ * session's title is the first line of the person's prompt until a model
+ * names it, and a fork's is copied from the session it came from, so a title
+ * is read only when MiMo Code marks it `generated`, or `user` once the person
+ * renamed the session.
  *
  * It reads no `session_v2` and no last message. See
  * docs/adapters/mimo-code.md. Built from MiMo Code's source at v0.1.17 (MIT),
@@ -69,13 +71,16 @@ export const MIMO_TOOLS: V1Tools = { asking: ["question", "plan_exit"], idle: []
 /**
  * What MiMo Code's layout has beyond OpenCode 1.x's: the main agent's
  * messages are those with `agent_id` `main`, its subagents are in
- * `actor_registry`, and a title is read only when a model wrote it or the
- * person set it.
+ * `actor_registry`, and a title is read only when a model wrote it, or once
+ * the person renamed the session. MiMo Code marks `user` a fork's copied
+ * title and a title passed when a session is made too, at `title_revision` 0,
+ * and a rename moves the revision above 0 (`writeTitle` in `session.ts`).
  */
 export const MIMO_EXTRAS: V1Extras = {
   mainAgent: "main",
   actors: true,
-  titleSources: ["generated", "user"],
+  titleSources: ["generated"],
+  renamedSources: ["user"],
 };
 
 /**
@@ -122,14 +127,18 @@ export const WINDOWS_DETAIL =
  *
  * - Working and idle are the newest message of the main agent of each root
  *   session of `session`, on macOS and Linux only. A session with a subagent
- *   `pending` or `running` in `actor_registry` is working.
+ *   `pending` or `running` in `actor_registry` is working. The main agent's
+ *   own row stays `pending`, and is not counted.
  * - Needs you is a `question` or `plan_exit` tool part of that message in the
  *   state `running`, unless it is older than the last `ps` that showed no
  *   MiMo Code. A wait for a tool's approval is in memory, and a subagent's
  *   question is not read.
  * - Finished is every session while `ps` shows no `mimo`.
  * - Failed is a reply that ends on an error MiMo Code records.
- * - The name is a title a model wrote or the person set, else the folder's.
+ * - The name is a title a model wrote or the person renamed the session to,
+ *   else the folder's. MiMo Code's first title, the first line of the
+ *   prompt, a fork's copied title and a title passed when a session is made
+ *   are not read.
  * - No Jump, Stop or Answer: the database names no process or terminal.
  * - No Quiet for: every session is in one file.
  * - Tokens are the counts of the main agent's newest reply that ended with
@@ -156,7 +165,11 @@ export const MIMO_CODE_CAPABILITIES: SourceCapabilities = {
     reason:
       "When a reply ends on an error MiMo Code records. One that fails before its first step shows as working.",
   },
-  names: { level: "yes" },
+  names: {
+    level: "partly",
+    reason:
+      "A model's title or your rename, else the folder's. MiMo Code's first title is the first line of your prompt, never read.",
+  },
   jump: {
     level: "no",
     reason: "MiMo Code's database names no process or terminal.",

@@ -47,8 +47,9 @@ import { readArguments } from "../antigravity/app/summaries.ts";
  * reads no `session_v2` (`../kilo-code/index.ts`). MiMo Code's `mimocode.db`
  * is too, with three differences its adapter asks about (`V1Extras`): its
  * subagents' messages are in the session beside the main agent's, each
- * subagent has a row of `actor_registry`, and a title may be the first line
- * of the person's prompt (`../mimo-code/index.ts`).
+ * actor, the main agent among them, has a row of `actor_registry`, and a
+ * title may be the first line of the person's prompt
+ * (`../mimo-code/index.ts`).
  */
 
 /** The file OpenCode keeps its sessions in, in its data folder. */
@@ -263,8 +264,10 @@ export interface V1Extras {
    */
   mainAgent?: string;
   /**
-   * Whether the agent keeps a row for each subagent in `actor_registry`, with
-   * a `status` of `pending`, `running` or `idle`, as MiMo Code does. Then
+   * Whether the agent keeps a row for each actor of a session in
+   * `actor_registry`, with its `mode` and a `status` of `pending`, `running`
+   * or `idle`, as MiMo Code does. The main agent has one too, which stays
+   * `pending`, so only rows whose `mode` is `subagent` are counted. Then
    * each row has `a_active_at` (`ACTIVE_SUBAGENTS`).
    */
   actors?: boolean;
@@ -275,12 +278,23 @@ export interface V1Extras {
    * model names it.
    */
   titleSources?: readonly string[];
+  /**
+   * The values of `session.title_source` whose title is printed only once
+   * `session.title_revision` is a whole number above 0. MiMo Code also marks
+   * `user` the title it copies into a fork and a title passed when a session
+   * is made, both at revision 0, and adds 1 to the revision on each write
+   * after that, so only a rename moves a `user` title above 0.
+   */
+  renamedSources?: readonly string[];
 }
 
 /** Whether any of the extras is set, so that a question differs from OpenCode's. */
 function hasExtras(extras: V1Extras): boolean {
   return (
-    extras.mainAgent !== undefined || extras.actors === true || extras.titleSources !== undefined
+    extras.mainAgent !== undefined ||
+    extras.actors === true ||
+    extras.titleSources !== undefined ||
+    extras.renamedSources !== undefined
   );
 }
 
@@ -297,12 +311,24 @@ function mainOnly(extras: V1Extras): MainOnly {
 
 /**
  * The title, cut inside SQLite, printed only when `session.title_source` is
- * one of these, and else null.
+ * one of `titleSources`, or one of `renamedSources` with a `title_revision`
+ * above 0, and else null. The source and the revision are only tested.
  */
 function titleField(extras: V1Extras): string {
-  const { titleSources } = extras;
-  if (titleSources === undefined) return "substr(s.title, 1, 1000) AS title";
-  return `CASE WHEN s.title_source IN (${toolList(titleSources)}) THEN substr(s.title, 1, 1000) END AS title`;
+  const { titleSources, renamedSources } = extras;
+  if (titleSources === undefined && renamedSources === undefined) {
+    return "substr(s.title, 1, 1000) AS title";
+  }
+  const printed = [
+    ...(titleSources === undefined ? [] : [`s.title_source IN (${toolList(titleSources)})`]),
+    ...(renamedSources === undefined
+      ? []
+      : [
+          `(s.title_source IN (${toolList(renamedSources)})` +
+            " AND typeof(s.title_revision) = 'integer' AND s.title_revision > 0)",
+        ]),
+  ];
+  return `CASE WHEN ${printed.join(" OR ")} THEN substr(s.title, 1, 1000) END AS title`;
 }
 
 /**
@@ -316,12 +342,15 @@ const ACTOR_TIME = (column: string) =>
  * The newest time a subagent of session `s` that is `pending` or `running`
  * was written: its row's `time_updated`, or its `last_activity_time`, which
  * MiMo Code moves as the subagent writes its parts. Null when none is, and 0
- * when one is but neither time is a whole number. Only the status and the two
- * times are read, and only the newest time is printed.
+ * when one is but neither time is a whole number. Only rows whose `mode` is
+ * `subagent` are counted, as MiMo Code's own wait for its subagents counts
+ * them: it keeps a row for the main agent too, which its turns leave
+ * `pending`. Only the mode, the status and the two times are read, and only
+ * the newest time is printed.
  */
 const ACTIVE_SUBAGENTS = [
   `(SELECT max(max(${ACTOR_TIME("time_updated")}, ${ACTOR_TIME("last_activity_time")}))`,
-  "FROM actor_registry a WHERE a.session_id = s.id",
+  "FROM actor_registry a WHERE a.session_id = s.id AND a.mode = 'subagent'",
   "AND a.status IN ('pending', 'running')) AS a_active_at,",
 ].join(" ");
 
@@ -422,7 +451,7 @@ export const SESSIONS_QUERY = v1SessionsQuery(OPENCODE_TOOLS);
  * (`idleCall`). With `extras` (`V1Extras`), the newest message, the newest
  * prompt and the counted reply are the main agent's, each row has
  * `a_active_at` (`ACTIVE_SUBAGENTS`), and a title is printed only for the
- * sources named.
+ * sources named, some of them only once renamed.
  */
 export function v1SessionsQuery(tools: V1Tools, extras: V1Extras = {}): string {
   return [
@@ -637,17 +666,24 @@ export function jsonRows(stdout: string): Record<string, unknown>[] | null {
 }
 
 /**
- * The columns the extras ask for: `session.title_source`, `message.agent_id`,
- * and of `actor_registry` the three `ACTIVE_SUBAGENTS` reads, by table.
+ * The columns the extras ask for, by table: `session.title_source`, and
+ * `session.title_revision` with `renamedSources`, `message.agent_id`, and of
+ * `actor_registry` those `ACTIVE_SUBAGENTS` reads.
  */
 function extraColumns(
   extras: V1Extras,
 ): Record<"session" | "message" | "actor_registry", string[]> {
+  const titles = extras.titleSources !== undefined || extras.renamedSources !== undefined;
   return {
-    session: extras.titleSources === undefined ? [] : ["title_source"],
+    session: [
+      ...(titles ? ["title_source"] : []),
+      ...(extras.renamedSources === undefined ? [] : ["title_revision"]),
+    ],
     message: extras.mainAgent === undefined ? [] : ["agent_id"],
     actor_registry:
-      extras.actors === true ? ["session_id", "status", "time_updated", "last_activity_time"] : [],
+      extras.actors === true
+        ? ["session_id", "mode", "status", "time_updated", "last_activity_time"]
+        : [],
   };
 }
 

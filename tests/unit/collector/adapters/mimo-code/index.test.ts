@@ -393,6 +393,7 @@ describe("reading the sessions", () => {
       { noActors: true },
       { noAgentId: true },
       { noTitleSource: true },
+      { noTitleRevision: true },
     ]) {
       const { files, sqlite } = openMimo([answerRow({ id: A })]);
       sqlite.probe(probeJson(options));
@@ -480,19 +481,21 @@ describe("what a session last said", () => {
 });
 
 describe("what its question asks", () => {
-  test("only the main agent's messages, the subagents' state, and a title a model wrote or the person set", () => {
+  test("only the main agent's messages, the subagents' state, and a title a model wrote or the person renamed the session to", () => {
     expect(MIMO_EXTRAS).toEqual({
       mainAgent: "main",
       actors: true,
-      titleSources: ["generated", "user"],
+      titleSources: ["generated"],
+      renamedSources: ["user"],
     });
     expect(MIMO_TOOLS).toEqual({ asking: ["question", "plan_exit"], idle: [] });
     expect(MIMO_SESSIONS_QUERY.match(/agent_id = 'main'/g)).toHaveLength(5);
     expect(MIMO_SESSIONS_QUERY).toContain(
-      "CASE WHEN s.title_source IN ('generated', 'user') THEN substr(s.title, 1, 1000) END AS title",
+      "CASE WHEN s.title_source IN ('generated') OR (s.title_source IN ('user') AND typeof(s.title_revision) = 'integer' AND s.title_revision > 0) THEN substr(s.title, 1, 1000) END AS title",
     );
+    // The main agent's own row stays pending, so only subagents' rows are counted.
     expect(MIMO_SESSIONS_QUERY).toContain(
-      "FROM actor_registry a WHERE a.session_id = s.id AND a.status IN ('pending', 'running')) AS a_active_at,",
+      "FROM actor_registry a WHERE a.session_id = s.id AND a.mode = 'subagent' AND a.status IN ('pending', 'running')) AS a_active_at,",
     );
     expect(MIMO_SESSIONS_QUERY).not.toContain("m_idle_call");
     expect(MIMO_PROBE_QUERY).toContain("pragma_table_info('actor_registry')");
