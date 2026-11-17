@@ -626,7 +626,7 @@ describe("what its worker's journal says", () => {
     const files = heldSession(
       checkpointAt(2, "prompt_accepted", true) +
         checkpointAt(5, "turn_end", true, true) +
-        checkpointAt(7, "queue_dropped", false),
+        checkpointAt(7, "queue_dropped", false, true),
     );
     const { session } = await statusOf(files);
     expect(session).toMatchObject({ status: "idle", statusSince: STARTED_AT + 7 * SECOND });
@@ -654,7 +654,7 @@ describe("what its worker's journal says", () => {
     expect((await statusOf(files)).session).toMatchObject({ status: "unknown", statusSince: null });
   });
 
-  test("unknown at a step that ends the worker or is not traced", async () => {
+  test("unknown at a step that says the worker is ending or has ended", async () => {
     for (const operation of ["shutdown", "killed", "replaced", "worker_gave_up"]) {
       const files = heldSession(
         checkpointAt(2, "prompt_accepted", true) + recordAt(5, operation, false),
