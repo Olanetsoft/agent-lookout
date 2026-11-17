@@ -6,7 +6,7 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 ### Added
 
-- MiMo Code sessions, from its `mimo` command, read with `sqlite3` from `~/.local/share/mimocode/mimocode.db`, or the folder `MIMOCODE_HOME` names or the file `MIMOCODE_DB` names, on macOS and Linux, the way OpenCode's database is read. Only the main agent's messages say how a session stands. A session shows as needing you while MiMo Code asks you a question or to approve a plan, as working while one of its subagents works, and as finished once no `mimo` program runs, with the token counts of the main agent's newest reply. Its name is a title a model wrote or you set, never one MiMo Code took from your prompt. Its status comes from the database, and from `ps` for whether a `mimo` program runs: no request is made to MiMo Code's server, and no last message is read. Built from MiMo Code's source at v0.1.17 and not yet checked on a computer running it. (#77)
+- MiMo Code sessions, from its `mimo` command, read with `sqlite3` from `~/.local/share/mimocode/mimocode.db`, or the file `MIMOCODE_DB` names, on macOS and Linux, the way OpenCode's database is read, from the main agent's messages. A session shows as needing you while MiMo Code asks you a question or to approve a plan, as working while one of its subagents works, and as finished once no `mimo` program runs. Its name is never a title MiMo Code took from your prompt. No request is made to MiMo Code's server, and no last message is read. Built from MiMo Code's source at v0.1.17 and not yet checked on a computer running it. (#77)
 
 ## 0.2.21 - 2026-11-17
 
