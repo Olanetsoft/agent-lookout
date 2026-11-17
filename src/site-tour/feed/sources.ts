@@ -857,12 +857,12 @@ export const FX_CAPABILITIES: SourceCapabilities = {
   finished: {
     level: "partly",
     reason:
-      "Once ps shows no fx, or every fx running started after a cut-off turn's last write. Another program named fx can hold it off.",
+      "Once ps shows no fx, or ps missed every fx running over 2 seconds after a cut-off turn's last write. Another fx can hold it off.",
   },
   failed: {
     level: "partly",
     reason:
-      "When fx ends a turn as failed. A turn a crash cut off shows as finished, as fx itself records it as a crash.",
+      "When fx ends a turn as failed. fx records a turn a crash cut off as a crash, which does not show as failed.",
   },
   names: {
     level: "partly",

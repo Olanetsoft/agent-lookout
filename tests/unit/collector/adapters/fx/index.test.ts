@@ -91,8 +91,14 @@ describe("where it looks", () => {
   test("nowhere when FX_HOME names it through . or .., with nothing looked at and no ps", async () => {
     const files = memoryFiles();
     const processes = standInFxProcesses();
-    const result = await fxAdapterFor(files, { env: { FX_HOME: "/data/../fx" }, processes }).poll();
+    const adapter = fxAdapterFor(files, { env: { FX_HOME: "/data/../fx" }, processes });
+    expect(adapter.lookingIn).toBe("Looking for fx sessions in /data/../fx/sessions/v2.");
+    const result = await adapter.poll();
     expect(result.health).toMatchObject({ state: "unavailable", detail: DOTTED_DETAIL });
+    expect(result.health.watching?.[0]).toEqual({
+      label: "Sessions folder",
+      value: "/data/../fx/sessions/v2",
+    });
     expect(result.sessions).toEqual([]);
     expect(files.count()).toBe(0);
     expect(processes.asked.count).toBe(0);
@@ -787,6 +793,27 @@ describe("ps", () => {
     await adapter.poll();
     expect(processes.asked.count).toBe(1);
     clock.advance(1);
+    await adapter.poll();
+    expect(processes.asked.count).toBe(2);
+  });
+
+  test("is not asked early while it shows fx, however recently a log is written", async () => {
+    const files = withLog(fxLog().turnStarted().item().text(), NOW - MINUTE);
+    const clock = handClock();
+    const processes = standInFxProcesses();
+    const adapter = fxAdapterFor(files, { now: clock.now, processes });
+    await adapter.poll();
+    expect(processes.asked.count).toBe(1);
+
+    files.append(logPath(SESSION_ID), fxLog().turnStarted().item().item().since(3), {
+      mtimeMs: NOW + SECOND,
+    });
+    clock.set(NOW + PROMPT_PROCESS_CHECK_MS);
+    expect(statusOf(await adapter.poll())).toBe("working");
+    clock.set(NOW + PROCESS_CHECK_MS - 1);
+    await adapter.poll();
+    expect(processes.asked.count).toBe(1);
+    clock.set(NOW + PROCESS_CHECK_MS);
     await adapter.poll();
     expect(processes.asked.count).toBe(2);
   });

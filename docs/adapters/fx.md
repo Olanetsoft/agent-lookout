@@ -40,14 +40,15 @@ The first of these that applies is used:
 | `FX_HOME`               | That folder, taken as fx takes it, below                                |
 | None                    | `~/.fx` (`core/shared/profile_paths.zig:5`)                             |
 
-fx takes `FX_HOME` as it is given (`core/shared/profile_paths.zig:40-47`; `main.zig:3914-3923`):
+fx takes `FX_HOME` as it is given (`core/shared/profile_paths.zig:40-47`; `main.zig:3914-3927`):
 
 - An empty value is not set.
 - It must be absolute. `~` is not taken for the home folder.
 - Any `/` at its end is left off. Nothing left is `/`, which fx refuses.
 - It may not be the folder `HOME` names, with any `/` at its end left off. With `HOME` unset, that is not checked.
+- It may not be a file, or a path through one (`main.zig:3924-3927`, `:3933-3945`).
 
-For a value fx refuses, fx stops before it reads or writes anything there, so Agent Lookout reads `~/.fx` instead, and loses nothing. Agent Lookout reads `HOME` only for this.
+For a value fx refuses, fx stops before it reads or writes anything there (`main.zig:3912-3913`). For one that is not absolute, is `/` or is the home folder, Agent Lookout reads `~/.fx` instead, and loses nothing. Agent Lookout reads `HOME` only for this. For a file, or a path through one, it reads nothing, and the Sources view says fx's folder is not followed, or is not found.
 
 fx opens the folder that holds its own, then its own by name (`core/shared/profile_paths.zig:102-115`), so the system follows a link before it applies a `..`. Node joins paths by their letters, which would apply the `..` first and read another folder. So an `FX_HOME` with a `.` or `..` in it is not followed: the Sources view says so, and nothing of fx's is read. `AGENT_LOOKOUT_FX_HOME` can name the folder instead.
 
@@ -80,7 +81,7 @@ Of a log it reads at most:
 
 Bytes after the last newline are a line fx is still writing, and are passed over.
 
-Never opened, listed or locked: `index.jsonl`, which holds every session's title, `index.lock`, a session's `lock`, its `blobs/`, `.tmp/` and `.trash/`; the older store's `sessions/<id>/` folders and `sessions/trash+v1`; `terminal/`, `session-files/` and `hosts/`; and fx's sign-in and key files `auth.json`, `chatgpt-auth.json`, `grok-auth.json`, `api-key` and `mcp-credentials/`, its `settings.json`, `mcp.json`, `history.jsonl`, `backups/`, `logs/`, `recordings/`, `skills/` and `agents/` (`core/shared/profile_paths.zig:5-27`). Nothing is written, no lock is taken or tried, and no fx program is run.
+Never opened, listed or locked: `index.jsonl`, which holds every session's title, `index.lock`, a session's `lock`, its `blobs/`, `.tmp/` and `.trash/`; the older store's `sessions/<id>/` folders and `sessions/trash+v1`; `terminal/`, `session-files/` and `hosts/`; and fx's sign-in and key files `auth.json`, `chatgpt-auth.json`, `grok-auth.json`, `api-key` and `mcp-credentials/`, its `settings.json`, `mcp.json`, `history.jsonl`, `backups/`, `logs/`, `recordings/`, `skills/` and `agents/` (`core/shared/profile_paths.zig:5-27`, `:165`; `core/session/v1_conversion.zig:38`). Nothing is written, no lock is taken or tried, and no fx program is run.
 
 ## The log
 
@@ -96,7 +97,7 @@ Every line is one JSON object, with this header first, always in this order, wit
 
 Then come the fields of its kind, then `,"crc":"`, 8 lowercase hex digits and `"}` with the newline. The digits are CRC32C (Castagnoli, polynomial 0x82F63B78, reflected) of every byte before `,"crc":"` (`log.zig:26-57`, `:99-128`). A line is 19 bytes to 4 MiB, newline included (`log.zig:21`, `:28`).
 
-A line counts only when its length, its frame, its checksum and its header all pass, a `,` or nothing follows the header, and its `seq` is one more than the line before it, as fx's own reader judges it (`log.zig:108-128`, `:150-215`). Agent Lookout computes the checksum itself, and a test holds it to fx's own check value, `crc32c("123456789") = 0xe3069283` (`log.zig:675`). A bad last line with nothing after it is one fx was writing, which fx cuts on its next open for writing: it is passed over until it is whole. Any other bad line, or a gap in `seq`, fx takes as damage, and Agent Lookout shows the session as unknown.
+A line counts only when its length, its frame, its checksum and its header all pass, a `,` or nothing follows the header, and its `seq` is one more than the line before it, as fx's own reader judges it (`log.zig:108-128`, `:150-215`). Agent Lookout computes the checksum itself, and a test holds it to fx's own check value, `crc32c("123456789") = 0xe3069283` (`log.zig:675`). A bad last line with nothing after it is one fx was writing, which fx cuts on its next open for writing: it is passed over until it is whole. Any other bad line, or a gap in `seq`, fx takes as damage. Damage after the newest line that decides the last turn shows the session as unknown. Damage before that line is passed over, since the end is read back only to it.
 
 `v` above 1 is a newer fx's (`schema.zig:11-13`). fx's 11 kinds are `session_created`, `turn_started`, `item`, `compacted`, `turn_committed`, `turn_interrupted`, `set`, `child_spawned`, `child_finished`, `snapshot` and `closed` (`schema.zig:17-29`).
 
@@ -195,7 +196,7 @@ The same 30 minutes keep the Mac awake for a working session (`KEEP_AWAKE_WORKIN
 
 ### Why nothing shows as waiting or idle
 
-fx keeps a pending approval or question in memory (`core/app/input_approval_runtime.zig`), and tells a terminal multiplexer it is blocked over that program's own socket only (`builtins/hooks/herdr.zig:1-4`). A question is an ordinary tool call inside an open turn. So a session waiting for you shows as working, and then as unknown. Between turns fx writes nothing, so idle never shows.
+fx keeps a pending approval or question in memory (`core/app/input_approval_runtime.zig`), and tells a terminal multiplexer it is blocked over that program's own socket only (`builtins/hooks/herdr.zig:1-4`, `:12`). A question is an ordinary tool call inside an open turn. So a session waiting for you shows as working, and then as unknown. Between turns fx writes nothing, so idle never shows.
 
 ## Names
 
@@ -223,8 +224,9 @@ fx runs on macOS and Linux only (`README.md:42`), and its storage is for those s
 - A session reopened between turns shows as unknown while fx runs.
 - An `FX_HOME` set in your shell but not in Agent Lookout's environment is not followed. Start Agent Lookout with the same `FX_HOME`, or `AGENT_LOOKOUT_FX_HOME`.
 - An `FX_HOME` with a `.` or `..` in it shows fx as unavailable.
-- A damaged log shows as unknown. fx never repairs one: it refuses to open it for writing (`session.zig:1249-1259`).
+- A log damaged after the newest line that decides its last turn shows as unknown. Damage before that line is passed over, and the session shows what that line says. fx never repairs a damaged log: it refuses to open it for writing (`session.zig:1249-1259`).
 - For up to 10 seconds after an fx starts, a session can show as finished, or up to 2 seconds once that fx writes to a session's log, since `ps` is asked sooner only after a write.
+- A log's time is the disk's. On a disk whose clock is more than 2 seconds behind this computer's, as a network home folder's can be, a session an fx writes to in its first seconds shows as finished until that fx writes again, which can be after a long command. On a disk whose clock is ahead, `ps` is asked every 2 seconds while no fx runs, for about as many seconds as the clock is ahead after each write.
 - A turn a crash cut off that Agent Lookout first sees while another fx runs, as after Agent Lookout starts, shows as working for up to 30 minutes and then as unknown.
 - With two fx programs, one of which left a turn open, the same.
 - A turn a crash cut off, when another fx starts up to 12 seconds after its last write, the same.

@@ -15,7 +15,13 @@ import type { Adapter, AdapterResult } from "../adapter.ts";
 import { every } from "../words.ts";
 import { createLogReader, type FxLog } from "./logFile.ts";
 import { createLogFinder } from "./logFiles.ts";
-import { fxFolderFor, sessionsDirOf, sessionsFolder, FX_HOME_ENV } from "./paths.ts";
+import {
+  fxFolderFor,
+  sessionsDirOf,
+  sessionsFolder,
+  FX_HOME_ENV,
+  SESSIONS_FOLDERS,
+} from "./paths.ts";
 import {
   createAbsenceTracker,
   createFxProcessReader,
@@ -48,7 +54,8 @@ export const PROCESS_CHECK_MS = 10_000;
 
 /**
  * How soon `ps` is asked again when a session is written after it said no fx
- * program runs, since fx may have been started since.
+ * program runs, or up to 2 seconds before, as a disk can keep a write's time
+ * rounded down, since fx may have been started since.
  */
 export const PROMPT_PROCESS_CHECK_MS = 2_000;
 
@@ -136,12 +143,12 @@ export const FX_CAPABILITIES: SourceCapabilities = {
   finished: {
     level: "partly",
     reason:
-      "Once ps shows no fx, or every fx running started after a cut-off turn's last write. Another program named fx can hold it off.",
+      "Once ps shows no fx, or ps missed every fx running over 2 seconds after a cut-off turn's last write. Another fx can hold it off.",
   },
   failed: {
     level: "partly",
     reason:
-      "When fx ends a turn as failed. A turn a crash cut off shows as finished, as fx itself records it as a crash.",
+      "When fx ends a turn as failed. fx records a turn a crash cut off as a crash, which does not show as failed.",
   },
   names: {
     level: "partly",
@@ -237,10 +244,10 @@ interface Listed {
  * Each session written in the last day is listed, except a subagent's, which
  * fx keeps beside its parent's. Its status is `fxMapping.ts`'s: working
  * while its turn is open and an fx program runs, failed when fx ended its
- * turn as failed, finished once no fx program runs, or once each one running
- * was missing from `ps` more than 2 seconds after the last write, and unknown
- * otherwise. It never
- * shows as idle or as needing you.
+ * turn as failed, finished once no fx program runs, or, while its turn is
+ * open, once each one running was missing from `ps` more than 2 seconds
+ * after the last write, and unknown otherwise. It never shows as idle or as
+ * needing you.
  *
  * fx runs on macOS and Linux only, so nothing is read on any other system.
  * fx not being installed costs nothing: when its folder is missing, the
@@ -262,7 +269,12 @@ export function createFxAdapter(options: FxAdapterOptions = {}): Adapter {
   const fxFolder = fxFolderFor(env, homeDir);
   const named = fxFolder.from === "agent-lookout";
   const sessionsDir = sessionsDirOf(fxFolder.folder);
-  const sessionsName = tildify(sessionsDir, homeDir);
+  // A dotted FX_HOME is named as it is given: Node's join would apply its `..`
+  // and name another folder.
+  const sessionsName = tildify(
+    fxFolder.from === "dotted" ? [fxFolder.folder, ...SESSIONS_FOLDERS].join("/") : sessionsDir,
+    homeDir,
+  );
   const finder = createLogFinder({ sessionsDir, io, sweepMs: options.sweepMs });
   const reader = createLogReader(io);
   const tracker = createAbsenceTracker();

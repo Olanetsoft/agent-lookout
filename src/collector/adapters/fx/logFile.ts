@@ -26,7 +26,9 @@ import { judgeLine, readFirstLine, type CountedLine } from "./logLines.ts";
  * - A line counts only when fx's own reader would count it. A bad last line
  *   with nothing after it is one fx was writing, and is left until it is
  *   whole or cut. Any other bad line, a gap in `seq`, or a line of a kind or a
- *   shape fx 0.0.17 does not write, makes the session's status unknown.
+ *   shape fx 0.0.17 does not write, after the newest line that decides the
+ *   last turn, makes the session's status unknown. Before that line, it is
+ *   passed over.
  *
  * Nothing is kept of a read but numbers, a few short strings and flags: no
  * bytes. Each file is opened only when its size, modified time or identity
@@ -329,12 +331,15 @@ async function readOnwards(
     if (line !== null && first && line.seq !== expected) return null;
     first = false;
     at = end;
-    if (line === null || (expected !== null && line.seq !== expected)) {
+    if (line === null) {
       next.odd = "unknown-end";
-      expected = line === null ? null : line.seq + 1;
-      goesOn = line === null ? null : { offset: from + end, lastSeq: line.seq };
+      expected = null;
+      goesOn = null;
       continue;
     }
+    // A gap in `seq` is damage, which a later line that decides passes over,
+    // as the backward read never looks behind the line that decides.
+    if (expected !== null && line.seq !== expected) next.odd = "unknown-end";
     expected = line.seq + 1;
     goesOn = { offset: from + end, lastSeq: line.seq };
     if (line.seq <= head.forkSeq) continue;

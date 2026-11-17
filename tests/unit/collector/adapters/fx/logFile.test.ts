@@ -275,6 +275,17 @@ describe("the same log read whole and read in two parts says the same", () => {
       ),
     ],
     [
+      "a gap in seq before a new turn",
+      (log) => (
+        log.turnStarted().turnCommitted(),
+        log.mark() + (log.set("usage", "{}").skip().turnStarted(), 0)
+      ),
+    ],
+    [
+      "a gap in seq after a new turn",
+      (log) => (log.turnStarted(), log.mark() + (log.item().skip().set("usage", "{}"), 0)),
+    ],
+    [
       "a new turn after an unknown end",
       (log) => (
         log.turnStarted().raw("future_kind", ""),

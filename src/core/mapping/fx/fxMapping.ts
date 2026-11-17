@@ -55,7 +55,7 @@ export interface FxStatusFacts {
  * | 3   | open, ended or none        | ps could not say            | unknown  |
  * | 4   | open, ended or none        | none                        | finished |
  * | 5   | ended, not failed, or none | some                        | unknown  |
- * | 6   | open                       | some, all since the write   | finished |
+ * | 6   | open                       | some, missed 2 s past write | finished |
  * | 7   | open                       | some, quiet 30 min or ahead | unknown  |
  * | 8   | open                       | some                        | working  |
  *
