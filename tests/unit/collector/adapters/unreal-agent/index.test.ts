@@ -178,6 +178,18 @@ describe("an Unreal Agent that is not there", () => {
     expect(files.count("readdir")).toBe(1);
   });
 
+  test("looks for its folder again at once when the clock is set back after it was found missing", async () => {
+    const files = memoryFiles();
+    const clock = handClock();
+    const adapter = unrealAgentAdapterFor(files, { now: clock.now });
+    expect((await adapter.poll()).health.state).toBe("unavailable");
+    clock.set(NOW - HOUR);
+    writeSession(files, idleSession(SESSION_ID, NOW - HOUR - 30 * SECOND).text(), {
+      mtimeMs: NOW - HOUR - 10 * SECOND,
+    });
+    expect(statusOf(await adapter.poll())).toBe("idle");
+  });
+
   test("a folder that cannot be listed is an error", async () => {
     const files = memoryFiles();
     files.mkdir(SESSIONS_DIR);
@@ -609,6 +621,24 @@ describe("ps", () => {
     clock.advance(PROCESS_CHECK_MS);
     processes.running(NOW + 5 * SECOND);
     expect(statusOf(await adapter.poll())).toBe("finished");
+  });
+
+  test("an answer that showed none before the clock was set back closes no session written after it", async () => {
+    const files = memoryFiles();
+    const clock = handClock();
+    writeSession(files, idleSession().text(), { mtimeMs: NOW - 10 * SECOND });
+    const processes = standInUnrealProcesses({ ok: true, starts: [], unknownStart: false });
+    const adapter = unrealAgentAdapterFor(files, { now: clock.now, processes });
+    expect(statusOf(await adapter.poll())).toBe("finished");
+    // The clock is set back an hour, and a program starts and writes a session.
+    clock.set(NOW - HOUR);
+    processes.running(NOW - HOUR - MINUTE);
+    const id = uuidOf(1, 2);
+    writeSession(files, idleSession(id, NOW - HOUR - 30 * SECOND).text(), {
+      id,
+      mtimeMs: NOW - HOUR - 10 * SECOND,
+    });
+    expect(statusOf(await adapter.poll(), `unreal-agent:${id}`)).toBe("idle");
   });
 
   test("the ways it reads are the ones another machine's are taken under", () => {
