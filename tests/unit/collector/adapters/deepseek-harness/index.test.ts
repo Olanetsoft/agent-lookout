@@ -680,6 +680,33 @@ describe("its times", () => {
     expect(sessions[0]).toMatchObject({ startedAt: null, status: "working" });
   });
 
+  test("a start and a turn's time ahead of the clock are none until it catches up, and then what a fresh read says", async () => {
+    const files = memoryFiles();
+    const clock = handClock(NOW - 5 * MINUTE);
+    // Written while the clock was 5 minutes ahead of where it is now.
+    const file = plain(files, headerLine({ createdAt: NOW }) + batch(line.turnStart(0, NOW)), {
+      mtimeMs: NOW,
+    });
+    const adapter = deepseekHarnessAdapterFor(files, { now: clock.now, ps: nodeRuns() });
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      startedAt: null,
+      statusSince: null,
+    });
+    const fresh = async () =>
+      (await deepseekHarnessAdapterFor(files, { now: clock.now, ps: nodeRuns() }).poll()).sessions;
+    clock.set(NOW + MINUTE);
+    const unchanged = (await adapter.poll()).sessions;
+    expect(unchanged).toEqual(await fresh());
+    expect(unchanged[0]).toMatchObject({ startedAt: NOW, status: "working", statusSince: NOW });
+    files.append(file, batch(line.title(1, NOW + MINUTE, "Fix the build", "provider")), {
+      mtimeMs: NOW + MINUTE,
+    });
+    clock.advance(2 * SECOND);
+    const grown = (await adapter.poll()).sessions;
+    expect(grown).toEqual(await fresh());
+    expect(grown[0]).toMatchObject({ name: "Fix the build", startedAt: NOW, statusSince: NOW });
+  });
+
   test("what a log said after polls is what a fresh read of it says", async () => {
     const files = memoryFiles();
     const clock = handClock();

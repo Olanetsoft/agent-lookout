@@ -90,6 +90,11 @@ test("its last write is shown only while it works, and a wait gives its reason",
   expect(session()).not.toHaveProperty("waitingReason");
 });
 
+test("a start ahead of the clock is none, and neither shown nor compared with a write", () => {
+  expect(session({ header: { ...header, createdAt: NOW + 2 * MINUTE } }).startedAt).toBeNull();
+  expect(lastWriteOf(STARTED_AT - DAY, NOW + 2 * MINUTE, NOW)).toBe(STARTED_AT - DAY);
+});
+
 test("idle for a day is stale", () => {
   expect(
     session({ status: { status: "idle", since: NOW - DAY, showsLastWrite: false } }).stale,

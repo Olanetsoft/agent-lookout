@@ -29,14 +29,18 @@ export function sessionIdOf(folderName: string): string {
   return `${SOURCE_ID}:h${hash}`;
 }
 
-/** When a log was last written, as a time that could be right and is not before the session began. */
+/**
+ * When a log was last written, as a time that could be right and is not
+ * before the session began, by a start that could be right too.
+ */
 export function lastWriteOf(
   writtenAt: number,
   createdAt: number | null,
   now: number,
 ): number | null {
   const at = plausibleTime(Math.floor(writtenAt), now);
-  if (at !== null && createdAt !== null && at < createdAt - WRITE_ORDER_SLACK_MS) return null;
+  const start = plausibleTime(createdAt, now);
+  if (at !== null && start !== null && at < start - WRITE_ORDER_SLACK_MS) return null;
   return at;
 }
 
@@ -76,7 +80,7 @@ export function deepseekHarnessSession(input: DeepseekHarnessSessionInput): Sess
     cwd: header.cwd,
     project,
     status: status.status,
-    startedAt: header.createdAt,
+    startedAt: plausibleTime(header.createdAt, now),
     statusSince: status.since,
     links: {},
     stale: false,

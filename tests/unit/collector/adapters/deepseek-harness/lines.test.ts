@@ -25,10 +25,10 @@ import {
 import { watchDecoding } from "@tests/support/adapters/unreal-agent/decodeSpy";
 
 const bytes = (text: string) => new TextEncoder().encode(text);
-const header = (text: string) => readHeader(bytes(text.replace(/\n$/, "")), NOW, "darwin");
+const header = (text: string) => readHeader(bytes(text.replace(/\n$/, "")), "darwin");
 const read = (text: string, titles = true) => {
   const data = bytes(text);
-  return readEvent(data, data.byteLength, NOW, titles);
+  return readEvent(data, data.byteLength, titles);
 };
 const T = NOW - 60_000;
 
@@ -83,9 +83,9 @@ describe("the header", () => {
     expect(seen).toEqual([]);
   });
 
-  test("a start that cannot be right is none, and the session is still read", () => {
+  test("a start before 2020 is none, and the session is still read; one ahead of the clock is kept as written, for each poll to judge", () => {
     expect(header(headerLine({ createdAt: 5 }))?.createdAt).toBeNull();
-    expect(header(headerLine({ createdAt: NOW + 2 * 60_000 }))?.createdAt).toBeNull();
+    expect(header(headerLine({ createdAt: NOW + 2 * 60_000 }))?.createdAt).toBe(NOW + 2 * 60_000);
   });
 
   test("a folder that is not absolute, too long or holds a control character is none", () => {
@@ -93,7 +93,7 @@ describe("the header", () => {
     expect(header(headerLine({ cwd: `/${"a".repeat(4096)}` }))?.cwd).toBeNull();
     expect(header(headerLine({ cwd: "/Users/example/bad\u0007name" }))?.cwd).toBeNull();
     expect(
-      readHeader(bytes(headerLine({ cwd: "C:\\Users\\example\\demo" }).trim()), NOW, "win32")?.cwd,
+      readHeader(bytes(headerLine({ cwd: "C:\\Users\\example\\demo" }).trim()), "win32")?.cwd,
     ).toBe("C:\\Users\\example\\demo");
   });
 
@@ -242,11 +242,11 @@ describe("an event line", () => {
     expect(read(`{"type":"other","seq":12345678901234567,"time":1,"data":{}}`).seq).toBeNull();
   });
 
-  test("a time that cannot be right is none, and the line is still read", () => {
+  test("a time before 2020 is none, and the line is still read; one ahead of the clock is kept as written, for each poll to judge", () => {
     expect(read(line.turnStart(0, 5)).line).toEqual({ kind: "turn-start", time: null });
     expect(read(line.turnStart(0, NOW + 2 * 60_000)).line).toEqual({
       kind: "turn-start",
-      time: null,
+      time: NOW + 2 * 60_000,
     });
   });
 
@@ -260,9 +260,7 @@ describe("an event line", () => {
     });
     // Cut where a line's first bytes end, it reads as it does whole.
     const data = bytes(long);
-    expect(readEvent(data.subarray(0, LINE_HEAD_BYTES), data.byteLength, NOW, true)).toEqual(
-      read(long),
-    );
+    expect(readEvent(data.subarray(0, LINE_HEAD_BYTES), data.byteLength, true)).toEqual(read(long));
     // A kind's bytes past the first ones are not looked for.
     const late = event("tool/call", 7, T, {
       turn: 1,
@@ -336,7 +334,7 @@ describe("an event line the chat import wrote, its data before its number and ti
     });
     const data = bytes(long);
     expect(data.byteLength).toBeGreaterThan(LINE_HEAD_BYTES);
-    expect(readEvent(data.subarray(0, LINE_HEAD_BYTES), data.byteLength, NOW, true)).toEqual({
+    expect(readEvent(data.subarray(0, LINE_HEAD_BYTES), data.byteLength, true)).toEqual({
       seq: null,
       line: { kind: "turn-end", end: "error", time: null },
     });
@@ -352,7 +350,7 @@ describe("an event line the chat import wrote, its data before its number and ti
     });
     expect(cut.slice(0, LINE_HEAD_BYTES).endsWith(`,"seq":5,"time":${T}}`)).toBe(true);
     const cutData = bytes(cut);
-    expect(readEvent(cutData.subarray(0, LINE_HEAD_BYTES), cutData.byteLength, NOW, true)).toEqual({
+    expect(readEvent(cutData.subarray(0, LINE_HEAD_BYTES), cutData.byteLength, true)).toEqual({
       seq: null,
       line: { kind: "turn-start", time: null },
     });
@@ -368,7 +366,7 @@ describe("an event line the chat import wrote, its data before its number and ti
     expect(read(inner)).toEqual({ seq: null, line: { kind: "turn-start", time: null } });
     const extra = `${importedEvent("turn/start", 0, T, { turn: 1 }).slice(0, -1)},"x":1}`;
     expect(read(extra)).toEqual({ seq: null, line: { kind: "turn-start", time: null } });
-    // A time that cannot be right is none, and the line is still read.
+    // A time before 2020 is none, and the line is still read.
     expect(read(importedEvent("turn/start", 0, 5, { turn: 1 }))).toEqual({
       seq: 0,
       line: { kind: "turn-start", time: null },

@@ -2,7 +2,7 @@ import type {
   DeepseekHarnessEnd,
   DeepseekHarnessLine,
 } from "../../../core/mapping/deepseek-harness/deepseekHarnessMapping.ts";
-import { plausibleTime } from "../../../core/time.ts";
+import { EARLIEST_PLAUSIBLE_TIME_MS } from "../../../core/time.ts";
 import { pathsOf } from "../../files/paths.ts";
 
 /**
@@ -219,7 +219,10 @@ function same(data: Uint8Array, at: number, end: number, literal: Uint8Array): b
 /** What is kept of a session's header. */
 export interface DeepseekHarnessHeader {
   id: string;
-  /** When the session was made, or null when that time cannot be right. */
+  /**
+   * When the session was made, as written, or null when it is before 2020.
+   * Whether it is ahead of the clock is judged when the session is built.
+   */
   createdAt: number | null;
   /** The folder it began in, or null when it has none that can be used. */
   cwd: string | null;
@@ -249,6 +252,14 @@ const isCount = (value: unknown) =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 
 /**
+ * A time as written, or null when it is before 2020 and so cannot be right.
+ * Whether it is ahead of the clock is judged each poll, when the session is
+ * built, so what was read never depends on the clock at the read.
+ */
+const sinceEarliest = (time: number): number | null =>
+  time < EARLIEST_PLAUSIBLE_TIME_MS ? null : time;
+
+/**
  * The header, from a log's first line without its newline, or null when it
  * is not one of format 4 that DeepSeek Harness itself would read
  * (format.ts:158-187). Its first bytes are checked before it is parsed. Of
@@ -258,7 +269,6 @@ const isCount = (value: unknown) =>
  */
 export function readHeader(
   line: Uint8Array,
-  now: number,
   platform: NodeJS.Platform,
 ): DeepseekHarnessHeader | null {
   if (!new Cursor(line).expect(HEADER_START)) return null;
@@ -289,7 +299,7 @@ export function readHeader(
       : null;
   return {
     id,
-    createdAt: plausibleTime(createdAt, now),
+    createdAt: sinceEarliest(createdAt as number),
     cwd: folder,
     parentSession:
       typeof parentSession === "string" && parentSession.length <= ID_MAX ? parentSession : null,
@@ -340,7 +350,7 @@ function endOf(head: Uint8Array, length: number): { seq: number; time: number } 
   return { seq, time };
 }
 
-function envelopeOf(head: Uint8Array, length: number, now: number): Envelope | null {
+function envelopeOf(head: Uint8Array, length: number): Envelope | null {
   const cursor = new Cursor(head);
   if (!cursor.expect(TYPE_START)) return null;
   const typeStart = cursor.at;
@@ -354,7 +364,7 @@ function envelopeOf(head: Uint8Array, length: number, now: number): Envelope | n
       typeStart,
       typeEnd,
       seq: end?.seq ?? null,
-      time: end === null ? null : plausibleTime(end.time, now),
+      time: end === null ? null : sinceEarliest(end.time),
       dataAt: cursor.at,
     };
   }
@@ -363,7 +373,7 @@ function envelopeOf(head: Uint8Array, length: number, now: number): Envelope | n
   if (seq === null || !cursor.expect(TIME)) return null;
   const time = cursor.digits();
   if (time === null || !cursor.expect(DATA)) return null;
-  return { typeStart, typeEnd, seq, time: plausibleTime(time, now), dataAt: cursor.at };
+  return { typeStart, typeEnd, seq, time: sinceEarliest(time), dataAt: cursor.at };
 }
 
 /** `{"turn":<n>` and, for a call or a result, `,"step":<n>`. */
@@ -482,14 +492,9 @@ export function isTitleLine(head: Uint8Array): boolean {
  * whole line's. With `titles` false, as for a subagent's log, a title line
  * is one more line of no kind.
  */
-export function readEvent(
-  line: Uint8Array,
-  length: number,
-  now: number,
-  titles: boolean,
-): ReadEvent {
+export function readEvent(line: Uint8Array, length: number, titles: boolean): ReadEvent {
   const head = line.subarray(0, Math.min(line.byteLength, LINE_HEAD_BYTES));
-  const envelope = envelopeOf(head, length, now);
+  const envelope = envelopeOf(head, length);
   if (envelope === null) return { seq: null, line: UNSURE };
   const { typeStart, typeEnd, seq, time, dataAt } = envelope;
   const is = (type: Uint8Array) => same(head, typeStart, typeEnd, type);

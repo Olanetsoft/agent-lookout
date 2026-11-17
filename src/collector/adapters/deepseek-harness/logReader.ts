@@ -124,13 +124,13 @@ export interface DeepseekHarnessLogReader {
   /** Whether a log's first line still has to be looked at: a log not seen before, another file, or one grown shorter than was read. */
   needsHeader(ref: LogRef): boolean;
   /** A log's first line, looked at once for each file, and again when it grew shorter than was read. */
-  header(ref: LogRef, now: number): Promise<HeaderRead>;
+  header(ref: LogRef): Promise<HeaderRead>;
   /**
    * A log read on past its first line, opened only when it changed, or null
    * when its first line is not known or is not a header. With `titles`, its
    * own titles are read too.
    */
-  readOn(ref: LogRef, titles: boolean, now: number): Promise<DeepseekHarnessLog | null>;
+  readOn(ref: LogRef, titles: boolean): Promise<DeepseekHarnessLog | null>;
   /** What was last known of a log, for one a newer format has since been written beside. */
   last(path: string): DeepseekHarnessLog | null;
   /** Forgets every log not in this set. */
@@ -267,11 +267,11 @@ export function createDeepseekHarnessLogReader(
     }
   }
 
-  async function probe(ref: LogRef, handle: OpenFile, now: number): Promise<Cached | "later"> {
+  async function probe(ref: LogRef, handle: OpenFile): Promise<Cached | "later"> {
     const info = handle.info;
     const found = await firstLine(handle, ref.zstd);
     if (found === "later") return "later";
-    const header = found === "bad" ? null : readHeader(found.line, now, platform);
+    const header = found === "bad" ? null : readHeader(found.line, platform);
     return {
       info,
       header,
@@ -293,9 +293,8 @@ export function createDeepseekHarnessLogReader(
     line: Uint8Array,
     length: number,
     titles: boolean,
-    now: number,
   ) {
-    const event = readEvent(line, length, now, titles);
+    const event = readEvent(line, length, titles);
     if (event.seq !== null) {
       // DeepSeek Harness numbers lines from 0 with no gap (core/session/src/index.ts:790-792).
       if (reading.nextSeq !== null && event.seq !== reading.nextSeq) throw new Reread();
@@ -314,7 +313,6 @@ export function createDeepseekHarnessLogReader(
     reading: Reading,
     header: DeepseekHarnessHeader,
     titles: boolean,
-    now: number,
   ): Promise<number> {
     if (zstd === null) throw new Stuck();
     const size = handle.info.size;
@@ -349,7 +347,7 @@ export function createDeepseekHarnessLogReader(
             titles && isTitleLine(head)
               ? text.subarray(start, start + Math.min(length, TITLE_LINE_MAX))
               : head;
-          take(reading, header, line, length, titles, now);
+          take(reading, header, line, length, titles);
           start = end + 1;
         }
       }
@@ -365,7 +363,6 @@ export function createDeepseekHarnessLogReader(
     reading: Reading,
     header: DeepseekHarnessHeader,
     titles: boolean,
-    now: number,
   ): Promise<number> {
     const size = handle.info.size;
     if ((await readExactly(handle, from - 1, 1))[0] !== NEWLINE) throw new Reread();
@@ -380,7 +377,7 @@ export function createDeepseekHarnessLogReader(
         if (newline < 0) break;
         gatherer.add(piece.subarray(start, newline));
         const line = gatherer.take();
-        take(reading, header, line.line, line.length, titles, now);
+        take(reading, header, line.line, line.length, titles);
         start = newline + 1;
         end = position + start;
       }
@@ -396,7 +393,6 @@ export function createDeepseekHarnessLogReader(
     cached: Cached & { header: DeepseekHarnessHeader },
     from: number,
     titles: boolean,
-    now: number,
     compressed: boolean,
   ): Promise<Cached> {
     const reading: Reading = {
@@ -412,8 +408,8 @@ export function createDeepseekHarnessLogReader(
       throw new Reread();
     }
     const readTo = compressed
-      ? await framesFrom(handle, from, reading, cached.header, titles, now)
-      : await linesFrom(handle, from, reading, cached.header, titles, now);
+      ? await framesFrom(handle, from, reading, cached.header, titles)
+      : await linesFrom(handle, from, reading, cached.header, titles);
     return {
       ...cached,
       info: handle.info,
@@ -432,15 +428,14 @@ export function createDeepseekHarnessLogReader(
     ref: LogRef,
     handle: OpenFile,
     titles: boolean,
-    now: number,
   ): Promise<Cached | "later"> {
-    const probed = await probe(ref, handle, now);
+    const probed = await probe(ref, handle);
     if (probed === "later" || probed.header === null) return probed;
     const header = probed.header;
     const limit = ref.zstd ? READ_MAX_COMPRESSED : READ_MAX_PLAIN;
     if (handle.info.size > limit) return { ...probed, titles, mark: "too-long" };
     try {
-      return await readFrom(handle, { ...probed, header }, probed.headerEnd, titles, now, ref.zstd);
+      return await readFrom(handle, { ...probed, header }, probed.headerEnd, titles, ref.zstd);
     } catch (error) {
       if (error instanceof Reread || error instanceof Stuck) {
         return { ...probed, readTo: probed.headerEnd, titles, mark: "stuck" };
@@ -449,12 +444,7 @@ export function createDeepseekHarnessLogReader(
     }
   }
 
-  async function readOnce(
-    ref: LogRef,
-    known: Cached,
-    titles: boolean,
-    now: number,
-  ): Promise<Cached | "later"> {
+  async function readOnce(ref: LogRef, known: Cached, titles: boolean): Promise<Cached | "later"> {
     const handle = await io.openRegular(ref.path);
     try {
       const opened = handle.info;
@@ -462,7 +452,7 @@ export function createDeepseekHarnessLogReader(
       if (opened.ino !== ref.info.ino) throw new Error("The file was replaced.");
       // Another file than was read, or shorter than was read: from its start.
       if (!stillOf(known, opened) || known.header === null)
-        return await fromStart(ref, handle, titles, now);
+        return await fromStart(ref, handle, titles);
       const header = known.header;
       // Too long or stuck: what a read from its start keeps, its first line alone, nothing of earlier reads.
       const settledAs = (mark: "too-long" | "stuck"): Cached => ({
@@ -490,17 +480,17 @@ export function createDeepseekHarnessLogReader(
           title: null,
         };
         try {
-          return await readFrom(handle, start, known.headerEnd, titles, now, ref.zstd);
+          return await readFrom(handle, start, known.headerEnd, titles, ref.zstd);
         } catch (error) {
           if (error instanceof Reread || error instanceof Stuck) return stuck();
           throw error;
         }
       }
       try {
-        return await readFrom(handle, { ...known, header }, known.readTo, titles, now, ref.zstd);
+        return await readFrom(handle, { ...known, header }, known.readTo, titles, ref.zstd);
       } catch (error) {
         if (error instanceof Stuck) return stuck();
-        if (error instanceof Reread) return await fromStart(ref, handle, titles, now);
+        if (error instanceof Reread) return await fromStart(ref, handle, titles);
         throw error;
       }
     } finally {
@@ -513,7 +503,7 @@ export function createDeepseekHarnessLogReader(
       return !stillOf(cache.get(ref.path), ref.info);
     },
 
-    async header(ref, now) {
+    async header(ref) {
       const known = cache.get(ref.path);
       if (stillOf(known, ref.info)) {
         return known.header === null ? { state: "bad" } : { state: "ok", header: known.header };
@@ -523,7 +513,7 @@ export function createDeepseekHarnessLogReader(
         try {
           // Not the file this poll's lstat found, as through a link put at a folder's name since: looked at again on the next poll.
           if (handle.info.ino !== ref.info.ino) throw new Error("The file was replaced.");
-          const probed = await probe(ref, handle, now);
+          const probed = await probe(ref, handle);
           if (probed === "later") {
             cache.delete(ref.path);
             return { state: "later" };
@@ -540,7 +530,7 @@ export function createDeepseekHarnessLogReader(
       }
     },
 
-    async readOn(ref, titles, now) {
+    async readOn(ref, titles) {
       const known = cache.get(ref.path);
       if (known === undefined || known.header === null) return null;
       const info = ref.info;
@@ -557,7 +547,7 @@ export function createDeepseekHarnessLogReader(
         info.size >= known.info.size;
       if (unchanged || settled) return logOf(known);
       try {
-        const next = await readOnce(ref, known, titles, now);
+        const next = await readOnce(ref, known, titles);
         if (next === "later") {
           cache.delete(ref.path);
           return null;

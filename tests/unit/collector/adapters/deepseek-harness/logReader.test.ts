@@ -75,8 +75,8 @@ async function readOnce(
   titles = true,
 ) {
   const ref = await refOf(files, path);
-  await reader.header(ref, NOW);
-  return reader.readOn(ref, titles, NOW);
+  await reader.header(ref);
+  return reader.readOn(ref, titles);
 }
 
 const readerFor = (files: MemoryFiles, decoder: ZstdDecoder | null = ZSTD) =>
@@ -103,7 +103,7 @@ describe("an uncompressed log", () => {
     const size = (await files.io.lstat(PLAIN)).size;
     files.forget();
     files.append(PLAIN, batch(line.turnEnd(1, T + 5, "completed")));
-    expect(await reader.readOn(await refOf(files, PLAIN), true, NOW)).toMatchObject({
+    expect(await reader.readOn(await refOf(files, PLAIN), true)).toMatchObject({
       turn: { state: "ended", end: "completed", at: T + 5 },
     });
     // The byte before what was added, and what was added, and nothing before it.
@@ -116,8 +116,8 @@ describe("an uncompressed log", () => {
     const reader = readerFor(files);
     await readOnce(reader, files, PLAIN);
     files.forget();
-    await reader.header(await refOf(files, PLAIN), NOW);
-    await reader.readOn(await refOf(files, PLAIN), true, NOW);
+    await reader.header(await refOf(files, PLAIN));
+    await reader.readOn(await refOf(files, PLAIN), true);
     expect(files.count("openRegular")).toBe(0);
   });
 
@@ -128,7 +128,7 @@ describe("an uncompressed log", () => {
     const reader = readerFor(files);
     expect((await readOnce(reader, files, PLAIN))?.turn.state).toBe("open");
     files.append(PLAIN, `${end.slice(20)}\n`);
-    expect((await reader.readOn(await refOf(files, PLAIN), true, NOW))?.turn).toMatchObject({
+    expect((await reader.readOn(await refOf(files, PLAIN), true))?.turn).toMatchObject({
       state: "ended",
     });
   });
@@ -141,7 +141,7 @@ describe("an uncompressed log", () => {
     files.rewrite(PLAIN, headerLine() + batch(line.turnStart(0, T)));
     expect((await readOnce(reader, files, PLAIN))?.turn.state).toBe("open");
     files.append(PLAIN, batch(line.turnEnd(1, T + 2, "completed")));
-    expect((await reader.readOn(await refOf(files, PLAIN), true, NOW))?.turn).toMatchObject({
+    expect((await reader.readOn(await refOf(files, PLAIN), true))?.turn).toMatchObject({
       end: "completed",
     });
   });
@@ -158,7 +158,7 @@ describe("an uncompressed log", () => {
       header + batch(event("other", 0, T, { pad: "x".repeat(40) }), line.turnStart(1, T + 3)),
     );
     files.forget();
-    const read = await reader.readOn(await refOf(files, PLAIN), true, NOW);
+    const read = await reader.readOn(await refOf(files, PLAIN), true);
     expect(read).toMatchObject({ mark: "ok", turn: { state: "open", since: T + 3 } });
     expect(files.reads.some((one) => one.position === 0)).toBe(true);
   });
@@ -170,14 +170,14 @@ describe("an uncompressed log", () => {
     await readOnce(reader, files, PLAIN);
     files.append(PLAIN, batch(line.turnEnd(5, T + 1, "completed")));
     files.forget();
-    expect(await reader.readOn(await refOf(files, PLAIN), true, NOW)).toMatchObject({
+    expect(await reader.readOn(await refOf(files, PLAIN), true)).toMatchObject({
       mark: "stuck",
     });
     expect(files.reads.some((one) => one.position === 0)).toBe(true);
     // Stuck until it is another file or grows shorter: not opened again as it grows.
     files.forget();
     files.append(PLAIN, batch(line.turnStart(6, T + 2)));
-    expect(await reader.readOn(await refOf(files, PLAIN), true, NOW)).toMatchObject({
+    expect(await reader.readOn(await refOf(files, PLAIN), true)).toMatchObject({
       mark: "stuck",
     });
     expect(files.count("openRegular")).toBe(0);
@@ -197,7 +197,7 @@ describe("an uncompressed log", () => {
       headerLine() +
         batch(line.turnStart(0, T), line.turnEnd(1, T + 1, "error"), line.turnStart(2, T + 2)),
     );
-    const read = await reader.readOn(await refOf(files, PLAIN), true, NOW);
+    const read = await reader.readOn(await refOf(files, PLAIN), true);
     expect(read).toMatchObject({ mark: "ok", turn: { state: "open", since: T + 2 } });
   });
 
@@ -219,9 +219,9 @@ describe("an uncompressed log", () => {
     const reader = readerFor(files);
     expect((await readOnce(reader, files, PLAIN))?.title).toBe("Fix the build");
     files.append(PLAIN, batch(line.title(1, T, "My rename", "user")));
-    expect((await reader.readOn(await refOf(files, PLAIN), true, NOW))?.title).toBe("My rename");
+    expect((await reader.readOn(await refOf(files, PLAIN), true))?.title).toBe("My rename");
     files.append(PLAIN, batch(line.title(2, T, "first words", "fallback")));
-    expect((await reader.readOn(await refOf(files, PLAIN), true, NOW))?.title).toBeNull();
+    expect((await reader.readOn(await refOf(files, PLAIN), true))?.title).toBeNull();
   });
 
   test(`keeps a title line past its first ${LINE_HEAD_BYTES} bytes, up to ${TITLE_LINE_MAX}, as a compressed log does`, async () => {
@@ -290,7 +290,7 @@ describe("an uncompressed log", () => {
     );
     files.forget();
     files.append(PLAIN, "\n");
-    expect(await reader.readOn(await refOf(files, PLAIN), true, NOW)).toMatchObject({
+    expect(await reader.readOn(await refOf(files, PLAIN), true)).toMatchObject({
       mark: "too-long",
     });
     expect(files.count("openRegular")).toBe(0);
@@ -307,12 +307,12 @@ describe("an uncompressed log", () => {
       turn: { state: "open" },
     });
     files.append(PLAIN, new Uint8Array(READ_MAX_PLAIN).fill(0x0a));
-    const read = await reader.readOn(await refOf(files, PLAIN), true, NOW);
+    const read = await reader.readOn(await refOf(files, PLAIN), true);
     expect(read).toMatchObject({ mark: "too-long", title: null, turn: { state: "none" } });
     expect(read).toEqual(await readOnce(readerFor(files), files, PLAIN));
     // Shorter again, past where it was read, with a line of no number: read from its first line, as a fresh read reads it.
     files.rewrite(PLAIN, `${start}\n`);
-    const shorter = await reader.readOn(await refOf(files, PLAIN), true, NOW);
+    const shorter = await reader.readOn(await refOf(files, PLAIN), true);
     expect(shorter).toMatchObject({
       mark: "ok",
       title: "Fix the build",
@@ -328,9 +328,9 @@ describe("an uncompressed log", () => {
     await readOnce(reader, files, PLAIN);
     files.append(PLAIN, batch(line.turnEnd(1, T + 1, "completed")));
     files.failOpen(PLAIN);
-    expect((await reader.readOn(await refOf(files, PLAIN), true, NOW))?.turn.state).toBe("open");
+    expect((await reader.readOn(await refOf(files, PLAIN), true))?.turn.state).toBe("open");
     files.heal(PLAIN);
-    expect((await reader.readOn(await refOf(files, PLAIN), true, NOW))?.turn.state).toBe("ended");
+    expect((await reader.readOn(await refOf(files, PLAIN), true))?.turn.state).toBe("ended");
   });
 
   test("takes its time as it was opened, which can be later than its lstat's", async () => {
@@ -338,12 +338,11 @@ describe("an uncompressed log", () => {
     files.write(PLAIN, headerLine() + batch(line.turnStart(0, T)), { mtimeMs: NOW - 5_000 });
     const reader = readerFor(files);
     const ref = await refOf(files, PLAIN);
-    await reader.header(ref, NOW);
+    await reader.header(ref);
     files.append(PLAIN, batch(line.turnEnd(1, T + 1, "completed")), { mtimeMs: NOW - 1_000 });
     const read = await reader.readOn(
       { ...ref, info: { ...ref.info, size: ref.info.size + 1 } },
       true,
-      NOW,
     );
     expect(read).toMatchObject({ writtenAt: NOW - 1_000, turn: { state: "ended" } });
   });
@@ -358,9 +357,9 @@ describe("a log replaced between its lstat and its open", () => {
     // Another file at its name since its lstat, as through a link put at its folder's name.
     files.write(PLAIN, headerLine({ createdAt: STARTED_AT + 1 }) + batch(line.turnStart(0, T)));
     files.forget();
-    expect(await reader.header(ref, NOW)).toEqual({ state: "later" });
+    expect(await reader.header(ref)).toEqual({ state: "later" });
     expect(files.reads).toEqual([]);
-    expect(await reader.header(await refOf(files, PLAIN), NOW)).toEqual({
+    expect(await reader.header(await refOf(files, PLAIN))).toEqual({
       state: "ok",
       header: expect.objectContaining({ createdAt: STARTED_AT + 1 }),
     });
@@ -371,8 +370,8 @@ describe("a log replaced between its lstat and its open", () => {
     files.write(PLAIN, headerLine() + batch(line.turnStart(0, T)));
     const reader = readerFor(files);
     const ref = await refOf(files, PLAIN);
-    await reader.header(ref, NOW);
-    const first = await reader.readOn(ref, true, NOW);
+    await reader.header(ref);
+    const first = await reader.readOn(ref, true);
     files.append(PLAIN, batch(line.turnEnd(1, T + 1, "completed")));
     const grown = await refOf(files, PLAIN);
     // Another file at its name since its lstat, as through a link put at its folder's name.
@@ -382,9 +381,9 @@ describe("a log replaced between its lstat and its open", () => {
         batch(line.turnStart(0, T), line.turnEnd(1, T + 1, "error")),
     );
     files.forget();
-    expect(await reader.readOn(grown, true, NOW)).toEqual(first);
+    expect(await reader.readOn(grown, true)).toEqual(first);
     expect(files.reads).toEqual([]);
-    expect(await reader.readOn(await refOf(files, PLAIN), true, NOW)).toMatchObject({
+    expect(await reader.readOn(await refOf(files, PLAIN), true)).toMatchObject({
       header: { createdAt: STARTED_AT + 1 },
       turn: { end: "error" },
     });
@@ -398,15 +397,15 @@ describe("a log replaced since it was read", () => {
     files.write(PLAIN, headerLine() + batch(line.turnStart(0, T)));
     const reader = readerFor(files);
     const ref = await refOf(files, PLAIN);
-    await reader.header(ref, NOW);
-    await reader.readOn(ref, true, NOW);
+    await reader.header(ref);
+    await reader.readOn(ref, true);
     const header = headerLine();
     const big = new Uint8Array(READ_MAX_PLAIN + 1);
     big.set(new TextEncoder().encode(header));
     big.fill(0x0a, header.length);
     files.write(PLAIN, big);
     files.forget();
-    const read = await reader.readOn(await refOf(files, PLAIN), true, NOW);
+    const read = await reader.readOn(await refOf(files, PLAIN), true);
     expect(read).toMatchObject({ mark: "too-long" });
     expect(Math.max(...files.reads.map((one) => one.position + one.length))).toBeLessThanOrEqual(
       HEADER_MAX_BYTES,
@@ -420,7 +419,7 @@ describe("a log's first line", () => {
     const long = headerLine({ agentPreset: "p".repeat(10_000) });
     files.write(PLAIN, long + batch(line.turnStart(0, T)));
     const reader = readerFor(files);
-    expect((await reader.header(await refOf(files, PLAIN), NOW)).state).toBe("ok");
+    expect((await reader.header(await refOf(files, PLAIN))).state).toBe("ok");
     expect(files.reads.map((one) => [one.position, one.length])).toEqual([
       [0, HEADER_FIRST_BYTES],
       [0, long.length + batch(line.turnStart(0, T)).length],
@@ -431,26 +430,26 @@ describe("a log's first line", () => {
     const files = memoryFiles();
     files.write(PLAIN, headerLine({ agentPreset: "p".repeat(HEADER_MAX_BYTES) }));
     const reader = readerFor(files);
-    expect(await reader.header(await refOf(files, PLAIN), NOW)).toEqual({ state: "bad" });
+    expect(await reader.header(await refOf(files, PLAIN))).toEqual({ state: "bad" });
     expect(Math.max(...files.reads.map((one) => one.position + one.length))).toBe(HEADER_MAX_BYTES);
     expect(reader.needsHeader(await refOf(files, PLAIN))).toBe(false);
 
     const part = memoryFiles();
     part.write(PLAIN, headerLine().slice(0, 30));
     const partReader = readerFor(part);
-    expect(await partReader.header(await refOf(part, PLAIN), NOW)).toEqual({ state: "later" });
+    expect(await partReader.header(await refOf(part, PLAIN))).toEqual({ state: "later" });
     expect(partReader.needsHeader(await refOf(part, PLAIN))).toBe(true);
-    expect(await partReader.readOn(await refOf(part, PLAIN), true, NOW)).toBeNull();
+    expect(await partReader.readOn(await refOf(part, PLAIN), true)).toBeNull();
   });
 
   test("that is not a header DeepSeek Harness would read leaves the session out, until it is another file", async () => {
     const files = memoryFiles();
     files.write(PLAIN, headerLine({ version: 3 }) + batch(line.turnStart(0, T)));
     const reader = readerFor(files);
-    expect(await reader.header(await refOf(files, PLAIN), NOW)).toEqual({ state: "bad" });
-    expect(await reader.readOn(await refOf(files, PLAIN), true, NOW)).toBeNull();
+    expect(await reader.header(await refOf(files, PLAIN))).toEqual({ state: "bad" });
+    expect(await reader.readOn(await refOf(files, PLAIN), true)).toBeNull();
     files.forget();
-    expect(await reader.header(await refOf(files, PLAIN), NOW)).toEqual({ state: "bad" });
+    expect(await reader.header(await refOf(files, PLAIN))).toEqual({ state: "bad" });
     expect(files.count("openRegular")).toBe(0);
   });
 
@@ -459,9 +458,9 @@ describe("a log's first line", () => {
     files.write(PLAIN, headerLine());
     files.failOpen(PLAIN);
     const reader = readerFor(files);
-    expect(await reader.header(await refOf(files, PLAIN), NOW)).toEqual({ state: "later" });
+    expect(await reader.header(await refOf(files, PLAIN))).toEqual({ state: "later" });
     files.heal(PLAIN);
-    expect((await reader.header(await refOf(files, PLAIN), NOW)).state).toBe("ok");
+    expect((await reader.header(await refOf(files, PLAIN))).state).toBe("ok");
   });
 });
 
@@ -477,7 +476,7 @@ describe.skipIf(!HAS_ZSTD)(`a compressed log (${NO_ZSTD_REASON} otherwise)`, () 
     const size = (await files.io.lstat(COMPRESSED)).size;
     files.forget();
     files.append(COMPRESSED, frame(batch(line.turnEnd(1, T + 1, "completed"))));
-    expect((await reader.readOn(await refOf(files, COMPRESSED), true, NOW))?.turn).toMatchObject({
+    expect((await reader.readOn(await refOf(files, COMPRESSED), true))?.turn).toMatchObject({
       end: "completed",
     });
     expect(Math.min(...files.reads.map((one) => one.position))).toBe(size);
@@ -487,7 +486,7 @@ describe.skipIf(!HAS_ZSTD)(`a compressed log (${NO_ZSTD_REASON} otherwise)`, () 
   test("whose first frame is more than its first line leaves the session out", async () => {
     const files = memoryFiles();
     files.write(COMPRESSED, frame(headerLine() + batch(line.turnStart(0, T))));
-    expect(await readerFor(files).header(await refOf(files, COMPRESSED), NOW)).toEqual({
+    expect(await readerFor(files).header(await refOf(files, COMPRESSED))).toEqual({
       state: "bad",
     });
   });
@@ -501,11 +500,9 @@ describe.skipIf(!HAS_ZSTD)(`a compressed log (${NO_ZSTD_REASON} otherwise)`, () 
     expect((await readOnce(reader, files, COMPRESSED))?.turn.state).toBe("open");
     // The repair cuts the log back to where the frame began and writes what it held again.
     files.rewrite(COMPRESSED, start);
-    expect((await reader.readOn(await refOf(files, COMPRESSED), true, NOW))?.turn.state).toBe(
-      "open",
-    );
+    expect((await reader.readOn(await refOf(files, COMPRESSED), true))?.turn.state).toBe("open");
     files.append(COMPRESSED, whole);
-    expect((await reader.readOn(await refOf(files, COMPRESSED), true, NOW))?.turn).toMatchObject({
+    expect((await reader.readOn(await refOf(files, COMPRESSED), true))?.turn).toMatchObject({
       end: "completed",
     });
   });
@@ -520,7 +517,7 @@ describe.skipIf(!HAS_ZSTD)(`a compressed log (${NO_ZSTD_REASON} otherwise)`, () 
     expect(calls).toHaveLength(2);
     // The next line's number is taken as it is, and the next turn's start settles it.
     files.append(COMPRESSED, frame(batch(line.turnStart(70_000, T + 2))));
-    expect(await reader.readOn(await refOf(files, COMPRESSED), true, NOW)).toMatchObject({
+    expect(await reader.readOn(await refOf(files, COMPRESSED), true)).toMatchObject({
       mark: "ok",
       turn: { state: "open", since: T + 2 },
     });
@@ -568,7 +565,7 @@ describe.skipIf(!HAS_ZSTD)(`a compressed log (${NO_ZSTD_REASON} otherwise)`, () 
       expect(await readOnce(reader, files, COMPRESSED)).toMatchObject({ mark: "stuck" });
       files.forget();
       files.append(COMPRESSED, frame(batch(line.turnEnd(1, T + 1, "completed"))));
-      expect(await reader.readOn(await refOf(files, COMPRESSED), true, NOW)).toMatchObject({
+      expect(await reader.readOn(await refOf(files, COMPRESSED), true)).toMatchObject({
         mark: "stuck",
       });
       expect(files.count("openRegular")).toBe(0);
@@ -590,13 +587,13 @@ describe.skipIf(!HAS_ZSTD)(`a compressed log (${NO_ZSTD_REASON} otherwise)`, () 
       const reader = readerFor(files);
       expect((await readOnce(reader, files, COMPRESSED))?.title).toBe("Fix the build");
       files.append(COMPRESSED, bad);
-      const read = await reader.readOn(await refOf(files, COMPRESSED), true, NOW);
+      const read = await reader.readOn(await refOf(files, COMPRESSED), true);
       expect(read).toMatchObject({ mark: "stuck", title: null, turn: { state: "none" } });
       expect(read).toEqual(await readOnce(readerFor(files), files, COMPRESSED));
       // Shorter again: read on from its first line, as a fresh read reads on, not from its start.
       files.rewrite(COMPRESSED, titled);
       files.forget();
-      const shorter = await reader.readOn(await refOf(files, COMPRESSED), true, NOW);
+      const shorter = await reader.readOn(await refOf(files, COMPRESSED), true);
       expect(shorter).toMatchObject({
         mark: "ok",
         title: "Fix the build",
@@ -623,7 +620,7 @@ describe.skipIf(!HAS_ZSTD)(`a compressed log (${NO_ZSTD_REASON} otherwise)`, () 
       ),
     );
     files.forget();
-    const read = await reader.readOn(await refOf(files, COMPRESSED), true, NOW);
+    const read = await reader.readOn(await refOf(files, COMPRESSED), true);
     expect(read).toMatchObject({ mark: "ok", turn: { end: "completed" } });
     expect(files.reads.some((one) => one.position === 0)).toBe(true);
   });
@@ -644,6 +641,6 @@ describe.skipIf(!HAS_ZSTD)(`a compressed log (${NO_ZSTD_REASON} otherwise)`, () 
     const files = memoryFiles();
     files.write(COMPRESSED, compressedLog(headerLine(), batch(line.turnStart(0, T))));
     const reader = readerFor(files, null);
-    expect(await reader.header(await refOf(files, COMPRESSED), NOW)).toEqual({ state: "bad" });
+    expect(await reader.header(await refOf(files, COMPRESSED))).toEqual({ state: "bad" });
   });
 });

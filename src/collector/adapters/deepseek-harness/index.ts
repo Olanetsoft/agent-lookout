@@ -400,7 +400,7 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
   }
 
   /** The sessions to show, and the logs of their subagents, newest first. */
-  async function familiesOf(found: FoundLogs, checkedAt: number): Promise<Family[]> {
+  async function familiesOf(found: FoundLogs): Promise<Family[]> {
     let reads = 0;
     const known: { ref: LogRef; header: DeepseekHarnessHeader }[] = [];
     for (const ref of found.logs) {
@@ -408,7 +408,7 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
         if (reads >= MAX_HEADER_READS) continue;
         reads += 1;
       }
-      const read = await reader.header(ref, checkedAt);
+      const read = await reader.header(ref);
       if (read.state === "ok") known.push({ ref, header: read.header });
     }
 
@@ -472,7 +472,7 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
 
     // One log at a time: each session's own, then the newest of its subagents'.
     for (const family of families) {
-      if (family.ref !== null) family.log = await reader.readOn(family.ref, true, checkedAt);
+      if (family.ref !== null) family.log = await reader.readOn(family.ref, true);
     }
     const toRead = families
       .flatMap((family) => family.children)
@@ -480,7 +480,7 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
         (a, b) => b.ref.info.mtimeMs - a.ref.info.mtimeMs || a.ref.path.localeCompare(b.ref.path),
       )
       .slice(0, MAX_CHILD_LOGS);
-    for (const child of toRead) child.log = await reader.readOn(child.ref, false, checkedAt);
+    for (const child of toRead) child.log = await reader.readOn(child.ref, false);
     return families;
   }
 
@@ -543,7 +543,7 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
     }
     absentAt = null;
 
-    const families = await familiesOf(found, checkedAt);
+    const families = await familiesOf(found);
     const keep = new Set(found.logs.map((ref) => ref.path));
     for (const newer of found.newer) if (newer.current !== null) keep.add(newer.current);
     reader.keepOnly(keep);

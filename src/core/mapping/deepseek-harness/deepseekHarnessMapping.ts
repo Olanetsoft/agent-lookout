@@ -1,5 +1,6 @@
 import { KEEP_AWAKE_WORKING_MS } from "../../keep-awake/keepAwakeRule.ts";
 import type { SessionStatus, WaitingReason } from "../../sessions/session.ts";
+import { plausibleTime } from "../../time.ts";
 
 /**
  * A DeepSeek Harness session's status, from the lines of its event log and
@@ -247,17 +248,22 @@ const IDLE_ENDS: ReadonlySet<DeepseekHarnessEnd> = new Set([
  *     working, since the earliest such turn began.
  * 11. Its last turn ended otherwise: idle, since then.
  * 12. No turn yet: idle, since the session began or was reopened.
+ *
+ * A log's times are kept as written, and each is judged against `now` here,
+ * on every poll: one more than a minute ahead of it is none.
  */
 export function deepseekHarnessStatusOf(family: DeepseekHarnessFamily): DeepseekHarnessStatus {
   const { own, children, writtenAt, writer, now } = family;
+  // A log's times are kept as written, and judged against the clock here, on every poll.
+  const believed = (time: number | null) => plausibleTime(time, now);
   if (own === null || own.state === "unsure") {
     return { status: "unknown", since: null, showsLastWrite: false };
   }
   if (own.state === "ended" && own.end === "error") {
-    return { status: "failed", since: own.at, showsLastWrite: false };
+    return { status: "failed", since: believed(own.at), showsLastWrite: false };
   }
   if (own.state === "ended" && own.end === "disposed") {
-    return { status: "finished", since: own.at, showsLastWrite: false };
+    return { status: "finished", since: believed(own.at), showsLastWrite: false };
   }
   if (writer === "gone") return { status: "finished", since: writtenAt, showsLastWrite: false };
 
@@ -274,7 +280,7 @@ export function deepseekHarnessStatusOf(family: DeepseekHarnessFamily): Deepseek
       ...[...turn.approvals.keys()].map((id) => `approval:${id}`),
       ...[...turn.questions.keys()].map((id) => `question:${id}`),
     ]);
-    const since = earliest(waiting.map((turn) => turn.waitSince));
+    const since = earliest(waiting.map((turn) => believed(turn.waitSince)));
     return {
       status: "needs-you",
       since,
@@ -286,7 +292,7 @@ export function deepseekHarnessStatusOf(family: DeepseekHarnessFamily): Deepseek
   if (own.state === "open") {
     return quiet
       ? { status: "unknown", since: null, showsLastWrite: false }
-      : { status: "working", since: own.since, showsLastWrite: true };
+      : { status: "working", since: believed(own.since), showsLastWrite: true };
   }
   if (own.state === "ended" && !IDLE_ENDS.has(own.end)) {
     return { status: "unknown", since: null, showsLastWrite: false };
@@ -296,13 +302,13 @@ export function deepseekHarnessStatusOf(family: DeepseekHarnessFamily): Deepseek
   );
   if (working.length > 0) {
     const since = earliest(
-      working.map((child) => (child.turn.state === "open" ? child.turn.since : null)),
+      working.map((child) => (child.turn.state === "open" ? believed(child.turn.since) : null)),
     );
     return { status: "working", since, showsLastWrite: true };
   }
   return {
     status: "idle",
-    since: own.state === "ended" ? own.at : own.since,
+    since: believed(own.state === "ended" ? own.at : own.since),
     showsLastWrite: false,
   };
 }

@@ -48,6 +48,14 @@ const question = (
   time,
 });
 
+const child = (
+  turn: DeepseekHarnessTurn,
+  writtenAt: number | null = NOW - MINUTE,
+): DeepseekHarnessChild => ({
+  turn,
+  writtenAt,
+});
+
 function family(own: DeepseekHarnessTurn | null, extra: Partial<DeepseekHarnessFamily> = {}) {
   return deepseekHarnessStatusOf({
     own,
@@ -273,6 +281,23 @@ describe("the status", () => {
     }
   });
 
+  test("a time more than a minute ahead of the clock is none, and one within that stands", () => {
+    const ahead = NOW + 2 * MINUTE;
+    expect(family(fold([start(ahead)]))).toMatchObject({ status: "working", since: null });
+    expect(family(fold([start(), ask(A, ahead)]))).toMatchObject({
+      status: "needs-you",
+      since: null,
+    });
+    for (const end of ["completed", "error", "disposed"] as const) {
+      expect(family({ state: "ended", end, at: ahead }).since, end).toBeNull();
+    }
+    expect(family(startDeepseekHarnessTurn(ahead))).toMatchObject({ status: "idle", since: null });
+    expect(
+      family(fold([start(), end("completed")]), { children: [child(fold([start(ahead)]))] }),
+    ).toMatchObject({ status: "working", since: null });
+    expect(family(fold([start(NOW + 30 * SECOND)])).since).toBe(NOW + 30 * SECOND);
+  });
+
   test("with no turn yet, a session is idle since it began", () => {
     expect(family(startDeepseekHarnessTurn(STARTED_AT))).toMatchObject({
       status: "idle",
@@ -281,14 +306,6 @@ describe("the status", () => {
   });
 
   describe("with subagents", () => {
-    const child = (
-      turn: DeepseekHarnessTurn,
-      writtenAt: number | null = NOW - MINUTE,
-    ): DeepseekHarnessChild => ({
-      turn,
-      writtenAt,
-    });
-
     test("a subagent's turn under way makes an idle session working, since the earliest such turn began", () => {
       const idle = fold([start(NOW - 20 * MINUTE), end("completed", NOW - 19 * MINUTE)]);
       expect(
