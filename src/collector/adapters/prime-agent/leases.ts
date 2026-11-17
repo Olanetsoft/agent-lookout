@@ -33,12 +33,12 @@ import { createFolderLister } from "./folders.ts";
  *   process as Prime Agent wrote it, the worker's ID, and the name of the
  *   session's file without its folders, which is matched with the name of a
  *   listed session's file. Prime Agent names a file for its session's ID,
- *   but one given to `--resume` that is not there yet is made under the name
- *   given. A lease that names no listed file is passed over. The `token`,
- *   which Prime Agent compares only when it gives the lease up, the folders
- *   of `sessionPath` and anything else are dropped with the parsed file. A
- *   parse that fails keeps nothing of its error, whose words could hold the
- *   file's bytes.
+ *   but a print, RPC or ACP run given a `--resume` path that is not there yet
+ *   makes it under the name given. A lease that names no listed file is
+ *   passed over. The `token`, which Prime Agent compares only when it gives
+ *   the lease up, the folders of `sessionPath` and anything else are dropped
+ *   with the parsed file. A parse that fails keeps nothing of its error,
+ *   whose words could hold the file's bytes.
  *
  * A lease that cannot be read, or whose fields are not what Prime Agent
  * writes, is kept as one that cannot be told whose it is, with its folder's
