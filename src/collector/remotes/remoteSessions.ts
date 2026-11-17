@@ -370,7 +370,7 @@ export interface RemoteSnapshotOptions {
  * The other machine's answer of `/api/sessions`, as this machine shows it, or
  * null when it is not one: no list of sessions, or no list of sources.
  *
- * Its sources are kept as their names and states, the first 20, and, for each
+ * Its sources are kept as their names and states, the first 30, and, for each
  * that is there, neither not found nor not set up, what its agent can report.
  * A source the other machine itself reads from yet another machine is left
  * out with that machine's sessions.
