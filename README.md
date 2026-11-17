@@ -109,7 +109,7 @@ Kimchi support reads its session files, in `~/.config/kimchi/harness/sessions`, 
 
 Prime Agent support reads its session files, in `~/.prime/agent/sessions`, the way Pi's are read, and its session leases and workers' journals for each session's status. A session shows as working or idle from its worker's journal while a running `prime-agent` holds it, on macOS and Linux, or as unknown when that journal cannot say, and as finished once none does. On Windows a session it holds shows as unknown. It was built from its source at v0.10.3 and has not yet been checked on a computer running it.
 
-fx support reads the log fx keeps for each session, in `~/.fx/sessions/v2`, on macOS and Linux. A session shows as working while its turn is open and an fx program runs, as failed when fx ends a turn as failed, and as finished once no fx program runs. It never shows as idle or needing you, and takes its folder's name. It was built from its source at v0.0.17 and has not yet been checked on a computer running it.
+fx support reads the log fx keeps for each session, in `~/.fx/sessions/v2`, on macOS and Linux. A session shows as working while its turn is open and an fx program that could be writing it runs, for up to 30 minutes without a write, as failed when fx ends a turn as failed, and as finished once no such program runs. It never shows as idle or needing you, and takes its folder's name. It was built from its source at v0.0.17 and has not yet been checked on a computer running it.
 
 |                                                    | macOS | Linux | Windows |
 | -------------------------------------------------- | ----- | ----- | ------- |
