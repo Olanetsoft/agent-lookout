@@ -87,7 +87,7 @@ export const BASIS_WITHOUT_PROCESSES = "files-without-processes";
 
 /** Said whenever Unreal Agent is watched, because it is what a person would otherwise expect to see. */
 export const STATUS_NOTE =
-  "Unreal Agent writes no lock or pid file, so a session is tied to a running program only by when each started: it is finished once no Unreal Agent program that started before its last write runs, and unknown between turns when more sessions look open than such programs run.";
+  "Unreal Agent writes no lock or pid file, so a session is tied to a running program only by when each started: it is finished once no Unreal Agent program that started before its last write runs, and unknown in place of idle when more sessions look open than such programs run.";
 
 /** Said whenever Unreal Agent is watched, until the adapter has been checked on a computer running it. */
 export const UNCHECKED_NOTE =
