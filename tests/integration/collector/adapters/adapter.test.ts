@@ -34,6 +34,10 @@ import {
 } from "@collector/adapters/kimchi/index";
 import { KIMI_CODE_CAPABILITIES } from "@collector/adapters/kimi-code/index";
 import {
+  PRIME_AGENT_CAPABILITIES,
+  UNCHECKED_NOTE as PRIME_AGENT_UNCHECKED_NOTE,
+} from "@collector/adapters/prime-agent/index";
+import {
   COMMAND_SHOWN as MIMO_CODE_COMMAND,
   MIMO_CODE_CAPABILITIES,
   UNCHECKED_NOTE as MIMO_CODE_UNCHECKED_NOTE,
@@ -76,6 +80,9 @@ const MIMO_CODE_NOTES = fileURLToPath(
   new URL("../../../../docs/adapters/mimo-code.md", import.meta.url),
 );
 const KIMCHI_NOTES = fileURLToPath(new URL("../../../../docs/adapters/kimchi.md", import.meta.url));
+const PRIME_AGENT_NOTES = fileURLToPath(
+  new URL("../../../../docs/adapters/prime-agent.md", import.meta.url),
+);
 
 const GUIDE_HEADING = "#### What each agent can report";
 const README_HEADING = "## Supported agents and systems";
@@ -100,6 +107,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Kilo Code", KILO_CODE_CAPABILITIES],
   ["MiMo Code", MIMO_CODE_CAPABILITIES],
   ["Kimchi", KIMCHI_CAPABILITIES],
+  ["Prime Agent", PRIME_AGENT_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -474,6 +482,42 @@ test("PRIVACY.md and the Kimchi notes name what is read and from which version",
       "kimchi:internal-session",
       "session_info",
       "ps -A -o comm=",
+    ]) {
+      expect(text, field).toContain(field);
+    }
+  }
+});
+
+test("PRIVACY.md and the Prime Agent notes name what is read and from which version", async () => {
+  const privacy = await readFile(PRIVACY, "utf8");
+  const notes = await readFile(PRIME_AGENT_NOTES, "utf8");
+  const line = (start: string) => privacy.split("\n").find((one) => one.startsWith(start)) ?? "";
+
+  const primeAgent = line("For Prime Agent, Agent Lookout reads");
+  expect(primeAgent).toContain("built from Prime Agent's source at v0.10.3");
+  expect(primeAgent).toContain("`ps`");
+  expect(primeAgent).not.toContain("Kimchi");
+  expect(PRIME_AGENT_UNCHECKED_NOTE).toContain("v0.10.3");
+  expect(notes).toContain("v0.10.3");
+  expect(notes).toContain("MIT");
+
+  const start = privacy.indexOf("### Prime Agent's files");
+  expect(start).toBeGreaterThan(-1);
+  const section = privacy.slice(start, privacy.indexOf("\n### ", start));
+  for (const text of [section, notes]) {
+    for (const field of [
+      "~/.prime/agent/sessions",
+      "PRIME_AGENT_SESSION_DIR",
+      "PRIME_AGENT_CODING_AGENT_SESSION_DIR",
+      "PRIME_AGENT_CODING_AGENT_DIR",
+      "AGENT_LOOKOUT_PRIME_AGENT_HOME",
+      "session-leases",
+      "owner.json",
+      "daemon-workers",
+      ".recovery.jsonl",
+      "session_info",
+      "ps -o pid=,lstart=,comm= -p",
+      "/proc/<pid>/stat",
     ]) {
       expect(text, field).toContain(field);
     }

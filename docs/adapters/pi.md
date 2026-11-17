@@ -6,7 +6,7 @@ Written on 2026-11-04 from Pi's source at `v1.5.0`, released 2026-11-02 (commit 
 
 Each citation is `path:line` at `v1.5.0`. Every path is in `packages/coding-agent/`, and `session-manager.ts` is `src/core/session-manager.ts`.
 
-The code is in `src/collector/adapters/pi/`, and the status mapping is in `src/core/mapping/pi/piMapping.ts`. What tells Pi apart is `PI_PROFILE`, a `PiProfile` of `profile.ts`, and the body is `createPiFamilyAdapter`.
+The code is in `src/collector/adapters/pi/`, and the status mapping is in `src/core/mapping/pi/piMapping.ts`. What tells Pi apart is `PI_PROFILE`, a `PiProfile` of `profile.ts`, and the body is `createPiFamilyAdapter`, which Kimchi's and Prime Agent's adapters share.
 
 ## What the issue said, and what holds
 
@@ -216,6 +216,6 @@ Everything here is read from the source, so each of these is for a person with P
 | `process.title` changes, or Pi stops setting it    | Sessions show as finished while Pi runs                                |
 | Pi starts to write a status or a pid               | Nothing changes until the adapter reads it, and sessions stay unknown  |
 
-The [Kimchi adapter](kimchi.md) is this adapter's body with a profile of Kimchi's own (`KIMCHI_PROFILE`), which reads no name and leaves out the files whose second line Kimchi marks as its own, so a change to these modules, or to `piMapping.ts`, changes Kimchi too. Run its tests with Pi's.
+The [Kimchi adapter](kimchi.md) is this adapter's body with a profile of Kimchi's own (`KIMCHI_PROFILE`), which reads no name and leaves out the files whose second line Kimchi marks as its own, so a change to these modules, or to `piMapping.ts`, changes Kimchi too. Run its tests with Pi's. The [Prime Agent adapter](prime-agent.md) is this body too, with a profile of Prime Agent's own (`PRIME_AGENT_PROFILE`), whose files sit in one flat folder, and a reader of status of its own, so a change to these modules changes Prime Agent too, except `piMapping.ts`, which it does not use. Golden runs of Pi and Kimchi, kept in `__snapshots__/` beside their tests, show any change to what they read or report.
 
 To check a new Pi version, read `docs/session-format.md`, `src/core/session-manager.ts`, `src/config.ts`, `src/cli/setup.ts`, `src/rpc-entry.ts`, `src/bun/runtime-setup.ts` and, in `src/main.ts`, the lines around `ENV_SESSION_DIR` and `appendSessionInfo`, and search for who calls `appendSessionInfo` and `setSessionName`. Then update `UNCHECKED_NOTE` in `src/collector/adapters/pi/index.ts` and the first paragraphs here.

@@ -25,6 +25,7 @@ import { createMimoCodeAdapter } from "./adapters/mimo-code/index.ts";
 import { createMistralVibeAdapter } from "./adapters/mistral-vibe/index.ts";
 import { createOpencodeAdapter } from "./adapters/opencode/index.ts";
 import { createPiAdapter } from "./adapters/pi/index.ts";
+import { createPrimeAgentAdapter } from "./adapters/prime-agent/index.ts";
 import { createQwenCodeAdapter } from "./adapters/qwen-code/index.ts";
 import { createStatusFileAdapter } from "./adapters/status-files/index.ts";
 import { createEditorRunner, type RunEditor } from "./editor/program.ts";
@@ -113,7 +114,7 @@ import { readWebhookSetup, webhookProblemLine } from "./webhook/webhookSettings.
 export interface CollectorOptions {
   /** The app version reported by `/api/health`. */
   version: string;
-  /** Defaults to every adapter the app ships: Claude Code, Codex, the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi and status files. */
+  /** Defaults to every adapter the app ships: Claude Code, Codex, the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent and status files. */
   adapters?: readonly Adapter[];
   /**
    * Where the default adapters read their settings, such as
@@ -125,8 +126,8 @@ export interface CollectorOptions {
    * `AGENT_LOOKOUT_GOOSE_HOME`, `AGENT_LOOKOUT_PI_HOME`,
    * `AGENT_LOOKOUT_KIMI_CODE_HOME`, `AGENT_LOOKOUT_CONTINUE_HOME`,
    * `AGENT_LOOKOUT_CRUSH_HOME`, `AGENT_LOOKOUT_KILO_HOME`,
-   * `AGENT_LOOKOUT_MIMO_CODE_HOME`, `AGENT_LOOKOUT_KIMCHI_HOME` and
-   * `AGENT_LOOKOUT_STATUS_DIR`, and where `AGENT_LOOKOUT_NOTIFICATIONS`, the
+   * `AGENT_LOOKOUT_MIMO_CODE_HOME`, `AGENT_LOOKOUT_KIMCHI_HOME`,
+   * `AGENT_LOOKOUT_PRIME_AGENT_HOME` and `AGENT_LOOKOUT_STATUS_DIR`, and where `AGENT_LOOKOUT_NOTIFICATIONS`, the
    * history settings, the email settings, the webhook settings and
    * `AGENT_LOOKOUT_SETTINGS_FILE` are read. Defaults to `process.env`.
    */
@@ -584,6 +585,8 @@ export function createCollector(options: CollectorOptions): Collector {
     createMimoCodeAdapter({ env: options.env, now, pollIntervalMs: intervalMs, platform }),
     // Read as Pi is, with no last message.
     createKimchiAdapter({ env: options.env, now, pollIntervalMs: intervalMs, platform }),
+    // Read as Pi is, with a status of its own from its leases and journals, and no last message.
+    createPrimeAgentAdapter({ env: options.env, now, pollIntervalMs: intervalMs, platform }),
     createStatusFileAdapter({ env: options.env, now, pollIntervalMs: intervalMs }),
   ];
   const poller = createPoller({

@@ -1,19 +1,23 @@
 import path from "node:path";
 
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import {
   BASIS,
   BASIS_CLOSED,
   BASIS_WITHOUT_PROCESSES,
+  createPiAdapter,
+  createPiFamilyAdapter,
   NEWER_FORMAT_NOTE,
   PI_CAPABILITIES,
+  PI_PROFILE,
   piSessionsDirFor,
   PROCESS_CHECK_MS,
   PROMPT_PROCESS_CHECK_MS,
   RECHECK_MS,
   STATUS_NOTE,
   UNCHECKED_NOTE,
+  type PiStatusSource,
 } from "@collector/adapters/pi/index";
 import { createEventStore } from "@collector/eventStore";
 import { createHistoryStore } from "@collector/historyStore";
@@ -48,7 +52,21 @@ import {
   piAdapterFor,
   standInProcesses,
 } from "@tests/support/adapters/pi/piAdapter";
+import { goldenRun } from "@tests/support/adapters/pi/golden";
 import { asWritten } from "@tests/support/paths";
+
+// The golden runs below build the adapter's own `ps` reader, so `runPs` is a
+// stand-in that records what it is asked, the same on every system.
+const ps = vi.hoisted(() => ({
+  asked: [] as string[][],
+  answer: { ok: true, stdout: "" },
+}));
+vi.mock("@collector/processes/ps", () => ({
+  runPs: async (args: readonly string[]) => {
+    ps.asked.push([...args]);
+    return ps.answer;
+  },
+}));
 
 const FILE = sessionPath(SESSION_ID);
 const NOTES = `${STATUS_NOTE} ${UNCHECKED_NOTE}`;
@@ -821,4 +839,84 @@ describe("what a poll costs", () => {
       "readdir",
     ]);
   });
+});
+
+describe("a reader of status of a profile's own, as Prime Agent's", () => {
+  /** A reader that says the one session works, and writes down what it was asked. */
+  function reader() {
+    const asked: {
+      now: number;
+      sessions: readonly { id: string; fileName: string; writtenAt: number }[];
+    }[] = [];
+    const source: PiStatusSource = {
+      facts: [{ label: "Leases folder", value: "~/leases" }],
+      emptyBasis: "files-empty",
+      async read(input) {
+        asked.push(input);
+        return {
+          basis: "files-own",
+          detail: "Own words.",
+          byId: new Map([[SESSION_ID, { status: "working", since: NOW - MINUTE }]]),
+        };
+      },
+    };
+    return { source, asked };
+  }
+
+  test("gives each session's status, and asks no ps question of Pi's", async () => {
+    const files = oneSession();
+    const { source, asked } = reader();
+    const processes = standInProcesses();
+    const adapter = createPiFamilyAdapter(
+      PI_PROFILE,
+      { env: {}, homeDir: HOME, now: () => NOW, io: files.io, platform: "darwin", processes },
+      source,
+    );
+    const result = await adapter.poll();
+    expect(processes.asked.count).toBe(0);
+    expect(asked).toEqual([
+      { now: NOW, sessions: [{ id: SESSION_ID, fileName: path.basename(FILE), writtenAt: NOW }] },
+    ]);
+    expect(result.basis).toBe("files-own");
+    expect(result.health.detail).toBe(`${READ_DETAIL} Own words.`);
+    expect(result.health.watching).toEqual([
+      { label: "Sessions folder", value: "~/.pi/agent/sessions" },
+      { label: "Read", value: "every 2 seconds" },
+      { label: "Leases folder", value: "~/leases" },
+    ]);
+    expect(result.sessions[0]).toMatchObject({ status: "working", statusSince: NOW - MINUTE });
+  });
+
+  test("is not asked while no session is listed, and a session it leaves out is unknown", async () => {
+    const files = memoryFiles();
+    files.mkdir(PROJECT_FOLDER);
+    const { source, asked } = reader();
+    const options = {
+      env: {},
+      homeDir: HOME,
+      now: () => NOW,
+      io: files.io,
+      platform: "darwin" as const,
+    };
+    const empty = await createPiFamilyAdapter(PI_PROFILE, options, source).poll();
+    expect(asked).toEqual([]);
+    expect(empty.basis).toBe("files-empty");
+    files.write(sessionPath(sessionIdOf(2)), sessionText(sessionIdOf(2)));
+    const other = await createPiFamilyAdapter(PI_PROFILE, options, source).poll();
+    expect(other.sessions[0]).toMatchObject({ status: "unknown", statusSince: null });
+  });
+});
+
+describe("the golden runs", () => {
+  // Each run is held to what the shared body did before Prime Agent's options
+  // were added to it, with Pi's own `ps` reader, so nothing made for Prime
+  // Agent moves anything for Pi.
+  for (const platform of ["darwin", "win32"] as const) {
+    for (const named of [false, true]) {
+      test(`on ${platform}, ${named ? "with" : "without"} AGENT_LOOKOUT_PI_HOME, are as before`, async () => {
+        const run = await goldenRun(createPiAdapter, PI_PROFILE, platform, named, ps);
+        expect(run).toMatchSnapshot();
+      });
+    }
+  }
 });

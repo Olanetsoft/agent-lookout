@@ -30,6 +30,7 @@ import {
   EMPTY_KIMI_CODE_HOME,
   EMPTY_CONTINUE_HOME,
   EMPTY_OPENCODE_HOME,
+  EMPTY_PRIME_AGENT_HOME,
   EMPTY_QWEN_HOME,
   EMPTY_VIBE_SESSION_DIR,
   NO_SETTINGS_FILE,
@@ -173,6 +174,17 @@ process.env.AGENT_LOOKOUT_MIMO_CODE_HOME = EMPTY_MIMO_CODE_HOME;
 mkdirSync(EMPTY_KIMCHI_HOME, { recursive: true });
 process.env.AGENT_LOOKOUT_KIMCHI_HOME = EMPTY_KIMCHI_HOME;
 delete process.env.KIMCHI_CODING_AGENT_SESSION_DIR;
+
+// Nor Prime Agent's, in `~/.prime/agent`, or the folders
+// `PRIME_AGENT_SESSION_DIR`, `PRIME_AGENT_CODING_AGENT_SESSION_DIR` and
+// `PRIME_AGENT_CODING_AGENT_DIR` name: the adapter is pointed at an empty
+// folder, and Prime Agent's own variables are dropped. A test of the adapter
+// names a folder of its own.
+mkdirSync(EMPTY_PRIME_AGENT_HOME, { recursive: true });
+process.env.AGENT_LOOKOUT_PRIME_AGENT_HOME = EMPTY_PRIME_AGENT_HOME;
+delete process.env.PRIME_AGENT_SESSION_DIR;
+delete process.env.PRIME_AGENT_CODING_AGENT_SESSION_DIR;
+delete process.env.PRIME_AGENT_CODING_AGENT_DIR;
 
 // And `os.homedir()` is an empty folder, never the home of the person running
 // the tests, so a collector whose environment forgets to name a folder of an

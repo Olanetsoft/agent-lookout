@@ -34,10 +34,13 @@ export const MAX_REMOTE_SESSIONS = 500;
 
 /**
  * The most of the other machine's sources taken, and so the most agents whose
- * capabilities are shown: far more than Agent Lookout has of its own, and a
- * machine that sends many more is not read for them.
+ * capabilities are shown: more than Agent Lookout has of its own, with room
+ * for those to come, and a machine that sends many more is not read for them.
+ * The page reads as many agents for one machine (`MAX_AGENTS` in
+ * `src/dashboard/lib/api/readApi.ts`). A test fails when Agent Lookout's own
+ * sources no longer fit.
  */
-export const MAX_REMOTE_SOURCES = 20;
+export const MAX_REMOTE_SOURCES = 30;
 
 /** The longest session id taken. The other machine's own are far shorter. */
 const MAX_ID_LENGTH = 512;
@@ -74,6 +77,7 @@ export const KNOWN_WAYS: ReadonlyMap<string, readonly string[]> = new Map([
   ["kilo-code", ["database", "database-closed", "database-without-processes"]],
   ["mimo-code", ["database", "database-closed", "database-without-processes"]],
   ["kimchi", ["files", "files-closed", "files-without-processes"]],
+  ["prime-agent", ["files", "files-without-leases", "files-without-processes"]],
   ["status-files", ["files"]],
 ]);
 
@@ -82,9 +86,9 @@ export const KNOWN_WAYS: ReadonlyMap<string, readonly string[]> = new Map([
  * source (`MAX_PARTS` in `src/dashboard/lib/api/readApi.ts`), so the page
  * compares that machine's sessions as this one does.
  *
- * A machine's sources can name 54: 20 Crush projects, 17 Hermes Agent profiles,
- * its default one and 16 named, and one for each of the other 17 sources. The
- * other 6 leave room for the sources to come, as a machine past this goes back
+ * A machine's sources can name 55: 20 Crush projects, 17 Hermes Agent profiles,
+ * its default one and 16 named, and one for each of the other 18 sources. The
+ * other 5 leave room for the sources to come, as a machine past this goes back
  * to one part for each source. A test fails when the limits of Crush and Hermes
  * Agent, with the count of sources, no longer fit. A new source that names
  * parts of its own must be added to `everySourceThere`, in

@@ -14,7 +14,7 @@ import {
   UNCHECKED_NOTE,
 } from "@collector/adapters/pi/index";
 import { PI_PROGRAMS } from "@collector/adapters/pi/processes";
-import { sessionsDirFor, type PiProfile } from "@collector/adapters/pi/profile";
+import { agentDirFor, sessionsDirFor, type PiProfile } from "@collector/adapters/pi/profile";
 import { HOME, nameLine, NOW, SESSION_ID, sessionPath, sessionText } from "@tests/fixtures/pi/pi";
 import { memoryFiles, standInProcesses } from "@tests/support/adapters/pi/piAdapter";
 import { asWritten } from "@tests/support/paths";
@@ -127,5 +127,31 @@ describe("another profile", () => {
     expect(sessions.map(({ id, name }) => [id, name])).toEqual([
       [`pi:${SESSION_ID}`, "demo-project"],
     ]);
+  });
+});
+
+describe("what a profile may add for Prime Agent", () => {
+  test("an older name of the sessions variable is read after it, and only when the profile names one", () => {
+    const older = { ...OTHER, legacySessionsEnv: "OTHER_OLD_SESSIONS" };
+    const at = (profile: PiProfile, env: NodeJS.ProcessEnv) =>
+      asWritten(sessionsDirFor(profile, env, HOME));
+    expect(at(older, { OTHER_OLD_SESSIONS: "/old" })).toBe("/old");
+    expect(at(older, { OTHER_SESSIONS: "/new", OTHER_OLD_SESSIONS: "/old" })).toBe("/new");
+    expect(at(older, { OTHER_OLD_SESSIONS: "relative" })).toBe(`${HOME}/.config/other/sessions`);
+    expect(at(OTHER, { OTHER_OLD_SESSIONS: "/old" })).toBe(`${HOME}/.config/other/sessions`);
+  });
+
+  test("the agent folder is its home variable, else its own variable, else its folder, whatever names the sessions", () => {
+    const named = { ...OTHER, agentDirEnv: "OTHER_AGENT_DIR" };
+    const agent = (profile: PiProfile, env: NodeJS.ProcessEnv) =>
+      asWritten(agentDirFor(profile, env, HOME));
+    expect(agent(named, {})).toBe(`${HOME}/.config/other`);
+    expect(agent(named, { OTHER_AGENT_DIR: "~/agent", OTHER_SESSIONS: "/sessions" })).toBe(
+      `${HOME}/agent`,
+    );
+    expect(agent(named, { AGENT_LOOKOUT_OTHER_HOME: "/lookout", OTHER_AGENT_DIR: "/agent" })).toBe(
+      "/lookout",
+    );
+    expect(agent(OTHER, { OTHER_AGENT_DIR: "/agent" })).toBe(`${HOME}/.config/other`);
   });
 });

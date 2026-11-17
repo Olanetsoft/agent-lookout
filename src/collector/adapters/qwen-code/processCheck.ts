@@ -117,7 +117,7 @@ interface Remembered {
 }
 
 /** How one check reads processes and compares a record with what it read. */
-interface Comparison {
+export interface Comparison {
   read: (pids: readonly number[]) => Promise<Map<number, string>>;
   /** What an answer is remembered by, or null for a record with nothing to compare. */
   keyOf: (record: RecordProcess) => string | null;
@@ -128,9 +128,10 @@ interface Comparison {
  * Remembers each answer for 30 seconds, so a poll every two seconds does not
  * mean a read every two seconds. When any record's answer is due, every record
  * that can be checked is asked about in that one read. A record that is not
- * asked about is forgotten.
+ * asked about is forgotten. Prime Agent's adapter builds its checks with it
+ * too (`../prime-agent/holders.ts`).
  */
-function rememberingCheck(
+export function rememberingCheck(
   comparison: Comparison,
   now: () => number,
   ttlMs: number,

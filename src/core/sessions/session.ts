@@ -39,6 +39,9 @@ export type RemoteSourceId = `remote:${string}`;
  * read from its database.
  * `kimchi` is Kimchi, in its command `kimchi`, built on Pi's coding agent,
  * whose sessions are read from the file it keeps for each.
+ * `prime-agent` is Prime Intellect's Prime Agent, in its command
+ * `prime-agent`, whose sessions are read from the file it keeps for each,
+ * its session leases and its workers' journals.
  */
 export type SourceId =
   | "claude-code"
@@ -59,6 +62,7 @@ export type SourceId =
   | "kilo-code"
   | "mimo-code"
   | "kimchi"
+  | "prime-agent"
   | "status-files"
   | RemoteSourceId;
 

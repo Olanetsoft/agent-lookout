@@ -9,6 +9,7 @@ import * as crush from "@collector/adapters/crush/index";
 import * as geminiCli from "@collector/adapters/gemini-cli/index";
 import * as goose from "@collector/adapters/goose/index";
 import * as pi from "@collector/adapters/pi/index";
+import * as primeAgent from "@collector/adapters/prime-agent/index";
 import * as kiloCode from "@collector/adapters/kilo-code/index";
 import * as kimchi from "@collector/adapters/kimchi/index";
 import * as mimoCode from "@collector/adapters/mimo-code/index";
@@ -253,6 +254,24 @@ describe("readRemoteSnapshot", () => {
     expect(snapshot.agents.at(-1)?.label).toBe(`Agent ${MAX_REMOTE_SOURCES - 1}`);
   });
 
+  test("more sources are taken than Agent Lookout has of its own", () => {
+    // KNOWN_WAYS names each of Agent Lookout's own sources once.
+    expect(KNOWN_WAYS.size).toBeLessThan(MAX_REMOTE_SOURCES);
+  });
+
+  test("the page reads the agent of every source taken", () => {
+    const [claude] = sourcesThere();
+    if (!claude) throw new Error("expected a source");
+    const many = Array.from({ length: MAX_REMOTE_SOURCES }, (_, index) => ({
+      ...claude,
+      id: `source-${index}`,
+      label: `Agent ${index}`,
+    }));
+    const { agents } = read({ generatedAt: NOW, sources: many, sessions: [] });
+    const kept = readSource({ id: "remote:devbox", state: "ok", agents }, NOW)?.agents;
+    expect(kept).toHaveLength(MAX_REMOTE_SOURCES);
+  });
+
   test("a source sent twice is kept once", () => {
     const sources = [...sourcesThere(), ...sourcesThere()];
     expect(read({ generatedAt: NOW, sources, sessions: [] }).sources).toHaveLength(3);
@@ -323,6 +342,7 @@ describe("readRemoteSnapshot", () => {
       "mistral-vibe": mistralVibe,
       opencode,
       pi,
+      "prime-agent": primeAgent,
       "qwen-code": qwenCode,
       "status-files": statusFiles,
     };

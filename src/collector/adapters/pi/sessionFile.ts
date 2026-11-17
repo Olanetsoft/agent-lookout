@@ -53,10 +53,10 @@ export const MAX_NAME_LINE_BYTES = 4 * 1024;
 export const SESSION_VERSION = 3;
 
 /** A session's id as `assertValidSessionId` allows, of 200 characters or less. */
-const SESSION_ID = /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,198}[A-Za-z0-9])?$/;
+export const SESSION_ID = /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,198}[A-Za-z0-9])?$/;
 
 /** A time as Pi writes one, with `Date.toISOString()`. */
-const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/;
+export const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/;
 
 /** The longest folder kept. A longer one is not a folder. */
 const MAX_CWD_LENGTH = 4096;

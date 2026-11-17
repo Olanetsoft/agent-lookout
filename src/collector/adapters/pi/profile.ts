@@ -4,18 +4,22 @@ import type { SourceCapabilities, SourceId } from "../../../core/sessions/sessio
 
 /**
  * What tells one agent whose sessions are kept as Pi keeps them from another,
- * so the modules of this folder read them all: Pi, and Kimchi, which runs Pi's
+ * so the modules of this folder read them all: Pi, Kimchi, which runs Pi's
  * coding agent and keeps its session files in a folder of its own
- * (`../kimchi/index.ts`). Everything else, the folders' layout, the bytes
- * read, the `ps` arguments, the mapping and the timings, is shared, so a
- * change to these modules changes Kimchi too.
+ * (`../kimchi/index.ts`), and Prime Agent, whose session files are in Pi's
+ * format, in one flat folder, and which says what a session does in files of
+ * its own (`../prime-agent/index.ts`). Everything else, the bytes read,
+ * the `ps` arguments, the mapping and the timings, is shared, so a change to
+ * these modules changes Kimchi and Prime Agent too. What Prime Agent asks
+ * for beyond Pi, `layout`, `legacySessionsEnv` and a status of its own, is
+ * left out by Pi and Kimchi, which then read exactly as before.
  */
 export interface PiProfile {
-  /** The source its sessions are listed under: `pi` or `kimchi`. */
+  /** The source its sessions are listed under: `pi`, `kimchi` or `prime-agent`. */
   sourceId: SourceId;
   /** Its name, as every sentence of its card says it. */
   label: string;
-  /** Its program's name, as a sentence of its card says it: `pi` or `kimchi`. */
+  /** Its program's name, as a sentence of its card says it: `pi`, `kimchi` or `prime-agent`. */
   program: string;
   /** The names of its program, as `ps -A -o comm=` prints them, each compared exactly. */
   programs: ReadonlySet<string>;
@@ -24,6 +28,11 @@ export interface PiProfile {
   /** The agent's own variable for its sessions folder, which holds the files directly. */
   sessionsEnv: string;
   /**
+   * An older name of that variable the agent still reads, after it, as Prime
+   * Agent reads `PRIME_AGENT_CODING_AGENT_SESSION_DIR`. Left out by Pi and Kimchi.
+   */
+  legacySessionsEnv?: string;
+  /**
    * The agent's own variable for its agent folder. Left out when the agent
    * sets that variable itself as it starts, so no setting of the person's can
    * move the folder, as Kimchi does.
@@ -31,6 +40,14 @@ export interface PiProfile {
   agentDirEnv?: string;
   /** Its agent folder, in the home folder, when nothing names another. */
   agentDir: readonly string[];
+  /**
+   * `flat` when every session file sits in the sessions folder itself, with no
+   * folder for each project, as Prime Agent keeps them. Then no project folder
+   * is looked for, and the sessions folder is listed again only when its
+   * modified time moves, and at each sweep. Left out by Pi and Kimchi, whose
+   * sessions folder is listed on every poll.
+   */
+  layout?: "flat";
   /**
    * Whether the name on a `session_info` line is read. False when the agent
    * writes one of its own from the person's words, so a session takes its
@@ -57,7 +74,10 @@ export interface PiProfile {
 }
 
 /** The parts of a profile that say where its files are. */
-export type ProfilePaths = Pick<PiProfile, "homeEnv" | "sessionsEnv" | "agentDirEnv" | "agentDir">;
+export type ProfilePaths = Pick<
+  PiProfile,
+  "homeEnv" | "sessionsEnv" | "legacySessionsEnv" | "agentDirEnv" | "agentDir"
+>;
 
 /** One of the agent's own settings as a folder: `~` is the home folder, and a relative one cannot be followed. */
 function ownFolder(value: string | undefined, homeDir: string): string | undefined {
@@ -73,11 +93,12 @@ function ownFolder(value: string | undefined, homeDir: string): string | undefin
 /**
  * The folder the adapter reads: `sessions` in the folder its `homeEnv` names,
  * for Agent Lookout alone. Otherwise it is worked out as Pi does (`config.ts`,
- * and `main.ts` for the order): the folder its `sessionsEnv` names, else
- * `sessions` in the folder its `agentDirEnv` names, else in its `agentDir` in
- * the home folder, on every system. Neither `--session-dir` nor the
- * `sessionDir` setting is followed: the settings file is never read, and a
- * process's arguments are not either.
+ * and `main.ts` for the order): the folder its `sessionsEnv` names, else the
+ * one its `legacySessionsEnv` names, when it has one, else `sessions` in the
+ * folder its `agentDirEnv` names, else in its `agentDir` in the home folder,
+ * on every system. Neither `--session-dir` nor the `sessionDir` setting is
+ * followed: the settings file is never read, and a process's arguments are
+ * not either.
  */
 export function sessionsDirFor(
   profile: ProfilePaths,
@@ -88,7 +109,31 @@ export function sessionsDirFor(
   if (own) return path.resolve(own, "sessions");
   const sessions = ownFolder(env[profile.sessionsEnv], homeDir);
   if (sessions !== undefined) return path.resolve(sessions);
+  const legacy =
+    profile.legacySessionsEnv === undefined
+      ? undefined
+      : ownFolder(env[profile.legacySessionsEnv], homeDir);
+  if (legacy !== undefined) return path.resolve(legacy);
   const named =
     profile.agentDirEnv === undefined ? undefined : ownFolder(env[profile.agentDirEnv], homeDir);
   return path.resolve(named ?? path.join(homeDir, ...profile.agentDir), "sessions");
+}
+
+/**
+ * The agent folder itself, for an agent that keeps more than its sessions
+ * there, as Prime Agent keeps its leases and its workers' journals: the folder
+ * its `homeEnv` names, else the one its `agentDirEnv` names, else its
+ * `agentDir` in the home folder. Its own variable for the sessions folder does
+ * not move it.
+ */
+export function agentDirFor(
+  profile: ProfilePaths,
+  env: NodeJS.ProcessEnv,
+  homeDir: string,
+): string {
+  const own = env[profile.homeEnv]?.trim();
+  if (own) return path.resolve(own);
+  const named =
+    profile.agentDirEnv === undefined ? undefined : ownFolder(env[profile.agentDirEnv], homeDir);
+  return path.resolve(named ?? path.join(homeDir, ...profile.agentDir));
 }

@@ -21,6 +21,7 @@ import { MIMO_CODE_CAPABILITIES } from "@collector/adapters/mimo-code/index";
 import { MISTRAL_VIBE_CAPABILITIES } from "@collector/adapters/mistral-vibe/index";
 import { OPENCODE_CAPABILITIES } from "@collector/adapters/opencode/index";
 import { PI_CAPABILITIES } from "@collector/adapters/pi/index";
+import { PRIME_AGENT_CAPABILITIES } from "@collector/adapters/prime-agent/index";
 import { QWEN_CODE_CAPABILITIES } from "@collector/adapters/qwen-code/index";
 import { STATUS_FILE_CAPABILITIES } from "@collector/adapters/status-files/index";
 import { readRemoteSnapshot } from "@collector/remotes/remoteSessions";
@@ -52,6 +53,10 @@ import { mimoCodeAdapterFor } from "@tests/support/adapters/mimo-code/mimoCodeAd
 import { vibeAdapterFor } from "@tests/support/adapters/mistralVibeAdapter";
 import { opencodeAdapterFor } from "@tests/support/adapters/opencodeAdapter";
 import { piAdapterFor } from "@tests/support/adapters/pi/piAdapter";
+import {
+  primeAgentAdapterFor,
+  primeAgentFiles,
+} from "@tests/support/adapters/prime-agent/primeAgentAdapter";
 import { qwenCodeAdapterFor } from "@tests/support/adapters/qwenCodeAdapter";
 import { fakeTmux } from "@tests/support/node/tmux";
 
@@ -80,6 +85,7 @@ test("each source says what its agent can report in its adapter's own words", ()
   expect(tour.KILO_CODE_CAPABILITIES).toEqual(KILO_CODE_CAPABILITIES);
   expect(tour.MIMO_CODE_CAPABILITIES).toEqual(MIMO_CODE_CAPABILITIES);
   expect(tour.KIMCHI_CAPABILITIES).toEqual(KIMCHI_CAPABILITIES);
+  expect(tour.PRIME_AGENT_CAPABILITIES).toEqual(PRIME_AGENT_CAPABILITIES);
   expect(tour.STATUS_FILE_CAPABILITIES).toEqual(STATUS_FILE_CAPABILITIES);
 });
 
@@ -104,6 +110,7 @@ test("this computer's sources come in the collector's order", () => {
     "kilo-code",
     "mimo-code",
     "kimchi",
+    "prime-agent",
     "status-files",
   ]);
 });
@@ -321,6 +328,18 @@ test("Kimchi's card is the one its adapter shows on a computer without it", asyn
   expect(sessions).toEqual([]);
 });
 
+test("Prime Agent's card is the one its adapter shows on a Mac without it", async () => {
+  const adapter = primeAgentAdapterFor(primeAgentFiles());
+  const { health, sessions } = await adapter.poll();
+  const { capabilities, ...card } = tour
+    .sourcesAt(0, 1, "0.2.6")
+    .find((source) => source.id === "prime-agent")!;
+  // The poller adds what the adapter can report to each health it gives.
+  expect(card).toEqual({ ...health, checkedAt: card.checkedAt });
+  expect(capabilities).toEqual(adapter.capabilities);
+  expect(sessions).toEqual([]);
+});
+
 test("Kimi Code's card is the one its adapter shows on a computer without it", async () => {
   const adapter = kimiCodeAdapterFor(memoryFiles());
   const { health, sessions } = await adapter.poll();
@@ -453,6 +472,12 @@ test("the other machine's agents and its row for each source are what this compu
           capabilities: KIMCHI_CAPABILITIES,
         },
         {
+          id: "prime-agent",
+          label: "Prime Agent",
+          state: "unavailable",
+          capabilities: PRIME_AGENT_CAPABILITIES,
+        },
+        {
           id: "status-files",
           label: "Status files",
           state: "not-set-up",
@@ -491,7 +516,7 @@ test("the other machine's card names the ssh command the tunnel runs, as it runs
  * soon as it changes, so it names an agent at the release that ships it, and
  * the agent leaves this list then.
  */
-const NOT_ON_THE_PAGE_YET = new Set<string>(["MiMo Code", "Kimchi"]);
+const NOT_ON_THE_PAGE_YET = new Set<string>(["MiMo Code", "Kimchi", "Prime Agent"]);
 
 test("the page's Works with names every agent the tour's Sources reads", () => {
   const works = /<div class="works">([\s\S]*?)<\/div\s*>/.exec(page)?.[1] ?? "";

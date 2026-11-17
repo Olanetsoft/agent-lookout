@@ -98,6 +98,15 @@ export interface AdapterResult {
    * `database-without-processes`, while it cannot say. So does the MiMo Code
    * adapter, with MiMo Code's. The Kimchi adapter has the Pi adapter's three,
    * since it is that adapter with Kimchi's names.
+   *
+   * The Prime Agent adapter has three:
+   * - `files`: Prime Agent's session files, its session leases and its
+   *   workers' journals. The usual one.
+   * - `files-without-leases`: the same while the folder of leases is missing
+   *   or cannot be listed, or a lease in it cannot be read, when no session
+   *   can be shown as finished.
+   * - `files-without-processes`: the same while `ps` cannot be run to tell a
+   *   lease's process, when a session it holds is unknown.
    */
   basis?: string;
 }

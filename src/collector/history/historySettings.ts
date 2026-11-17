@@ -19,6 +19,7 @@ import { mimoCodeDatabaseFor } from "../adapters/mimo-code/index.ts";
 import { vibeSessionDirFor } from "../adapters/mistral-vibe/index.ts";
 import { opencodeDatabaseFor } from "../adapters/opencode/index.ts";
 import { piSessionsDirFor } from "../adapters/pi/index.ts";
+import { primeAgentAgentDirFor, primeAgentSessionsDirFor } from "../adapters/prime-agent/index.ts";
 import { qwenFolders } from "../adapters/qwen-code/index.ts";
 import { STATUS_DIR_ENV } from "../adapters/status-files/index.ts";
 import { tildify } from "../files/paths.ts";
@@ -65,7 +66,7 @@ export function readHistorySetup(
 }
 
 /**
- * The folders the fifteen other sources read, and OpenCode's, Goose's, Kilo
+ * The folders the sixteen other sources read, and OpenCode's, Goose's, Kilo
  * Code's and MiMo Code's databases,
  * as the adapters work them out on this system, made into a short fingerprint that
  * names none of them. Two copies of Agent Lookout with the same one see the
@@ -102,6 +103,8 @@ export function sourcesFingerprint(
     kiloDatabaseFor(env, homeDir) ?? ":memory:",
     mimoCodeDatabaseFor(env, homeDir) ?? ":memory:",
     kimchiSessionsDirFor(env, homeDir),
+    primeAgentSessionsDirFor(env, homeDir),
+    primeAgentAgentDirFor(env, homeDir),
   ];
   return createHash("sha256").update(JSON.stringify(folders)).digest("hex").slice(0, 32);
 }

@@ -1,4 +1,5 @@
 import os from "node:os";
+import path from "node:path";
 
 import type {
   Session,
@@ -22,7 +23,7 @@ import {
 import { sessionsDirFor, type PiProfile } from "./profile.ts";
 import { createSessionFileReader, type PiSessionFile } from "./sessionFile.ts";
 import { createSessionFileFinder, type SessionFileRef } from "./sessionFiles.ts";
-import { piSession, SOURCE_ID } from "./toSession.ts";
+import { piSession, SOURCE_ID, type PiEvidence } from "./toSession.ts";
 
 /** The variable that names Pi's agent folder, for Agent Lookout alone. */
 export const PI_HOME_ENV = "AGENT_LOOKOUT_PI_HOME";
@@ -188,7 +189,40 @@ export interface PiAdapterOptions {
 /** One file this poll read. */
 interface Found {
   file: PiSessionFile;
+  /** The name of the session's file, without its folders. */
+  name: string;
   writtenAt: number;
+}
+
+/** What a profile's own reader of status says on one poll. */
+export interface PiStatusAnswer {
+  /** The way this poll was read, named for the poller. */
+  basis: string;
+  /** Sentences added to the card's detail after the notes, or "" for none. */
+  detail: string;
+  /** Each session's status, by its id in its file. A session left out is unknown. */
+  byId: ReadonlyMap<string, PiEvidence>;
+}
+
+/**
+ * A reader of status of a profile's own, for an agent whose files say more
+ * than Pi's, as Prime Agent's do (`../prime-agent/status.ts`). With one, no
+ * `ps` question of Pi's is asked, and each session's status is the one it
+ * gives. Pi and Kimchi have none.
+ */
+export interface PiStatusSource {
+  /** What Sources shows in place of Pi's two rows about `ps`. */
+  facts: SourceFact[];
+  /** The way a poll that lists no session, or finds no sessions folder, is read. */
+  emptyBasis: string;
+  /**
+   * Asked once on each poll that lists a session, with each session's id in
+   * its file, the name of its file and when it was written. Never rejects.
+   */
+  read(input: {
+    now: number;
+    sessions: readonly { id: string; fileName: string; writtenAt: number }[];
+  }): Promise<PiStatusAnswer>;
 }
 
 /**
@@ -227,9 +261,15 @@ export function createPiAdapter(options: PiAdapterOptions = {}): Adapter {
  * with the names, folders, programs and words of `profile`. Pi's adapter is
  * this with `PI_PROFILE`, and Kimchi's gives a profile of its own
  * (`../kimchi/index.ts`): it reads no names and leaves out the sessions Kimchi
- * marks as its own.
+ * marks as its own. Prime Agent's gives a profile and a reader of status of
+ * its own (`../prime-agent/index.ts`), and no `ps` question of Pi's is asked
+ * for it.
  */
-export function createPiFamilyAdapter(profile: PiProfile, options: PiAdapterOptions = {}): Adapter {
+export function createPiFamilyAdapter(
+  profile: PiProfile,
+  options: PiAdapterOptions = {},
+  status?: PiStatusSource,
+): Adapter {
   const { sourceId, label, program, notes } = profile;
   const env = options.env ?? process.env;
   const homeDir = options.homeDir ?? os.homedir();
@@ -239,13 +279,21 @@ export function createPiFamilyAdapter(profile: PiProfile, options: PiAdapterOpti
   const pollIntervalMs = options.pollIntervalMs ?? POLL_INTERVAL_MS;
   const recheckMs = options.recheckMs ?? RECHECK_MS;
   const processCheckMs = options.processCheckMs ?? PROCESS_CHECK_MS;
-  const processes =
-    options.processes ?? createPiProcessReader({ platform, programs: profile.programs });
+  /** What a session's status is asked of: Pi's question to `ps`, or a profile's own reader. */
+  const asks: { ps: PiProcessReader } | { status: PiStatusSource } =
+    status === undefined
+      ? { ps: options.processes ?? createPiProcessReader({ platform, programs: profile.programs }) }
+      : { status };
 
   const named = Boolean(env[profile.homeEnv]?.trim());
   const sessionsDir = sessionsDirFor(profile, env, homeDir);
   const sessionsName = tildify(sessionsDir, homeDir);
-  const files = createSessionFileFinder({ sessionsDir, io, sweepMs: options.sweepMs });
+  const files = createSessionFileFinder({
+    sessionsDir,
+    io,
+    sweepMs: options.sweepMs,
+    flat: profile.layout === "flat",
+  });
   const reader = createSessionFileReader(sessionsDir, io, platform, {
     readsNames: profile.readsNames,
     hiddenMarkers: profile.hiddenMarkers,
@@ -263,7 +311,7 @@ export function createPiFamilyAdapter(profile: PiProfile, options: PiAdapterOpti
    * poll that lists a session is read without it, so one that lists none is too,
    * and a session's leaving the list is compared with the poll that listed it.
    */
-  const unaskedBasis = psRuns ? BASIS : BASIS_WITHOUT_PROCESSES;
+  const unaskedBasis = status?.emptyBasis ?? (psRuns ? BASIS : BASIS_WITHOUT_PROCESSES);
   const sooner =
     processCheckMs > PROMPT_PROCESS_CHECK_MS
       ? `, ${every(PROMPT_PROCESS_CHECK_MS)} at most while sessions are written and ps shows no ${program}`
@@ -273,9 +321,13 @@ export function createPiFamilyAdapter(profile: PiProfile, options: PiAdapterOpti
     : `not run on ${platform === "win32" ? "Windows" : "this system"}`;
 
   function watching(read: string): SourceFact[] {
-    return [
+    const here = [
       { label: "Sessions folder", value: sessionsName },
       { label: "Read", value: read },
+    ];
+    if (status !== undefined) return [...here, ...status.facts];
+    return [
+      ...here,
       { label: "Process check", value: `ps ${PI_TABLE_ARGS.join(" ")}` },
       { label: "Process check run", value: processCheckRun },
     ];
@@ -306,14 +358,18 @@ export function createPiFamilyAdapter(profile: PiProfile, options: PiAdapterOpti
    * it said no such program runs, since one may have been started since. A clock
    * set back counts as time enough.
    */
-  async function processesFor(found: readonly Found[], checkedAt: number): Promise<ProcessAnswer> {
+  async function processesFor(
+    ps: PiProcessReader,
+    found: readonly Found[],
+    checkedAt: number,
+  ): Promise<ProcessAnswer> {
     const since = checkedAt - processesAt;
     let due = lastProcesses === null || since < 0 || since >= processCheckMs;
     if (!due && since >= PROMPT_PROCESS_CHECK_MS && lastProcesses?.ok && !lastProcesses.running) {
       due = found.some(({ writtenAt }) => writtenAt > processesAt);
     }
     if (lastProcesses === null || due) {
-      lastProcesses = await processes.read();
+      lastProcesses = await ps.read();
       processesAt = checkedAt;
     }
     return lastProcesses;
@@ -378,12 +434,21 @@ export function createPiFamilyAdapter(profile: PiProfile, options: PiAdapterOpti
       if (read.state === "newer") newer = true;
       if (read.state !== "ok" || ids.has(read.session.id)) continue;
       ids.add(read.session.id);
-      found.push({ file: read.session, writtenAt: ref.info.mtimeMs });
+      found.push({
+        file: read.session,
+        name: path.basename(ref.path),
+        writtenAt: ref.info.mtimeMs,
+      });
     }
     reader.keepOnly(new Set(refs.map((ref) => ref.path)));
 
+    if ("status" in asks) {
+      // A profile's own reader of status, asked only while there is a session to show.
+      return await withStatus(asks.status, found, checkedAt, newer);
+    }
+
     // `ps` is asked only while there is a session to show.
-    const asked = found.length > 0 ? await processesFor(found, checkedAt) : null;
+    const asked = found.length > 0 ? await processesFor(asks.ps, found, checkedAt) : null;
     const open = asked === null || !asked.ok || asked.running;
     const sessions = found.map(({ file, writtenAt }) =>
       piSession({ file, open, writtenAt, now: checkedAt, sourceId }),
@@ -401,6 +466,41 @@ export function createPiFamilyAdapter(profile: PiProfile, options: PiAdapterOpti
       basis = BASIS_CLOSED;
     }
     if (newer) detail += ` ${notes.newerFormat}`;
+    return result("ok", detail, every(pollIntervalMs), checkedAt, sessions, basis);
+  }
+
+  /** A poll's sessions with the status a profile's own reader gives each. */
+  async function withStatus(
+    source: PiStatusSource,
+    found: readonly Found[],
+    checkedAt: number,
+    newer: boolean,
+  ): Promise<AdapterResult> {
+    const answer =
+      found.length > 0
+        ? await source.read({
+            now: checkedAt,
+            sessions: found.map(({ file, name, writtenAt }) => ({
+              id: file.id,
+              fileName: name,
+              writtenAt,
+            })),
+          })
+        : null;
+    const sessions = found.map(({ file, writtenAt }) =>
+      piSession({
+        file,
+        open: true,
+        writtenAt,
+        now: checkedAt,
+        sourceId,
+        evidence: answer?.byId.get(file.id) ?? { status: "unknown", since: null },
+      }),
+    );
+    let detail = `Sessions are read from the files ${label} keeps in ${sessionsName}. ${alwaysNotes}`;
+    if (answer !== null && answer.detail !== "") detail += ` ${answer.detail}`;
+    if (newer) detail += ` ${notes.newerFormat}`;
+    const basis = answer?.basis ?? source.emptyBasis;
     return result("ok", detail, every(pollIntervalMs), checkedAt, sessions, basis);
   }
 
