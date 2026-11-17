@@ -29,10 +29,14 @@ import type { FileInfo, ReadOnlyIo } from "../../files/readOnlyIo.ts";
  * however old it is. Of a session folder only its names are read. On every
  * poll each log of format 4 is looked up with `lstat`, its session folder
  * first, unless the log was found to be older than a day or past the newest
- * `MAX_LOGS`, when it is passed over until the next sweep. A link, or
- * anything that is not a folder or a file, is never gone into or taken, a
- * link put at a session folder's name since it was listed among them.
- * `session.lock`, temporary files and every other name are never looked up.
+ * `MAX_LOGS`, when it is passed over until the next sweep. A link a lookup
+ * finds, or anything that is not a folder or a file, is never gone into or
+ * taken. So a link put at a session folder's name since it was listed is
+ * caught by the folder's lookup, just before its log's, and one put there
+ * after the log's lookup by the reader, which reads a log only when the file
+ * it opens is the one that lookup found. Only one put there between the two
+ * lookups is followed, for that poll alone. `session.lock`, temporary files
+ * and every other name are never looked up.
  */
 
 /** How often every folder is listed and every log looked up. */

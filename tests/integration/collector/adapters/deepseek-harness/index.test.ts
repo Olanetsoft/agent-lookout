@@ -271,6 +271,52 @@ describe("sessions on real files", () => {
     },
   );
 
+  test.skipIf(process.platform === "win32")(
+    "a link put at a session folder's name after its log was looked up is not read through",
+    async () => {
+      const start = Date.now() - 4 * 60_000;
+      const home = await homeWith({
+        [SESSION_ID]:
+          headerLine() +
+          batch(line.title(0, start, "Fix the build", "provider"), ...endedTurn(1, start)),
+      });
+      const other = await homeWith({
+        [sessionIdOf(9)]:
+          headerLine({ id: sessionIdOf(9) }) +
+          batch(
+            line.title(0, start, "Write the docs", "provider"),
+            line.turnStart(1, start),
+            line.turnEnd(2, start + 1_000, "error"),
+          ),
+      });
+      const folder = path.join(home, "sessions", PROJECT_FOLDER, SESSION_ID);
+      const file = path.join(folder, "session.v4.jsonl");
+      let swap = false;
+      // The folder becomes a link to another session's folder just before its log is opened.
+      const io: ReadOnlyIo = {
+        ...nodeIo,
+        async openRegular(target) {
+          if (swap && target === file) {
+            swap = false;
+            await rm(folder, { recursive: true });
+            await symlink(path.join(other, "sessions", PROJECT_FOLDER, sessionIdOf(9)), folder);
+          }
+          return nodeIo.openRegular(target);
+        },
+      };
+      const adapter = adapterFor(home, { io });
+      const shown = (result: Awaited<ReturnType<typeof adapter.poll>>) =>
+        result.sessions.map((one) => [one.id, one.name, one.status]);
+      expect(shown(await adapter.poll())).toEqual([[ID, "Fix the build", "idle"]]);
+      await appendFile(file, batch(line.turnStart(5, start + 2_000)));
+      const at = new Date(Date.now() - 2 * 60_000);
+      await utimes(file, at, at);
+      swap = true;
+      expect(shown(await adapter.poll())).toEqual([[ID, "Fix the build", "idle"]]);
+      expect(swap).toBe(false);
+    },
+  );
+
   test("a subagent's log is not shown, and a log older than a day is left out", async () => {
     const home = await homeWith({
       [SESSION_ID]: headerLine() + batch(...endedTurn(0, Date.now() - 4 * 60_000)),

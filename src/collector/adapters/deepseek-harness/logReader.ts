@@ -57,10 +57,11 @@ import {
  *
  * One log is read at a time, and one frame at a time. A file is opened
  * without following a link, read-only, and only when its size, time or
- * identity changed. What is kept of it is its identity, size and time, where
- * its first line ends and how far it was read, the next line's number, the
- * header, the turn's state and a title of at most 1 KiB. No byte of it is
- * kept. Nothing here writes, renames, deletes or locks anything.
+ * identity changed, and is read only when it is the file this poll's `lstat`
+ * found. What is kept of it is its identity, size and time, where its first
+ * line ends and how far it was read, the next line's number, the header, the
+ * turn's state and a title of at most 1 KiB. No byte of it is kept. Nothing
+ * here writes, renames, deletes or locks anything.
  */
 
 /** The first read of a log's start, for its first line. */
@@ -457,7 +458,9 @@ export function createDeepseekHarnessLogReader(
     const handle = await io.openRegular(ref.path);
     try {
       const opened = handle.info;
-      // Another file since the lstat, or shorter than was read: from its start.
+      // Not the file this poll's lstat found, as through a link put at a folder's name since: what was read stands until the next poll.
+      if (opened.ino !== ref.info.ino) throw new Error("The file was replaced.");
+      // Another file than was read, or shorter than was read: from its start.
       if (!stillOf(known, opened) || known.header === null)
         return await fromStart(ref, handle, titles, now);
       const header = known.header;
@@ -518,6 +521,8 @@ export function createDeepseekHarnessLogReader(
       try {
         const handle = await io.openRegular(ref.path);
         try {
+          // Not the file this poll's lstat found, as through a link put at a folder's name since: looked at again on the next poll.
+          if (handle.info.ino !== ref.info.ino) throw new Error("The file was replaced.");
           const probed = await probe(ref, handle, now);
           if (probed === "later") {
             cache.delete(ref.path);
@@ -529,7 +534,7 @@ export function createDeepseekHarnessLogReader(
           await handle.close();
         }
       } catch {
-        // Gone since its lstat, or a read that failed: tried again on the next poll.
+        // Gone or replaced since its lstat, or a read that failed: tried again on the next poll.
         cache.delete(ref.path);
         return { state: "later" };
       }
@@ -560,7 +565,7 @@ export function createDeepseekHarnessLogReader(
         cache.set(ref.path, next);
         return logOf(next);
       } catch {
-        // Gone since its lstat, or a read that failed: what was read of it stands.
+        // Gone or replaced since its lstat, or a read that failed: what was read of it stands.
         return logOf(known);
       }
     },

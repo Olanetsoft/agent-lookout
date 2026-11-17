@@ -347,29 +347,52 @@ describe("an uncompressed log", () => {
     );
     expect(read).toMatchObject({ writtenAt: NOW - 1_000, turn: { state: "ended" } });
   });
+});
 
-  test("replaced by another file between its lstat and its open is read from its start", async () => {
+describe("a log replaced between its lstat and its open", () => {
+  test("is not read for its first line until the next poll", async () => {
+    const files = memoryFiles();
+    files.write(PLAIN, headerLine() + batch(line.turnStart(0, T)));
+    const reader = readerFor(files);
+    const ref = await refOf(files, PLAIN);
+    // Another file at its name since its lstat, as through a link put at its folder's name.
+    files.write(PLAIN, headerLine({ createdAt: STARTED_AT + 1 }) + batch(line.turnStart(0, T)));
+    files.forget();
+    expect(await reader.header(ref, NOW)).toEqual({ state: "later" });
+    expect(files.reads).toEqual([]);
+    expect(await reader.header(await refOf(files, PLAIN), NOW)).toEqual({
+      state: "ok",
+      header: expect.objectContaining({ createdAt: STARTED_AT + 1 }),
+    });
+  });
+
+  test("is not read on until the next poll, then from its start", async () => {
     const files = memoryFiles();
     files.write(PLAIN, headerLine() + batch(line.turnStart(0, T)));
     const reader = readerFor(files);
     const ref = await refOf(files, PLAIN);
     await reader.header(ref, NOW);
-    await reader.readOn(ref, true, NOW);
+    const first = await reader.readOn(ref, true, NOW);
+    files.append(PLAIN, batch(line.turnEnd(1, T + 1, "completed")));
+    const grown = await refOf(files, PLAIN);
+    // Another file at its name since its lstat, as through a link put at its folder's name.
     files.write(
       PLAIN,
       headerLine({ createdAt: STARTED_AT + 1 }) +
         batch(line.turnStart(0, T), line.turnEnd(1, T + 1, "error")),
     );
-    const read = await reader.readOn(
-      { ...ref, info: { ...ref.info, mtimeMs: ref.info.mtimeMs + 1 } },
-      true,
-      NOW,
-    );
-    expect(read).toMatchObject({ header: { createdAt: STARTED_AT + 1 }, turn: { end: "error" } });
+    files.forget();
+    expect(await reader.readOn(grown, true, NOW)).toEqual(first);
+    expect(files.reads).toEqual([]);
+    expect(await reader.readOn(await refOf(files, PLAIN), true, NOW)).toMatchObject({
+      header: { createdAt: STARTED_AT + 1 },
+      turn: { end: "error" },
+    });
+    expect(files.reads.some((one) => one.position === 0)).toBe(true);
   });
 });
 
-describe("a log replaced between its lstat and its open", () => {
+describe("a log replaced since it was read", () => {
   test("by one too long to read is not read past its first line", async () => {
     const files = memoryFiles();
     files.write(PLAIN, headerLine() + batch(line.turnStart(0, T)));
@@ -383,11 +406,7 @@ describe("a log replaced between its lstat and its open", () => {
     big.fill(0x0a, header.length);
     files.write(PLAIN, big);
     files.forget();
-    const read = await reader.readOn(
-      { ...ref, info: { ...ref.info, mtimeMs: ref.info.mtimeMs + 1 } },
-      true,
-      NOW,
-    );
+    const read = await reader.readOn(await refOf(files, PLAIN), true, NOW);
     expect(read).toMatchObject({ mark: "too-long" });
     expect(Math.max(...files.reads.map((one) => one.position + one.length))).toBeLessThanOrEqual(
       HEADER_MAX_BYTES,
