@@ -34,10 +34,13 @@ export const MAX_REMOTE_SESSIONS = 500;
 
 /**
  * The most of the other machine's sources taken, and so the most agents whose
- * capabilities are shown: far more than Agent Lookout has of its own, and a
- * machine that sends many more is not read for them.
+ * capabilities are shown: more than Agent Lookout has of its own, with room
+ * for those to come, and a machine that sends many more is not read for them.
+ * The page reads as many agents for one machine (`MAX_AGENTS` in
+ * `src/dashboard/lib/api/readApi.ts`). A test fails when Agent Lookout's own
+ * sources no longer fit.
  */
-export const MAX_REMOTE_SOURCES = 20;
+export const MAX_REMOTE_SOURCES = 30;
 
 /** The longest session id taken. The other machine's own are far shorter. */
 const MAX_ID_LENGTH = 512;

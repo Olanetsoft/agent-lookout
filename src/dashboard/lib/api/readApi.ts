@@ -414,8 +414,12 @@ export function readSource(value: unknown, generatedAt: number): SourceHealth | 
   return source;
 }
 
-/** The most agents read for one machine. A machine sends one for each of its sources. */
-const MAX_AGENTS = 20;
+/**
+ * The most agents read for one machine. A machine sends one for each of its
+ * sources, and as many sources are taken (`MAX_REMOTE_SOURCES` in
+ * `src/collector/remotes/remoteSessions.ts`).
+ */
+const MAX_AGENTS = 30;
 
 /**
  * The most parts read for one source: as many as the collector takes from one

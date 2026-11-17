@@ -764,7 +764,7 @@ Each tool is marked read-only (`READ_ONLY`). None can jump to, stop or answer a 
 | `sshProgram.ts`     | `findSsh` finds your ssh: `AGENT_LOOKOUT_SSH_BIN`, else `PATH`, else fixed folders. `sshArguments` builds the one command line                                                                            |
 | `tunnel.ts`         | `createTunnel` keeps one ssh running for each machine. When it ends, it starts again after 1, 2, 5, 10 and 30 seconds, then every minute (`RESTART_DELAYS_MS`)                                            |
 | `remoteReader.ts`   | `readRemote` asks the tunnel for `GET /api/health`, then `GET /api/sessions` (`REMOTE_ROUTES`), and nothing else                                                                                          |
-| `remoteSessions.ts` | `readRemoteSnapshot` reads the answer as it would any answer from outside: each field checked and cleaned again, at most 500 sessions and 20 sources                                                      |
+| `remoteSessions.ts` | `readRemoteSnapshot` reads the answer as it would any answer from outside: each field checked and cleaned again, at most 500 sessions and 30 sources                                                      |
 | `remoteAdapter.ts`  | `createRemoteAdapter` makes the machine a source, `remote:<name>`, polled with the others                                                                                                                 |
 | `remotes.ts`        | `createRemotes` ties these together, and starts and stops the tunnels with the collector                                                                                                                  |
 
