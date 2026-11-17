@@ -88,7 +88,7 @@ export function isAgyProgram(program: string): boolean {
   return name === "agy" || name === "agy.exe";
 }
 
-/** The agy programs in what the table printed. Every other process is dropped as it is read. */
+/** The agy programs in what the table printed. Every other process is dropped. */
 export function parseAgyTable(stdout: string): AgyRow[] {
   const rows: AgyRow[] = [];
   for (const line of stdout.split("\n")) {
