@@ -651,7 +651,7 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 
 **How it reads.**
 
-- Each log's first line is read once, and for a session shown, and its subagents, what follows it, then only what was added, one log and one frame at a time (`logReader.ts`, `zstdFrames.ts`). `node:zlib` undoes each frame, with at most 8 MiB out of it, and is imported whole, so a Node.js before 22.15 still runs Agent Lookout and reads uncompressed logs only.
+- Each log's first line is read once, and again only when the log is read from its start. For a session shown, and its subagents, what follows it is read, then only what was added, one log and one frame at a time (`logReader.ts`, `zstdFrames.ts`). `node:zlib` undoes each frame, with at most 8 MiB out of it, and is imported whole, so a Node.js before 22.15 still runs Agent Lookout and reads uncompressed logs only.
 - Each line's first 512 bytes are compared with the bytes each kind begins with (`lines.ts`). Only IDs, kinds and a title its model wrote or one marked as yours become text: never a prompt, a reply, a tool's arguments or output, or the first title, which is your first words.
 - Nothing marks an open session, so `ps` start times and the computer's start say when no program could still write one (`processes.ts`), and its own turn or a wait quiet for 30 minutes shows as unknown, a wait only without the desktop app, while a subagent's turn quiet that long stops keeping it working.
 

@@ -34,7 +34,8 @@ import {
  * (:1442-1451) and when it repairs a torn end (:1454-1462), and a migration
  * publishes a new file (generation.ts:817-834). So:
  *
- * - A log's first line is read once for each file: at most `HEADER_MAX_BYTES`,
+ * - A log's first line is read once for each file, and again only when the
+ *   log is read from its start: at most `HEADER_MAX_BYTES`,
  *   `HEADER_FIRST_BYTES` first. Nothing else of a subagent's log whose session
  *   is not shown is read.
  * - For a session shown, and its subagents', the log is then read on from
@@ -119,9 +120,9 @@ interface Cached {
 }
 
 export interface DeepseekHarnessLogReader {
-  /** Whether a log's first line still has to be looked at: a log not seen before, or another file. */
+  /** Whether a log's first line still has to be looked at: a log not seen before, another file, or one grown shorter than was read. */
   needsHeader(ref: LogRef): boolean;
-  /** A log's first line, looked at once for each file. */
+  /** A log's first line, looked at once for each file, and again when it grew shorter than was read. */
   header(ref: LogRef, now: number): Promise<HeaderRead>;
   /**
    * A log read on past its first line, opened only when it changed, or null
