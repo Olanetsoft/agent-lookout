@@ -367,3 +367,50 @@ describe("a flat sessions folder, as Prime Agent keeps", () => {
     expect(files.count("readdir", (target) => target === SESSIONS_DIR)).toBe(2);
   });
 });
+
+describe("a test of its own for which names are session files, as Unreal Agent's adapter gives", () => {
+  const onlyMine = (name: string) => name.endsWith(".mine.jsonl");
+
+  test("takes only the names it passes, in the folder and in a project folder, and looks up no other", async () => {
+    const files = memoryFiles();
+    files.write(`${SESSIONS_DIR}/a.mine.jsonl`, sessionText(SESSION_ID));
+    files.write(`${SESSIONS_DIR}/b.jsonl`, sessionText(sessionIdOf(2)));
+    files.write(`${PROJECT_FOLDER}/c.mine.jsonl`, sessionText(sessionIdOf(3)));
+    files.write(`${PROJECT_FOLDER}/d.jsonl`, sessionText(sessionIdOf(4)));
+    const finder = createSessionFileFinder({
+      sessionsDir: path.resolve(SESSIONS_DIR),
+      io: files.io,
+      fileName: onlyMine,
+    });
+    expect((await finder.recent(NOW)).map((ref) => path.basename(ref.path)).sort()).toEqual([
+      "a.mine.jsonl",
+      "c.mine.jsonl",
+    ]);
+    expect(files.count("lstat", (target) => target.endsWith("b.jsonl"))).toBe(0);
+    expect(files.count("lstat", (target) => target.endsWith("d.jsonl"))).toBe(0);
+  });
+
+  test("with a flat folder, goes into no folder in it", async () => {
+    const files = memoryFiles();
+    files.write(`${SESSIONS_DIR}/a.mine.jsonl`, sessionText(SESSION_ID));
+    files.write(`${PROJECT_FOLDER}/c.mine.jsonl`, sessionText(sessionIdOf(3)));
+    const finder = createSessionFileFinder({
+      sessionsDir: path.resolve(SESSIONS_DIR),
+      io: files.io,
+      flat: true,
+      fileName: onlyMine,
+    });
+    expect((await finder.recent(NOW)).map((ref) => path.basename(ref.path))).toEqual([
+      "a.mine.jsonl",
+    ]);
+    expect(files.count(undefined, (target) => target.startsWith(PROJECT_FOLDER))).toBe(0);
+  });
+
+  test("left out, every name that ends in .jsonl is still a session file's", async () => {
+    const files = memoryFiles();
+    files.write(`${SESSIONS_DIR}/a.mine.jsonl`, sessionText(SESSION_ID));
+    files.write(`${SESSIONS_DIR}/b.jsonl`, sessionText(sessionIdOf(2)));
+    const names = (await finderOf(files).recent(NOW)).map((ref) => path.basename(ref.path)).sort();
+    expect(names).toEqual(["a.mine.jsonl", "b.jsonl"]);
+  });
+});

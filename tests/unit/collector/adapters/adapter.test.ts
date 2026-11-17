@@ -65,6 +65,11 @@ import { CONTINUE_CAPABILITIES, createContinueAdapter } from "@collector/adapter
 import { continueSession } from "@collector/adapters/continue/toSession";
 import { createFxAdapter, FX_CAPABILITIES } from "@collector/adapters/fx/index";
 import { fxSession } from "@collector/adapters/fx/toSession";
+import {
+  createUnrealAgentAdapter,
+  UNREAL_AGENT_CAPABILITIES,
+} from "@collector/adapters/unreal-agent/index";
+import { unrealAgentSession } from "@collector/adapters/unreal-agent/toSession";
 import { createPiAdapter, PI_CAPABILITIES } from "@collector/adapters/pi/index";
 import { piSession } from "@collector/adapters/pi/toSession";
 import {
@@ -113,6 +118,12 @@ import {
   type QwenCodeRecord,
 } from "@core/mapping/qwen-code/qwenCodeMapping";
 import { mapStatusFileStatus } from "@core/mapping/statusFileMapping";
+import { mapUnrealAgentStatus } from "@core/mapping/unreal-agent/unrealAgentMapping";
+import {
+  applyUnrealAgentLine,
+  startUnrealAgentReplay,
+  type UnrealAgentItem,
+} from "@core/mapping/unreal-agent/unrealAgentReplay";
 import { CAPABILITIES, type SessionStatus, type SourceCapabilities } from "@core/sessions/session";
 import { memoryFiles } from "@tests/support/adapters/codexAdapter";
 
@@ -140,6 +151,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Kimchi", KIMCHI_CAPABILITIES],
   ["Prime Agent", PRIME_AGENT_CAPABILITIES],
   ["fx", FX_CAPABILITIES],
+  ["Unreal Agent", UNREAL_AGENT_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -239,6 +251,9 @@ test("each adapter carries its own declaration, for the poller to pass on", () =
     expect(createFxAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities).toBe(
       FX_CAPABILITIES,
     );
+    expect(
+      createUnrealAgentAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
+    ).toBe(UNREAL_AGENT_CAPABILITIES);
   }
   expect(createMistralVibeAdapter({ env: {}, homeDir: home, io: files.io }).capabilities).toBe(
     MISTRAL_VIBE_CAPABILITIES,
@@ -1229,6 +1244,86 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(FX_CAPABILITIES.jump.level).toBe("no");
     expect(FX_CAPABILITIES.stop.level).toBe("no");
     expect(FX_CAPABILITIES.answer.level).toBe("no");
+  });
+
+  test("Unreal Agent: a session is working, idle, finished, failed or unknown, and never waiting", () => {
+    const turn = "00000003-c3d4-4e5f-8a9b-000000000001";
+    const op = "00000005-c3d4-4e5f-8a9b-000000000001";
+    const files: UnrealAgentItem[][] = [
+      [{ kind: "turn", id: turn, type: "regular" }],
+      [
+        { kind: "turn", id: turn, type: "regular" },
+        { kind: "reply", turnId: turn, outcome: "complete" },
+      ],
+      [
+        { kind: "turn", id: turn, type: "regular" },
+        { kind: "reply", turnId: turn, outcome: "failed" },
+      ],
+      [
+        { kind: "turn", id: turn, type: "regular" },
+        { kind: "reply", turnId: turn, outcome: "complete" },
+        { kind: "status-created", ids: [op] },
+      ],
+      [{ kind: "input", input: "hard" }],
+      [{ kind: "unread" }],
+    ];
+    const shown: SessionStatus[] = [];
+    for (const items of files) {
+      const replay = startUnrealAgentReplay(true);
+      for (const [index, item] of items.entries()) {
+        applyUnrealAgentLine(replay, { kind: "item", sequence: index + 1, at: NOW - 60_000, item });
+      }
+      for (const liveness of ["closed", "may-be-open", "cannot-tell"] as const) {
+        for (const writtenAt of [NOW - 10_000, NOW - 60 * 60_000]) {
+          shown.push(mapUnrealAgentStatus({ replay, liveness, writtenAt, now: NOW }));
+        }
+      }
+    }
+    expect(statuses(shown)).toEqual(new Set(["working", "idle", "finished", "failed", "unknown"]));
+    expect(UNREAL_AGENT_CAPABILITIES["working-and-idle"].level).toBe("partly");
+    expect(UNREAL_AGENT_CAPABILITIES["needs-you"].level).toBe("no");
+    expect(UNREAL_AGENT_CAPABILITIES.failed.level).toBe("partly");
+    expect(UNREAL_AGENT_CAPABILITIES.finished.level).toBe("partly");
+  });
+
+  test("Unreal Agent: a session has its folder's name and its file's last write, and no tokens, jump, stop or link", () => {
+    const replay = startUnrealAgentReplay(true);
+    applyUnrealAgentLine(replay, {
+      kind: "item",
+      sequence: 1,
+      at: NOW - 20_000,
+      item: { kind: "turn", id: "00000003-c3d4-4e5f-8a9b-000000000001", type: "regular" },
+    });
+    const session = unrealAgentSession({
+      file: {
+        id: "00000001-c3d4-4e5f-8a9b-000000000001",
+        createdAt: NOW - 60_000,
+        folder: "/Users/example/code/demo",
+        replay,
+        tooLong: false,
+        writtenAt: NOW - 10_000,
+      },
+      liveness: "may-be-open",
+      writtenAt: NOW - 10_000,
+      now: NOW,
+    });
+    expect(session).toMatchObject({
+      id: "unreal-agent:00000001-c3d4-4e5f-8a9b-000000000001",
+      source: "unreal-agent",
+      name: "demo",
+      status: "working",
+      lastWriteAt: NOW - 10_000,
+    });
+    for (const absent of ["tokens", "jump", "stop", "pid", "alive", "ask"]) {
+      expect(session, absent).not.toHaveProperty(absent);
+    }
+    expect(session.links).toEqual({});
+    expect(UNREAL_AGENT_CAPABILITIES.names.level).toBe("partly");
+    expect(UNREAL_AGENT_CAPABILITIES["quiet-for"].level).toBe("yes");
+    expect(UNREAL_AGENT_CAPABILITIES.tokens.level).toBe("no");
+    expect(UNREAL_AGENT_CAPABILITIES.jump.level).toBe("no");
+    expect(UNREAL_AGENT_CAPABILITIES.stop.level).toBe("no");
+    expect(UNREAL_AGENT_CAPABILITIES.answer.level).toBe("no");
   });
 
   test("Prime Agent: a working session has the time of its file's last write, and no tokens, jump, stop or link", () => {

@@ -228,6 +228,19 @@ export const EMPTY_PRIME_AGENT_HOME = path.join(
 export const EMPTY_FX_HOME = path.join(os.tmpdir(), "agent-lookout-test-no-fx", "fx");
 
 /**
+ * An empty folder for the Unreal Agent adapter to read in place of
+ * `~/.local/state/unreal-agent/sessions`, so that a collector a test builds
+ * from `process.env` finds no sessions: `nodeSetup.ts` makes it and names it
+ * there. Nothing is ever written in it. A test that builds an environment of
+ * its own names a `tempDir` there.
+ */
+export const EMPTY_UNREAL_AGENT_SESSIONS = path.join(
+  os.tmpdir(),
+  "agent-lookout-test-no-unreal-agent",
+  "sessions",
+);
+
+/**
  * An empty folder that stands in for the home folder of the person running the
  * tests: `nodeSetup.ts` makes it and names it in `HOME` and `USERPROFILE`, so
  * `os.homedir()` is never the real home, and no `~/.claude`, `~/.codex`,

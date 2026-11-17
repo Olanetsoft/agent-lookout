@@ -7,9 +7,9 @@ import { MACHINE } from "@site-tour/feed/hour";
  * what its agent can report. This computer's sources come first, in the
  * collector's order: Claude Code, Codex, the Antigravity CLI, Antigravity,
  * Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi,
- * Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent and
- * fx, none of the eighteen installed here, and status files. Then the other
- * machine, connected over SSH.
+ * Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx
+ * and Unreal Agent, none of the nineteen installed here, and status files.
+ * Then the other machine, connected over SSH.
  *
  * The adapters run in Node, so their declarations cannot be bundled into the
  * page. Their words are written here in their place, and a test holds each
@@ -890,6 +890,48 @@ export const FX_CAPABILITIES: SourceCapabilities = {
   },
 };
 
+export const UNREAL_AGENT_CAPABILITIES: SourceCapabilities = {
+  "working-and-idle": {
+    level: "partly",
+    reason:
+      "From its file, on macOS and Linux. Unknown after 30 quiet minutes, or when more sessions look open than programs run.",
+  },
+  "needs-you": {
+    level: "no",
+    reason:
+      "Unreal Agent asks no approval before a command runs and has no tool that asks you anything, so it never waits for you.",
+  },
+  finished: {
+    level: "partly",
+    reason:
+      "On Ctrl+C, when a runner ends idle, or once ps shows no Unreal Agent program that started before the last write.",
+  },
+  failed: {
+    level: "partly",
+    reason:
+      "When the newest reply failed, was refused or hit its token limit. A request that fails outright shows working, then finished.",
+  },
+  names: {
+    level: "partly",
+    reason:
+      "The folder's, once a command has run in it, else the session's id. Unreal Agent gives a session no name.",
+  },
+  jump: { level: "no", reason: "A session's file names no process or terminal." },
+  "quiet-for": { level: "yes" },
+  tokens: {
+    level: "no",
+    reason: "A reply's counts are on its line, after its text, and are not read.",
+  },
+  stop: {
+    level: "no",
+    reason: "A session's file names no process that Agent Lookout could confirm and stop.",
+  },
+  answer: {
+    level: "no",
+    reason: "Unreal Agent never asks for an approval, so there is nothing to answer.",
+  },
+};
+
 /**
  * What Claude Code on the other machine can report, as it is seen from here:
  * what its Agent Lookout says, with Jump, Stop and Answer as no, since each
@@ -1420,6 +1462,26 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
       checkedAt,
     },
     {
+      // The adapter's card on a Mac when Unreal Agent is not installed: its folder is looked for, and nothing more.
+      id: "unreal-agent",
+      label: "Unreal Agent",
+      state: "unavailable",
+      detail:
+        "Unreal Agent was not found: there is no ~/.local/state/unreal-agent/sessions folder. Agent Lookout looks again every minute.",
+      watching: [
+        { label: "Sessions folder", value: "~/.local/state/unreal-agent/sessions" },
+        { label: "Read", value: "not found" },
+        { label: "Process check", value: "ps -A -o lstart=,comm=" },
+        {
+          label: "Process check run",
+          value:
+            "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no Unreal Agent",
+        },
+      ],
+      capabilities: UNREAL_AGENT_CAPABILITIES,
+      checkedAt,
+    },
+    {
       id: "status-files",
       label: "Status files",
       state: "ok",
@@ -1466,6 +1528,7 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "Kimchi there", value: "Not found" },
         { label: "Prime Agent there", value: "Not found" },
         { label: "fx there", value: "Not found" },
+        { label: "Unreal Agent there", value: "Not found" },
         { label: "Status files there", value: "Not set up" },
       ],
       agents: [{ label: "Claude Code", capabilities: CLAUDE_CODE_THERE_CAPABILITIES }],

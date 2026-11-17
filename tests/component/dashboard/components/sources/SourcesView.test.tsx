@@ -300,6 +300,7 @@ test.each([
       "Kimchi",
       "Prime Agent",
       "fx",
+      "Unreal Agent",
       "Status files",
       "Claude Code on devbox",
     ]);
@@ -327,6 +328,7 @@ test.each([
       "No",
       "Yes",
       "Yes",
+      "No",
       "No",
       "No",
       "No",

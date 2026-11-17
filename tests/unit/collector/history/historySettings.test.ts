@@ -130,6 +130,10 @@ test("the fingerprint of the folders sessions are read from names none of them, 
   expect(sourcesFingerprint({ FX_HOME: "/Users/someone", HOME: "/Users/someone/" }, HOME)).toBe(
     defaults,
   );
+  // An XDG_STATE_HOME that is not absolute is passed over, as Unreal Agent passes it.
+  for (const value of ["", "relative/state", "~/state"]) {
+    expect(sourcesFingerprint({ XDG_STATE_HOME: value }, HOME), value).toBe(defaults);
+  }
   // Agent Lookout's names the root outright. A home folder is a whole path,
   // with a drive on Windows, as the system gives it.
   const home = path.resolve(HOME);
@@ -200,6 +204,8 @@ test("the fingerprint of the folders sessions are read from names none of them, 
     sourcesFingerprint({ FX_HOME: "/tmp/fx-home" }, HOME),
     // Through a `.` or `..`, nothing of fx's is read.
     sourcesFingerprint({ FX_HOME: "/tmp/a/../fx" }, HOME),
+    sourcesFingerprint({ AGENT_LOOKOUT_UNREAL_AGENT_SESSION_DIR: "/tmp/empty-unreal-agent" }, HOME),
+    sourcesFingerprint({ XDG_STATE_HOME: path.resolve("/tmp/state") }, HOME),
     sourcesFingerprint({}, "/Users/someone-else"),
   ];
   for (const other of others) expect(other).not.toBe(defaults);

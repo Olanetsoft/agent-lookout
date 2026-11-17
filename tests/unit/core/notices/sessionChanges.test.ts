@@ -769,6 +769,7 @@ describe("over a long run of snapshots", () => {
     kimchi: [],
     "prime-agent": [],
     fx: [],
+    "unreal-agent": [],
     "status-files": [F],
   };
   const sourceOf = (id: string): SourceId =>

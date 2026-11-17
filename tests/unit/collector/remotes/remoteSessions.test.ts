@@ -21,6 +21,7 @@ import * as mistralVibe from "@collector/adapters/mistral-vibe/index";
 import * as opencode from "@collector/adapters/opencode/index";
 import * as qwenCode from "@collector/adapters/qwen-code/index";
 import * as statusFiles from "@collector/adapters/status-files/index";
+import * as unrealAgent from "@collector/adapters/unreal-agent/index";
 import {
   KNOWN_WAYS,
   MAX_REMOTE_PARTS,
@@ -347,6 +348,7 @@ describe("readRemoteSnapshot", () => {
       "prime-agent": primeAgent,
       "qwen-code": qwenCode,
       "status-files": statusFiles,
+      "unreal-agent": unrealAgent,
     };
     for (const [source, module] of Object.entries(modules)) {
       expect(ways(module).length, source).toBeGreaterThan(0);

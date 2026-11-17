@@ -258,7 +258,7 @@ Nothing is read, and `sqlite3` and `ps` are not run, as for OpenCode, Hermes Age
 - A rename moves `updated_at`, so a session closed long ago can come back for a day.
 - A folder copied with its `.crush` shows its sessions twice, once for each folder, each with an id of its own.
 - A project not read is named on the card by its folder's name alone, so two folders of one name read alike.
-- On another machine, its sources share 60 parts. Today they name at most 55, these 20 projects, Hermes Agent's 17 profiles and one for each of the other 18 sources, so a database that fails there leaves its sessions as they were here too. Past 60, which a later version there could reach, each source is compared as a whole, Hermes Agent's profiles too, so a database that fails there shows its sessions as ended here.
+- On another machine, its sources share 60 parts. Today they name at most 57, these 20 projects, Hermes Agent's 17 profiles and one for each of the other 20 sources, so a database that fails there leaves its sessions as they were here too. Past 60, which a later version there could reach, each source is compared as a whole, Hermes Agent's profiles too, so a database that fails there shows its sessions as ended here.
 - `sqlite3 -json` needs SQLite 3.33 or newer. An older one is a failed read.
 - A Crush older than v0.25.0 keeps no list, so nothing of it is read.
 

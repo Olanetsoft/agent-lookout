@@ -23,6 +23,7 @@ import { piSessionsDirFor } from "../adapters/pi/index.ts";
 import { primeAgentAgentDirFor, primeAgentSessionsDirFor } from "../adapters/prime-agent/index.ts";
 import { qwenFolders } from "../adapters/qwen-code/index.ts";
 import { STATUS_DIR_ENV } from "../adapters/status-files/index.ts";
+import { unrealAgentSessionsDirFor } from "../adapters/unreal-agent/index.ts";
 import { tildify } from "../files/paths.ts";
 
 /** Set to `off` and nothing is written: the history is held in memory only, and goes when Agent Lookout stops. */
@@ -67,7 +68,7 @@ export function readHistorySetup(
 }
 
 /**
- * The folders the seventeen other sources read, and OpenCode's, Goose's, Kilo
+ * The folders the eighteen other sources read, and OpenCode's, Goose's, Kilo
  * Code's and MiMo Code's databases,
  * as the adapters work them out on this system, made into a short fingerprint that
  * names none of them. Two copies of Agent Lookout with the same one see the
@@ -107,6 +108,7 @@ export function sourcesFingerprint(
     primeAgentSessionsDirFor(env, homeDir),
     primeAgentAgentDirFor(env, homeDir),
     fxSessionsDirFor(env, homeDir) ?? "",
+    unrealAgentSessionsDirFor(env, homeDir),
   ];
   return createHash("sha256").update(JSON.stringify(folders)).digest("hex").slice(0, 32);
 }

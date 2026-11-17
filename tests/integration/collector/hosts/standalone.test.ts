@@ -68,13 +68,13 @@ async function distFolder(withPage: boolean): Promise<string> {
  * Settings that name nothing on this machine: an empty Claude home, a
  * stand-in `claude` that lists no sessions, an empty Codex home, empty
  * Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent,
- * Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent and fx
- * folders, an empty folder of status files and tmux turned off, on a free port. The poller runs in
+ * Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx and
+ * Unreal Agent folders, an empty folder of status files and tmux turned off, on a free port. The poller runs in
  * this process, so anything less would read the real `~/.claude`, `~/.codex`, `~/.vibe`,
  * `~/.gemini`, `~/.local/share/opencode`, `~/.qwen`, `~/.hermes`, `~/.cline`,
  * `~/.local/share/goose`, `~/.pi`, `~/.kimi-code`, `~/.continue`, `~/.local/share/crush`,
- * `~/.local/share/kilo`, `~/.local/share/mimocode`, `~/.config/kimchi`, `~/.prime/agent`, `~/.fx` and
- * `~/.agent-lookout` and run the real `claude`.
+ * `~/.local/share/kilo`, `~/.local/share/mimocode`, `~/.config/kimchi`, `~/.prime/agent`, `~/.fx`,
+ * `~/.local/state/unreal-agent` and `~/.agent-lookout` and run the real `claude`.
  */
 async function isolatedEnv(overrides: Record<string, string> = {}) {
   const claudeHome = await makeClaudeHome();
@@ -97,6 +97,7 @@ async function isolatedEnv(overrides: Record<string, string> = {}) {
   const kimchiHome = await tempDir();
   const primeAgentHome = await tempDir();
   const fxHome = await tempDir();
+  const unrealAgentSessionDir = await tempDir();
   const statusDir = await tempDir();
   const stub = await writeStub("echo '[]'");
   return {
@@ -120,6 +121,7 @@ async function isolatedEnv(overrides: Record<string, string> = {}) {
     kimchiHome,
     primeAgentHome,
     fxHome,
+    unrealAgentSessionDir,
     statusDir,
     env: {
       AGENT_LOOKOUT_CLAUDE_HOME: claudeHome,
@@ -143,6 +145,7 @@ async function isolatedEnv(overrides: Record<string, string> = {}) {
       AGENT_LOOKOUT_KIMCHI_HOME: kimchiHome,
       AGENT_LOOKOUT_PRIME_AGENT_HOME: primeAgentHome,
       AGENT_LOOKOUT_FX_HOME: fxHome,
+      AGENT_LOOKOUT_UNREAL_AGENT_SESSION_DIR: unrealAgentSessionDir,
       AGENT_LOOKOUT_STATUS_DIR: statusDir,
       AGENT_LOOKOUT_TMUX: "off",
       AGENT_LOOKOUT_PORT: "0",
@@ -224,6 +227,7 @@ describe("the standalone host", () => {
       kimchiHome,
       primeAgentHome,
       fxHome,
+      unrealAgentSessionDir,
       statusDir,
     } = await isolatedEnv();
     const host = await start(await distFolder(true), env);
@@ -432,6 +436,14 @@ describe("the standalone host", () => {
             state: process.platform === "win32" ? "unavailable" : "ok",
             watching: expect.arrayContaining([
               { label: "Sessions folder", value: path.join(fxHome, "sessions", "v2") },
+            ]),
+          },
+          {
+            id: "unreal-agent",
+            // Nothing of Unreal Agent's is read on Windows.
+            state: process.platform === "win32" ? "unavailable" : "ok",
+            watching: expect.arrayContaining([
+              { label: "Sessions folder", value: unrealAgentSessionDir },
             ]),
           },
           {

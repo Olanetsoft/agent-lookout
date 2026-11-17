@@ -55,6 +55,7 @@ async function pollOnce(home: string, platform: NodeJS.Platform) {
       AGENT_LOOKOUT_KIMCHI_HOME: await tempDir(),
       AGENT_LOOKOUT_PRIME_AGENT_HOME: await tempDir(),
       AGENT_LOOKOUT_FX_HOME: home,
+      AGENT_LOOKOUT_UNREAL_AGENT_SESSION_DIR: await tempDir(),
       AGENT_LOOKOUT_STATUS_DIR: path.join(await tempDir(), "no-status-files-here"),
       AGENT_LOOKOUT_TMUX: "off",
       AGENT_LOOKOUT_TERMINAL_JUMP: "off",
