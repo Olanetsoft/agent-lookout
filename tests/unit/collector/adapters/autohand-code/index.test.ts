@@ -784,6 +784,24 @@ describe("which sessions are listed", () => {
       statusSince: NOW,
     });
   });
+
+  test("a copy you never resumed is opened once while it is unchanged, not again on each sweep", async () => {
+    const pc = computer();
+    session(pc, importedMetadata({ importedAt: NOW - MINUTE }));
+    const adapter = pc.adapter();
+    for (let sweep = 0; sweep < 3; sweep += 1) {
+      expect((await adapter.poll()).sessions).toEqual([]);
+      // A poll between two sweeps does not look its folder up.
+      pc.clock.advance(2 * SECOND);
+      expect((await adapter.poll()).sessions).toEqual([]);
+      pc.clock.advance(59 * SECOND);
+    }
+    expect(pc.files.opened()).toEqual([asWritten(metadataPath())]);
+    // Written again, it is opened on the next sweep.
+    session(pc, importedMetadata({ importedAt: NOW - MINUTE }));
+    expect((await adapter.poll()).sessions).toEqual([]);
+    expect(pc.files.opened()).toHaveLength(2);
+  });
 });
 
 describe("names", () => {

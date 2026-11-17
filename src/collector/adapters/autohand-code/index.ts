@@ -449,10 +449,13 @@ export function createAutohandCodeAdapter(options: AutohandCodeAdapterOptions = 
     const sweep = sweepDue(checkedAt);
     if (sweep) sweptAt = checkedAt;
     const stillSettled = new Set<string>();
+    /** The settled folders not looked up on this poll, which keep what was read of their metadata.json. */
+    const notLookedUp = new Set<string>();
     const folders = new Map<string, Folder>();
     for (const id of (names ?? []).filter(isSessionFolderName).sort()) {
       if (settled.has(id) && !sweep && !bySession.has(id) && !memory.has(id)) {
         stillSettled.add(id);
+        notLookedUp.add(id);
         continue;
       }
       const folder = await lookUpFolder(id);
@@ -645,7 +648,9 @@ export function createAutohandCodeAdapter(options: AutohandCodeAdapterOptions = 
 
     settled = stillSettled;
     memory = nextMemory;
-    metadata.keepOnly(read);
+    // A folder not looked up keeps its read, so an unchanged metadata.json, as of
+    // a copy you never resumed, is not opened again on the next sweep.
+    metadata.keepOnly(new Set([...read, ...notLookedUp]));
     previousAt = checkedAt;
 
     const basis = withHeartbeats ? BASIS : BASIS_WITHOUT_HEARTBEATS;
