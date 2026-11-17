@@ -243,10 +243,11 @@ const BUSY: readonly SessionStatus[] = ["needs-you", "working", "idle"];
  * lists `sessions` and looks up each session's folder and its
  * `metadata.json` with `lstat`: those of the sessions shown, those a heartbeat
  * names, any new folder, and every other folder once a minute. A
- * `metadata.json` is opened (`metadata.ts`) only when it changed and its
- * session is shown: written in the last day, or named by a heartbeat of the
- * last day. A session shows only when it has a folder in `sessions`, so a run
- * with --ephemeral, which keeps nothing, is left out.
+ * `metadata.json` is opened (`metadata.ts`) only when it changed and was
+ * written in the last day, or a heartbeat of the last day names its session,
+ * even for a copy you never resumed, which only that file tells and which is
+ * then left out. A session shows only when it has a folder in `sessions`, so
+ * a run with --ephemeral, which keeps nothing, is left out.
  *
  * Whether the process a heartbeat names runs is asked with signal 0, which
  * sends it nothing. Autohand Code deletes a stale heartbeat whenever any of its

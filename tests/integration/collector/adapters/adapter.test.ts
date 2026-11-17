@@ -653,4 +653,14 @@ test("PRIVACY.md and the Autohand Code notes name what is read and from which ve
   for (const field of ["v0.9.11", "waiting_input", "signal 0", "--ephemeral"]) {
     expect(notes, field).toContain(field);
   }
+  // A copy you never resumed has its metadata.json opened and is then left
+  // out, so no page says a metadata.json is opened only for a session shown.
+  const guide =
+    (await readFile(GUIDE, "utf8"))
+      .split("\n")
+      .find((one) => one.startsWith("For Autohand Code it runs no Autohand Code program")) ?? "";
+  expect(guide).toContain("metadata.json");
+  for (const text of [section, notes, guide]) {
+    expect(text).not.toContain("its session is shown");
+  }
 });
