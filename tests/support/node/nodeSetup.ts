@@ -25,6 +25,7 @@ import {
   EMPTY_HERMES_HOME,
   EMPTY_HOME,
   EMPTY_KILO_HOME,
+  EMPTY_MIMO_CODE_HOME,
   EMPTY_KIMI_CODE_HOME,
   EMPTY_CONTINUE_HOME,
   EMPTY_OPENCODE_HOME,
@@ -157,6 +158,12 @@ delete process.env.CRUSH_GLOBAL_DATA;
 // `XDG_DATA_HOME` aside. A test of the adapter names a folder of its own.
 mkdirSync(EMPTY_KILO_HOME, { recursive: true });
 process.env.AGENT_LOOKOUT_KILO_HOME = EMPTY_KILO_HOME;
+
+// Nor MiMo Code's, in `~/.local/share/mimocode`: the adapter is pointed at an
+// empty folder, which also sets MiMo Code's own `MIMOCODE_HOME`, `MIMOCODE_DB`
+// and `XDG_DATA_HOME` aside. A test of the adapter names a folder of its own.
+mkdirSync(EMPTY_MIMO_CODE_HOME, { recursive: true });
+process.env.AGENT_LOOKOUT_MIMO_CODE_HOME = EMPTY_MIMO_CODE_HOME;
 
 // And `os.homedir()` is an empty folder, never the home of the person running
 // the tests, so a collector whose environment forgets to name a folder of an

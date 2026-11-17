@@ -16,6 +16,7 @@ import { GOOSE_CAPABILITIES } from "@collector/adapters/goose/index";
 import { HERMES_AGENT_CAPABILITIES } from "@collector/adapters/hermes-agent/index";
 import { KILO_CODE_CAPABILITIES } from "@collector/adapters/kilo-code/index";
 import { KIMI_CODE_CAPABILITIES } from "@collector/adapters/kimi-code/index";
+import { MIMO_CODE_CAPABILITIES } from "@collector/adapters/mimo-code/index";
 import { MISTRAL_VIBE_CAPABILITIES } from "@collector/adapters/mistral-vibe/index";
 import { OPENCODE_CAPABILITIES } from "@collector/adapters/opencode/index";
 import { PI_CAPABILITIES } from "@collector/adapters/pi/index";
@@ -45,6 +46,7 @@ import { gooseAdapterFor } from "@tests/support/adapters/goose/gooseAdapter";
 import { hermesAgentAdapterFor } from "@tests/support/adapters/hermesAgentAdapter";
 import { kiloCodeAdapterFor } from "@tests/support/adapters/kilo-code/kiloCodeAdapter";
 import { kimiCodeAdapterFor } from "@tests/support/adapters/kimi-code/kimiCodeAdapter";
+import { mimoCodeAdapterFor } from "@tests/support/adapters/mimo-code/mimoCodeAdapter";
 import { vibeAdapterFor } from "@tests/support/adapters/mistralVibeAdapter";
 import { opencodeAdapterFor } from "@tests/support/adapters/opencodeAdapter";
 import { piAdapterFor } from "@tests/support/adapters/pi/piAdapter";
@@ -74,6 +76,7 @@ test("each source says what its agent can report in its adapter's own words", ()
   expect(tour.CONTINUE_CAPABILITIES).toEqual(CONTINUE_CAPABILITIES);
   expect(tour.CRUSH_CAPABILITIES).toEqual(CRUSH_CAPABILITIES);
   expect(tour.KILO_CODE_CAPABILITIES).toEqual(KILO_CODE_CAPABILITIES);
+  expect(tour.MIMO_CODE_CAPABILITIES).toEqual(MIMO_CODE_CAPABILITIES);
   expect(tour.STATUS_FILE_CAPABILITIES).toEqual(STATUS_FILE_CAPABILITIES);
 });
 
@@ -96,6 +99,7 @@ test("this computer's sources come in the collector's order", () => {
     "continue",
     "crush",
     "kilo-code",
+    "mimo-code",
     "status-files",
   ]);
 });
@@ -289,6 +293,18 @@ test("Kilo Code's card is the one its adapter shows on a computer without it", a
   expect(sessions).toEqual([]);
 });
 
+test("MiMo Code's card is the one its adapter shows on a computer without it", async () => {
+  const adapter = mimoCodeAdapterFor(memoryFiles());
+  const { health, sessions } = await adapter.poll();
+  const { capabilities, ...card } = tour
+    .sourcesAt(0, 1, "0.2.6")
+    .find((source) => source.id === "mimo-code")!;
+  // The poller adds what the adapter can report to each health it gives.
+  expect(card).toEqual({ ...health, checkedAt: card.checkedAt });
+  expect(capabilities).toEqual(adapter.capabilities);
+  expect(sessions).toEqual([]);
+});
+
 test("Kimi Code's card is the one its adapter shows on a computer without it", async () => {
   const adapter = kimiCodeAdapterFor(memoryFiles());
   const { health, sessions } = await adapter.poll();
@@ -409,6 +425,12 @@ test("the other machine's agents and its row for each source are what this compu
           capabilities: KILO_CODE_CAPABILITIES,
         },
         {
+          id: "mimo-code",
+          label: "MiMo Code",
+          state: "unavailable",
+          capabilities: MIMO_CODE_CAPABILITIES,
+        },
+        {
           id: "status-files",
           label: "Status files",
           state: "not-set-up",
@@ -447,7 +469,7 @@ test("the other machine's card names the ssh command the tunnel runs, as it runs
  * soon as it changes, so it names an agent at the release that ships it, and
  * the agent leaves this list then.
  */
-const NOT_ON_THE_PAGE_YET = new Set<string>();
+const NOT_ON_THE_PAGE_YET = new Set<string>(["MiMo Code"]);
 
 test("the page's Works with names every agent the tour's Sources reads", () => {
   const works = /<div class="works">([\s\S]*?)<\/div\s*>/.exec(page)?.[1] ?? "";

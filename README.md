@@ -4,7 +4,7 @@ See every AI coding agent running on your computer on one page, and which one is
 
 [![npm](https://img.shields.io/npm/v/agent-lookout)](https://www.npmjs.com/package/agent-lookout) [![CI](https://img.shields.io/github/actions/workflow/status/Olanetsoft/agent-lookout/ci.yml?branch=main&label=CI)](https://github.com/Olanetsoft/agent-lookout/actions/workflows/ci.yml) [![License](https://img.shields.io/npm/l/agent-lookout)](LICENSE) ![Node.js](https://img.shields.io/node/v/agent-lookout)
 
-It finds your Claude Code, Codex, Antigravity, Antigravity CLI, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush and Kilo Code sessions on its own, with no setup. It never starts a session, and it stops one or answers a prompt only when you press the button, or by a rule you set.
+It finds your Claude Code, Codex, Antigravity, Antigravity CLI, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code and MiMo Code sessions on its own, with no setup. It never starts a session, and it stops one or answers a prompt only when you press the button, or by a rule you set.
 
 [Install](#install) · [Download for Mac](https://github.com/Olanetsoft/agent-lookout/releases/latest) · [Guide](docs/GUIDE.md) · [Privacy](#privacy) · [Changelog](CHANGELOG.md) · [Website](https://www.agentlookout.app)
 
@@ -41,7 +41,7 @@ Then open http://127.0.0.1:4777. Your sessions appear within a few seconds.
 - **Needs you:** the sessions waiting for your permission or an answer, longest first, with what a Claude Code session is asking.
 - **Sessions:** everything else, by status, by repository or on a board, with folder and branch.
 - **Answer and act:** Allow or Deny a Claude Code prompt, jump to its terminal or editor, or stop it after you confirm.
-- **Details:** Claude Code, Codex, Antigravity, Gemini CLI, OpenCode 1.x and Qwen Code sessions show what they last said, and how many tokens the newest reply took. Mistral Vibe and Kilo Code sessions show the tokens.
+- **Details:** Claude Code, Codex, Antigravity, Gemini CLI, OpenCode 1.x and Qwen Code sessions show what they last said, and how many tokens the newest reply took. Mistral Vibe, Kilo Code and MiMo Code sessions show the tokens.
 - **Notifications:** on your desktop, by email, by webhook or on your phone, when a session waits or finishes. All off until you turn them on.
 - **Your own agents:** any agent that writes one small JSON file per session shows up too.
 
@@ -71,6 +71,7 @@ Any other agent can show up by writing one small file per session. [Your own age
 | Continue        | No        | No     | No        | No     | No     | No     |
 | Crush           | No        | No     | No        | No     | No     | No     |
 | Kilo Code       | Partly    | No     | No        | Yes    | No     | No     |
+| MiMo Code       | Partly    | No     | No        | Yes    | No     | No     |
 | Status files    | Partly    | No     | Partly    | No     | No     | No     |
 
 Codex doesn't record when it waits for your approval, so a waiting session shows as working, and after 5 minutes its row says how long it has been quiet. The Antigravity CLI and the Antigravity app show as needing you while they ask you to approve a step, but not what they ask. [What each agent can report](docs/GUIDE.md#what-each-agent-can-report) explains every Partly and No.
@@ -98,6 +99,8 @@ Continue support reads the list in `~/.continue/sessions`, which its `cn` comman
 Crush support reads `.crush/crush.db` in the projects Crush lists in `~/.local/share/crush/projects.json`, on macOS and Linux. A session shows as unknown while a Crush program runs and as finished once none does, as nothing ties a session to a process, and takes its folder's name. It was built from its source at v0.99.0 and has not yet been checked on a computer running it.
 
 Kilo Code support reads its database, `~/.local/share/kilo/kilo.db`, on macOS and Linux, the way OpenCode's is read: Kilo Code keeps the same tables. A session shows as needing you while Kilo Code asks you a question. It was built from its source at v7.8.27 and has not yet been checked on a computer running it.
+
+MiMo Code support reads its database, `~/.local/share/mimocode/mimocode.db`, on macOS and Linux, the way OpenCode's is read. A session shows as needing you while MiMo Code asks you a question or to approve a plan, and as working while one of its subagents works. It was built from its source at v0.1.17 and has not yet been checked on a computer running it.
 
 |                                                    | macOS | Linux | Windows |
 | -------------------------------------------------- | ----- | ----- | ------- |

@@ -7,6 +7,7 @@ import {
   MESSAGES_FOR_TOKENS,
   OPENCODE_2_SESSIONS_QUERY,
   PROBE_QUERY,
+  probeQueryFor,
   QUERY_WINDOW_MS,
   readSchema,
   readSessionRows,
@@ -644,5 +645,180 @@ describe("readSchema, for an agent that never writes session_v2", () => {
     // OpenCode's own reads both, as it did.
     expect(readSchema(probeJson("v1+v2"))).toEqual({ layout: "both" });
     expect(readSchema(probeJson("v1+v2"), { v2: true })).toEqual({ layout: "both" });
+  });
+});
+
+// MiMo Code's database is laid out as OpenCode 1.x's, with its subagents'
+// messages in the session, a row of `actor_registry` for each actor, the main
+// agent's too, and a title taken from the prompt until a model names it, or
+// copied into a fork (`../mimo-code/index.ts`).
+describe("the 1.x question with extras", () => {
+  const extras = {
+    mainAgent: "main",
+    actors: true,
+    titleSources: ["generated"],
+    renamedSources: ["user"],
+  };
+  const TITLE =
+    "CASE WHEN s.title_source IN ('generated') OR (s.title_source IN ('user') AND typeof(s.title_revision) = 'integer' AND s.title_revision > 0) THEN substr(s.title, 1, 1000) END AS title";
+  const mimo = v1SessionsQuery({ asking: ["question", "plan_exit"], idle: [] }, extras);
+
+  test("with none is the question it was, and the probe is PROBE_QUERY", () => {
+    expect(v1SessionsQuery(OPENCODE_TOOLS, {})).toBe(SESSIONS_QUERY);
+    expect(probeQueryFor({})).toBe(PROBE_QUERY);
+    expect(probeQueryFor()).toBe(PROBE_QUERY);
+    for (const never of [
+      "agent_id",
+      "actor_registry",
+      "title_source",
+      "title_revision",
+      "a_active_at",
+    ]) {
+      expect(SESSIONS_QUERY, never).not.toContain(never);
+      expect(PROBE_QUERY, never).not.toContain(never);
+    }
+  });
+
+  test("reads the newest message, the newest prompt and the counted reply of the main agent alone", () => {
+    expect(mimo).toContain(
+      "LEFT JOIN message m ON m.id = (SELECT x.id FROM message x WHERE x.session_id = s.id AND x.agent_id = 'main' ORDER BY x.time_created DESC, x.id DESC LIMIT 1)",
+    );
+    expect(mimo).toContain(
+      "(SELECT u.time_created FROM message u WHERE u.session_id = s.id AND u.agent_id = 'main' AND CASE WHEN json_valid(u.data)",
+    );
+    expect(mimo).toContain(
+      "LEFT JOIN message r ON r.id = (SELECT y.id FROM message y WHERE y.session_id = s.id AND y.agent_id = 'main' AND (y.time_created, y.id) >= (coalesce((SELECT z.time_created FROM message z WHERE z.session_id = s.id AND z.agent_id = 'main' ORDER BY z.time_created DESC, z.id DESC LIMIT 1 OFFSET 9), 0), coalesce((SELECT z.id FROM message z WHERE z.session_id = s.id AND z.agent_id = 'main' ORDER BY z.time_created DESC, z.id DESC LIMIT 1 OFFSET 9), ''))",
+    );
+    expect(mimo.match(/agent_id/g)).toHaveLength(5);
+    // The rest is SESSIONS_QUERY's, with the asking tools OpenCode's own.
+    expect(
+      mimo
+        .replaceAll(/ AND [a-z]\.agent_id = 'main'/g, "")
+        .replace(TITLE, "substr(s.title, 1, 1000) AS title")
+        .replace(/\(SELECT max\(max\([^]*?\) AS a_active_at, /, ""),
+    ).toBe(SESSIONS_QUERY);
+  });
+
+  test("asks of an actor only its mode, status and two times, and prints only the newest time of the subagents pending or running", () => {
+    // The main agent's own row stays pending, so only a subagent's is counted.
+    expect(mimo).toContain(
+      "(SELECT max(max(CASE WHEN typeof(a.time_updated) = 'integer' THEN a.time_updated ELSE 0 END, CASE WHEN typeof(a.last_activity_time) = 'integer' THEN a.last_activity_time ELSE 0 END)) FROM actor_registry a WHERE a.session_id = s.id AND a.mode = 'subagent' AND a.status IN ('pending', 'running')) AS a_active_at,",
+    );
+    for (const never of ["description", "last_error", "instance_id", "tools", "agent "]) {
+      expect(mimo.slice(mimo.indexOf("(SELECT max(max(")), never).not.toMatch(
+        new RegExp(`a\\.${never.trim()}\\b`),
+      );
+    }
+  });
+
+  test("prints a title only for the sources named, and a user's only once renamed, so one taken from the prompt never leaves SQLite", () => {
+    expect(mimo).toContain(`${TITLE},`);
+    expect(mimo).not.toContain("'fallback'");
+    // Each of the two alone.
+    expect(v1SessionsQuery(OPENCODE_TOOLS, { titleSources: ["generated"] })).toContain(
+      "CASE WHEN s.title_source IN ('generated') THEN substr(s.title, 1, 1000) END AS title,",
+    );
+    expect(v1SessionsQuery(OPENCODE_TOOLS, { renamedSources: ["user"] })).toContain(
+      "CASE WHEN (s.title_source IN ('user') AND typeof(s.title_revision) = 'integer' AND s.title_revision > 0) THEN substr(s.title, 1, 1000) END AS title,",
+    );
+  });
+
+  test("asks nothing but fixed text, and no table that holds secrets", () => {
+    expect(mimo.replaceAll("count(*)", "").replaceAll("* 1000", "")).not.toContain("*");
+    expect(mimo).not.toMatch(/[\n?]|\$\{/);
+    expect(mimo).not.toMatch(/\b(LIKE|GLOB|REGEXP|MATCH)\b/);
+    for (const never of [
+      "account",
+      "credential",
+      "permission",
+      "todo",
+      "$.text",
+      "$.state.input",
+    ]) {
+      expect(mimo, never).not.toContain(never);
+    }
+  });
+
+  test("takes only a fixed word for the main agent and the sources of a title", () => {
+    for (const word of ["", "Main", "it's", "a b", "x)"]) {
+      expect(() => v1SessionsQuery(OPENCODE_TOOLS, { mainAgent: word }), word).toThrow();
+      expect(() => v1SessionsQuery(OPENCODE_TOOLS, { titleSources: [word] }), word).toThrow();
+      expect(() => v1SessionsQuery(OPENCODE_TOOLS, { renamedSources: [word] }), word).toThrow();
+    }
+  });
+
+  test("the probe asks for the names of the tables and of the columns of message and actor_registry", () => {
+    expect(probeQueryFor(extras)).toBe(
+      "SELECT 'table' AS kind, name FROM sqlite_master WHERE type = 'table' AND name IN ('session', 'message', 'part', 'session_v2', 'session_message', 'actor_registry') UNION ALL SELECT 'session', name FROM pragma_table_info('session') UNION ALL SELECT 'session_v2', name FROM pragma_table_info('session_v2') UNION ALL SELECT 'message', name FROM pragma_table_info('message') UNION ALL SELECT 'actor_registry', name FROM pragma_table_info('actor_registry')",
+    );
+  });
+
+  test("a 1.x layout without what the extras ask for is a version that is not read", () => {
+    const rows = (drop: string[] = []) =>
+      sqliteJson(
+        [
+          ...["session", "message", "part", "actor_registry"].map((name) => ({
+            kind: "table",
+            name,
+          })),
+          ...[
+            "id",
+            "parent_id",
+            "directory",
+            "title",
+            "title_source",
+            "title_revision",
+            "time_created",
+            "time_updated",
+            "time_archived",
+          ].map((name) => ({ kind: "session", name })),
+          { kind: "message", name: "agent_id" },
+          ...["session_id", "mode", "status", "time_updated", "last_activity_time"].map((name) => ({
+            kind: "actor_registry",
+            name,
+          })),
+        ].filter(({ kind, name }) => !drop.includes(`${kind}.${name}`)),
+      );
+    expect(readSchema(rows(), { v2: false, extras })).toEqual({ layout: "v1" });
+    for (const drop of [
+      "table.actor_registry",
+      "session.title_source",
+      "session.title_revision",
+      "message.agent_id",
+      "actor_registry.mode",
+      "actor_registry.status",
+      "actor_registry.last_activity_time",
+    ]) {
+      expect(readSchema(rows([drop]), { v2: false, extras }), drop).toEqual({
+        layout: "unsupported",
+      });
+    }
+    // A source read only once renamed needs the revision, and asks the probe of the extras.
+    const renamed = { renamedSources: ["user"] };
+    expect(probeQueryFor(renamed)).toBe(probeQueryFor(extras));
+    expect(readSchema(rows(["table.actor_registry"]), { v2: false, extras: renamed })).toEqual({
+      layout: "v1",
+    });
+    for (const drop of ["session.title_source", "session.title_revision"]) {
+      expect(readSchema(rows([drop]), { v2: false, extras: renamed }), drop).toEqual({
+        layout: "unsupported",
+      });
+    }
+    // Without extras, the same tables are OpenCode 1.x's as ever.
+    expect(readSchema(rows(["table.actor_registry", "message.agent_id"]))).toEqual({
+      layout: "v1",
+    });
+  });
+
+  test("a row keeps when a subagent was last written only when it was asked", () => {
+    const of = (fields: Record<string, unknown>) =>
+      readSessionRows(sqliteJson([answerRow({ id: A, ...fields })]))?.[0];
+    expect(of({})).not.toHaveProperty("subagentsAt");
+    expect(of({ a_active_at: NOW })?.subagentsAt).toBe(NOW);
+    expect(of({ a_active_at: 0 })?.subagentsAt).toBe(0);
+    expect(of({ a_active_at: null })?.subagentsAt).toBeNull();
+    expect(of({ a_active_at: "x".repeat(65) })?.subagentsAt).toBeUndefined();
+    // A title the question did not print is none.
+    expect(of({ title: null })?.title).toBeNull();
   });
 });

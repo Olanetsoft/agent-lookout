@@ -29,6 +29,11 @@ import {
   UNCHECKED_NOTE as KILO_CODE_UNCHECKED_NOTE,
 } from "@collector/adapters/kilo-code/index";
 import { KIMI_CODE_CAPABILITIES } from "@collector/adapters/kimi-code/index";
+import {
+  COMMAND_SHOWN as MIMO_CODE_COMMAND,
+  MIMO_CODE_CAPABILITIES,
+  UNCHECKED_NOTE as MIMO_CODE_UNCHECKED_NOTE,
+} from "@collector/adapters/mimo-code/index";
 import { MISTRAL_VIBE_CAPABILITIES } from "@collector/adapters/mistral-vibe/index";
 import {
   COMMAND_SHOWN as OPENCODE_COMMAND,
@@ -63,6 +68,9 @@ const CRUSH_NOTES = fileURLToPath(new URL("../../../../docs/adapters/crush.md", 
 const KILO_CODE_NOTES = fileURLToPath(
   new URL("../../../../docs/adapters/kilo-code.md", import.meta.url),
 );
+const MIMO_CODE_NOTES = fileURLToPath(
+  new URL("../../../../docs/adapters/mimo-code.md", import.meta.url),
+);
 
 const GUIDE_HEADING = "#### What each agent can report";
 const README_HEADING = "## Supported agents and systems";
@@ -85,6 +93,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Continue", CONTINUE_CAPABILITIES],
   ["Crush", CRUSH_CAPABILITIES],
   ["Kilo Code", KILO_CODE_CAPABILITIES],
+  ["MiMo Code", MIMO_CODE_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -210,6 +219,7 @@ test("every read Agent Lookout runs with sqlite3 that a card, PRIVACY.md or the 
     GOOSE_COMMAND,
     CRUSH_COMMAND,
     KILO_CODE_COMMAND,
+    MIMO_CODE_COMMAND,
   ]) {
     expect(command).toContain(`-cmd "${TRUSTED_SCHEMA_OFF}" <database>`);
   }
@@ -391,6 +401,39 @@ test("PRIVACY.md and the Kilo Code notes name what is read and from which versio
       "ps -A -o comm=",
     ]) {
       expect(text).toContain(field);
+    }
+  }
+});
+
+test("PRIVACY.md and the MiMo Code notes name what is read and from which version", async () => {
+  const privacy = await readFile(PRIVACY, "utf8");
+  const notes = await readFile(MIMO_CODE_NOTES, "utf8");
+  const line = (start: string) => privacy.split("\n").find((one) => one.startsWith(start)) ?? "";
+
+  const mimo = line("For MiMo Code, Agent Lookout runs");
+  expect(mimo).toContain("built from MiMo Code's source at v0.1.17");
+  expect(mimo).toContain("`ps`");
+  expect(MIMO_CODE_UNCHECKED_NOTE).toContain("v0.1.17");
+  expect(notes).toContain("v0.1.17");
+  expect(notes).toContain("MIT");
+
+  const start = privacy.indexOf("### MiMo Code's files");
+  expect(start).toBeGreaterThan(-1);
+  const section = privacy.slice(start, privacy.indexOf("\n### ", start));
+  for (const text of [section, notes]) {
+    for (const field of [
+      "~/.local/share/mimocode/mimocode.db",
+      "MIMOCODE_HOME",
+      "MIMOCODE_DB",
+      "agent_id",
+      "actor_registry",
+      "title_source",
+      "title_revision",
+      "account",
+      "control_account",
+      "ps -A -o comm=",
+    ]) {
+      expect(text, field).toContain(field);
     }
   }
 });

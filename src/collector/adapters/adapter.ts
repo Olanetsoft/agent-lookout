@@ -95,7 +95,8 @@ export interface AdapterResult {
    * The Kilo Code adapter has the OpenCode adapter's three, since it is that
    * adapter with Kilo Code's names: `database`, while `ps` shows a Kilo Code
    * program running, `database-closed`, while it shows none, and
-   * `database-without-processes`, while it cannot say.
+   * `database-without-processes`, while it cannot say. So does the MiMo Code
+   * adapter, with MiMo Code's.
    */
   basis?: string;
 }

@@ -60,6 +60,7 @@ async function serve(files: Record<string, string>) {
       AGENT_LOOKOUT_CONTINUE_HOME: await tempDir(),
       AGENT_LOOKOUT_CRUSH_HOME: await tempDir(),
       AGENT_LOOKOUT_KILO_HOME: await tempDir(),
+      AGENT_LOOKOUT_MIMO_CODE_HOME: await tempDir(),
       AGENT_LOOKOUT_STATUS_DIR: await tempDir(),
       AGENT_LOOKOUT_TMUX: "off",
       AGENT_LOOKOUT_TERMINAL_JUMP: "off",

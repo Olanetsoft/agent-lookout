@@ -2,6 +2,12 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
+## Unreleased
+
+### Added
+
+- MiMo Code sessions, from its `mimo` command, read with `sqlite3` from `~/.local/share/mimocode/mimocode.db`, or the file `MIMOCODE_DB` names, on macOS and Linux, the way OpenCode's database is read, from the main agent's messages. A session shows as needing you while MiMo Code asks you a question or to approve a plan, as working while one of its subagents works, and as finished once no `mimo` program runs. Its name is never a title MiMo Code took from your prompt. No request is made to MiMo Code's server, and no last message is read. Built from MiMo Code's source at v0.1.17 and not yet checked on a computer running it. (#77)
+
 ## 0.2.21 - 2026-11-17
 
 Kilo Code sessions show, a permission wait with no Deny or Allow says why, the Mac app's notification of a wait has Deny and Allow with the window open too, on a Mac Jump brings forward the VS Code window of a running Claude Code session, and after a restart a Hermes Agent profile or Crush project the first poll missed no longer shows its sessions as ended.

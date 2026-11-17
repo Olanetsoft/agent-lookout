@@ -161,6 +161,7 @@ async function serve(settings: Record<string, string>) {
       AGENT_LOOKOUT_CONTINUE_HOME: await tempDir(),
       AGENT_LOOKOUT_CRUSH_HOME: await tempDir(),
       AGENT_LOOKOUT_KILO_HOME: await tempDir(),
+      AGENT_LOOKOUT_MIMO_CODE_HOME: await tempDir(),
       AGENT_LOOKOUT_STATUS_DIR: path.join(await tempDir(), "no-status-files-here"),
       AGENT_LOOKOUT_TMUX: "off",
       ...settings,
@@ -187,8 +188,11 @@ const CRUSH_STATE = process.platform === "win32" ? "unavailable" : "ok";
 /** Kilo Code's card in a folder with no database: watched, but not on Windows, where nothing of it is read. */
 const KILO_CODE_STATE = process.platform === "win32" ? "unavailable" : "ok";
 
+/** MiMo Code's card in a folder with no database: watched, but not on Windows, where nothing of it is read. */
+const MIMO_CODE_STATE = process.platform === "win32" ? "unavailable" : "ok";
+
 describe("createCollector", () => {
-  test("watches Claude Code, Codex, the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush and Kilo Code, and lists Codex sessions beside Claude Code's", async () => {
+  test("watches Claude Code, Codex, the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code and MiMo Code, and lists Codex sessions beside Claude Code's", async () => {
     const snapshot = await serve({ AGENT_LOOKOUT_CODEX_HOME: CODEX_FIXTURE_HOME });
 
     expect(snapshot.sources.map((source) => [source.id, source.label, source.state])).toEqual([
@@ -208,6 +212,7 @@ describe("createCollector", () => {
       ["continue", "Continue", "ok"],
       ["crush", "Crush", CRUSH_STATE],
       ["kilo-code", "Kilo Code", KILO_CODE_STATE],
+      ["mimo-code", "MiMo Code", MIMO_CODE_STATE],
       ["status-files", "Status files", "not-set-up"],
     ]);
     // The folder is written from ~ when the repository sits in the home folder.
@@ -251,6 +256,7 @@ describe("createCollector", () => {
       { id: "continue", state: "ok" },
       { id: "crush", state: CRUSH_STATE },
       { id: "kilo-code", state: KILO_CODE_STATE },
+      { id: "mimo-code", state: MIMO_CODE_STATE },
       { id: "status-files", state: "not-set-up" },
     ]);
     expect(snapshot.sources[1]).not.toHaveProperty("advice");
@@ -385,6 +391,7 @@ describe("createCollector", () => {
           AGENT_LOOKOUT_CONTINUE_HOME: await tempDir(),
           AGENT_LOOKOUT_CRUSH_HOME: await tempDir(),
           AGENT_LOOKOUT_KILO_HOME: await tempDir(),
+          AGENT_LOOKOUT_MIMO_CODE_HOME: await tempDir(),
           AGENT_LOOKOUT_STATUS_DIR: path.join(await tempDir(), "no-status-files-here"),
           AGENT_LOOKOUT_TMUX: "off",
           AGENT_LOOKOUT_STOP: "off",
@@ -428,6 +435,7 @@ describe("createCollector", () => {
         AGENT_LOOKOUT_CONTINUE_HOME: await tempDir(),
         AGENT_LOOKOUT_CRUSH_HOME: await tempDir(),
         AGENT_LOOKOUT_KILO_HOME: await tempDir(),
+        AGENT_LOOKOUT_MIMO_CODE_HOME: await tempDir(),
         AGENT_LOOKOUT_STATUS_DIR: folder,
         AGENT_LOOKOUT_TMUX: "off",
       },
@@ -508,6 +516,7 @@ describe("createCollector", () => {
         AGENT_LOOKOUT_CONTINUE_HOME: await tempDir(),
         AGENT_LOOKOUT_CRUSH_HOME: await tempDir(),
         AGENT_LOOKOUT_KILO_HOME: await tempDir(),
+        AGENT_LOOKOUT_MIMO_CODE_HOME: await tempDir(),
         AGENT_LOOKOUT_STATUS_DIR: statusDir,
         AGENT_LOOKOUT_TMUX: "off",
       },
@@ -2552,6 +2561,7 @@ describe("the last messages of every agent, under one set of limits", () => {
         AGENT_LOOKOUT_CONTINUE_HOME: await tempDir(),
         AGENT_LOOKOUT_CRUSH_HOME: await tempDir(),
         AGENT_LOOKOUT_KILO_HOME: await tempDir(),
+        AGENT_LOOKOUT_MIMO_CODE_HOME: await tempDir(),
         AGENT_LOOKOUT_STATUS_DIR: path.join(await tempDir(), "no-status-files-here"),
         AGENT_LOOKOUT_TMUX: "off",
         AGENT_LOOKOUT_TERMINAL_JUMP: "off",
@@ -2830,6 +2840,7 @@ describe.skipIf(process.platform === "win32")("another machine over SSH", () => 
         AGENT_LOOKOUT_CONTINUE_HOME: await tempDir(),
         AGENT_LOOKOUT_CRUSH_HOME: await tempDir(),
         AGENT_LOOKOUT_KILO_HOME: await tempDir(),
+        AGENT_LOOKOUT_MIMO_CODE_HOME: await tempDir(),
         AGENT_LOOKOUT_STATUS_DIR: path.join(await tempDir(), "no-status-files-here"),
         AGENT_LOOKOUT_TMUX: "off",
         AGENT_LOOKOUT_NOTIFICATIONS: "on",
@@ -3068,6 +3079,7 @@ describe.skipIf(process.platform === "win32")("another machine over SSH", () => 
       "continue",
       "crush",
       "kilo-code",
+      "mimo-code",
       "status-files",
       "remote:",
     ]);

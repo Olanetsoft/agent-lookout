@@ -388,3 +388,49 @@ describe("a session of OpenCode 2's", () => {
     }
   });
 });
+
+// Only MiMo Code's question prints `a_active_at`, so OpenCode's rows have no
+// `subagentsAt`, and keep their status as it was.
+describe("opencodeSession, with a subagent pending or running", () => {
+  test("is working while its main agent's step says idle, and lists a session for the subagent's write", () => {
+    const session = opencodeSession({
+      row: row({ a_active_at: NOW - 10_000 }),
+      open: true,
+      now: NOW,
+    });
+    expect(session).toMatchObject({ id: `opencode:${A}`, status: "working" });
+    expect(session?.statusSince).toBe(NOW - 3 * MINUTE);
+    expect(lastActivity(row({ a_active_at: NOW - 10_000 }), NOW)).toBe(NOW - 10_000);
+    const old = {
+      time_updated: NOW - DAY - MINUTE,
+      m_updated: NOW - DAY - MINUTE,
+      p_updated: NOW - DAY - MINUTE,
+    };
+    expect(opencodeSession({ row: row(old), open: true, now: NOW })).toBeNull();
+    expect(
+      opencodeSession({ row: row({ ...old, a_active_at: NOW - MINUTE }), open: true, now: NOW })
+        ?.status,
+    ).toBe("working");
+  });
+
+  test("is not at work when none is, when its time is of the wrong type, or when it was last written before ps showed no program", () => {
+    const status = (fields: Record<string, unknown>, noOpencodeAt: number | null = null) =>
+      opencodeSession({ row: row(fields), open: true, now: NOW, noOpencodeAt })?.status;
+    expect(status({ a_active_at: null })).toBe("idle");
+    expect(status({ a_active_at: "x".repeat(65) })).toBe("idle");
+    expect(status({ a_active_at: "soon" })).toBe("idle");
+    expect(status({ a_active_at: NOW - 5 * MINUTE }, NOW - MINUTE)).toBe("idle");
+    expect(status({ a_active_at: NOW - MINUTE }, NOW - MINUTE)).toBe("working");
+    // An OpenCode row has none, and is read as ever.
+    expect(row()).not.toHaveProperty("subagentsAt");
+    expect(status({})).toBe("idle");
+  });
+
+  test("ends a reply as failed on the error names given, and on OpenCode's without them", () => {
+    const failed = (error: string, failedErrors?: readonly string[]) =>
+      opencodeSession({ row: row({ m_error: error }), open: true, now: NOW, failedErrors })?.status;
+    expect(failed("ModelError")).toBe("unknown");
+    expect(failed("ModelError", ["ModelError"])).toBe("failed");
+    expect(failed("APIError")).toBe("failed");
+  });
+});

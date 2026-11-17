@@ -109,6 +109,9 @@ test("the fingerprint of the folders sessions are read from names none of them, 
   expect(sourcesFingerprint({ CRUSH_GLOBAL_DATA: "relative/crush" }, HOME)).toBe(defaults);
   // Kilo Code's own variable names its database, as OpenCode's does.
   expect(sourcesFingerprint({ KILO_DB: "kilo.db" }, HOME)).toBe(defaults);
+  // So does MiMo Code's, and a home of MiMo Code's that is not absolute is passed over, as MiMo Code refuses it.
+  expect(sourcesFingerprint({ MIMOCODE_DB: "mimocode.db" }, HOME)).toBe(defaults);
+  expect(sourcesFingerprint({ MIMOCODE_HOME: "relative/mimo" }, HOME)).toBe(defaults);
   // Agent Lookout's names the root outright. A home folder is a whole path,
   // with a drive on Windows, as the system gives it.
   const home = path.resolve(HOME);
@@ -155,6 +158,10 @@ test("the fingerprint of the folders sessions are read from names none of them, 
     sourcesFingerprint({ AGENT_LOOKOUT_KILO_HOME: "/tmp/empty-kilo" }, HOME),
     sourcesFingerprint({ KILO_DB: "/tmp/empty-kilo.db" }, HOME),
     sourcesFingerprint({ KILO_DB: ":memory:" }, HOME),
+    sourcesFingerprint({ AGENT_LOOKOUT_MIMO_CODE_HOME: "/tmp/empty-mimo-code" }, HOME),
+    sourcesFingerprint({ MIMOCODE_HOME: path.resolve("/tmp/mimo-home") }, HOME),
+    sourcesFingerprint({ MIMOCODE_DB: "/tmp/empty-mimocode.db" }, HOME),
+    sourcesFingerprint({ MIMOCODE_DB: ":memory:" }, HOME),
     sourcesFingerprint({}, "/Users/someone-else"),
   ];
   for (const other of others) expect(other).not.toBe(defaults);

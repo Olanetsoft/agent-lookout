@@ -344,3 +344,47 @@ describe("opencodeStatusSince", () => {
     ).toBe(NOW - 2 * MINUTE);
   });
 });
+
+// MiMo Code's subagents work in the session after the main agent's step has
+// ended, and it records error names of its own. Only MiMo Code's adapter
+// passes `subagents` and `failedErrors`, so OpenCode's sessions leave them out.
+describe("mapOpencodeStatus, with subagents at work and error names of the agent's own", () => {
+  const withSubagents = (message: OpencodeMessageFields | null, subagents = true) =>
+    [true, false].map((open) => mapOpencodeStatus({ message, open, now: NOW, subagents }));
+
+  test("a session whose main agent's newest step says idle is working while a subagent works, and finished once closed", () => {
+    expect(withSubagents(assistant())).toEqual(["working", "finished"]);
+    expect(withSubagents(null)).toEqual(["working", "finished"]);
+    expect(withSubagents(assistant({ error: ABORTED_ERROR }))).toEqual(["working", "finished"]);
+    expect(
+      withSubagents(assistant({ finish: "tool-calls", completedAt: NOW - STEP_GAP_MS })),
+    ).toEqual(["working", "finished"]);
+    // With none at work, as for OpenCode.
+    expect(withSubagents(assistant(), false)).toEqual(["idle", "finished"]);
+    expect(withSubagents(null, false)).toEqual(["idle", "finished"]);
+  });
+
+  test("a question still needs you, and a failure or a message it does not know stays as it is", () => {
+    expect(
+      withSubagents(
+        assistant({ completedAt: null, finish: null, tools: 1, askedAt: NOW - MINUTE }),
+      ),
+    ).toEqual(["needs-you", "finished"]);
+    expect(withSubagents(assistant({ error: "APIError" }))).toEqual(["failed", "failed"]);
+    expect(withSubagents(assistant({ role: "system" }))).toEqual(["unknown", "unknown"]);
+    expect(withSubagents(user)).toEqual(["working", "finished"]);
+  });
+
+  test("the names given are the failures in place of OpenCode's, and any other name is unknown", () => {
+    const own = ["ModelError", "APIError"];
+    const mapped = (error: string, failedErrors?: readonly string[]) =>
+      mapOpencodeStatus({ message: assistant({ error }), open: true, now: NOW, failedErrors });
+    expect(mapped("ModelError")).toBe("unknown");
+    expect(mapped("ModelError", own)).toBe("failed");
+    expect(mapped("APIError", own)).toBe("failed");
+    expect(mapped("ContextOverflowError", own)).toBe("unknown");
+    // A stop is never a failure.
+    expect(mapped(ABORTED_ERROR, own)).toBe("idle");
+    expect(FAILED_ERRORS).not.toContain("ModelError");
+  });
+});

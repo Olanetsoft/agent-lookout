@@ -296,6 +296,7 @@ test.each([
       "Continue",
       "Crush",
       "Kilo Code",
+      "MiMo Code",
       "Status files",
       "Claude Code on devbox",
     ]);
@@ -303,7 +304,8 @@ test.each([
       (row) => row.querySelectorAll('[data-part="capability"]')[7]?.firstChild?.textContent,
     );
     // Claude Code's are read here while its details are open, and never from another
-    // machine, and OpenCode's for 1.x alone. Kilo Code's sessions are all read as 1.x's are.
+    // machine, and OpenCode's for 1.x alone. Kilo Code's and MiMo Code's sessions are all read
+    // as 1.x's are.
     expect(tokens).toEqual([
       "Partly",
       "Yes",
@@ -320,6 +322,7 @@ test.each([
       "No",
       "No",
       "No",
+      "Yes",
       "Yes",
       "No",
       "No",

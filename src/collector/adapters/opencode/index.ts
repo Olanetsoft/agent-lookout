@@ -217,8 +217,8 @@ export const LAST_MESSAGE_READ =
 
 /**
  * OpenCode's profile: its names, its files, its programs and its words, for
- * the shared body of `createOpencodeFamilyAdapter`, which Kilo Code's adapter
- * gives a profile of its own.
+ * the shared body of `createOpencodeFamilyAdapter`, which the Kilo Code and
+ * MiMo Code adapters give profiles of their own.
  */
 export const OPENCODE_PROFILE: OpencodeProfile = {
   sourceId: SOURCE_ID,
@@ -340,9 +340,9 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Ope
  * The adapter of an agent whose database is laid out as OpenCode's, as
  * `createOpencodeAdapter` describes it, with the names, files, programs, tools
  * and words of `profile`. OpenCode's adapter is this with `OPENCODE_PROFILE`,
- * and Kilo Code's with its own (`../kilo-code/index.ts`). A profile with no
- * `lastMessageRead` reads no last message, and its adapter has no
- * `lastMessage`.
+ * and Kilo Code's and MiMo Code's with their own (`../kilo-code/index.ts`,
+ * `../mimo-code/index.ts`). A profile with no `lastMessageRead` reads no last
+ * message, and its adapter has no `lastMessage`.
  */
 export function createOpencodeFamilyAdapter(
   profile: OpencodeProfile,
@@ -373,8 +373,9 @@ export function createOpencodeFamilyAdapter(
           file: database,
           io,
           platform,
-          v1Query: v1SessionsQuery(profile.tools),
+          v1Query: v1SessionsQuery(profile.tools, profile.v1Extras),
           readsV2: profile.readsV2,
+          v1Extras: profile.v1Extras,
         }));
   // What a session last said, asked only when it is asked for. With either
   // setting off, or for a profile that reads none, nothing is asked for it.
@@ -654,6 +655,7 @@ export function createOpencodeFamilyAdapter(
         now: checkedAt,
         noOpencodeAt,
         sourceId: profile.sourceId,
+        failedErrors: profile.failedErrors,
       });
       if (session === null) continue;
       if (session.status === "unknown") unknown = true;

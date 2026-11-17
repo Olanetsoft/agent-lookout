@@ -20,6 +20,7 @@ import { createGooseAdapter } from "./adapters/goose/index.ts";
 import { createHermesAgentAdapter } from "./adapters/hermes-agent/index.ts";
 import { createKiloCodeAdapter } from "./adapters/kilo-code/index.ts";
 import { createKimiCodeAdapter } from "./adapters/kimi-code/index.ts";
+import { createMimoCodeAdapter } from "./adapters/mimo-code/index.ts";
 import { createMistralVibeAdapter } from "./adapters/mistral-vibe/index.ts";
 import { createOpencodeAdapter } from "./adapters/opencode/index.ts";
 import { createPiAdapter } from "./adapters/pi/index.ts";
@@ -111,7 +112,7 @@ import { readWebhookSetup, webhookProblemLine } from "./webhook/webhookSettings.
 export interface CollectorOptions {
   /** The app version reported by `/api/health`. */
   version: string;
-  /** Defaults to every adapter the app ships: Claude Code, Codex, the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code and status files. */
+  /** Defaults to every adapter the app ships: Claude Code, Codex, the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code and status files. */
   adapters?: readonly Adapter[];
   /**
    * Where the default adapters read their settings, such as
@@ -122,7 +123,8 @@ export interface CollectorOptions {
    * `AGENT_LOOKOUT_HERMES_HOME`, `AGENT_LOOKOUT_CLINE_HOME`,
    * `AGENT_LOOKOUT_GOOSE_HOME`, `AGENT_LOOKOUT_PI_HOME`,
    * `AGENT_LOOKOUT_KIMI_CODE_HOME`, `AGENT_LOOKOUT_CONTINUE_HOME`,
-   * `AGENT_LOOKOUT_CRUSH_HOME`, `AGENT_LOOKOUT_KILO_HOME` and
+   * `AGENT_LOOKOUT_CRUSH_HOME`, `AGENT_LOOKOUT_KILO_HOME`,
+   * `AGENT_LOOKOUT_MIMO_CODE_HOME` and
    * `AGENT_LOOKOUT_STATUS_DIR`, and where `AGENT_LOOKOUT_NOTIFICATIONS`, the
    * history settings, the email settings, the webhook settings and
    * `AGENT_LOOKOUT_SETTINGS_FILE` are read. Defaults to `process.env`.
@@ -577,6 +579,8 @@ export function createCollector(options: CollectorOptions): Collector {
     createCrushAdapter({ env: options.env, now, pollIntervalMs: intervalMs, platform }),
     // Read as OpenCode is, with no last message, so it needs no share of the limits.
     createKiloCodeAdapter({ env: options.env, now, pollIntervalMs: intervalMs, platform }),
+    // Read as Kilo Code is, with no last message.
+    createMimoCodeAdapter({ env: options.env, now, pollIntervalMs: intervalMs, platform }),
     createStatusFileAdapter({ env: options.env, now, pollIntervalMs: intervalMs }),
   ];
   const poller = createPoller({

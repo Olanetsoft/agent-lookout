@@ -43,11 +43,13 @@ export interface SqliteRun {
  * which the test changes, every argument list it was given, and a way to make
  * it fail, or not be there at all. A question it was not given an answer for
  * fails. `sessionsQuestions` are the questions of the sessions it answers,
- * OpenCode's unless a test of another agent of its family names its own.
+ * OpenCode's unless a test of another agent of its family names its own, and
+ * `probeQuestion` the probe it answers, OpenCode's unless one names its own.
  */
 export function standInSqlite(
   initial: Record<string, unknown>[] = [],
   sessionsQuestions: readonly string[] = SESSIONS_QUESTIONS,
+  probeQuestion: string = PROBE_QUERY,
 ) {
   let rows: Record<string, unknown>[] | string = initial;
   let probe = probeJson("v1");
@@ -68,7 +70,7 @@ export function standInSqlite(
       if (throwing) throw new Error("A stand-in that throws.");
       if (failing) return { ok: false };
       const question = args.at(-1) ?? "";
-      if (question === PROBE_QUERY) return { ok: true, stdout: probe };
+      if (question === probeQuestion) return { ok: true, stdout: probe };
       if (sessionsQuestions.includes(question)) {
         return { ok: true, stdout: typeof rows === "string" ? rows : sqliteJson(rows) };
       }
@@ -109,12 +111,12 @@ export function standInSqlite(
     /** The runs that asked for the sessions. */
     queries: () => runs.filter((run) => sessionsQuestions.includes(run.args.at(-1) ?? "")),
     /** The runs that asked for the tables. */
-    probes: () => runs.filter((run) => run.args.at(-1) === PROBE_QUERY),
+    probes: () => runs.filter((run) => run.args.at(-1) === probeQuestion),
     /** The runs that asked anything but those two: the questions of a session's last text. */
     questions: () =>
       runs.filter(
         (run) =>
-          !sessionsQuestions.includes(run.args.at(-1) ?? "") && run.args.at(-1) !== PROBE_QUERY,
+          !sessionsQuestions.includes(run.args.at(-1) ?? "") && run.args.at(-1) !== probeQuestion,
       ),
   };
 }
