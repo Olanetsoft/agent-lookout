@@ -936,7 +936,7 @@ export const AUTOHAND_CODE_CAPABILITIES: SourceCapabilities = {
   "working-and-idle": {
     level: "partly",
     reason:
-      "From the heartbeat Autohand Code rewrites every 5 seconds. A run with --no-daemon, or with its heartbeats moved, shows as unknown.",
+      "From the heartbeat Autohand Code rewrites every 5 seconds, so not for a run with --no-daemon or with its heartbeats moved.",
   },
   "needs-you": {
     level: "partly",
@@ -951,7 +951,7 @@ export const AUTOHAND_CODE_CAPABILITIES: SourceCapabilities = {
   failed: {
     level: "partly",
     reason:
-      "When marked crashed with nothing saved since, soon after its process ends or leaves it. A failed -p run shows finished.",
+      "Marked crashed and not saved since, soon after its process ends or leaves it, or with no heartbeat. A failed -p run is finished.",
   },
   names: {
     level: "partly",

@@ -636,9 +636,9 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 - Autohand Code's own reader of heartbeats deletes every stale one, so the folder is read here, and nothing is ever deleted.
 - Each field is found as bytes (`jsonBytes.ts`): every writer writes `JSON.stringify(value, null, 2)`, so a line break and two spaces begin only a key of the outer object. A heartbeat's fields are looked for only before `phase`, which comes before the instruction. Nothing else, an instruction, a command, a summary or a title Autohand Code made, is turned into text.
 - A heartbeat or a `metadata.json` is read only as an ordinary file with one name, and on macOS and Linux only one of the user Agent Lookout runs as, a heartbeat only when no one else may read or write it, as Autohand Code requires (`folders.ts`).
-- A fresh heartbeat whose process answers signal 0 gives needs you, working or idle. What the last heartbeat said is kept in memory, so a session whose heartbeat went is finished once that heartbeat's process is gone (`index.ts`).
+- A fresh heartbeat whose process answers signal 0 gives needs you, working or idle. What the last heartbeat said is kept in memory, so a session whose heartbeat went is finished, or failed when it crashed, once that heartbeat's process is gone (`index.ts`).
 
-**How sure it is.** Not checked against Autohand Code yet. A run with `--no-daemon` writes no heartbeat and shows as unknown while it runs. Some prompts, for a commit message, a folder outside the project, a plan or computer-use setup, show as working.
+**How sure it is.** Not checked against Autohand Code yet. A run with `--no-daemon` writes no heartbeat and shows as unknown once it saves, and until then as the session it resumed showed before. Some prompts, for a commit message, a folder outside the project, a plan or computer-use setup, show as working.
 
 ### Status files: your own agents
 
@@ -691,7 +691,7 @@ In short:
 - **Prime Agent** reports working and idle from the journal of the worker that holds a session's lease, on macOS and Linux, finished once no running `prime-agent` holds it, names you or its model gave, and Quiet for while it works. No needs you, failed, Jump, tokens, Stop or Answer.
 - **fx** reports working while a turn is open and an fx program runs, failed when fx ends a turn as failed, finished once no fx program runs, on macOS and Linux, and Quiet for for up to 30 minutes. Names are its folders', since fx names a session from the first prompt. No idle, needs you, Jump, tokens, Stop or Answer.
 - **Unreal Agent** reports working and idle from its file, on macOS and Linux, failed when the newest reply failed, finished on Ctrl+C, when a runner goes idle or once `ps` shows no Unreal Agent program that started before the last write, and Quiet for. Names are its folders', since it gives a session none. No needs you, Jump, tokens, Stop or Answer.
-- **Autohand Code** reports working, idle and needs you from a fresh heartbeat whose process runs, finished once Autohand Code closes a session or the process of its last heartbeat ends, within 15 seconds, or moves on to another session, failed when Autohand Code marked it crashed and saved nothing after, once that process ends, within 15 seconds, or moves on, names you gave, and Quiet for from `metadata.json`. No Jump, tokens, Stop or Answer.
+- **Autohand Code** reports working, idle and needs you from a fresh heartbeat whose process runs, finished once Autohand Code closes a session or the process of its last heartbeat ends, within 15 seconds, or moves on to another session, failed when Autohand Code marked it crashed and saved nothing after, once that process ends, within 15 seconds, or moves on, or at once when it has no heartbeat, as with `--no-daemon`, names you gave, and Quiet for from `metadata.json`. No Jump, tokens, Stop or Answer.
 - **Status files** report whatever the agent writes. No Jump, Stop, Answer or tokens.
 
 A setting can turn a cell to no as well: `AGENT_LOOKOUT_STOP=off` and `AGENT_LOOKOUT_ANSWER=off` change Claude Code's Stop and Answer.

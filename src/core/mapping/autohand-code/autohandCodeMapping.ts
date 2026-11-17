@@ -177,9 +177,9 @@ function later(a: number | null, b: number | null): number | null {
 /**
  * Whether a session is one Autohand Code copied from another tool, or from
  * the web, and you never resumed: written `completed` with the time of the
- * copy, and neither closed nor written to since: its `lastActiveAt` is no
- * more than a second past the copy, as each save of a resumed session moves it
- * (`src/import/importers/BaseImporter.ts:198-216`,
+ * copy, and neither closed nor saved by a run of it since: its `lastActiveAt`
+ * is no more than a second past the copy, as a run of it moves `lastActiveAt`
+ * at each message (`src/import/importers/BaseImporter.ts:198-216`,
  * `src/session/transfer/transfer-session-store.ts:64-66`,
  * `src/session/SessionManager.ts:598-611`). It is not listed, unless a
  * heartbeat shows it running.

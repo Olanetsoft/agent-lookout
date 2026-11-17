@@ -88,7 +88,7 @@ export const UNCHECKED_NOTE =
 
 /** Said when a session's status is unknown. */
 export const UNKNOWN_NOTE =
-  "An Autohand Code session shows as unknown when its files cannot tell, as while it runs with --no-daemon or with its heartbeats moved, while its process runs but its heartbeat is over 15 seconds old, for up to 15 seconds after its process ends, and when it was left open and its heartbeat deleted while Agent Lookout was not running.";
+  "An Autohand Code session shows as unknown when its files cannot tell, as while it runs with --no-daemon or with its heartbeats moved, once it has saved, while its process runs but its heartbeat is over 15 seconds old, for up to 15 seconds after its process ends, and when it was left open and its heartbeat deleted while Agent Lookout was not running.";
 
 /** Said when a heartbeat is of a newer format than this reads. */
 export const NEWER_FORMAT_NOTE =
@@ -111,7 +111,7 @@ export function noHeartbeatsNote(folder: string): string {
  *
  * - Working and idle from a heartbeat written in the last 15 seconds whose
  *   process runs. A run with --no-daemon, or with its heartbeats moved, writes
- *   none here and shows as unknown.
+ *   none here, so never shows as working, idle or needing you.
  * - Needs you while the heartbeat says it waits for input, which Autohand
  *   Code writes while it asks you to approve a tool or to answer a question.
  * - Finished once Autohand Code closes the session, or the process of its
@@ -119,7 +119,9 @@ export function noHeartbeatsNote(folder: string): string {
  *   heartbeat goes with it, else once that heartbeat is 15 seconds old.
  * - Failed when Autohand Code wrote `crashed` after an error in its loop and
  *   saved nothing after, once the process of its last heartbeat goes or moves
- *   on, as for finished. A failed -p run is written `completed`.
+ *   on, as for finished, or at once for a session with no heartbeat, even
+ *   while a run with --no-daemon goes on. A failed -p run is written
+ *   `completed`.
  * - Its name is yours, from `/rename` or `autohand --rename`, else its
  *   folder's. Autohand Code's own title is never read.
  * - No Jump yet.
@@ -130,7 +132,7 @@ export const AUTOHAND_CODE_CAPABILITIES: SourceCapabilities = {
   "working-and-idle": {
     level: "partly",
     reason:
-      "From the heartbeat Autohand Code rewrites every 5 seconds. A run with --no-daemon, or with its heartbeats moved, shows as unknown.",
+      "From the heartbeat Autohand Code rewrites every 5 seconds, so not for a run with --no-daemon or with its heartbeats moved.",
   },
   "needs-you": {
     level: "partly",
@@ -145,7 +147,7 @@ export const AUTOHAND_CODE_CAPABILITIES: SourceCapabilities = {
   failed: {
     level: "partly",
     reason:
-      "When marked crashed with nothing saved since, soon after its process ends or leaves it. A failed -p run shows finished.",
+      "Marked crashed and not saved since, soon after its process ends or leaves it, or with no heartbeat. A failed -p run is finished.",
   },
   names: {
     level: "partly",
@@ -482,10 +484,11 @@ export function createAutohandCodeAdapter(options: AutohandCodeAdapterOptions = 
       const facts: MetadataFacts | null = md?.state === "ok" ? md.facts : null;
       const writtenAt = md?.state === "ok" ? Math.floor(md.writtenAt) : lstatWrittenAt;
 
-      // A heartbeat whose process has gone counts for nothing once the session
-      // was saved over 15 seconds after it. Only a process that runs the
-      // session saves it, and that process writes a heartbeat every 5
-      // seconds, so the save came from another run, as one with --no-daemon.
+      // A heartbeat whose process has gone counts for nothing once the session's
+      // lastActiveAt is over 15 seconds after it. Only a process that runs the
+      // session moves lastActiveAt, and the heartbeat's process rewrote it every
+      // 5 seconds while it ran, so the save came from another run, as one with
+      // --no-daemon.
       const savedAt = plausibleTime(facts?.lastActiveAt ?? null, checkedAt);
       const outrun = (at: number | null) =>
         savedAt !== null && at !== null && savedAt > at + AUTOHAND_STALE_MS;

@@ -125,7 +125,7 @@ Left out:
 
 - A run with `--ephemeral`, which keeps no session files (`src/index.ts:528`; `src/session/SessionManager.ts:111-131`), still writes a heartbeat (`src/core/agent.ts:3142-3238`). A heartbeat whose session has no folder in `sessions` is not listed, so such a run is left out, as it asks.
 - A heartbeat whose session ID has a dot is never looked up in `sessions`, where its folder would be one of Autohand Code's other files, and so is not listed.
-- A copy of another tool's session, or of a session from the web, that you never resumed: one written `completed` with the time of the copy, neither closed nor written to since, with no heartbeat (`src/import/importers/BaseImporter.ts:198-216`; `src/session/transfer/transfer-session-store.ts:64-66`). One closed or written to since is listed, and so is one with a heartbeat, or that had one while Agent Lookout ran.
+- A copy of another tool's session, or of a session from the web, that you never resumed: one written `completed` with the time of the copy, neither closed nor saved by a run of it since, with no heartbeat (`src/import/importers/BaseImporter.ts:198-216`; `src/session/transfer/transfer-session-store.ts:64-66`). One closed since, or saved since by a run of it, is listed, and so is one with a heartbeat, or that had one while Agent Lookout ran.
 - A teammate, which has no heartbeat or session.
 - Heartbeats of another format, whose name is not their session's, over 128 KiB, of another user, with a second name or links, and every temporary or removed file and lock.
 
@@ -179,7 +179,7 @@ The first row that applies gives the status.
 
 - Row 1: Autohand Code sets `waiting_input` while it asks you to approve a tool and while it asks you a question (`src/core/agent.ts:2926-2948`, `:2969-2979`; `src/session/peers/PeerActivityPublisher.ts:46-52`). The two cannot be told apart.
 - Row 5: an auto-mode iteration's session and a session a terminal's `/new` left are taken up by the same process (`src/core/agent/AgentLifecycleRunner.ts:325-380`, `:1132-1143`). An editor over ACP holds many sessions in one process and writes mode `rpc` (`src/modes/acp/adapter.ts:442-470`), so a process that writes `rpc` does not end a session this way.
-- Rows 9 and 10: only a process that runs a session saves it, and each save moves `lastActiveAt` (`src/session/SessionManager.ts:409`, `:601`, `:683`, `:730`). Such a process writes a heartbeat every 5 seconds, so a save over 15 seconds after a heartbeat whose process has gone came from another run, as one with `--no-daemon`, and that heartbeat counts for nothing.
+- Rows 9 and 10: only a process that runs a session moves its `lastActiveAt`, as at each message, token count, file read, `/rename`, model change over ACP and close (`src/session/SessionManager.ts:386`, `:409`, `:601`, `:634`, `:683`, `:730`; `src/modes/acp/adapter.ts:324`). A rename from another process (`src/startup/renameSession.ts:20-29`; `src/session/SessionManager.ts:416-429`) and the crash's own write leave it as it was. A process that writes a heartbeat rewrites it every 5 seconds while it runs, so a `lastActiveAt` over 15 seconds after a heartbeat whose process has gone came from another run, as one with `--no-daemon`, and that heartbeat counts for nothing.
 - Rows 9 and 13: only the interactive loop writes `crashed` (`src/core/agent/AgentLifecycleRunner.ts:2189-2211`).
 - Rows 10 and 11: a process ends with no close on `kill -9`, on a second Ctrl+C (`src/core/agent/AgentLifecycleRunner.ts:629-651`), on SIGHUP, which it has no handler for, and when an editor's ACP connection closes.
 - Row 12: `closeSession` (`src/session/SessionManager.ts:382-395`). A `-p` run that fails is closed as `completed` too (`src/core/agent/AgentLifecycleRunner.ts:1382-1388`), so it shows as finished.
@@ -235,7 +235,8 @@ No Jump yet: Agent Lookout does not look for the terminal an Autohand Code sessi
 
 ## Known gaps
 
-- A run with `--no-daemon` writes no heartbeat, so it shows as unknown while it runs, and is finished only once closed.
+- A run with `--no-daemon`, or with its heartbeats moved, writes no heartbeat here. A new one shows as unknown while it runs, and is finished only once closed. One that resumes a session shows as that session did before, finished or failed from its old time, or is not listed when it was last written over a day ago, until it first saves. Then it shows as unknown.
+- A run with `--no-daemon`, or with its heartbeats moved, that Autohand Code marks crashed after an error its loop gets past shows as failed while it runs, until its next save.
 - Heartbeats moved with `coordinationDirectory`, or by a `--set` for one run, are not found.
 - A failed `-p` run is written `completed` and shows as finished.
 - The memory is lost when Agent Lookout stops. Then an editor's session closed over ACP, an auto-mode iteration and a session whose heartbeat another Autohand Code deleted show as unknown, until they leave the list a day after their last write, and a copy of another tool's session that was resumed with nothing saved yet is left out again.
