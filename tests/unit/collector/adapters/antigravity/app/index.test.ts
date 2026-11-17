@@ -307,6 +307,47 @@ describe("with Antigravity 2.0's folder there", () => {
     expect(changes).toEqual([]);
   });
 
+  test("after the clock is set back, a chat written before ps found the app closed stays finished, so it sends no Finished", async () => {
+    const { adapter, clock, hub, write } = setUp();
+    let memory = EMPTY_CHANGE_MEMORY;
+    const changes: string[] = [];
+    const poll = async () => {
+      const result = await adapter.poll();
+      // As the poller puts it in the snapshot.
+      const health = { ...result.health, basis: result.basis };
+      const next = sessionChanges(memory, {
+        generatedAt: clock.now(),
+        sources: [health],
+        sessions: result.sessions,
+      });
+      memory = next.memory;
+      changes.push(...next.changes.map(({ event, session }) => `${session.name} ${event}`));
+      return result;
+    };
+    await poll();
+    // The app's last write, 5 seconds before ps finds it closed.
+    write(WORKING, [appStep({ index: 0, type: "USER_INPUT", at: NOW - MINUTE })], NOW + 5 * SECOND);
+    hub.set(false);
+    clock.advance(PROCESS_CHECK_MS);
+    const closed = await poll();
+    expect(closed.basis).toBe(BASIS_APP_CLOSED);
+    expect(statuses(closed.sessions)).toMatchObject({ [WORKING]: "finished" });
+    expect(hub.asked()).toBe(2);
+
+    // The clock is set back to just after that write, so ps is asked at once.
+    clock.set(NOW + 5_500);
+    expect(statuses((await poll()).sessions)).toMatchObject({ [WORKING]: "finished" });
+    expect(hub.asked()).toBe(3);
+    clock.advance(SECOND);
+    expect(statuses((await poll()).sessions)).toMatchObject({ [WORKING]: "finished" });
+    expect(hub.asked()).toBe(3);
+    // The write is within 2 seconds of the last ask, so ps is asked again 2 seconds later.
+    clock.advance(SECOND);
+    expect(statuses((await poll()).sessions)).toMatchObject({ [WORKING]: "finished" });
+    expect(hub.asked()).toBe(4);
+    expect(changes).toEqual([]);
+  });
+
   test("a chat last written 2 seconds or more before ps said the app was closed is finished, and ps is not asked early for it", async () => {
     const { adapter, clock, hub, write } = setUp(false);
     write(WORKING, [appStep({ index: 0, type: "USER_INPUT", at: NOW - MINUTE })], NOW - 2 * SECOND);

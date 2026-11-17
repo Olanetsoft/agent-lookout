@@ -78,7 +78,8 @@ export function createHubProcessReader(
  * (`closedBefore`), so does one written up to 2 seconds before `askedAt`, as a
  * disk can keep a write's time rounded down: asks are at least 2 seconds
  * apart, so that write still came after an answer that found the app closed.
- * After an answer that found the app open, such a write is taken for the
+ * `closedBefore` is not set for an ask made because the clock was set back,
+ * as that ask can come sooner. After an answer that found the app open, such a write is taken for the
  * app's last before it was closed, so closing the app finishes every chat at
  * once.
  */

@@ -305,7 +305,10 @@ export function createAntigravityAppAdapter(
   /** What `ps` last said, and when. Null before it was first asked. */
   let lastHub: HubAnswer | null = null;
   let hubAt: number | null = null;
-  /** Whether `ps` said the app was closed at the ask before the last one too (`hubLiveness`). */
+  /**
+   * Whether `ps` said the app was closed at the ask before the last one too
+   * (`hubLiveness`). Never after an ask made because the clock was set back.
+   */
   let closedBefore = false;
   /** The transcript each chat the last poll listed was read from, by its id: the only file its last message is read from. */
   let listedFiles: ReadonlyMap<string, string> = new Map();
@@ -396,7 +399,7 @@ export function createAntigravityAppAdapter(
       );
     }
     if (due) {
-      closedBefore = lastHub !== null && lastHub.ok && !lastHub.running;
+      closedBefore = since >= 0 && lastHub !== null && lastHub.ok && !lastHub.running;
       lastHub = await hub.read();
       hubAt = checkedAt;
     }
