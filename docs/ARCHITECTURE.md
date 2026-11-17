@@ -324,9 +324,9 @@ Pi keeps each session in one JSONL file, in a folder for its working directory u
 
 Nothing in a file says a session is open, and nothing ties a session to a process, so `piMapping.ts` has one input: whether Pi may have it open. `processes.ts` asks `ps -A -o comm=` whether a program named `pi` or `pi-rpc` runs, which Pi's `process.title` makes it. A session is `unknown` while one does or `ps` cannot say, as on Windows, and `finished` once none does, so a crash left behind never shows as running. Its basis says which, as Goose's does.
 
-A session's id is `pi:<session id>`. Its name is the one on its newest `session_info` line, else its folder's name, else its id.
+A session's id is `pi:<session id>`. Its name is the one on its newest `session_info` line, else its folder's name, else its id. It is listed for a day after its file was last written, and has no process ID, no link, no Jump, no Stop, no tokens and no `lastWriteAt`.
 
-What tells Pi from an agent kept the same way is `PI_PROFILE`, a `PiProfile` of `profile.ts`: the source, the name, the folders and variables, the programs `ps` is asked for, whether names are read, which second lines leave a session out, and every sentence of its card. `createPiFamilyAdapter` is the body every such profile shares, and `createPiAdapter` is it with Pi's. It is listed for a day after its file was last written, and has no process ID, no link, no Jump, no Stop, no tokens and no `lastWriteAt`.
+What tells Pi from an agent kept the same way is `PI_PROFILE`, a `PiProfile` of `profile.ts`: the source, the name, the folders and variables, the programs `ps` is asked for, whether names are read, which second lines leave a session out, and every sentence of its card. `createPiFamilyAdapter` is the body every such profile shares, and `createPiAdapter` is it with Pi's.
 
 ## The Kimi Code adapter
 
@@ -403,7 +403,7 @@ The adapter lives in `src/collector/adapters/kimchi/index.ts`. [adapters/kimchi.
 
 Kimchi keeps Pi's session files in `~/.config/kimchi/harness/sessions`, a folder it sets itself as it starts. So the adapter is the Pi adapter's body, `createPiFamilyAdapter`, given `KIMCHI_PROFILE`: the source `kimchi`, the name, the folder, `AGENT_LOOKOUT_KIMCHI_HOME` and Kimchi's own `KIMCHI_CODING_AGENT_SESSION_DIR`, with no variable for the agent folder, and the program `kimchi`. What differs is held in the profile:
 
-- `readsNames` is false, since Kimchi names every session from the person's first messages. `sessionFile.ts` then turns no `session_info` line into text, and reads only a file's first 64 KiB, once.
+- `readsNames` is false, since Kimchi names every session from the person's first messages. `sessionFile.ts` then turns no `session_info` line into text, and reads only a file's first 64 KiB. A file it found a session in is not opened again while it only grows.
 - `hiddenMarkers` names `kimchi:subagent-session` and `kimchi:internal-session`. `sessionFile.ts` compares a file's second line with them as bytes, and a file so marked is left out, and not opened again while it only grows.
 
 A session's id is `kimchi:<session id>`, its name its folder's, else its id, and its status `unknown` or `finished`, as a Pi session's.

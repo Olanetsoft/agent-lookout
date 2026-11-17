@@ -31,7 +31,7 @@ As for Pi: it needs nothing installed and changes nothing. It reads the first by
 
 - It reads no name. Kimchi names every session itself from the person's first messages, as [Names](#names) says.
 - It leaves out the sessions Kimchi marks as its own on their second line, as [The second line](#the-second-line) says.
-- It reads only a file's first 64 KiB, once. Nothing past the first two lines is needed.
+- It reads only a file's first 64 KiB, and once it has found a session or a mark there, not again while the file only grows. Nothing past the first two lines is needed.
 
 Kimchi's ACP server (`src/modes/acp/server.ts`) lists sessions too, but it is a Kimchi that a client starts and talks to, and its list reads every line of every file, with the text of every message.
 
@@ -57,14 +57,14 @@ When the folder is missing, Kimchi is reported as not found, with no advice, and
 
 ## What it reads
 
-| Path                                   | How                                                                               | How often                                                                                                |
-| -------------------------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| The sessions folder                    | Listed                                                                            | Every poll, and while it is missing once a minute, or every poll when `AGENT_LOOKOUT_KIMCHI_HOME` is set |
-| Each project folder, `--<folder>--/`   | One `lstat`, to see that it is a folder and not a link, and for its modified time | Every poll                                                                                               |
-| The same folder                        | Listed                                                                            | When its modified time moves, and once a minute                                                          |
-| Each `*.jsonl` written in the last day | One `lstat`                                                                       | Every poll, for the newest 200                                                                           |
-| Every other `*.jsonl`                  | One `lstat`. Never opened                                                         | Once a minute                                                                                            |
-| A session file written in the last day | Opened read-only: its first 64 KiB. Not opened again while it only grows          | Once, and again only when it is a new file or grows shorter                                              |
+| Path                                   | How                                                                               | How often                                                                                                   |
+| -------------------------------------- | --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| The sessions folder                    | Listed                                                                            | Every poll, and while it is missing once a minute, or every poll when `AGENT_LOOKOUT_KIMCHI_HOME` is set    |
+| Each project folder, `--<folder>--/`   | One `lstat`, to see that it is a folder and not a link, and for its modified time | Every poll                                                                                                  |
+| The same folder                        | Listed                                                                            | When its modified time moves, and once a minute                                                             |
+| Each `*.jsonl` written in the last day | One `lstat`                                                                       | Every poll, for the newest 200                                                                              |
+| Every other `*.jsonl`                  | One `lstat`. Never opened                                                         | Once a minute                                                                                               |
+| A session file written in the last day | Opened read-only: its first 64 KiB                                                | When it changes, until a session or a mark is found in it, then only when it is a new file or grows shorter |
 
 A file is opened without following a link at its name, and not through a link at a project folder, as for Pi. Nothing else in Kimchi's folder is read: not `settings.json`, `auth.json`, `models.json`, its logs, its memory, its work ledger or anything beside the sessions folder.
 

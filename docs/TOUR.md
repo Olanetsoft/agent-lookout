@@ -559,7 +559,7 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 **What differs from Pi.**
 
 - `ps` is asked for `kimchi`, the title Kimchi gives its process and the name of its program.
-- No name is read. Kimchi names every session from the person's first messages, and a rename cannot be told from that, so a session takes its folder's name and no `session_info` line is turned into text. So only a file's first 64 KiB are read, once.
+- No name is read. Kimchi names every session from the person's first messages, and a rename cannot be told from that, so a session takes its folder's name and no `session_info` line is turned into text. So only a file's first 64 KiB are read, and a file a session was found in is not opened again while it only grows.
 - A file whose second line marks a subagent's or Ferment's evaluator's session is left out. The line is compared as bytes. A branch names its parent as a subagent does, so the parent alone hides nothing.
 - Side chats, in a folder of their own, are never looked at.
 
@@ -1801,7 +1801,7 @@ No source, tests, scripts or site files go in.
 - The licence of every library and font that goes in is written to `dist/THIRD-PARTY-LICENSES.md`, first by the dashboard's build and then by the script. Each licence comes from the package's own licence file, or from `licenses/` for a package that ships none (881f8ac).
 - `bin/agent-lookout.mjs` runs `src/` through tsx if `src/` exists, as in a clone, and the bundle in `dist/cli/` otherwise, as in the installed package. A bundle left over from an earlier `npm pack` is never run by mistake in a clone.
 
-**Why it is this small.** #67 found that `npx agent-lookout` installed about 29 MB. About 20 MB of that was the MCP SDK and zod, and every font shipped twice, as `.woff2` and `.woff`. Since a8cd2e5 the SDK is bundled and only `.woff2` ships, and the install is about 4 MB. `scripts/package-size.mjs` keeps it there: it fails when the tarball passes 1 MB, the unpacked files pass 3 MB, or the install passes 5 MB. Raise a limit only on purpose, and say why in the pull request.
+**Why it is this small.** #67 found that `npx agent-lookout` installed about 29 MB. About 20 MB of that was the MCP SDK and zod, and every font shipped twice, as `.woff2` and `.woff`. Since a8cd2e5 the SDK is bundled and only `.woff2` ships, and the install is about 4 MB. `scripts/package-size.mjs` keeps it small: it fails when the tarball passes 1.2 MB, the unpacked files pass 4.2 MB, or the install passes 6 MB, the `LIMITS` there. Raise a limit only on purpose, and say why in the pull request.
 
 **What bundling costs.** A bundled package is never updated where Agent Lookout is installed, and `npm audit` there cannot see it. When the SDK or zod gets a security fix, update `package-lock.json` and publish a new version.
 
