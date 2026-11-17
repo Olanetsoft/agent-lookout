@@ -50,8 +50,8 @@ import { gunzipSync } from "node:zlib";
  * tarball, of code in the command and the documents the package ships.
  *
  * Unpacked was raised from 3.90 MB to 4.20 MB once MiMo Code took it to 3.8998
- * MB and Kimchi past the limit, to 3.92 MB. Kimchi added 18 KB, 6 KB of code in
- * the command and 12 KB of the documents the package ships, which leaves room
+ * MB and Kimchi past the limit, to 3.92 MB. Kimchi added 19 KB, 6 KB of code in
+ * the command and 13 KB of the documents the package ships, which leaves room
  * for several more sources.
  */
 const LIMITS = {
