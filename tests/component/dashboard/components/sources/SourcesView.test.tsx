@@ -302,6 +302,7 @@ test.each([
       "fx",
       "Unreal Agent",
       "Autohand Code",
+      "DeepSeek Harness",
       "Status files",
       "Claude Code on devbox",
     ]);
@@ -329,6 +330,7 @@ test.each([
       "No",
       "Yes",
       "Yes",
+      "No",
       "No",
       "No",
       "No",

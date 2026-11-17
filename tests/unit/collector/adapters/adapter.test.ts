@@ -75,6 +75,11 @@ import {
   createAutohandCodeAdapter,
 } from "@collector/adapters/autohand-code/index";
 import { autohandCodeSession } from "@collector/adapters/autohand-code/toSession";
+import {
+  createDeepseekHarnessAdapter,
+  DEEPSEEK_HARNESS_CAPABILITIES,
+} from "@collector/adapters/deepseek-harness/index";
+import { deepseekHarnessSession } from "@collector/adapters/deepseek-harness/toSession";
 import { createPiAdapter, PI_CAPABILITIES } from "@collector/adapters/pi/index";
 import { piSession } from "@collector/adapters/pi/toSession";
 import {
@@ -130,6 +135,11 @@ import {
   type HeartbeatClass,
 } from "@core/mapping/autohand-code/autohandCodeMapping";
 import {
+  deepseekHarnessStatusOf,
+  type DeepseekHarnessTurn,
+  type DeepseekHarnessWriter,
+} from "@core/mapping/deepseek-harness/deepseekHarnessMapping";
+import {
   applyUnrealAgentLine,
   startUnrealAgentReplay,
   type UnrealAgentItem,
@@ -163,6 +173,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["fx", FX_CAPABILITIES],
   ["Unreal Agent", UNREAL_AGENT_CAPABILITIES],
   ["Autohand Code", AUTOHAND_CODE_CAPABILITIES],
+  ["DeepSeek Harness", DEEPSEEK_HARNESS_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -268,6 +279,9 @@ test("each adapter carries its own declaration, for the poller to pass on", () =
     expect(
       createAutohandCodeAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
     ).toBe(AUTOHAND_CODE_CAPABILITIES);
+    expect(
+      createDeepseekHarnessAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
+    ).toBe(DEEPSEEK_HARNESS_CAPABILITIES);
   }
   expect(createMistralVibeAdapter({ env: {}, homeDir: home, io: files.io }).capabilities).toBe(
     MISTRAL_VIBE_CAPABILITIES,
@@ -1406,6 +1420,81 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(AUTOHAND_CODE_CAPABILITIES.jump.level).toBe("no");
     expect(AUTOHAND_CODE_CAPABILITIES.stop.level).toBe("no");
     expect(AUTOHAND_CODE_CAPABILITIES.answer.level).toBe("no");
+  });
+
+  test("DeepSeek Harness: a session is working, idle, needs you, finished, failed or unknown", () => {
+    const shown: SessionStatus[] = [];
+    const open = (waits: boolean): DeepseekHarnessTurn => ({
+      state: "open",
+      since: NOW - 60_000,
+      approvals: new Map(waits ? [["a", NOW - 30_000]] : []),
+      questions: new Map(),
+      waitSince: waits ? NOW - 30_000 : null,
+    });
+    const turns: (DeepseekHarnessTurn | null)[] = [
+      null,
+      { state: "unsure" },
+      { state: "none", since: NOW - 60_000 },
+      open(false),
+      open(true),
+      ...(["completed", "error", "disposed", "other"] as const).map((end): DeepseekHarnessTurn => ({
+        state: "ended",
+        end,
+        at: NOW - 10_000,
+      })),
+    ];
+    const writers: DeepseekHarnessWriter[] = ["gone", "backed", "maybe"];
+    for (const own of turns) {
+      for (const writer of writers) {
+        for (const writtenAt of [NOW - 10_000, null]) {
+          shown.push(
+            deepseekHarnessStatusOf({ own, children: [], writtenAt, writer, now: NOW }).status,
+          );
+        }
+      }
+    }
+    expect(statuses(shown)).toEqual(
+      new Set(["needs-you", "working", "idle", "finished", "failed", "unknown"]),
+    );
+    expect(DEEPSEEK_HARNESS_CAPABILITIES["working-and-idle"].level).toBe("partly");
+    expect(DEEPSEEK_HARNESS_CAPABILITIES["needs-you"].level).toBe("partly");
+    expect(DEEPSEEK_HARNESS_CAPABILITIES.finished.level).toBe("partly");
+    expect(DEEPSEEK_HARNESS_CAPABILITIES.failed.level).toBe("partly");
+  });
+
+  test("DeepSeek Harness: a working session has its title and its last write, and no tokens, jump, stop or link", () => {
+    const session = deepseekHarnessSession({
+      folderName: "session-0b5d6c1e-2f3a-4b4c-8d5e-6f7a8b9c0d1e",
+      header: {
+        id: "session-0b5d6c1e-2f3a-4b4c-8d5e-6f7a8b9c0d1e",
+        createdAt: NOW - 60_000,
+        cwd: "/Users/example/code/demo",
+        parentSession: null,
+        subagent: false,
+      },
+      title: "Fix the build",
+      status: { status: "working", since: NOW - 30_000, showsLastWrite: true },
+      writtenAt: NOW - 20_000,
+      now: NOW,
+    });
+    expect(session).toMatchObject({
+      id: "deepseek-harness:session-0b5d6c1e-2f3a-4b4c-8d5e-6f7a8b9c0d1e",
+      source: "deepseek-harness",
+      name: "Fix the build",
+      project: "demo",
+      status: "working",
+      lastWriteAt: NOW - 20_000,
+    });
+    for (const absent of ["tokens", "jump", "stop", "ask", "pid"]) {
+      expect(session, absent).not.toHaveProperty(absent);
+    }
+    expect(session.links).toEqual({});
+    expect(DEEPSEEK_HARNESS_CAPABILITIES.names.level).toBe("partly");
+    expect(DEEPSEEK_HARNESS_CAPABILITIES["quiet-for"].level).toBe("partly");
+    expect(DEEPSEEK_HARNESS_CAPABILITIES.tokens.level).toBe("no");
+    expect(DEEPSEEK_HARNESS_CAPABILITIES.jump.level).toBe("no");
+    expect(DEEPSEEK_HARNESS_CAPABILITIES.stop.level).toBe("no");
+    expect(DEEPSEEK_HARNESS_CAPABILITIES.answer.level).toBe("no");
   });
 
   test("Prime Agent: a working session has the time of its file's last write, and no tokens, jump, stop or link", () => {

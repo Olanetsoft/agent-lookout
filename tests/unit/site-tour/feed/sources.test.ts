@@ -7,6 +7,7 @@ import { createStopTargets } from "@collector/actions/stopTargets";
 import { ANTIGRAVITY_APP_CAPABILITIES } from "@collector/adapters/antigravity/app/index";
 import { ANTIGRAVITY_CAPABILITIES } from "@collector/adapters/antigravity/cli/index";
 import { AUTOHAND_CODE_CAPABILITIES } from "@collector/adapters/autohand-code/index";
+import { DEEPSEEK_HARNESS_CAPABILITIES } from "@collector/adapters/deepseek-harness/index";
 import { CLAUDE_CODE_CAPABILITIES } from "@collector/adapters/claude-code/index";
 import { CLINE_CAPABILITIES } from "@collector/adapters/cline/index";
 import { CODEX_CAPABILITIES, NEEDS_YOU_NOTE } from "@collector/adapters/codex/index";
@@ -70,6 +71,11 @@ import {
   autohandAdapterFor,
   memoryFiles as autohandFiles,
 } from "@tests/support/adapters/autohand-code/autohandCodeAdapter";
+import {
+  deepseekHarnessAdapterFor,
+  memoryFiles as deepseekHarnessFiles,
+} from "@tests/support/adapters/deepseek-harness/deepseekHarnessAdapter";
+import { zstdOf } from "@collector/adapters/deepseek-harness/index";
 import { fakeTmux } from "@tests/support/node/tmux";
 
 const readme = readFileSync(new URL("../../../../README.md", import.meta.url), "utf8");
@@ -101,6 +107,7 @@ test("each source says what its agent can report in its adapter's own words", ()
   expect(tour.FX_CAPABILITIES).toEqual(FX_CAPABILITIES);
   expect(tour.UNREAL_AGENT_CAPABILITIES).toEqual(UNREAL_AGENT_CAPABILITIES);
   expect(tour.AUTOHAND_CODE_CAPABILITIES).toEqual(AUTOHAND_CODE_CAPABILITIES);
+  expect(tour.DEEPSEEK_HARNESS_CAPABILITIES).toEqual(DEEPSEEK_HARNESS_CAPABILITIES);
   expect(tour.STATUS_FILE_CAPABILITIES).toEqual(STATUS_FILE_CAPABILITIES);
 });
 
@@ -129,6 +136,7 @@ test("this computer's sources come in the collector's order", () => {
     "fx",
     "unreal-agent",
     "autohand-code",
+    "deepseek-harness",
     "status-files",
   ]);
 });
@@ -394,6 +402,21 @@ test("Autohand Code's card is the one its adapter shows on a Mac without it", as
   expect(sessions).toEqual([]);
 });
 
+test("DeepSeek Harness's card is the one its adapter shows on a Mac without it", async () => {
+  // The card says the Zstandard of a Node.js that has it, as every Node.js the tests run on in CI does.
+  const adapter = deepseekHarnessAdapterFor(deepseekHarnessFiles(), {
+    zstd: zstdOf({ zstdDecompress: () => {}, constants: { ZSTD_d_windowLogMax: 100 } }),
+  });
+  const { health, sessions } = await adapter.poll();
+  const { capabilities, ...card } = tour
+    .sourcesAt(0, 1, "0.2.6")
+    .find((source) => source.id === "deepseek-harness")!;
+  // The poller adds what the adapter can report to each health it gives.
+  expect(card).toEqual({ ...health, checkedAt: card.checkedAt });
+  expect(capabilities).toEqual(adapter.capabilities);
+  expect(sessions).toEqual([]);
+});
+
 test("Kimi Code's card is the one its adapter shows on a computer without it", async () => {
   const adapter = kimiCodeAdapterFor(memoryFiles());
   const { health, sessions } = await adapter.poll();
@@ -550,6 +573,12 @@ test("the other machine's agents and its row for each source are what this compu
           capabilities: AUTOHAND_CODE_CAPABILITIES,
         },
         {
+          id: "deepseek-harness",
+          label: "DeepSeek Harness",
+          state: "unavailable",
+          capabilities: DEEPSEEK_HARNESS_CAPABILITIES,
+        },
+        {
           id: "status-files",
           label: "Status files",
           state: "not-set-up",
@@ -588,7 +617,12 @@ test("the other machine's card names the ssh command the tunnel runs, as it runs
  * soon as it changes, so it names an agent at the release that ships it, and
  * the agent leaves this list then.
  */
-const NOT_ON_THE_PAGE_YET = new Set<string>(["fx", "Unreal Agent", "Autohand Code"]);
+const NOT_ON_THE_PAGE_YET = new Set<string>([
+  "fx",
+  "Unreal Agent",
+  "Autohand Code",
+  "DeepSeek Harness",
+]);
 
 test("the page's Works with names every agent the tour's Sources reads", () => {
   const works = /<div class="works">([\s\S]*?)<\/div\s*>/.exec(page)?.[1] ?? "";

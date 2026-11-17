@@ -7,6 +7,7 @@ import { CLAUDE_CODE_CAPABILITIES } from "@collector/adapters/claude-code/index"
 import * as codex from "@collector/adapters/codex/index";
 import * as continueAdapter from "@collector/adapters/continue/index";
 import * as crush from "@collector/adapters/crush/index";
+import * as deepseekHarness from "@collector/adapters/deepseek-harness/index";
 import * as fx from "@collector/adapters/fx/index";
 import * as geminiCli from "@collector/adapters/gemini-cli/index";
 import * as goose from "@collector/adapters/goose/index";
@@ -340,6 +341,7 @@ describe("readRemoteSnapshot", () => {
       "hermes-agent": hermesAgent,
       "kimi-code": kimiCode,
       crush,
+      "deepseek-harness": deepseekHarness,
       fx,
       "kilo-code": kiloCode,
       "mimo-code": mimoCode,

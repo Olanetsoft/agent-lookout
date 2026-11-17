@@ -771,6 +771,7 @@ describe("over a long run of snapshots", () => {
     fx: [],
     "unreal-agent": [],
     "autohand-code": [],
+    "deepseek-harness": [],
     "status-files": [F],
   };
   const sourceOf = (id: string): SourceId =>

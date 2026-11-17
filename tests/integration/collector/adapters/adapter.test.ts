@@ -38,6 +38,10 @@ import {
   UNCHECKED_NOTE as AUTOHAND_CODE_UNCHECKED_NOTE,
 } from "@collector/adapters/autohand-code/index";
 import {
+  DEEPSEEK_HARNESS_CAPABILITIES,
+  UNCHECKED_NOTE as DEEPSEEK_HARNESS_UNCHECKED_NOTE,
+} from "@collector/adapters/deepseek-harness/index";
+import {
   KIMCHI_CAPABILITIES,
   UNCHECKED_NOTE as KIMCHI_UNCHECKED_NOTE,
 } from "@collector/adapters/kimchi/index";
@@ -99,6 +103,9 @@ const UNREAL_AGENT_NOTES = fileURLToPath(
 const AUTOHAND_CODE_NOTES = fileURLToPath(
   new URL("../../../../docs/adapters/autohand-code.md", import.meta.url),
 );
+const DEEPSEEK_HARNESS_NOTES = fileURLToPath(
+  new URL("../../../../docs/adapters/deepseek-harness.md", import.meta.url),
+);
 
 const GUIDE_HEADING = "#### What each agent can report";
 const README_HEADING = "## Supported agents and systems";
@@ -127,6 +134,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["fx", FX_CAPABILITIES],
   ["Unreal Agent", UNREAL_AGENT_CAPABILITIES],
   ["Autohand Code", AUTOHAND_CODE_CAPABILITIES],
+  ["DeepSeek Harness", DEEPSEEK_HARNESS_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -662,5 +670,47 @@ test("PRIVACY.md and the Autohand Code notes name what is read and from which ve
   expect(guide).toContain("metadata.json");
   for (const text of [section, notes, guide]) {
     expect(text).not.toContain("its session is shown");
+  }
+});
+
+test("PRIVACY.md and the DeepSeek Harness notes name what is read and from which version", async () => {
+  const privacy = await readFile(PRIVACY, "utf8");
+  const notes = await readFile(DEEPSEEK_HARNESS_NOTES, "utf8");
+  const line = (start: string) => privacy.split("\n").find((one) => one.startsWith(start)) ?? "";
+
+  const dsh = line("For DeepSeek Harness, Agent Lookout reads");
+  expect(dsh).toContain("built from DeepSeek Harness's source at dsh-v0.2.2-rc.3");
+  expect(dsh).toContain("`node:zlib`");
+  expect(dsh).toContain("`ps`");
+  expect(dsh).not.toContain("Autohand Code");
+  expect(DEEPSEEK_HARNESS_UNCHECKED_NOTE).toContain("dsh-v0.2.2-rc.3");
+  expect(notes).toContain("MIT");
+
+  const start = privacy.indexOf("### DeepSeek Harness's files");
+  expect(start).toBeGreaterThan(-1);
+  const section = privacy.slice(start, privacy.indexOf("\n### ", start));
+  for (const text of [section, notes]) {
+    for (const field of [
+      "~/.dsh/sessions",
+      "DSH_HOME",
+      "AGENT_LOOKOUT_DEEPSEEK_HARNESS_HOME",
+      "session.v4.jsonl.zstd",
+      "session.lock",
+      "session/title",
+      "exit_plan_mode",
+      "ask_user_question",
+      "ps -A -o pid=,lstart=,comm=",
+      "/proc/uptime",
+      "64 KiB",
+      "16 MiB",
+      "64 MiB",
+      "8 MiB",
+      "512 bytes",
+    ]) {
+      expect(text, field).toContain(field);
+    }
+  }
+  for (const field of ["dsh-v0.2.2-rc.3", "38a6a5c965aa", "dsh-v0.2.0-rc.2", "session/end-seed"]) {
+    expect(notes, field).toContain(field);
   }
 });
