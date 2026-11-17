@@ -32,6 +32,7 @@ import {
   OPENCODE_PROGRAMS,
   opencodeInTable,
 } from "@collector/adapters/opencode/processes";
+import { sqliteUri } from "@collector/adapters/opencode/sessionRows";
 import { FAILED_ERRORS } from "@core/mapping/opencode/opencodeMapping";
 import {
   answerRow,
@@ -441,7 +442,10 @@ describe("reading the sessions", () => {
     const fromHome = standInMimoSqlite([answerRow({ id: A })]);
     const adapter = mimoCodeAdapterFor(home, fromHome, { env: { MIMOCODE_HOME: "/work/mimo" } });
     expect((await adapter.poll()).sessions).toHaveLength(1);
-    expect(fromHome.runs[0]?.args.at(-2)).toContain("/work/mimo/data/mimocode.db?mode=ro");
+    // Resolved, so on Windows it starts with the drive.
+    expect(fromHome.runs[0]?.args.at(-2)).toBe(
+      sqliteUri(path.resolve("/work/mimo/data/mimocode.db"), "whole"),
+    );
     expect(adapter.lookingIn).toBe(
       `Looking for MiMo Code sessions in ${path.resolve("/work/mimo/data/mimocode.db")}.`,
     );
