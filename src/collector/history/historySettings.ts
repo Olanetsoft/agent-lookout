@@ -9,6 +9,7 @@ import { clineSessionsDirFor } from "../adapters/cline/index.ts";
 import { CODEX_HOME_ENV, CODEX_OWN_HOME_ENV } from "../adapters/codex/index.ts";
 import { continueHomeFor } from "../adapters/continue/index.ts";
 import { crushDataDirFor } from "../adapters/crush/index.ts";
+import { fxSessionsDirFor } from "../adapters/fx/index.ts";
 import { geminiCliFolder, geminiCliSeatbeltFolder } from "../adapters/gemini-cli/index.ts";
 import { gooseDatabaseFor } from "../adapters/goose/index.ts";
 import { hermesRootFor } from "../adapters/hermes-agent/home.ts";
@@ -66,7 +67,7 @@ export function readHistorySetup(
 }
 
 /**
- * The folders the sixteen other sources read, and OpenCode's, Goose's, Kilo
+ * The folders the seventeen other sources read, and OpenCode's, Goose's, Kilo
  * Code's and MiMo Code's databases,
  * as the adapters work them out on this system, made into a short fingerprint that
  * names none of them. Two copies of Agent Lookout with the same one see the
@@ -105,6 +106,7 @@ export function sourcesFingerprint(
     kimchiSessionsDirFor(env, homeDir),
     primeAgentSessionsDirFor(env, homeDir),
     primeAgentAgentDirFor(env, homeDir),
+    fxSessionsDirFor(env, homeDir) ?? "",
   ];
   return createHash("sha256").update(JSON.stringify(folders)).digest("hex").slice(0, 32);
 }

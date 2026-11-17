@@ -42,6 +42,8 @@ export type RemoteSourceId = `remote:${string}`;
  * `prime-agent` is Prime Intellect's Prime Agent, in its command
  * `prime-agent`, whose sessions are read from the file it keeps for each,
  * its session leases and its workers' journals.
+ * `fx` is Vercel Labs' fx, in its command `fx`, in `fx ask` and in editors
+ * over ACP, whose sessions are read from the log it keeps for each.
  */
 export type SourceId =
   | "claude-code"
@@ -63,6 +65,7 @@ export type SourceId =
   | "mimo-code"
   | "kimchi"
   | "prime-agent"
+  | "fx"
   | "status-files"
   | RemoteSourceId;
 

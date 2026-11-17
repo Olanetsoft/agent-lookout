@@ -83,6 +83,7 @@ async function startLookout(files: Record<string, string>): Promise<string> {
       AGENT_LOOKOUT_MIMO_CODE_HOME: await tempDir(),
       AGENT_LOOKOUT_KIMCHI_HOME: await tempDir(),
       AGENT_LOOKOUT_PRIME_AGENT_HOME: await tempDir(),
+      AGENT_LOOKOUT_FX_HOME: await tempDir(),
       AGENT_LOOKOUT_STATUS_DIR: statusDir,
       AGENT_LOOKOUT_TMUX: "off",
     },
