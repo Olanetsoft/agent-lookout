@@ -1,5 +1,5 @@
 import { lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { appendFile, mkdir, symlink, utimes, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -242,6 +242,32 @@ describe("sessions on real files", () => {
       const result = await adapterFor(below).poll();
       expect(result.health.state).toBe("ok");
       expect(result.sessions).toEqual([]);
+    },
+  );
+
+  test.skipIf(process.platform === "win32")(
+    "a link put at a session folder's name since it was listed is not gone into",
+    async () => {
+      const home = await homeWith({
+        [SESSION_ID]: headerLine() + batch(...endedTurn(0, Date.now() - 4 * 60_000)),
+      });
+      const other = await homeWith({
+        [sessionIdOf(9)]:
+          headerLine({ id: sessionIdOf(9) }) + batch(...endedTurn(0, Date.now() - 4 * 60_000)),
+      });
+      const { io, asked } = recording();
+      const adapter = adapterFor(home, { io });
+      expect((await adapter.poll()).sessions.map((one) => one.id)).toEqual([ID]);
+      const folder = path.join(home, "sessions", PROJECT_FOLDER, SESSION_ID);
+      await rm(folder, { recursive: true });
+      await symlink(path.join(other, "sessions", PROJECT_FOLDER, sessionIdOf(9)), folder);
+      asked.length = 0;
+      const result = await adapter.poll();
+      expect(result.health.state).toBe("ok");
+      expect(result.sessions).toEqual([]);
+      for (const target of asked) {
+        expect(target.startsWith(`${folder}${path.sep}`), target).toBe(false);
+      }
     },
   );
 

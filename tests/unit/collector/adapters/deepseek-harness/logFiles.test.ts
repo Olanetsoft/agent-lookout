@@ -126,6 +126,39 @@ describe("the finder", () => {
     expect(files.count("readdir", (target) => target.includes("linked"))).toBe(0);
   });
 
+  test("a link put at a listed session folder's name is not gone into before the next sweep", async () => {
+    const files = memoryFiles();
+    writeLog(files, headerLine());
+    const finder = finderFor(files);
+    expect(paths(await finder.find(NOW))).toEqual([logPath()]);
+    // The log stays where the folder was, as one behind a link would be found.
+    files.special(sessionFolder());
+    files.touch(`${SESSIONS_DIR}/${PROJECT_FOLDER}`, NOW);
+    files.forget();
+    expect((await finder.find(NOW + 2_000)).logs).toEqual([]);
+    const under = (target: string) => target.startsWith(`${sessionFolder()}/`);
+    expect(files.count("lstat", under)).toBe(0);
+    expect(files.count("openRegular", under)).toBe(0);
+    // A folder there again is listed afresh, with whatever log it now holds.
+    files.remove(sessionFolder());
+    writeLog(files, headerLine(), { compressed: false });
+    expect(paths(await finder.find(NOW + 4_000))).toEqual([
+      logPath(SESSION_ID, { compressed: false }),
+    ]);
+  });
+
+  test("a session folder is looked up once a poll, with its log, and not again when it was just listed", async () => {
+    const files = memoryFiles();
+    writeLog(files, headerLine());
+    const finder = finderFor(files);
+    await finder.find(NOW);
+    expect(files.count("lstat", (target) => target === sessionFolder())).toBe(1);
+    files.forget();
+    await finder.find(NOW + 2_000);
+    expect(files.count("lstat", (target) => target === sessionFolder())).toBe(1);
+    expect(files.count("lstat", (target) => target === logPath())).toBe(1);
+  });
+
   test("a log older than a day is passed over until the next sweep, and is found again once written", async () => {
     const files = memoryFiles();
     const file = writeLog(files, headerLine(), { mtimeMs: NOW - DAY - 1 });

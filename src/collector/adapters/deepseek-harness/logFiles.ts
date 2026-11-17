@@ -17,19 +17,21 @@ import type { FileInfo, ReadOnlyIo } from "../../files/readOnlyIo.ts";
  * (session-format/src/filename.ts:5). DeepSeek Harness reads the one with
  * the highest N, and refuses a session whose highest N it does not know even
  * when an older one is beside it (docs/subsystems/persistence.md:193), or
- * whose folder holds names of both kinds (index.ts:1556-1559).
+ * whose folder holds names of both kinds (index.ts:1561).
  *
  * So on each poll the sessions folder is looked up, following a link there,
  * and listed when its modified time moved or a sweep is due. Each project
  * folder is looked up with `lstat`, which follows no link, and listed when
- * its time moved or a sweep is due. A session folder is looked up and listed
- * when it first appears and at each sweep, and on every poll while it holds
- * no log yet and was changed in the last day, for a session being made. Of a
- * session folder only its names are read. Each log of format 4 is looked up
- * with `lstat`, unless it was found to be older than a day or past the newest
- * `MAX_LOGS`, when it is passed over until the next sweep. A link, or
- * anything that is not a folder or a file, is never gone into or taken.
- * `session.lock`, temporary files and every other name are never looked up.
+ * its time moved or a sweep is due. A session folder is listed when it first
+ * appears and at each sweep, and on every poll while it holds no log yet and
+ * was changed in the last day, for a session being made. Of a session folder
+ * only its names are read. On every poll each log of format 4 is looked up
+ * with `lstat`, its session folder first, unless the log was found to be
+ * older than a day or past the newest `MAX_LOGS`, when it is passed over
+ * until the next sweep. A link, or anything that is not a folder or a file,
+ * is never gone into or taken, a link put at a session folder's name since
+ * it was listed among them. `session.lock`, temporary files and every other
+ * name are never looked up.
  */
 
 /** How often every folder is listed and every log looked up. */
@@ -44,7 +46,7 @@ export const FORMAT_VERSION = 4;
 /** A log's name, with its format and whether it is compressed. */
 const LOG_NAME = /^session(?:\.v([1-9][0-9]*))?\.jsonl(\.zstd)?$/;
 
-/** A file in a project folder of DeepSeek Harness's older flat layout, which it refuses (index.ts:1682-1690). */
+/** A file in a project folder of DeepSeek Harness's older flat layout, which it refuses (index.ts:1685-1692). */
 const FLAT_FILE = /\.jsonl(?:\.zstd)?$/;
 
 /** A log of format 4, with what a `lstat` of it said this poll. */
@@ -182,35 +184,43 @@ export function createLogFinder(options: LogFinderOptions): LogFinder {
     }
   }
 
-  /** What a session folder holds, from its names, listed when new, pending or at a sweep. */
-  async function choiceIn(dir: string, sweep: boolean, now: number): Promise<Choice> {
+  /**
+   * What a session folder holds, from its names, listed when new, pending or
+   * at a sweep; and whether it was looked up with `lstat` for it.
+   */
+  async function choiceIn(
+    dir: string,
+    sweep: boolean,
+    now: number,
+  ): Promise<{ choice: Choice; looked: boolean }> {
     const known = sessions.get(dir);
-    if (known !== undefined && !sweep && !pending.has(dir)) return known.choice;
+    if (known !== undefined && !sweep && !pending.has(dir)) {
+      return { choice: known.choice, looked: false };
+    }
     const folder = await infoOf(dir);
     if (folder?.kind !== "directory") {
       sessions.delete(dir);
       pending.delete(dir);
-      return { kind: "none" };
+      return { choice: { kind: "none" }, looked: true };
     }
     // A folder that held no log is listed again only while it was changed in the last day.
     if (known !== undefined && !sweep && !isWithinRetention(Math.floor(folder.mtimeMs), now)) {
-      return known.choice;
+      return { choice: known.choice, looked: true };
     }
     let choice: Choice;
     try {
       choice = chooseLog(await io.readdir(dir));
     } catch {
-      return known?.choice ?? { kind: "none" };
+      return { choice: known?.choice ?? { kind: "none" }, looked: true };
     }
     sessions.set(dir, { choice });
     if (choice.kind === "none") pending.add(dir);
     else pending.delete(dir);
-    return choice;
+    return { choice, looked: true };
   }
 
   /** A file's `lstat`, when it is a file written to in the last day; else it is passed over. */
   async function recent(file: string, now: number): Promise<FileInfo | null> {
-    if (passedOver.has(file)) return null;
     const info = await infoOf(file);
     if (info?.kind !== "file") return null;
     if (isWithinRetention(Math.floor(info.mtimeMs), now)) return info;
@@ -241,9 +251,15 @@ export function createLogFinder(options: LogFinderOptions): LogFinder {
         seenProjects.add(project);
         for (const folder of await sessionsIn(project, sweep)) {
           seenSessions.add(folder);
-          const choice = await choiceIn(folder, sweep, now);
+          const { choice, looked } = await choiceIn(folder, sweep, now);
           if (choice.kind === "none") continue;
           const file = path.join(folder, choice.name);
+          if (passedOver.has(file)) continue;
+          // A link put at a session folder's name since it was listed is not gone into.
+          if (!looked && (await infoOf(folder))?.kind !== "directory") {
+            sessions.delete(folder);
+            continue;
+          }
           const info = await recent(file, now);
           if (info === null) continue;
           if (choice.kind === "older") found.older += 1;
