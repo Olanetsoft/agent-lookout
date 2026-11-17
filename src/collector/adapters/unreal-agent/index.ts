@@ -101,7 +101,7 @@ export const NEWER_FORMAT_NOTE =
 export const UNREAD_NOTE =
   "Some sessions hold a line Agent Lookout does not know, perhaps from a newer Unreal Agent, so they show as unknown.";
 
-/** Said when a session that looks idle is too long to read from its start. */
+/** Said when a session that shows as unknown is too long to read from its start. */
 export const LONG_NOTE =
   "Some sessions are longer than 64 MiB, too long to read from their start, so they show as unknown while Unreal Agent waits in them.";
 
@@ -447,7 +447,7 @@ export function createUnrealAgentAdapter(options: UnrealAgentAdapterOptions = {}
       });
       const { phase } = unrealAgentPhaseNow(file.replay, writtenAt, checkedAt);
       if (phase === "unread") unread = true;
-      if (phase === "unsure" && file.tooLong) long = true;
+      if (phase === "unsure" && file.tooLong && session.status === "unknown") long = true;
       if (session.status === "unknown" && held.rule === "L4" && phase === "waiting") counted = true;
       return session;
     });

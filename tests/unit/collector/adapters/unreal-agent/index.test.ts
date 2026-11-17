@@ -40,6 +40,7 @@ import {
   sessionPath,
   shellCall,
   shellOperation,
+  shellState,
   STARTED_AT,
   uuidOf,
 } from "@tests/fixtures/unreal-agent/unrealAgent";
@@ -72,6 +73,26 @@ function watching(
 
 const statusOf = (result: AdapterResult, id = ID) =>
   result.sessions.find((session) => session.id === id)?.status;
+
+const FILL = "@@FILL@@";
+
+/** A file's bytes, with the `FILL` mark in its text made 65 MiB of text, too long to read whole. */
+function overLong(text: string): Buffer {
+  const [before, after] = text.split(FILL);
+  return Buffer.concat([
+    Buffer.from(before as string),
+    Buffer.alloc(65 * 1024 * 1024, 0x61),
+    Buffer.from(after as string),
+  ]);
+}
+
+/** A session that waits, its first reply 65 MiB long. */
+function waitsWithFill(): SessionLines {
+  const lines = new SessionLines();
+  lines.settings(STARTED_AT).message(STARTED_AT).turn(STARTED_AT).reply(STARTED_AT, { text: FILL });
+  lines.message(STARTED_AT).turn(STARTED_AT).reply(STARTED_AT);
+  return lines;
+}
 
 describe("where it looks", () => {
   test("in ~/.local/state/unreal-agent/sessions, on macOS too, saying so while it looks", () => {
@@ -347,23 +368,47 @@ describe("a session", () => {
 
   test("that waits in a file over 64 MiB, which is not read whole, is unknown, and the card says why", async () => {
     const files = memoryFiles();
-    const lines = new SessionLines();
-    lines
-      .settings(STARTED_AT)
-      .message(STARTED_AT)
-      .turn(STARTED_AT)
-      .reply(STARTED_AT, { text: "@@FILL@@" });
-    lines.message(STARTED_AT).turn(STARTED_AT).reply(STARTED_AT);
-    const [before, after] = lines.text().split("@@FILL@@");
-    const bytes = Buffer.concat([
-      Buffer.from(before as string),
-      Buffer.alloc(65 * 1024 * 1024, 0x61),
-      Buffer.from(after as string),
-    ]);
-    writeSession(files, bytes, { mtimeMs: NOW - MINUTE });
+    writeSession(files, overLong(waitsWithFill().text()), { mtimeMs: NOW - MINUTE });
     const result = await unrealAgentAdapterFor(files).poll();
     expect(statusOf(result)).toBe("unknown");
     expect(result.health.detail).toBe(`${HEALTHY} ${LONG_NOTE}`);
+  });
+
+  test("that waits in a file over 64 MiB is finished once no program runs, and the card says nothing of its length", async () => {
+    const files = memoryFiles();
+    writeSession(files, overLong(waitsWithFill().text()), { mtimeMs: NOW - MINUTE });
+    const processes = standInUnrealProcesses({ ok: true, starts: [], unknownStart: false });
+    const result = await unrealAgentAdapterFor(files, { processes }).poll();
+    expect(statusOf(result)).toBe("finished");
+    expect(result.health.detail).not.toContain(LONG_NOTE);
+  });
+
+  test("quit with Ctrl+C in a file over 64 MiB is finished, and the card says nothing of its length", async () => {
+    const files = memoryFiles();
+    const lines = waitsWithFill();
+    lines.hard(STARTED_AT);
+    writeSession(files, overLong(lines.text()), { mtimeMs: NOW - MINUTE });
+    const result = await unrealAgentAdapterFor(files).poll();
+    expect(statusOf(result)).toBe("finished");
+    expect(result.health.detail).toBe(HEALTHY);
+  });
+
+  test("quit with Ctrl+C in a file over 64 MiB while an older command ran is finished, and the card says nothing of its length", async () => {
+    const files = memoryFiles();
+    const lines = new SessionLines();
+    lines.settings(STARTED_AT).message(STARTED_AT).turn(STARTED_AT);
+    const firstTurn = lines.turnId;
+    const op = shellCall(lines, STARTED_AT, 1, { end: false });
+    lines.heartbeat(STARTED_AT).turn(STARTED_AT).reply(STARTED_AT, { text: FILL });
+    lines.heartbeat(STARTED_AT).turn(STARTED_AT).reply(STARTED_AT).hard(STARTED_AT);
+    const done = shellState({ operationId: op, ended: true });
+    lines.operation(shellOperation(op, "canceling"));
+    lines.operation(shellOperation(op, "canceled", done));
+    lines.completed(STARTED_AT, "call_1", [shellOperation(op, "canceled", done)], firstTurn);
+    writeSession(files, overLong(lines.text()), { mtimeMs: NOW - MINUTE });
+    const result = await unrealAgentAdapterFor(files).poll();
+    expect(statusOf(result)).toBe("finished");
+    expect(result.health.detail).toBe(HEALTHY);
   });
 
   test("takes no time more than 2 seconds before its start", async () => {
