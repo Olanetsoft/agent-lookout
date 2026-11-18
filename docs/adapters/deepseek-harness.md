@@ -244,7 +244,7 @@ The desktop app's names there are worked out, not seen. procps works a process's
 - The folder is where the session began, not where it moved to.
 - On Linux, a clock set forward by more than a minute can finish a live session.
 - On macOS, after the clock is set back by more than a minute while Agent Lookout runs, a session whose last write is stamped between the time the clock was set back to and the latest time it had seen is not finished by `ps` while a `node` or DeepSeek Harness program runs, so it can stay idle or unknown until none runs, Agent Lookout restarts or it leaves the list a day after its last write. As the time between two polls is read on a clock that stops while the Mac sleeps, a session written after the clock was set back and just before the Mac slept, between the same two polls, can show as finished until it is written again.
-- On macOS, when Agent Lookout starts after the clock was set back by more than a minute, a session written since by a program that started before then can show as finished, until it is written after the clock passes that program's start.
+- On macOS, when Agent Lookout starts after the clock was set back by more than a minute, a session written since by a program that started before then can show as finished, until a write of it is stamped no earlier than a minute before that program's start.
 - A DeepSeek Harness that is closing can lose a turn's last line (`packages/core/agent-loop/README.md:232`), so a session closed mid-turn can show as working, then unknown or finished.
 - A chat imported from chat.deepseek.com whose last reply the import closed on an error (`packages/experimental/deepseek-chat-import/src/conversation.ts:198-207`) shows as failed until it is reopened.
 
