@@ -493,6 +493,9 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
 
   const alwaysNotes = `${STATUS_NOTE} ${UNCHECKED_NOTE}`;
 
+  /** Whether the last answer of `ps`, which this poll may not have asked, could not say which programs run. */
+  const psCannotSay = () => lastAnswer !== null && !usable(lastAnswer);
+
   function zstdNote(compressed: number): string {
     if (zstd !== null) return "";
     if (compressed === 0) {
@@ -538,11 +541,14 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
       reader.keepOnly(new Set());
       waits = new Map();
       if (named) {
+        const cannotSay = psCannotSay();
         return result(
           "ok",
-          `${DEEPSEEK_HARNESS_HOME_ENV} is set, and there is no ${sessionsName} folder, so no DeepSeek Harness sessions are listed. ${alwaysNotes}${zstdNote(0)}`,
+          `${DEEPSEEK_HARNESS_HOME_ENV} is set, and there is no ${sessionsName} folder, so no DeepSeek Harness sessions are listed. ${alwaysNotes}${cannotSay ? ` ${PS_FAILED_NOTE}` : ""}${zstdNote(0)}`,
           "not found",
           checkedAt,
+          [],
+          cannotSay ? BASIS_WITHOUT_PROCESSES : unaskedBasis,
         );
       }
       absentAt = checkedAt;
@@ -674,7 +680,7 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
     if (systemNote !== null) detail += ` ${systemNote}`;
     // A poll that does not ask `ps` is named as the last answer was, so a
     // session that settles while it cannot say is compared with that way's poll.
-    else if (lastAnswer !== null && !usable(lastAnswer)) {
+    else if (psCannotSay()) {
       detail += ` ${PS_FAILED_NOTE}`;
       basis = BASIS_WITHOUT_PROCESSES;
     }

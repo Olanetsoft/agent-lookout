@@ -958,6 +958,28 @@ describe("ps", () => {
     expect(failed.health.detail).toContain(PS_FAILED_NOTE);
   });
 
+  test("that cannot say names apart a poll that finds the named sessions folder missing", async () => {
+    const files = memoryFiles();
+    const clock = handClock();
+    const ps = standInPs();
+    plain(files, headerLine() + batch(line.turnStart(0, T)), { mtimeMs: T });
+    const adapter = deepseekHarnessAdapterFor(files, {
+      env: { AGENT_LOOKOUT_DEEPSEEK_HARNESS_HOME: `${HOME}/.dsh` },
+      now: clock.now,
+      ps,
+    });
+    ps.fail();
+    expect((await adapter.poll()).basis).toBe(BASIS_WITHOUT_PROCESSES);
+    files.remove(SESSIONS_DIR);
+    clock.advance(2 * SECOND);
+    const missing = await adapter.poll();
+    expect(ps.runs).toHaveLength(1);
+    expect(missing.health.state).toBe("ok");
+    expect(missing.sessions).toEqual([]);
+    expect(missing.basis).toBe(BASIS_WITHOUT_PROCESSES);
+    expect(missing.health.detail).toContain(PS_FAILED_NOTE);
+  });
+
   test("a node started after the last write, beyond a minute, does not keep a session open; one before does", async () => {
     const files = memoryFiles();
     plain(files, headerLine() + batch(...endedTurn(0, T)), { mtimeMs: T + 3 });
