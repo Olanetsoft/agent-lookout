@@ -176,8 +176,9 @@ export type DeepseekHarnessWriter =
   /** One may. */
   | "maybe";
 
-/** A subagent's log, of a session shown, that could be read. */
+/** A subagent's log, of a session shown, read past its first line. */
 export interface DeepseekHarnessChild {
+  /** Its turns, unsure when its log is too long or stuck. */
   turn: DeepseekHarnessTurn;
   /** When its log was last written, or null when that time cannot be right. */
   writtenAt: number | null;
@@ -188,7 +189,7 @@ export interface DeepseekHarnessChild {
 export interface DeepseekHarnessFamily {
   /** The session's own turns, or null when its log cannot be used: too long, stuck or of a newer format. */
   own: DeepseekHarnessTurn | null;
-  /** Its subagents' logs that could be read and used. */
+  /** Its subagents' logs read past their first line. */
   children: readonly DeepseekHarnessChild[];
   /** When it or a subagent's log was last written, or null when that cannot be right. */
   writtenAt: number | null;
@@ -251,8 +252,9 @@ const IDLE_ENDS: ReadonlySet<DeepseekHarnessEnd> = new Set([
  * 10. A subagent's turn is open, its log was written within 30 minutes and a
  *     program that could write it may run: working, since the earliest such
  *     turn began.
- * 11. A subagent's wait with neither, unless no program that could write
- *     that subagent's log runs: unknown.
+ * 11. A subagent's wait with neither, or a subagent's turn that is not
+ *     known, as when its log is too long or stuck, unless no program that
+ *     could write that subagent's log runs: unknown.
  * 12. Its last turn ended otherwise: idle, since then.
  * 13. No turn yet: idle, since the session began or was reopened.
  *
@@ -321,7 +323,11 @@ export function deepseekHarnessStatusOf(family: DeepseekHarnessFamily): Deepseek
     );
     return { status: "working", since, showsLastWrite: true };
   }
-  if (childWaits.some((child) => child.writer !== "gone")) {
+  if (
+    childWaits.some((child) => child.writer !== "gone") ||
+    // A subagent's turn not known may wait or work.
+    children.some((child) => child.turn.state === "unsure" && child.writer !== "gone")
+  ) {
     return { status: "unknown", since: null, showsLastWrite: false };
   }
   return {
