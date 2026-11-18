@@ -10,6 +10,7 @@ import { createPiProcessReader } from "@collector/adapters/pi/processes";
 import { createCollector } from "@collector/collector";
 import { nodeIo } from "@collector/files/readOnlyIo";
 import {
+  CWD,
   messageLine,
   OWNER,
   PRIVATE_PROMPT,
@@ -28,8 +29,6 @@ import { makeClaudeHome, NO_SETTINGS_FILE, tempDir } from "@tests/support/node/t
 // real `ps` on macOS and Linux. Whether a Droid runs on the machine under test
 // is not known, so a test that goes through it takes either status, and the
 // others give the adapter a stand-in for `ps`.
-
-const CWD = path.resolve("/Users/example/code/demo-project");
 
 /** A Droid folder, `.factory`, with these files by their path in `sessions`. */
 async function homeWith(files: Record<string, string>) {
