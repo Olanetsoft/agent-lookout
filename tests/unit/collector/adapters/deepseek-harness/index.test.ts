@@ -891,6 +891,10 @@ describe("ps", () => {
     clock.advance(SECOND);
     expect((await adapter.poll()).sessions[0]?.status).toBe("finished");
     expect(ps.runs).toHaveLength(2);
+    // Written 3 seconds before that answer, so not asked again within 10 seconds of it.
+    clock.advance(2 * SECOND);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("finished");
+    expect(ps.runs).toHaveLength(2);
     // A clock set back to just after the write asks again and allows nothing for a rounded time, so it stays finished.
     clock.set(NOW - SECOND + 500);
     expect((await adapter.poll()).sessions[0]?.status).toBe("finished");
