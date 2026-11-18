@@ -204,7 +204,7 @@ Droid documents hooks that could tell working, waiting and finished apart: `Noti
 
 - Every session is unknown while Factory's app, Droid's daemon or a tunnel runs.
 - No session ever shows as working or as needing you, and finished is all or nothing.
-- While a `droid` runs, as one does all day while Factory's app is open, and always on Windows, a session sends Ended when it leaves the list: a day after its last write, when you archive it, or when its file goes (a user report, Factory-AI/factory issue #59).
+- While a `droid` runs, as one does all day while Factory's app is open, and always on Windows, a session sends Ended when it leaves the list: a day after its last write, when you archive it, or when its file goes (a user report, Factory-AI/factory issue #59), and so does one that leaves it within seconds of a write while no `droid` program is seen.
 - A finished session's time is its file's last write, which a rename in the app moves.
 - A session copied here from another computer, as a synced or pulled one may be (`docs:changelog/release-notes.mdx:215`, `:1292`), shows as finished once no `droid` runs here.
 - A session whose file is cut back to its first line for good leaves the list once the file holds still.
@@ -214,7 +214,7 @@ Droid documents hooks that could tell working, waiting and finished apart: `Noti
 - An `archivedAt` that is not text, such as `true`, leaves the session shown.
 - A settings file larger than 16 KiB counts as not archived.
 - A settings file left half written shows as not archived once it holds still.
-- Droid run under another name, as an SDK host can start it (`ts-repo:docs/typescript-sdk-reference.md:39-41`), or as `node`, shows as finished while it runs.
+- Droid run under another name, as an SDK host can start it (`ts-repo:docs/typescript-sdk-reference.md:39-41`), or as `node`, is not seen by `ps`. While it writes, every session shows as unknown, and a session that leaves the list then sends Ended. Once no session has been written for 2 seconds, every session shows as finished, though it runs.
 - Missions workers are listed.
 - A session with only lines Droid's hooks add after its first line is listed (a user report, Factory-AI/factory issue #1).
 - Favourites are not marked.
@@ -240,14 +240,14 @@ Everything here is read from Factory's documentation and SDKs, so each of these 
 
 ## What breaks when Droid changes
 
-| Change in Droid                                                               | What the dashboard shows                                              |
-| ----------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| The sessions folder moves from `~/.factory/sessions`                          | Droid is not found, or found with no sessions                         |
-| The first line's type is renamed, or the title made optional                  | Sessions are not listed, and the Sources view says so                 |
-| The ID stops being the file's name                                            | Sessions are listed by the file's name, or not at all                 |
-| `archivedAt` is renamed                                                       | Archived sessions are listed                                          |
-| The program is renamed, or runs as `node`                                     | Sessions show as finished while Droid runs                            |
-| Droid starts to write a status or a pid                                       | Nothing changes until the adapter reads it, and sessions stay unknown |
-| The first line grows past 64 KiB, as a long system prompt on it would make it | Sessions are not listed, and the Sources view says so                 |
+| Change in Droid                                                               | What the dashboard shows                                                                                                |
+| ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| The sessions folder moves from `~/.factory/sessions`                          | Droid is not found, or found with no sessions                                                                           |
+| The first line's type is renamed, or the title made optional                  | Sessions are not listed, and the Sources view says so                                                                   |
+| The ID stops being the file's name                                            | Sessions are listed by the file's name, or not at all                                                                   |
+| `archivedAt` is renamed                                                       | Archived sessions are listed                                                                                            |
+| The program is renamed, or runs as `node`                                     | Sessions show as finished while Droid runs, except in the seconds after each write, when every session shows as unknown |
+| Droid starts to write a status or a pid                                       | Nothing changes until the adapter reads it, and sessions stay unknown                                                   |
+| The first line grows past 64 KiB, as a long system prompt on it would make it | Sessions are not listed, and the Sources view says so                                                                   |
 
 To check a new Droid, read the Python SDK's `src/droid_sdk/_high_level/discovery.py` and `src/droid_sdk/transport.py`, the TypeScript SDK's `listSessions`, `loadSettingsFile`, `SessionStartEventSchema`, `normalizeSessionStartEvent`, `SessionSettingsFileSchema` and `resolveDroidCommand`, and Factory's CLI reference and hooks reference. Then update `UNCHECKED_NOTE` in `src/collector/adapters/droid/index.ts` and the first paragraphs here.
