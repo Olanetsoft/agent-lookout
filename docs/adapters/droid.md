@@ -12,7 +12,7 @@ The citations:
 - `ts-repo:path:line` is Factory-AI/droid-sdk-typescript at `a4103054`.
 - A user report is an issue someone opened on Factory-AI/factory. Each says what one person saw, not what Factory documents.
 
-The code is in `src/collector/adapters/droid/`. `index.ts` builds the adapter, `sessionFile.ts` reads each session's first line, `settingsFile.ts` reads whether it is archived, and `toSession.ts` makes the session. It shares Pi's finder of session files, `src/collector/adapters/pi/sessionFiles.ts`, and Pi's question to `ps`, `src/collector/adapters/pi/processes.ts`. The status is given by `src/core/mapping/droid/droidMapping.ts`.
+The code is in `src/collector/adapters/droid/`. `index.ts` builds the adapter, `sessionFile.ts` reads each session's first line, `settingsFile.ts` reads whether it is archived, and `toSession.ts` makes the session. It shares Pi's finder of session files, `src/collector/adapters/pi/sessionFiles.ts`, Pi's tests of which IDs are allowed and of a session's `cwd`, `SESSION_ID` and `folder` in `src/collector/adapters/pi/sessionFile.ts`, and Pi's question to `ps`, `src/collector/adapters/pi/processes.ts`. The status is given by `src/core/mapping/droid/droidMapping.ts`.
 
 ## What the issue said, and what holds
 

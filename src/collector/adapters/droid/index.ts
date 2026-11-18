@@ -38,8 +38,10 @@ import { droidSession, SOURCE_ID } from "./toSession.ts";
  * It is a small adapter of its own, not a profile of Pi's: Droid's first line,
  * its IDs and its project folders differ from Pi's, and it keeps a settings
  * file beside each session. It shares Pi's finder of session files
- * (`../pi/sessionFiles.ts`), with a test of its own for project folders, and
- * Pi's question to `ps` (`../pi/processes.ts`), with Droid's names.
+ * (`../pi/sessionFiles.ts`), with a test of its own for project folders, Pi's
+ * tests of which IDs are allowed and of a session's `cwd` (`SESSION_ID` and
+ * `folder` in `../pi/sessionFile.ts`), and Pi's question to `ps`
+ * (`../pi/processes.ts`), with Droid's names.
  */
 
 /** The variable that names Droid's folder, `~/.factory`, for Agent Lookout alone. */
