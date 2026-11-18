@@ -60,7 +60,7 @@ import { gunzipSync } from "node:zlib";
  * command and 28 KB of the documents the package ships.
  *
  * Installed was raised from 6.10 MB to 6.20 MB once Droid took it to 6.11 MB,
- * from 6.07 MB. It added 35 KB, 18 KB of code in the command and 17 KB of the
+ * from 6.07 MB. It added 36 KB, 18 KB of code in the command and 18 KB of the
  * documents the package ships. Unpacked, at 4.29 MB from 4.26 MB, is still
  * under its 4.30 MB, so it was left as it was.
  */
