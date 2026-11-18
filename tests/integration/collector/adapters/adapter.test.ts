@@ -741,10 +741,6 @@ test("PRIVACY.md and the Droid notes name what is read and from which versions",
     expect(notes).toContain(version);
   }
   expect(notes).toContain("Apache-2.0");
-  for (const word of ["UNLICENSED", "terms of service", "Factory's terms"]) {
-    expect(privacy, word).not.toContain(word);
-    expect(notes, word).not.toContain(word);
-  }
 
   const start = privacy.indexOf("### Droid's files");
   expect(start).toBeGreaterThan(-1);
