@@ -204,7 +204,7 @@ Droid documents hooks that could tell working, waiting and finished apart: `Noti
 
 - Every session is unknown while Factory's app, Droid's daemon or a tunnel runs.
 - No session ever shows as working or as needing you, and finished is all or nothing.
-- While a `droid` runs, as one does all day while Factory's app is open, and always on Windows, a session sends Ended when it leaves the list: a day after its last write, when you archive it, or when its file goes (a user report, Factory-AI/factory issue #59), and so does one that leaves it within seconds of a write while no `droid` program is seen.
+- While a `droid` runs, as one does all day while Factory's app is open, and always on Windows, a session sends Ended when it leaves the list: a day after its last write, when you archive it, or when its file goes (a user report, Factory-AI/factory issue #59).
 - A finished session's time is its file's last write, which a rename in the app moves.
 - A session copied here from another computer, as a synced or pulled one may be (`docs:changelog/release-notes.mdx:215`, `:1292`), shows as finished once no `droid` runs here.
 - A session whose file is cut back to its first line for good leaves the list once the file holds still.
@@ -214,7 +214,7 @@ Droid documents hooks that could tell working, waiting and finished apart: `Noti
 - An `archivedAt` that is not text, such as `true`, leaves the session shown.
 - A settings file larger than 16 KiB, or a link, counts as not archived, though both SDKs read it.
 - A settings file left half written shows as not archived once it holds still.
-- Droid run under another name, as an SDK host can start it (`ts-repo:docs/typescript-sdk-reference.md:39-41`), or as `node`, is not seen by `ps`. While it writes, every session shows as unknown, and a session that leaves the list then sends Ended. Once no session has been written for 2 seconds, every session shows as finished, though it runs.
+- Droid run under another name, as an SDK host can start it (`ts-repo:docs/typescript-sdk-reference.md:39-41`), or as `node`, is not seen by `ps`. While it writes, every session shows as unknown. A session that leaves the list then sends Ended only once a write or a `droid` next shows every session as unknown, or no session is listed, which can be a day later. Once no session has been written for 2 seconds, every session shows as finished, though it runs.
 - Missions workers are listed.
 - A session with only lines Droid's hooks add after its first line is listed (a user report, Factory-AI/factory issue #1).
 - Favourites are not marked.
