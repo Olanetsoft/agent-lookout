@@ -637,23 +637,25 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
         });
       }
       const known = writes.filter((at): at is number => at !== null);
-      // None when any of them cannot be right, so an older one is never taken for the last.
-      const writtenAt = known.length < writes.length ? null : Math.max(...known);
+      // The newest that can be right, for the quiet rule and the desktop app. One that cannot be right may be the last, so then none finishes it.
+      const newest = known.length === 0 ? null : Math.max(...known);
+      const anyUnknown = known.length < writes.length;
       // Whether `ps` could change its status: not when its own turns settle it, nor when it was last written before the computer started.
       const settled =
         own === null ||
         own.state === "unsure" ||
         (own.state === "ended" && (own.end === "error" || own.end === "disposed")) ||
-        dshWriter({
-          platform,
-          writtenAt,
-          bootAt,
-          answer: null,
-          answerAt: 0,
-          startFloor: clock.startFloor,
-          lowAt: clock.lowAt,
-        }) === "gone";
-      return { family, own, children, writtenAt, settled };
+        (!anyUnknown &&
+          dshWriter({
+            platform,
+            writtenAt: newest,
+            bootAt,
+            answer: null,
+            answerAt: 0,
+            startFloor: clock.startFloor,
+            lowAt: clock.lowAt,
+          }) === "gone");
+      return { family, own, children, writtenAt: newest, anyUnknown, settled };
     });
 
     const unsettled = facts.filter(({ settled }) => !settled);
@@ -669,7 +671,7 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
     const nextWaits = new Map<string, DeepseekHarnessWait>();
     let tooLong = false;
     let unread = false;
-    const sessions = facts.map(({ family, own, children, writtenAt }) => {
+    const sessions = facts.map(({ family, own, children, writtenAt, anyUnknown }) => {
       const writerOf = (at: number | null, asked: boolean) =>
         dshWriter({
           platform,
@@ -686,7 +688,8 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
         family.ref !== null &&
         asAsked(family.ref) &&
         family.children.every(({ ref }) => asAsked(ref));
-      const writer = writerOf(writtenAt, unchanged);
+      const seen = writerOf(writtenAt, unchanged);
+      const writer = anyUnknown && seen === "gone" ? "maybe" : seen;
       // Each subagent's by its own last write, as reopening a session reopens none of them.
       const judged = children.map(({ ref, ...child }) => ({
         ...child,
@@ -726,7 +729,8 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
         header: family.header,
         title: family.log?.title ?? null,
         status,
-        writtenAt,
+        // No last write is shown while one that may be the last cannot be right.
+        writtenAt: anyUnknown ? null : writtenAt,
         now: checkedAt,
       });
     });

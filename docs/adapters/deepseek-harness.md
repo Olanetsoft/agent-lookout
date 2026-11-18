@@ -189,7 +189,7 @@ The first row that holds:
 | 12  | Its last turn ended `completed`, `blocked`, `max-tokens`, `interrupted`, `forked` or `aborted` otherwise                                                                                                                                            | idle                                                                  | the end                        |
 | 13  | No turn yet                                                                                                                                                                                                                                         | idle                                                                  | when it began, or was reopened |
 
-"Wrote" is its log's or a subagent's, the newer, and not known while any of their times cannot be right; a subagent's turn and wait are judged by that subagent's log alone. A wait that goes on across polls keeps the time it began while it shares an approval or a question with the one before, as Mistral Vibe's does.
+"Wrote" is its log's or a subagent's, the newer, of those whose time can be right; while any cannot be right, row 4 does not hold and no last write is shown; a subagent's turn and wait are judged by that subagent's log alone. A wait that goes on across polls keeps the time it began while it shares an approval or a question with the one before, as Mistral Vibe's does.
 
 ### Thirty quiet minutes
 
@@ -240,7 +240,7 @@ The desktop app's names there are worked out, not seen. procps works a process's
 - A `node` that started before a session's last write, and still runs, keeps that session from showing as finished, whatever it is.
 - A real wait in the command or the web page longer than 30 minutes, with no desktop app, turns unknown.
 - A subagent whose log is too long or cannot be followed leaves its session unknown, not idle, while a program that could write that log may run. A turn under way, of the session's own or another subagent's, still shows as working, though that subagent may wait for an approval.
-- A session whose log, or a subagent's, is stamped more than a minute ahead of the clock, or more than 2 seconds before that log's session began, has no last write until the log is written again or the clock catches up: it is not finished by `ps` or the computer's start, and never shows as working or needing you from a turn of its own.
+- A session whose log, or a subagent's, is stamped more than a minute ahead of the clock, or more than 2 seconds before that log's session began, is not finished by `ps` or the computer's start, and shows no last write, until that log is written again or the clock catches up.
 - A question of the timed `ask_user_question`, which DeepSeek Harness's presets do not use, waits only until its time runs out, 120 seconds by default (`packages/interaction/tool-ask-user/src/index.ts:16-26`), then answers itself.
 - An answer given in an editor over ACP, slower than one batch, can show as needing you for a moment.
 - The folder is where the session began, not where it moved to.

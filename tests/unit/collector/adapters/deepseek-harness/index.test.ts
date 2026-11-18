@@ -751,12 +751,34 @@ describe("its times", () => {
     // ps shows no program that could write it: with the older write taken as its last, it would be finished.
     for (const files of [family(NOW + 5 * MINUTE, T), family(T, NOW + 5 * MINUTE)]) {
       const { sessions } = await deepseekHarnessAdapterFor(files).poll();
-      expect(sessions[0]).toMatchObject({ status: "unknown" });
+      expect(sessions[0]).toMatchObject({ status: "working" });
       expect(sessions[0]).not.toHaveProperty("lastWriteAt");
     }
     // With both times as they could be, it is.
     const { sessions } = await deepseekHarnessAdapterFor(family(T, T + SECOND)).poll();
     expect(sessions[0]).toMatchObject({ status: "finished", statusSince: T + SECOND });
+  });
+
+  test("a subagent's log written ahead of the clock leaves a recent write of its own to keep its turn working or waiting", async () => {
+    const family = (own: string) => {
+      const files = memoryFiles();
+      plain(files, headerLine() + own, { mtimeMs: NOW - SECOND });
+      plain(files, childHeaderLine() + batch(...endedTurn(0, T)), {
+        id: CHILD_ID,
+        mtimeMs: NOW + 5 * MINUTE,
+      });
+      return files;
+    };
+    const working = await deepseekHarnessAdapterFor(family(batch(line.turnStart(0, T))), {
+      ps: nodeRuns(),
+    }).poll();
+    expect(working.sessions[0]).toMatchObject({ status: "working" });
+    expect(working.sessions[0]).not.toHaveProperty("lastWriteAt");
+    const waiting = await deepseekHarnessAdapterFor(
+      family(batch(line.turnStart(0, T), line.approvalAsked(1, T + SECOND))),
+      { ps: nodeRuns() },
+    ).poll();
+    expect(waiting.sessions[0]).toMatchObject({ status: "needs-you" });
   });
 
   test("a session that began after its log's time that cannot be right is listed, with no start", async () => {

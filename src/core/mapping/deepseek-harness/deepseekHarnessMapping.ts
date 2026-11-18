@@ -191,7 +191,7 @@ export interface DeepseekHarnessFamily {
   own: DeepseekHarnessTurn | null;
   /** Its subagents' logs read past their first line. */
   children: readonly DeepseekHarnessChild[];
-  /** When it or a subagent's log was last written, or null when that cannot be right. */
+  /** The newest of its and its subagents' log writes that can be right, or null when none can. */
   writtenAt: number | null;
   writer: DeepseekHarnessWriter;
   now: number;
