@@ -73,10 +73,12 @@ A file is opened without following a link at its name and, in a project folder, 
 
 Never opened, and never looked up:
 
-- `.favorites`, the search index `droid search --reindex` rebuilds (`docs:reference/cli-reference.mdx:413`), and any other file in the sessions folder.
+- `.favorites` and any other file in the sessions folder that is not a `*.jsonl` or the `<id>.settings.json` beside a file that shows a session.
 - Anything else under `~/.factory`: `settings.json`, `settings.local.json` and `config.json`, which can hold API keys (`docs:cli/byok/overview.mdx:24-56`), `mcp.json`, `hooks.json` and hook scripts, `.ssh/` (`docs:cli/features/droid-computers.mdx:150-162`), `logs/` (`docs:integrations/ide-integrations.mdx:121`), `memories.md`, `AGENTS.md`, `droids/`, `skills/`, `commands/`, `rules/`, specs, worktrees and Missions files.
 - Droid's tokens, in the system keyring or any file.
 - No socket of Droid's daemon is connected to.
+
+Factory does not say where the search index `droid search --reindex` rebuilds is kept (`docs:reference/cli-reference.mdx:413`), so it is item 10 below: it is never opened unless it is kept as an `<id>.jsonl` in the sessions folder or a `-` folder in it.
 
 ## The session file
 
