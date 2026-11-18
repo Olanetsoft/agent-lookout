@@ -149,11 +149,14 @@ export interface LogFinderOptions {
   /** Whether compressed logs can be read. When not, they are looked up only to be counted. */
   readsCompressed: boolean;
   sweepMs?: number;
+  /** The most logs given at once, `MAX_LOGS` unless a test says fewer. */
+  maxLogs?: number;
 }
 
 export function createLogFinder(options: LogFinderOptions): LogFinder {
   const { sessionsDir, io, readsCompressed } = options;
   const sweepMs = options.sweepMs ?? SWEEP_MS;
+  const maxLogs = options.maxLogs ?? MAX_LOGS;
   let root: { mtimeMs: number; names: string[] } | null = null;
   const projects = new Map<string, ProjectFolder>();
   const sessions = new Map<string, SessionFolder>();
@@ -287,8 +290,8 @@ export function createLogFinder(options: LogFinderOptions): LogFinder {
       }
 
       found.logs.sort((a, b) => b.info.mtimeMs - a.info.mtimeMs || a.path.localeCompare(b.path));
-      for (const ref of found.logs.slice(MAX_LOGS)) passedOver.add(ref.path);
-      found.logs = found.logs.slice(0, MAX_LOGS);
+      for (const ref of found.logs.slice(maxLogs)) passedOver.add(ref.path);
+      found.logs = found.logs.slice(0, maxLogs);
       return found;
     },
 

@@ -234,22 +234,28 @@ describe("the finder", () => {
   });
 
   test(`at most the ${MAX_LOGS} newest logs are looked at, the rest until the next sweep`, async () => {
+    expect(MAX_LOGS).toBe(2000);
+    // The same rule with a cap of 20, as 2,000 logs are slow to make on Windows.
+    const cap = 20;
     const files = memoryFiles();
-    for (let n = 0; n < MAX_LOGS + 3; n++) {
+    for (let n = 0; n < cap + 3; n++) {
       writeLog(files, headerLine({ id: sessionIdOf(n + 10) }), {
         id: sessionIdOf(n + 10),
         mtimeMs: NOW - n,
       });
     }
-    const finder = finderFor(files);
+    const finder = createLogFinder({
+      sessionsDir: SESSIONS_DIR,
+      io: files.io,
+      readsCompressed: true,
+      maxLogs: cap,
+    });
     const found = await finder.find(NOW);
-    expect(found.logs).toHaveLength(MAX_LOGS);
+    expect(found.logs).toHaveLength(cap);
     expect(asWritten(found.logs[0]!.path)).toBe(logPath(sessionIdOf(10)));
     files.forget();
     await finder.find(NOW + 2_000);
-    expect(files.count("lstat", (target) => target === logPath(sessionIdOf(MAX_LOGS + 12)))).toBe(
-      0,
-    );
+    expect(files.count("lstat", (target) => target === logPath(sessionIdOf(cap + 12)))).toBe(0);
   });
 
   test("sessions of an older or newer format written in the last day are counted, and their logs never opened", async () => {
