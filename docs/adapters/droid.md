@@ -27,7 +27,7 @@ The code is in `src/collector/adapters/droid/`. `index.ts` builds the adapter, `
 
 ## How it reads Droid, and why
 
-It needs nothing installed and changes nothing. It reads the first line of each recent session file and `archivedAt` from the settings file beside it, read-only, and asks `ps` whether a `droid` program runs. It runs no Droid program, connects to no Droid daemon and makes no request to Droid or to Factory. CONTRIBUTING's fourth step asks for the least an adapter can read, and this is it.
+It needs nothing installed and changes nothing. It reads the first line of each recent session file and `archivedAt` from the settings file beside it, read-only, and asks `ps` whether a `droid` program runs. It runs no Droid program, connects to no Droid daemon and makes no request to Droid or to Factory. CONTRIBUTING's fourth step asks for the files to be checked against a listing the vendor documents for outside tools, and this adapter does not do that.
 
 Factory documents a way for other programs to list sessions: the SDKs' `listSessions` and `list_sessions`. Neither is used:
 
@@ -115,9 +115,9 @@ Beside each session file is `<id>.settings.json` (`py:discovery.py:150`; `ts:nod
 - It is looked up only for a file that shows a session whose ID no newer file has given, once each poll.
 - It is opened only when its size, modified time or identity changes and it is 16 KiB or less. At most 16 KiB and one byte are read, and a file that gives more than 16 KiB is not parsed.
 - It is turned into text and parsed only when it looks whole, ending in `}`, and holds `"archivedAt"` as bytes.
-- A session is archived when `archivedAt` is text that is not empty. Both SDKs hide such a session (`py:discovery.py:155`; `ts:node.js`, `if (settings?.archivedAt) return null`). The TypeScript SDK's schema takes only text, so a value of another kind, such as `true`, leaves the session shown here; the Python SDK would hide it.
+- A session is archived when `archivedAt` is text that is not empty. Both SDKs hide such a session (`py:discovery.py:155`; `ts:node.js`, `if (settings?.archivedAt) return null`), the TypeScript SDK only when the whole file passes its schema (`ts:node.js, loadSettingsFile`; `ts:chunk-KAAWCHO4.js, SessionSettingsFileSchema`), so there `tags` that are not a list of tags leave it listed. This reads `archivedAt` alone, as the Python SDK does. The TypeScript SDK's schema takes only text, so a value of another kind, such as `true`, leaves the session shown here; the Python SDK would hide it.
 - Only that yes or no is kept. The tags, the model, the counts and everything else are dropped with the parsed file.
-- A settings file that is missing, larger than 16 KiB, a link or not JSON leaves the session listed, as the SDKs leave it.
+- A settings file that is missing or not JSON leaves the session listed, as the SDKs leave it. One larger than 16 KiB or a link leaves it listed too, though both SDKs read the whole file and follow a link, and would hide an archived session in it.
 - One caught half written, gone or not JSON shows what it showed until it holds still for a poll, so an archived session does not come back for a moment while Droid writes its file.
 
 A user report (Factory-AI/factory issue #59) shows a settings file left after its `.jsonl` was gone. Such a file gives nothing.
@@ -174,7 +174,7 @@ So while any of them runs, every session shows as unknown, even one closed long 
 
 ### Why nothing shows as working or waiting
 
-Nothing Droid writes to a session's files says what it is doing. The SDKs' lists have no status (`py:discovery.py:123-175`; `ts:node.js, listSessions`), and the daemon, which can list the open sessions, is asked with a Factory API key (`ts-repo:docs/typescript-sdk-reference.md:51-52`, `:913`). Droid's hooks could tell, as [A hook, later](#a-hook-later) says.
+Nothing Droid writes to a session's files says what it is doing. The SDKs' lists have no status (`py:discovery.py:123-175`; `ts:node.js, listSessions`), and the daemon, which can list the open sessions, is asked with a Factory API key (`ts-repo:docs/typescript-sdk-reference.md:53`, `:913`). Droid's hooks could tell, as [A hook, later](#a-hook-later) says.
 
 ## Names
 
@@ -212,7 +212,7 @@ Droid documents hooks that could tell working, waiting and finished apart: `Noti
 - `FACTORY_HOME_OVERRIDE` is not followed.
 - A linked session file is not shown, though the TypeScript SDK lists it.
 - An `archivedAt` that is not text, such as `true`, leaves the session shown.
-- A settings file larger than 16 KiB counts as not archived.
+- A settings file larger than 16 KiB, or a link, counts as not archived, though both SDKs read it.
 - A settings file left half written shows as not archived once it holds still.
 - Droid run under another name, as an SDK host can start it (`ts-repo:docs/typescript-sdk-reference.md:39-41`), or as `node`, is not seen by `ps`. While it writes, every session shows as unknown, and a session that leaves the list then sends Ended. Once no session has been written for 2 seconds, every session shows as finished, though it runs.
 - Missions workers are listed.
@@ -225,7 +225,7 @@ Droid documents hooks that could tell working, waiting and finished apart: `Noti
 
 Everything here is read from Factory's documentation and SDKs, so each of these is for a person with Droid installed to check:
 
-1. What `ps -A -o comm=` shows for the command, the daemon, Factory's app and `droid.exe`, and for Droid set up through the Zed extension (`docs:integrations/zed.mdx:10`), JetBrains' ACP registry (`docs:integrations/jetbrains.mdx:23-26`), VS Code's install (`docs:integrations/ide-integrations.mdx:38-42`) and npm (`docs:integrations/ide-integrations.mdx:115`, `docs:reference/cli-reference.mdx:42-43`).
+1. What `ps -A -o comm=` shows for the command, the daemon, Factory's app and `droid.exe`, and for Droid set up through the Zed extension (`docs:integrations/zed.mdx:11`), JetBrains' ACP registry (`docs:integrations/jetbrains.mdx:23-26`), VS Code's install (`docs:integrations/ide-integrations.mdx:38-42`) and npm (`docs:integrations/ide-integrations.mdx:115`, `docs:reference/cli-reference.mdx:42-43`).
 2. Whether the command follows `FACTORY_HOME_OVERRIDE`.
 3. How long real first lines and settings files are.
 4. Whether a first line can be written without its line break.
