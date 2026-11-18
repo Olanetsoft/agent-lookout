@@ -17,7 +17,7 @@ Issue #78 was written from the same source. These parts needed more:
 - A log is `session.v4.jsonl.zstd`, or `session.v4.jsonl` when DeepSeek Harness is set not to compress, as its SDK bundle is (`packages/bundle/sdk-minimal/cordis.patch.yml:172-176`).
 - The first line also holds `type`, `version`, `isSeeded`, `delegationDepth` and `agentPreset`.
 - `turn/end` can also be `interrupted`, written when a session is reopened after a crash, and `forked`, in a fork's copy (`session/types.ts:206-235`). `completed` means the turn is done and the session idle, not that it ended.
-- A session whose newest log is newer than 4 is left out even when a log of format 4 is beside it, as DeepSeek Harness refuses it (`docs/subsystems/persistence.md:193`).
+- A session whose newest log is newer than 4 is left out even when a log of format 4 is beside it, as DeepSeek Harness refuses it (`docs/subsystems/persistence.md:193`). One whose log of format 4 was already being read stays, as unknown, as [Finding the logs](#finding-the-logs) says. DeepSeek Harness moves a session to its current format only when it opens the session to write to it, and leaves the older log as it was (`docs/subsystems/persistence.md:193`; `persistence/index.ts:421-437`), so leaving it out would make a session still in use seem to end.
 - An approval or a question counts only in the turn under way. One left in an earlier turn stays in the log for ever.
 - A plan review, `exit_plan_mode`, waits for the person too (`packages/plan/plan-mode/src/index.ts:64`, `:281-331`).
 - A session's first title is the first five words of its first prompt (`base.yml:60-65`), so only a title its model wrote or one marked as yours is decoded.
@@ -150,7 +150,7 @@ A `user` title is not always one you typed. A scheduled task's session is rename
 
 ## Which sessions are listed
 
-- A log of format 4 written in the last day, of a session that is not a subagent's.
+- A log of format 4 written in the last day, of a session that is not a subagent's, or one already being read when a newer log was written beside it, as unknown, while that newer log was written in the last day.
 - A subagent's session, `origin` `subagent` (`packages/subagent/subagent/src/child-agent.ts:136-154`), is not listed: product views hide it too (`docs/subsystems/persistence.md:197`). Its turns and approvals count for the session it is of.
 - A fork you make is a session of its own (`session/index.ts:1490-1499`).
 - Two folders of one session's name, which DeepSeek Harness refuses, are shown once, the newer.
