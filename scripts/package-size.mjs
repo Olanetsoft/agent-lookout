@@ -55,9 +55,9 @@ import { gunzipSync } from "node:zlib";
  * for several more sources.
  *
  * Unpacked was raised from 4.20 MB to 4.30 MB, and installed from 6.00 MB to
- * 6.10 MB, once DeepSeek Harness took unpacked to 4.24 MB and installed to
- * 6.06 MB, from 4.16 MB and 5.98 MB. It added 81 KB, 58 KB of code in the
- * command and 23 KB of the documents the package ships.
+ * 6.10 MB, once DeepSeek Harness took unpacked to 4.25 MB and installed to
+ * 6.07 MB, from 4.17 MB and 5.98 MB. It added 89 KB, 62 KB of code in the
+ * command and 27 KB of the documents the package ships.
  */
 const LIMITS = {
   tarball: 1_200_000,
