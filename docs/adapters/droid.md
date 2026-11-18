@@ -208,7 +208,7 @@ Droid documents hooks that could tell working, waiting and finished apart: `Noti
 - No session ever shows as working or as needing you, and finished is all or nothing.
 - While a `droid` runs, as one does all day while Factory's app is open, and always on Windows, a session sends Ended when it leaves the list: a day after its last write, when you archive it, or when its file goes (a user report, Factory-AI/factory issue #59).
 - A finished session's time is its file's last write, which a rename in the app moves.
-- A session copied here from another computer, as a synced or pulled one may be (`docs:changelog/release-notes.mdx:215`, `:1292`), shows as finished once no `droid` runs here.
+- A session copied here from another computer, as a synced or pulled one may be (`docs:changelog/release-notes.mdx:215`, `:1292`), shows as finished once no `droid` runs here, unless its file keeps a time ahead of this computer's clock, which keeps every session unknown, as below.
 - A session whose file is cut back to its first line for good leaves the list once the file holds still.
 - When a session started is not known.
 - `FACTORY_HOME_OVERRIDE` is not followed.
@@ -220,7 +220,7 @@ Droid documents hooks that could tell working, waiting and finished apart: `Noti
 - Missions workers are listed.
 - A session with only lines Droid's hooks add after its first line is listed (a user report, Factory-AI/factory issue #1).
 - Favourites are not marked.
-- After the clock is set back, a session file stamped ahead of the clock keeps every session unknown until the clock passes its write.
+- A session file stamped ahead of this computer's clock, as after the clock is set back, on a network home folder whose clock runs ahead, or for a file copied or restored with its time kept, keeps every session unknown until `ps` is asked 2 seconds or more after that time, or after the clock is set back, at or after it. Until then, while no `droid` runs, `ps` is asked on every poll. Nothing limits how far ahead that time can be, so a file stamped years ahead keeps every session unknown until it is archived or its file goes.
 - On Windows every session is unknown. In WSL pointed at Windows' folder, every session shows as finished, except in the seconds after each write, when every session shows as unknown.
 
 ## Not yet checked
