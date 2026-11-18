@@ -110,8 +110,8 @@ export const NOT_A_SESSION_NOTE =
  *   under way.
  * - No Needs you: nothing Droid writes to a session's files says it waits.
  * - Finished is every session while `ps` shows no `droid` program, asked 2
- *   seconds or more after the last write to any session shown, on macOS and
- *   Linux.
+ *   seconds or more after the last write to any session shown, or after it
+ *   when the clock was just set back, on macOS and Linux.
  * - No Failed: nothing on the first line says a turn failed, and nothing
  *   after it is read.
  * - The name is the folder's. Droid's title is made from the first prompt, or
@@ -135,7 +135,7 @@ export const DROID_CAPABILITIES: SourceCapabilities = {
   finished: {
     level: "partly",
     reason:
-      "Every session at once, when ps shows no droid program 2 seconds or more after the last write to any, on macOS and Linux.",
+      "Every session at once, when ps shows no droid program, asked late enough after the last write to any, on macOS and Linux.",
   },
   failed: {
     level: "no",

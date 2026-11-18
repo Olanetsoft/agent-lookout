@@ -140,11 +140,12 @@ Not left out: Missions workers, which both SDKs list; the sessions of every proj
 
 `mapDroidStatus` in `src/core/mapping/droid/droidMapping.ts`:
 
-| A `droid` program runs                                                             | Status     |
-| ---------------------------------------------------------------------------------- | ---------- |
-| Yes, or `ps` cannot say, as on Windows                                             | `unknown`  |
-| No, by an answer asked 2 seconds or more after the last write to any session shown | `finished` |
-| No, by an answer asked sooner after a write                                        | `unknown`  |
+| A `droid` program runs                                                                                 | Status     |
+| ------------------------------------------------------------------------------------------------------ | ---------- |
+| Yes, or `ps` cannot say, as on Windows                                                                 | `unknown`  |
+| No, by an answer asked 2 seconds or more after the last write to any session shown                     | `finished` |
+| No, by an answer asked because the clock was set back, at or after the last write to any session shown | `finished` |
+| No, by any other answer                                                                                | `unknown`  |
 
 A session is never `working`, `idle`, `needs-you` or `failed`. A finished session's time is its file's last write.
 

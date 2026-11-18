@@ -1044,7 +1044,7 @@ export const DROID_CAPABILITIES: SourceCapabilities = {
   finished: {
     level: "partly",
     reason:
-      "Every session at once, when ps shows no droid program 2 seconds or more after the last write to any, on macOS and Linux.",
+      "Every session at once, when ps shows no droid program, asked late enough after the last write to any, on macOS and Linux.",
   },
   failed: {
     level: "no",

@@ -671,7 +671,7 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 - Pi's finder finds the files, with any folder whose name starts with `-` as a project's, and the ID is the file's name (`sessionFile.ts`).
 - Only the first line is read, from the first 4 KiB and at most 64 KiB, and turned into text only when it holds `"session_start"` as bytes. Only `cwd` is kept, never the title or `owner`, and a file with nothing after its first line is not a session yet.
 - `archivedAt` is read from the settings file beside each, at most 16 KiB, and an archived session is left out (`settingsFile.ts`).
-- Pi's `ps -A -o comm=` question says whether any `droid` or `droid-dev` program runs, and its answer that none does counts once it was asked 2 seconds or more after the last write to any session shown.
+- Pi's `ps -A -o comm=` question says whether any `droid` or `droid-dev` program runs, and its answer that none does counts once it was asked 2 seconds or more after the last write to any session shown, or after it when it was asked because the clock was set back.
 
 **How sure it is.** Not checked against Droid yet. Factory's app, Droid's daemon and its tunnels run `droid` too, so while any of them runs every session shows as unknown.
 
@@ -728,7 +728,7 @@ In short:
 - **Unreal Agent** reports working and idle from its file, on macOS and Linux, failed when the newest reply failed, finished on Ctrl+C, when a runner goes idle or once `ps` shows no Unreal Agent program that started before the last write, and Quiet for. Names are its folders', since it gives a session none. No needs you, Jump, tokens, Stop or Answer.
 - **Autohand Code** reports working, idle and needs you from a fresh heartbeat whose process runs, finished once Autohand Code closes a session or the process of its last heartbeat ends, within 15 seconds, or moves on to another session, failed when Autohand Code marked it crashed and saved nothing after, once that process ends, within 15 seconds, or moves on, or at once when it has no heartbeat, as with `--no-daemon`, names you gave, and Quiet for from `metadata.json`. No Jump, tokens, Stop or Answer.
 - **DeepSeek Harness** reports working, needs you and idle from each log's turns and its subagents', failed when a turn ends on an error, finished when DeepSeek Harness closed a session mid-turn or no program that could write it runs, by `ps` or since the computer started, titles its model wrote or marked as yours, and Quiet for from the logs while it works. No Jump, tokens, Stop or Answer.
-- **Droid** reports finished alone, for every session at once when `ps` shows no `droid` program 2 seconds or more after the last write to any, on macOS and Linux. Otherwise a session is unknown. Names are its folders', since its titles are made from the first prompt. No working and idle, needs you, failed, Jump, Quiet for, tokens, Stop or Answer.
+- **Droid** reports finished alone, for every session at once when `ps` shows no `droid` program 2 seconds or more after the last write to any, or after it when the clock was just set back, on macOS and Linux. Otherwise a session is unknown. Names are its folders', since its titles are made from the first prompt. No working and idle, needs you, failed, Jump, Quiet for, tokens, Stop or Answer.
 - **Status files** report whatever the agent writes. No Jump, Stop, Answer or tokens.
 
 A setting can turn a cell to no as well: `AGENT_LOOKOUT_STOP=off` and `AGENT_LOOKOUT_ANSWER=off` change Claude Code's Stop and Answer.
