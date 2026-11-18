@@ -92,7 +92,7 @@ export const BASIS_WITHOUT_PROCESSES = "files-without-processes";
 
 /** Said whenever Droid is watched, because it is what a person would otherwise expect to see. */
 export const STATUS_NOTE =
-  "Nothing Agent Lookout reads says whether a Droid session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while any droid program runs and as finished once none does, by a ps asked 2 seconds or more after the last write to any session shown, or after it when the clock was just set back. Factory's desktop app, Droid's background daemon and a droid computer ssh or port-forward tunnel run droid too, so while any of them runs every session shows as unknown.";
+  "Nothing Agent Lookout reads says whether a Droid session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while any droid program runs and as finished once none does, by a ps asked 2 seconds or more after the last write to any session shown, or at or after it when the clock was just set back. Factory's desktop app, Droid's background daemon and a droid computer ssh or port-forward tunnel run droid too, so while any of them runs every session shows as unknown.";
 
 /** Said whenever Droid is watched, until the adapter has been checked on a computer running it. */
 export const UNCHECKED_NOTE =
@@ -112,8 +112,8 @@ export const NOT_A_SESSION_NOTE =
  *   under way.
  * - No Needs you: nothing Droid writes to a session's files says it waits.
  * - Finished is every session while `ps` shows no `droid` program, asked 2
- *   seconds or more after the last write to any session shown, or after it
- *   when the clock was just set back, on macOS and Linux.
+ *   seconds or more after the last write to any session shown, or at or after
+ *   it when the clock was just set back, on macOS and Linux.
  * - No Failed: nothing on the first line says a turn failed, and nothing
  *   after it is read.
  * - The name is the folder's. Droid's title is made from the first prompt, or
@@ -219,11 +219,12 @@ interface Found {
  * 2 seconds before. A session shows as unknown while one does, or while `ps`
  * cannot say, as on Windows, and as finished once none does, by an answer
  * asked 2 seconds or more after the last write to any session shown, as a disk
- * can keep a write's time rounded down, or after it when that answer was asked
- * because the clock was set back. A write nearer the answer says a `droid` may
- * have started since, so until `ps` is asked again every session shows as
- * unknown, as while one runs, and closing the last `droid` still finishes every
- * session at once. It never shows as working, as needing you or as failed.
+ * can keep a write's time rounded down, or at or after it when that answer was
+ * asked because the clock was set back. A write nearer the answer says a
+ * `droid` may have started since, so until `ps` is asked again every session
+ * shows as unknown, as while one runs, and closing the last `droid` still
+ * finishes every session at once. It never shows as working, as needing you or
+ * as failed.
  *
  * Droid not being installed costs nothing: when the sessions folder is missing,
  * the adapter says so and looks again only once a minute, and runs nothing.

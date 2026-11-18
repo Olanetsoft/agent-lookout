@@ -485,7 +485,7 @@ Droid keeps each session in `<id>.jsonl`, in a folder for its project in `~/.fac
 - reads `archivedAt` from the settings file beside each, in `settingsFile.ts`, at most 16 KiB, and leaves archived sessions out;
 - asks `ps -A -o comm=` with Pi's reader, `pi/processes.ts`, given `droid` and `droid-dev`, only while a session is listed, as Pi's adapter does.
 
-A session's id is `droid:<id>`, its name its folder's, else its id, and its status `unknown` or `finished`, by `droidMapping.ts` in `src/core/mapping/droid/`. An answer of `ps` that no `droid` runs finishes the sessions only when it was asked 2 seconds or more after the last write to any of them, as a disk can keep a write's time rounded down, or after it when it was asked because the clock was set back. Until then every session is unknown, with the basis `files`, so closing the last `droid` still finishes every session at once, in `files-closed`.
+A session's id is `droid:<id>`, its name its folder's, else its id, and its status `unknown` or `finished`, by `droidMapping.ts` in `src/core/mapping/droid/`. An answer of `ps` that no `droid` runs finishes the sessions only when it was asked 2 seconds or more after the last write to any of them, as a disk can keep a write's time rounded down, or at or after it when it was asked because the clock was set back. Until then every session is unknown, with the basis `files`, so closing the last `droid` still finishes every session at once, in `files-closed`.
 
 ## The status-file adapter
 
