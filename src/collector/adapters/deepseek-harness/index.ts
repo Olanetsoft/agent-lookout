@@ -258,6 +258,9 @@ interface Family {
   children: { ref: LogRef; header: DeepseekHarnessHeader; log: DeepseekHarnessLog | null }[];
 }
 
+/** A log's identity, size and time, as a poll's `lstat` found them. */
+type LogStamp = Pick<LogRef["info"], "ino" | "size" | "mtimeMs">;
+
 /**
  * Finds DeepSeek Harness's sessions on this machine from the event logs it
  * keeps, with nothing installed, no setting changed and no program of
@@ -321,6 +324,12 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
   let answerAt = 0;
   /** Whether that answer was asked because the clock was set back. */
   let clockSetBack = false;
+  /**
+   * While it was, each log as the poll that asked it found it. Every write
+   * that poll saw came before `ps` was asked. A log changed since may have
+   * been written after, so a rounded write time is allowed for again.
+   */
+  const seenAtAsk = new Map<string, LogStamp>();
   /** What a clock set back keeps the start rule from finishing. */
   let clock = startDshClockGuard();
   /**
@@ -389,11 +398,13 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
    * though not within 2 seconds of the last ask, when a session was written
    * after an answer that listed no `node` or DeepSeek Harness program, or up
    * to 2 seconds before, as a disk can keep a write's time rounded down. A
-   * clock set back counts as time enough.
+   * clock set back counts as time enough. When it is asked because the clock
+   * was set back, each log this poll found is kept as it was found.
    */
   async function programsFor(
     checkedAt: number,
     writes: readonly (number | null)[],
+    logs: readonly LogRef[],
   ): Promise<DshPrograms> {
     const since = checkedAt - answerAt;
     let due = lastAnswer === null || since < 0 || since >= processCheckMs;
@@ -407,10 +418,27 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
     }
     if (lastAnswer === null || due) {
       clockSetBack = since < 0;
+      seenAtAsk.clear();
+      if (clockSetBack) {
+        for (const { path: file, info } of logs) {
+          seenAtAsk.set(file, { ino: info.ino, size: info.size, mtimeMs: info.mtimeMs });
+        }
+      }
       lastAnswer = await processes.read();
       answerAt = checkedAt;
     }
     return lastAnswer;
+  }
+
+  /** Whether a log is as the poll that asked the answer in use found it, once the clock was set back. */
+  function asAsked(ref: LogRef): boolean {
+    const seen = seenAtAsk.get(ref.path);
+    return (
+      seen !== undefined &&
+      seen.ino === ref.info.ino &&
+      seen.size === ref.info.size &&
+      seen.mtimeMs === ref.info.mtimeMs
+    );
   }
 
   /** The sessions to show, and the logs of their subagents, newest first. */
@@ -584,7 +612,7 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
           checkedAt,
         ),
       ];
-      const children: Omit<DeepseekHarnessChild, "writer">[] = [];
+      const children: (Omit<DeepseekHarnessChild, "writer"> & { ref: LogRef })[] = [];
       for (const child of family.children) {
         const childWrite = lastWriteOf(
           Math.max(child.ref.info.mtimeMs, child.log?.writtenAt ?? 0),
@@ -593,7 +621,7 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
         );
         writes.push(childWrite);
         if (child.log?.mark === "ok" && child.log.turn.state !== "unsure") {
-          children.push({ turn: child.log.turn, writtenAt: childWrite });
+          children.push({ turn: child.log.turn, writtenAt: childWrite, ref: child.ref });
         }
       }
       const known = writes.filter((at): at is number => at !== null);
@@ -621,6 +649,7 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
         ? await programsFor(
             checkedAt,
             unsettled.map(({ writtenAt }) => writtenAt),
+            found.logs,
           )
         : null;
 
@@ -628,20 +657,28 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
     let tooLong = false;
     let unread = false;
     const sessions = facts.map(({ family, own, children, writtenAt }) => {
-      const writerOf = (at: number | null) =>
+      const writerOf = (at: number | null, asked: boolean) =>
         dshWriter({
           platform,
           writtenAt: at,
           bootAt,
           answer,
           answerAt,
-          clockSetBack,
+          // A log changed since that answer was asked may have been written after it.
+          clockSetBack: clockSetBack && asked,
           startFloor: clock.startFloor,
           lowAt: clock.lowAt,
         });
-      const writer = writerOf(writtenAt);
+      const unchanged =
+        family.ref !== null &&
+        asAsked(family.ref) &&
+        family.children.every(({ ref }) => asAsked(ref));
+      const writer = writerOf(writtenAt, unchanged);
       // Each subagent's by its own last write, as reopening a session reopens none of them.
-      const judged = children.map((child) => ({ ...child, writer: writerOf(child.writtenAt) }));
+      const judged = children.map(({ ref, ...child }) => ({
+        ...child,
+        writer: writerOf(child.writtenAt, asAsked(ref)),
+      }));
       const status = deepseekHarnessStatusOf({
         own,
         children: judged,

@@ -899,8 +899,38 @@ describe("ps", () => {
     clock.set(NOW - SECOND + 500);
     expect((await adapter.poll()).sessions[0]?.status).toBe("finished");
     expect(ps.runs).toHaveLength(3);
-    clock.advance(2 * SECOND);
+    // So does a poll within 2 seconds of that ask, for the log as that ask found it.
+    clock.advance(SECOND);
     expect((await adapter.poll()).sessions[0]?.status).toBe("finished");
+    expect(ps.runs).toHaveLength(3);
+    clock.advance(SECOND);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("finished");
+    expect(ps.runs).toHaveLength(4);
+  });
+
+  test("an answer asked because the clock was set back allows again for a rounded write time on a log written since that ask", async () => {
+    const files = memoryFiles();
+    const clock = handClock();
+    const ps = standInPs([]);
+    const file = plain(files, headerLine() + batch(...endedTurn(0, NOW - 10 * SECOND)), {
+      mtimeMs: NOW - 10 * SECOND,
+    });
+    const adapter = deepseekHarnessAdapterFor(files, { now: clock.now, ps });
+    expect((await adapter.poll()).sessions[0]?.status).toBe("finished");
+    // The clock is set back half a second, so ps is asked at once, and shows no node.
+    clock.set(NOW - 500);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("finished");
+    expect(ps.runs).toHaveLength(2);
+    // A node started after that ask writes a turn, on a disk that keeps whole seconds, so its time is before the ask.
+    ps.set([psLine(100, NOW - 400, "node")]);
+    files.append(file, batch(line.turnStart(4, NOW - 300, 2)), { mtimeMs: NOW - SECOND });
+    clock.advance(SECOND);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("working");
+    expect(ps.runs).toHaveLength(2);
+    // 2 seconds after the ask, ps is asked again and shows the node.
+    clock.advance(SECOND);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("working");
+    expect(ps.runs).toHaveLength(3);
   });
 
   test("on macOS, a clock set back by more than a minute does not finish a session a node started before then writes", async () => {

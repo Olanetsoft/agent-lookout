@@ -124,7 +124,7 @@ export interface WriterInput {
   /** What `ps` last said, and when it was asked. */
   answer: DshPrograms | null;
   answerAt: number;
-  /** Whether that answer was asked because the clock was set back: then nothing is allowed for a rounded write time. */
+  /** Whether that answer was asked because the clock was set back, and the logs behind this write are unchanged since the poll that asked it: then nothing is allowed for a rounded write time. */
   clockSetBack?: boolean;
   /** The clock guard's bounds (`DshClockGuard`): a last write stamped at or after `lowAt` and before `startFloor` is not finished by the start rule. */
   startFloor: number;
@@ -186,10 +186,11 @@ export function guardDshClock(
  *   as a disk can keep a write's time rounded down, shows no such program
  *   that started before it, or within a minute after, as Linux can move a
  *   start by that much. A start that cannot be read counts as before. An
- *   answer asked because the clock was set back allows nothing for that. On
- *   macOS, once a poll's time is more than a minute behind the latest one
- *   seen, a write stamped between the time the clock was set back to and
- *   that latest time is never finished this way while such a program runs.
+ *   answer asked because the clock was set back allows nothing for that, for
+ *   logs unchanged since the poll that asked it. On macOS, once a poll's time
+ *   is more than a minute behind the latest one seen, a write stamped between
+ *   the time the clock was set back to and that latest time is never finished
+ *   this way while such a program runs.
  * - The desktop app backs it when such a program of its names runs.
  * - Otherwise one may. So it is on Windows, with no time that can be right,
  *   when `ps` could not say, and when its table did not list Agent Lookout's
