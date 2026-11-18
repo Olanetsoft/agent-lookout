@@ -18,11 +18,13 @@ afterEach(() => {
 const DAY = 24 * 60 * 60 * 1000;
 const MB = 1024 * 1024;
 
-/** Today at this time on the clock. */
+/**
+ * This time on the clock on Jan 5, 2026. `NOW` is on that day too, and every
+ * card here is given it as its clock, so these times are today's to the card
+ * whenever the tests run.
+ */
 function today(hours: number, minutes: number): number {
-  const date = new Date();
-  date.setHours(hours, minutes, 0, 0);
-  return date.getTime();
+  return new Date(2026, 0, 5, hours, minutes).getTime();
 }
 
 const NOW = today(15, 0);

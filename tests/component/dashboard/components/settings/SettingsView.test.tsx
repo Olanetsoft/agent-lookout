@@ -1497,12 +1497,25 @@ async function emailLines(screen: Awaited<ReturnType<typeof render>>) {
   return [...card.element().querySelectorAll(SENDING_LINES)].map((line) => line.textContent);
 }
 
-/** Today at this time on the clock. */
-const today = (hours: number, minutes: number) => {
-  const date = new Date();
-  date.setHours(hours, minutes, 0, 0);
-  return date.getTime();
-};
+/**
+ * This time on the clock on Jan 5, 2026, the day `onTheDay` stands the clock
+ * on, so it is today in a test that calls `onTheDay`, whenever the tests run.
+ */
+const today = (hours: number, minutes: number) => new Date(2026, 0, 5, hours, minutes).getTime();
+
+/**
+ * Stands the clock at 14:30 on the day of `today` until the test ends, so a
+ * card says those times as today's, with no day, on whichever side of midnight
+ * the tests run. Every test that gives a card one of them calls this first.
+ * Only the time is faked, so timers run as ever.
+ */
+function onTheDay() {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(today(14, 30));
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+}
 
 const EMAIL_ON: EmailStatusResponse = {
   on: true,
@@ -1599,6 +1612,7 @@ test.each<[string, Partial<EmailStatusResponse>, string[]]>([
     ],
   ],
 ])("when the last email was %s, the card says so", async (_, status, lines) => {
+  onTheDay();
   email = { ...EMAIL_ON, ...status };
   const screen = await render(<SettingsView />);
 
@@ -1638,6 +1652,7 @@ test("when the app does not answer, the card says it could not be read, and clai
 test.each(["dark", "light"] as const)(
   "in the %s theme the Email card is built like the notifications card: the state in ink at 500, the line under it quieter, and nothing warm",
   async (theme) => {
+    onTheDay();
     document.documentElement.setAttribute("data-theme", theme);
     email = { ...EMAIL_ON, last: { at: today(14, 2), sent: true } };
     const screen = await render(<SettingsView />);
@@ -1664,6 +1679,7 @@ test.each(["dark", "light"] as const)(
 );
 
 test("with AGENT_LOOKOUT_EMAIL_ASKING on, the card says a wait's email says what the session is asking, and still only reads", async () => {
+  onTheDay();
   email = { ...EMAIL_ON, asking: true, last: { at: today(14, 2), sent: true } };
   const screen = await render(<SettingsView />);
 
@@ -1801,6 +1817,7 @@ test.each<[string, Partial<WebhookStatusResponse>, string[]]>([
     ],
   ],
 ])("when the last post was %s, the card says so", async (_, status, lines) => {
+  onTheDay();
   webhook = { ...WEBHOOK_ON, ...status };
   const screen = await render(<SettingsView />);
 
@@ -1822,6 +1839,7 @@ test("when the app does not answer about the webhook, the card says it could not
 test.each(["dark", "light"] as const)(
   "in the %s theme the Webhook card is built like the Email card, and nothing is warm",
   async (theme) => {
+    onTheDay();
     document.documentElement.setAttribute("data-theme", theme);
     webhook = { ...WEBHOOK_ON, last: { at: today(14, 2), sent: true } };
     const screen = await render(<SettingsView />);
@@ -1917,6 +1935,7 @@ test("with nothing set, the Pull requests card says they are off and which setti
 });
 
 test("with them on, it says where they show, what goes to GitHub and when gh was last asked, and the facts say names go to GitHub", async () => {
+  onTheDay();
   pullRequests = PULL_REQUESTS_ON;
   const screen = await render(<SettingsView />);
 
@@ -1943,6 +1962,7 @@ test("with them on, it says where they show, what goes to GitHub and when gh was
 });
 
 test("with them and email on, the facts name both", async () => {
+  onTheDay();
   pullRequests = PULL_REQUESTS_ON;
   email = EMAIL_ON;
   const screen = await render(<SettingsView />);
@@ -1959,6 +1979,7 @@ test.each<[string, Partial<PullRequestsStatusResponse>]>([
 ])(
   "%s, the card says no pull request is shown, why in a note with gh auth login in the mono, and the facts say nothing goes to GitHub",
   async (_, change) => {
+    onTheDay();
     pullRequests = { ...PULL_REQUESTS_ON, ...change };
     const screen = await render(<SettingsView />);
 
@@ -1983,6 +2004,7 @@ test.each<[string, Partial<PullRequestsStatusResponse>]>([
 );
 
 test("when the last check did not work, the card says so in a note, and still says what goes to GitHub", async () => {
+  onTheDay();
   pullRequests = {
     ...PULL_REQUESTS_ON,
     last: { at: today(14, 2), ok: false, reason: "gh did not answer within 15 seconds" },
@@ -2107,6 +2129,7 @@ test("a push setting that is wrong is named, with what to do, and there is no bu
 });
 
 test("with ntfy on, the card names the host, says whether a token guards the topic and how the last push went, and offers Send a test", async () => {
+  onTheDay();
   ntfy = { ...NTFY_ON, last: { at: today(14, 2), sent: true } };
   const screen = await render(<SettingsView />);
 
@@ -2146,6 +2169,7 @@ test("with Pushover on, and email and the webhook too, the card offers Send a te
 });
 
 test("Send a test asks the app once for that channel, says it is sending, then when the test went, and keeps its focus", async () => {
+  onTheDay();
   ntfy = NTFY_ON;
   let release = () => {};
   testAnswer = {
@@ -2207,6 +2231,7 @@ test.each<[string, { status: number; body: unknown }, string]>([
     "20 pushes were tried in the last hour, the most it tries. The next can go at 15:02.",
   ],
 ])("when %s, the note says the test was not sent, and why", async (_, answer, words) => {
+  onTheDay();
   ntfy = NTFY_ON;
   testAnswer = answer;
   const screen = await render(<SettingsView />);
@@ -2231,6 +2256,7 @@ test.each<[string, { status: number; body: unknown }, string]>([
 test.each(["dark", "light"] as const)(
   "in the %s theme the ntfy card is built like the Webhook card, its button is the quiet one, and nothing is warm",
   async (theme) => {
+    onTheDay();
     document.documentElement.setAttribute("data-theme", theme);
     ntfy = { ...NTFY_ON, tokenSet: true, last: { at: today(14, 2), sent: true } };
     const screen = await render(<SettingsView />);
@@ -2269,6 +2295,7 @@ test.each(["dark", "light"] as const)(
 test.each([1280, 375])(
   "at %i pixels the push cards, with a failed test's note, keep inside the card",
   async (width) => {
+    onTheDay();
     await page.viewport(width, 900);
     onTestFinished(() => page.viewport(1280, 900));
     ntfy = {

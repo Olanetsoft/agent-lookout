@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 import { userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
@@ -111,6 +111,11 @@ test("shows the version, the switch on, when it last checked, and Check for Upda
 });
 
 test("Check for Updates… asks the app, and says it is up to date", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(2026, 0, 5, 14, 30).getTime());
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
   const screen = await render(<UpdatesCard />);
   await card(screen).getByRole("button", { name: "Check for Updates…" }).click();
 
@@ -121,7 +126,10 @@ test("Check for Updates… asks the app, and says it is up to date", async () =>
     action: "check-for-updates",
     body: "{}",
   });
-  expect(facts(screen)[1]?.[1]).toMatch(/^\d\d:\d\d$/);
+  expect(facts(screen)).toEqual([
+    ["Version", "v0.2.0"],
+    ["Last checked", "14:30"],
+  ]);
   expect(card(screen).element().querySelector('[data-slot="callout"]')).toBeNull();
 });
 
