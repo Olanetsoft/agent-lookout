@@ -2,7 +2,9 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
-## Unreleased
+## 0.2.23 - 2026-11-19
+
+fx, Unreal Agent, Autohand Code and DeepSeek Harness sessions show.
 
 ### Added
 
