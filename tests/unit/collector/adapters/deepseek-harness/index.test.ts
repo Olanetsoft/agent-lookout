@@ -939,6 +939,32 @@ describe("ps", () => {
     expect(ps.runs).toHaveLength(2);
   });
 
+  test("on macOS, a clock set forward by more than a minute does not finish a session written before then that the desktop app backs", async () => {
+    const files = memoryFiles();
+    const clock = handClock();
+    // os.uptime() on macOS is the clock less kern.boottime, which setting the clock moves by as much: it counts only the time that went by.
+    let uptime = 2 * 60 * MINUTE;
+    const written = NOW - 5 * MINUTE;
+    plain(files, headerLine() + batch(line.turnStart(0, written), line.approvalAsked(1, written)), {
+      mtimeMs: written,
+    });
+    const ps = standInPs([psLine(13, STARTED_AT - MINUTE, "DeepSeek Harness")]);
+    const adapter = deepseekHarnessAdapterFor(files, {
+      now: clock.now,
+      uptimeMs: () => uptime,
+      ps,
+    });
+    expect((await adapter.poll()).sessions[0]?.status).toBe("needs-you");
+    // Set forward 3 hours within the 10 seconds since.
+    clock.set(NOW + 3 * 60 * MINUTE + 10 * SECOND);
+    uptime += 10 * SECOND;
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "needs-you",
+      statusSince: written,
+    });
+    expect(ps.runs).toHaveLength(2);
+  });
+
   test("that cannot say keeps the way of reading named apart once every session is settled", async () => {
     const files = memoryFiles();
     const clock = handClock();

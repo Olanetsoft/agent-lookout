@@ -119,7 +119,7 @@ export interface WriterInput {
   platform: NodeJS.Platform;
   /** When the session or a subagent's log was last written, or null when that cannot be right. */
   writtenAt: number | null;
-  /** When the computer started, or null when not known. */
+  /** When the computer started, the earliest the adapter has worked it out to be while it runs, or null when not known. */
   bootAt: number | null;
   /** What `ps` last said, and when it was asked. */
   answer: DshPrograms | null;

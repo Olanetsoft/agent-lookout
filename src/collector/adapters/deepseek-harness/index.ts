@@ -323,6 +323,13 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
   let clockSetBack = false;
   /** What a clock set back keeps the start rule from finishing. */
   let clock = startDshClockGuard();
+  /**
+   * The earliest the computer's start has been worked out to be while this
+   * runs, as the clock less `os.uptime()`, or null before then. Both count
+   * sleep, so it moves only when the clock is set, by as much, and a clock
+   * set forward cannot move it past writes made before then.
+   */
+  let bootFloor: number | null = null;
   /** Each session's wait on the last poll, so a wait that goes on keeps its time. */
   let waits = new Map<string, DeepseekHarnessWait>();
 
@@ -561,7 +568,11 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
     for (const newer of found.newer) if (newer.current !== null) keep.add(newer.current);
     reader.keepOnly(keep);
 
-    const bootAt = psRuns ? checkedAt - uptimeMs() : null;
+    if (psRuns) {
+      const seen = checkedAt - uptimeMs();
+      if (Number.isFinite(seen) && (bootFloor === null || seen < bootFloor)) bootFloor = seen;
+    }
+    const bootAt = psRuns ? bootFloor : null;
     const facts = families.map((family) => {
       const { header } = family;
       const own: DeepseekHarnessTurn | null =
