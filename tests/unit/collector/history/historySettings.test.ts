@@ -139,6 +139,12 @@ test("the fingerprint of the folders sessions are read from names none of them, 
   for (const value of ["", "  ", "relative/autohand", "~/autohand"]) {
     expect(sourcesFingerprint({ AUTOHAND_HOME: value }, HOME), value).toBe(defaults);
   }
+  // A DSH_HOME that is empty or still not absolute once `~` is read is passed
+  // over, and so is DeepSeek Harness's own default named outright.
+  for (const value of ["", "  ", "relative/dsh", "~relative", "~/.dsh", "~"]) {
+    const expected = value === "~" ? sourcesFingerprint({ DSH_HOME: HOME }, HOME) : defaults;
+    expect(sourcesFingerprint({ DSH_HOME: value }, HOME), value).toBe(expected);
+  }
   // Agent Lookout's names the root outright. A home folder is a whole path,
   // with a drive on Windows, as the system gives it.
   const home = path.resolve(HOME);
@@ -213,6 +219,11 @@ test("the fingerprint of the folders sessions are read from names none of them, 
     sourcesFingerprint({ XDG_STATE_HOME: path.resolve("/tmp/state") }, HOME),
     sourcesFingerprint({ AGENT_LOOKOUT_AUTOHAND_HOME: "/tmp/empty-autohand" }, HOME),
     sourcesFingerprint({ AUTOHAND_HOME: path.resolve("/tmp/autohand-home") }, HOME),
+    sourcesFingerprint(
+      { AGENT_LOOKOUT_DEEPSEEK_HARNESS_HOME: "/tmp/empty-deepseek-harness" },
+      HOME,
+    ),
+    sourcesFingerprint({ DSH_HOME: path.resolve("/tmp/dsh-home") }, HOME),
     sourcesFingerprint({}, "/Users/someone-else"),
   ];
   for (const other of others) expect(other).not.toBe(defaults);

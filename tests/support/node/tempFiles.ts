@@ -254,6 +254,19 @@ export const EMPTY_AUTOHAND_HOME = path.join(
 );
 
 /**
+ * An empty folder for the DeepSeek Harness adapter to read in place of
+ * `~/.dsh`, so that a collector a test builds from `process.env` finds no
+ * sessions: `nodeSetup.ts` makes it, with an empty `sessions` folder, and
+ * names it there. Nothing is ever written in it. A test that builds an
+ * environment of its own names a `tempDir` there.
+ */
+export const EMPTY_DEEPSEEK_HARNESS_HOME = path.join(
+  os.tmpdir(),
+  "agent-lookout-test-no-deepseek-harness",
+  "dsh",
+);
+
+/**
  * An empty folder that stands in for the home folder of the person running the
  * tests: `nodeSetup.ts` makes it and names it in `HOME` and `USERPROFILE`, so
  * `os.homedir()` is never the real home, and no `~/.claude`, `~/.codex`,

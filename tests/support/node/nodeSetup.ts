@@ -13,6 +13,7 @@
 // or a file of its own.
 
 import { mkdirSync } from "node:fs";
+import path from "node:path";
 
 import {
   EMPTY_ANTIGRAVITY_APP_HOME,
@@ -20,6 +21,7 @@ import {
   EMPTY_AUTOHAND_HOME,
   EMPTY_CLINE_HOME,
   EMPTY_CRUSH_HOME,
+  EMPTY_DEEPSEEK_HARNESS_HOME,
   EMPTY_FX_HOME,
   EMPTY_GOOSE_HOME,
   EMPTY_PI_HOME,
@@ -209,6 +211,13 @@ process.env.AGENT_LOOKOUT_UNREAL_AGENT_SESSION_DIR = EMPTY_UNREAL_AGENT_SESSIONS
 mkdirSync(EMPTY_AUTOHAND_HOME, { recursive: true });
 process.env.AGENT_LOOKOUT_AUTOHAND_HOME = EMPTY_AUTOHAND_HOME;
 delete process.env.AUTOHAND_HOME;
+
+// Nor DeepSeek Harness's, in `~/.dsh`, or the folder `DSH_HOME` names: the
+// adapter is pointed at an empty folder, and DeepSeek Harness's own variable
+// is dropped. A test of the adapter names a folder of its own.
+mkdirSync(path.join(EMPTY_DEEPSEEK_HARNESS_HOME, "sessions"), { recursive: true });
+process.env.AGENT_LOOKOUT_DEEPSEEK_HARNESS_HOME = EMPTY_DEEPSEEK_HARNESS_HOME;
+delete process.env.DSH_HOME;
 
 // And `os.homedir()` is an empty folder, never the home of the person running
 // the tests, so a collector whose environment forgets to name a folder of an

@@ -4,7 +4,7 @@ See every AI coding agent running on your computer on one page, and which one is
 
 [![npm](https://img.shields.io/npm/v/agent-lookout)](https://www.npmjs.com/package/agent-lookout) [![CI](https://img.shields.io/github/actions/workflow/status/Olanetsoft/agent-lookout/ci.yml?branch=main&label=CI)](https://github.com/Olanetsoft/agent-lookout/actions/workflows/ci.yml) [![License](https://img.shields.io/npm/l/agent-lookout)](LICENSE) ![Node.js](https://img.shields.io/node/v/agent-lookout)
 
-It finds your Claude Code, Codex, Antigravity, Antigravity CLI, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx, Unreal Agent and Autohand Code sessions on its own, with no setup. It never starts a session, and it stops one or answers a prompt only when you press the button, or by a rule you set.
+It finds your Claude Code, Codex, Antigravity, Antigravity CLI, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx, Unreal Agent, Autohand Code and DeepSeek Harness sessions on its own, with no setup. It never starts a session, and it stops one or answers a prompt only when you press the button, or by a rule you set.
 
 [Install](#install) · [Download for Mac](https://github.com/Olanetsoft/agent-lookout/releases/latest) · [Guide](docs/GUIDE.md) · [Privacy](#privacy) · [Changelog](CHANGELOG.md) · [Website](https://www.agentlookout.app)
 
@@ -53,31 +53,32 @@ Any other agent can show up by writing one small file per session. [Your own age
 
 <!-- Checked against the adapters by tests/integration/collector/adapters/adapter.test.ts -->
 
-| Agent           | Needs you | Jump   | Quiet for | Tokens | Stop   | Answer |
-| --------------- | --------- | ------ | --------- | ------ | ------ | ------ |
-| Claude Code     | Yes       | Partly | No        | Partly | Partly | Partly |
-| Codex           | No        | No     | Yes       | Yes    | No     | No     |
-| Antigravity CLI | Partly    | No     | Yes       | Yes    | No     | No     |
-| Antigravity     | Partly    | No     | Yes       | Yes    | No     | No     |
-| Mistral Vibe    | Partly    | No     | Yes       | Yes    | No     | No     |
-| Gemini CLI      | No        | No     | Yes       | Yes    | No     | No     |
-| OpenCode        | Partly    | No     | No        | Partly | No     | No     |
-| Qwen Code       | Partly    | Partly | Yes       | Yes    | No     | No     |
-| Hermes Agent    | Partly    | No     | No        | No     | No     | No     |
-| Cline           | Partly    | No     | Yes       | No     | No     | No     |
-| Goose           | No        | No     | No        | No     | No     | No     |
-| Pi              | No        | No     | No        | No     | No     | No     |
-| Kimi Code       | Partly    | No     | Partly    | No     | No     | No     |
-| Continue        | No        | No     | No        | No     | No     | No     |
-| Crush           | No        | No     | No        | No     | No     | No     |
-| Kilo Code       | Partly    | No     | No        | Yes    | No     | No     |
-| MiMo Code       | Partly    | No     | No        | Yes    | No     | No     |
-| Kimchi          | No        | No     | No        | No     | No     | No     |
-| Prime Agent     | No        | No     | Partly    | No     | No     | No     |
-| fx              | No        | No     | Partly    | No     | No     | No     |
-| Unreal Agent    | No        | No     | Yes       | No     | No     | No     |
-| Autohand Code   | Partly    | No     | Partly    | No     | No     | No     |
-| Status files    | Partly    | No     | Partly    | No     | No     | No     |
+| Agent            | Needs you | Jump   | Quiet for | Tokens | Stop   | Answer |
+| ---------------- | --------- | ------ | --------- | ------ | ------ | ------ |
+| Claude Code      | Yes       | Partly | No        | Partly | Partly | Partly |
+| Codex            | No        | No     | Yes       | Yes    | No     | No     |
+| Antigravity CLI  | Partly    | No     | Yes       | Yes    | No     | No     |
+| Antigravity      | Partly    | No     | Yes       | Yes    | No     | No     |
+| Mistral Vibe     | Partly    | No     | Yes       | Yes    | No     | No     |
+| Gemini CLI       | No        | No     | Yes       | Yes    | No     | No     |
+| OpenCode         | Partly    | No     | No        | Partly | No     | No     |
+| Qwen Code        | Partly    | Partly | Yes       | Yes    | No     | No     |
+| Hermes Agent     | Partly    | No     | No        | No     | No     | No     |
+| Cline            | Partly    | No     | Yes       | No     | No     | No     |
+| Goose            | No        | No     | No        | No     | No     | No     |
+| Pi               | No        | No     | No        | No     | No     | No     |
+| Kimi Code        | Partly    | No     | Partly    | No     | No     | No     |
+| Continue         | No        | No     | No        | No     | No     | No     |
+| Crush            | No        | No     | No        | No     | No     | No     |
+| Kilo Code        | Partly    | No     | No        | Yes    | No     | No     |
+| MiMo Code        | Partly    | No     | No        | Yes    | No     | No     |
+| Kimchi           | No        | No     | No        | No     | No     | No     |
+| Prime Agent      | No        | No     | Partly    | No     | No     | No     |
+| fx               | No        | No     | Partly    | No     | No     | No     |
+| Unreal Agent     | No        | No     | Yes       | No     | No     | No     |
+| Autohand Code    | Partly    | No     | Partly    | No     | No     | No     |
+| DeepSeek Harness | Partly    | No     | Partly    | No     | No     | No     |
+| Status files     | Partly    | No     | Partly    | No     | No     | No     |
 
 Codex doesn't record when it waits for your approval, so a waiting session shows as working, and after 5 minutes its row says how long it has been quiet. The Antigravity CLI and the Antigravity app show as needing you while they ask you to approve a step, but not what they ask. [What each agent can report](docs/GUIDE.md#what-each-agent-can-report) explains every Partly and No.
 
@@ -116,6 +117,8 @@ fx support reads the log fx keeps for each session, in `~/.fx/sessions/v2`, on m
 Unreal Agent support reads the file Unreal Agent keeps for each session, in `~/.local/state/unreal-agent/sessions`, on macOS and Linux. A session shows as working, idle, failed or finished from its file and from when each Unreal Agent program started, and takes the name of the folder its commands run in. It never shows as needing you. It was built from its source at v0.3.1 and has not yet been checked on a computer running it.
 
 Autohand Code support reads the heartbeat Autohand Code rewrites in `~/.autohand/active-agents` while each session runs, and each session's `metadata.json` in `~/.autohand/sessions`. A session shows as working, idle or needing you from a heartbeat written in the last 15 seconds whose process runs, as finished once Autohand Code closes it or soon after its process ends or leaves it, as failed when it crashed and saved nothing after, soon after its process ends or leaves it, or at once with no heartbeat, and as unknown when its files cannot tell. It takes the name you gave it with `/rename` or `autohand --rename`, else its folder's. A run with `--ephemeral` is left out. It was built from its source at v0.9.11 and has not yet been checked on a computer running it.
+
+DeepSeek Harness support reads the event log DeepSeek Harness keeps for each session, in `~/.dsh/sessions`, undoing its Zstandard compression with Node.js's own `node:zlib`, from Node.js 22.15. A session shows as working, needing you, idle or failed from its log and its subagents' logs, as finished when DeepSeek Harness closed it mid-turn or no program that could write it runs, and as unknown when its log cannot tell, as once its own turn, or a wait with no desktop app running, has gone 30 minutes with nothing written. It takes a title its model wrote or one marked as yours, else its folder's. It was built from its source at dsh-v0.2.2-rc.3 and has not yet been checked on a computer running it.
 
 |                                                    | macOS | Linux | Windows |
 | -------------------------------------------------- | ----- | ----- | ------- |

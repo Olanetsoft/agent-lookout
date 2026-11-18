@@ -53,11 +53,16 @@ import { gunzipSync } from "node:zlib";
  * MB and Kimchi past the limit, to 3.92 MB. Kimchi added 19 KB, 6 KB of code in
  * the command and 13 KB of the documents the package ships, which leaves room
  * for several more sources.
+ *
+ * Unpacked was raised from 4.20 MB to 4.30 MB, and installed from 6.00 MB to
+ * 6.10 MB, once DeepSeek Harness took unpacked to 4.26 MB and installed to
+ * 6.07 MB, from 4.17 MB and 5.98 MB. It added 92 KB, 64 KB of code in the
+ * command and 28 KB of the documents the package ships.
  */
 const LIMITS = {
   tarball: 1_200_000,
-  unpacked: 4_200_000,
-  installed: 6_000_000,
+  unpacked: 4_300_000,
+  installed: 6_100_000,
 };
 
 /** Bytes as megabytes, as npm gives sizes. */
