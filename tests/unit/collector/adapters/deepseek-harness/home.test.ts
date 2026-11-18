@@ -44,6 +44,16 @@ test("DSH_HOME comes next, untrimmed, with ~ for the home folder", () => {
   expect(home({ DSH_HOME: "~\\elsewhere" }).sessionsDir).toBe(`${HOME}/elsewhere/sessions`);
 });
 
+test.each(["darwin", "linux", "win32"] as const)(
+  "with %s, a ~ in DSH_HOME is this computer's home folder, joined and judged by its rules",
+  (platform) => {
+    const read = (set: string) => home({ DSH_HOME: set }, platform).sessionsDir;
+    expect(read("~")).toBe(`${HOME}/sessions`);
+    expect(read("~/elsewhere")).toBe(`${HOME}/elsewhere/sessions`);
+    expect(read("~\\elsewhere")).toBe(`${HOME}/elsewhere/sessions`);
+  },
+);
+
 test("a DSH_HOME of spaces alone is not set, and one still not absolute is passed over", () => {
   expect(home({ DSH_HOME: "   " })).toEqual({
     sessionsDir: `${HOME}/.dsh/sessions`,

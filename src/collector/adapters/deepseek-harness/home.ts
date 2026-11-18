@@ -48,10 +48,13 @@ export function deepseekHarnessHome(
   if (own) return { sessionsDir: path.resolve(own, "sessions"), named: true, relativeHome: false };
   const set = env[DSH_HOME_ENV];
   if (set !== undefined && set.trim().length > 0) {
+    // `~` stands for this computer's home folder, so what it makes is joined
+    // and judged by this computer's rules, and any other value by the system's.
+    const tilde = set === "~" || set.startsWith("~/") || set.startsWith("~\\");
     let home = set;
     if (set === "~") home = homeDir;
-    else if (set.startsWith("~/") || set.startsWith("~\\")) home = path.join(homeDir, set.slice(2));
-    if (pathsOf(platform).isAbsolute(home)) {
+    else if (tilde) home = path.join(homeDir, set.slice(2));
+    if ((tilde ? path : pathsOf(platform)).isAbsolute(home)) {
       return { sessionsDir: path.resolve(home, "sessions"), named: false, relativeHome: false };
     }
     return {
