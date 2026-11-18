@@ -8,6 +8,7 @@ import { ANTIGRAVITY_APP_CAPABILITIES } from "@collector/adapters/antigravity/ap
 import { ANTIGRAVITY_CAPABILITIES } from "@collector/adapters/antigravity/cli/index";
 import { AUTOHAND_CODE_CAPABILITIES } from "@collector/adapters/autohand-code/index";
 import { DEEPSEEK_HARNESS_CAPABILITIES } from "@collector/adapters/deepseek-harness/index";
+import { DROID_CAPABILITIES } from "@collector/adapters/droid/index";
 import { CLAUDE_CODE_CAPABILITIES } from "@collector/adapters/claude-code/index";
 import { CLINE_CAPABILITIES } from "@collector/adapters/cline/index";
 import { CODEX_CAPABILITIES, NEEDS_YOU_NOTE } from "@collector/adapters/codex/index";
@@ -53,6 +54,7 @@ import { gooseAdapterFor } from "@tests/support/adapters/goose/gooseAdapter";
 import { hermesAgentAdapterFor } from "@tests/support/adapters/hermesAgentAdapter";
 import { kiloCodeAdapterFor } from "@tests/support/adapters/kilo-code/kiloCodeAdapter";
 import { kimchiAdapterFor } from "@tests/support/adapters/kimchi/kimchiAdapter";
+import { droidAdapterFor } from "@tests/support/adapters/droid/droidAdapter";
 import { kimiCodeAdapterFor } from "@tests/support/adapters/kimi-code/kimiCodeAdapter";
 import { mimoCodeAdapterFor } from "@tests/support/adapters/mimo-code/mimoCodeAdapter";
 import { vibeAdapterFor } from "@tests/support/adapters/mistralVibeAdapter";
@@ -108,6 +110,7 @@ test("each source says what its agent can report in its adapter's own words", ()
   expect(tour.UNREAL_AGENT_CAPABILITIES).toEqual(UNREAL_AGENT_CAPABILITIES);
   expect(tour.AUTOHAND_CODE_CAPABILITIES).toEqual(AUTOHAND_CODE_CAPABILITIES);
   expect(tour.DEEPSEEK_HARNESS_CAPABILITIES).toEqual(DEEPSEEK_HARNESS_CAPABILITIES);
+  expect(tour.DROID_CAPABILITIES).toEqual(DROID_CAPABILITIES);
   expect(tour.STATUS_FILE_CAPABILITIES).toEqual(STATUS_FILE_CAPABILITIES);
 });
 
@@ -137,6 +140,7 @@ test("this computer's sources come in the collector's order", () => {
     "unreal-agent",
     "autohand-code",
     "deepseek-harness",
+    "droid",
     "status-files",
   ]);
 });
@@ -417,6 +421,18 @@ test("DeepSeek Harness's card is the one its adapter shows on a Mac without it",
   expect(sessions).toEqual([]);
 });
 
+test("Droid's card is the one its adapter shows on a Mac without it", async () => {
+  const adapter = droidAdapterFor(memoryFiles());
+  const { health, sessions } = await adapter.poll();
+  const { capabilities, ...card } = tour
+    .sourcesAt(0, 1, "0.2.6")
+    .find((source) => source.id === "droid")!;
+  // The poller adds what the adapter can report to each health it gives.
+  expect(card).toEqual({ ...health, checkedAt: card.checkedAt });
+  expect(capabilities).toEqual(adapter.capabilities);
+  expect(sessions).toEqual([]);
+});
+
 test("Kimi Code's card is the one its adapter shows on a computer without it", async () => {
   const adapter = kimiCodeAdapterFor(memoryFiles());
   const { health, sessions } = await adapter.poll();
@@ -579,6 +595,12 @@ test("the other machine's agents and its row for each source are what this compu
           capabilities: DEEPSEEK_HARNESS_CAPABILITIES,
         },
         {
+          id: "droid",
+          label: "Droid",
+          state: "unavailable",
+          capabilities: DROID_CAPABILITIES,
+        },
+        {
           id: "status-files",
           label: "Status files",
           state: "not-set-up",
@@ -617,7 +639,7 @@ test("the other machine's card names the ssh command the tunnel runs, as it runs
  * soon as it changes, so it names an agent at the release that ships it, and
  * the agent leaves this list then.
  */
-const NOT_ON_THE_PAGE_YET = new Set<string>();
+const NOT_ON_THE_PAGE_YET = new Set<string>(["Droid"]);
 
 test("the page's Works with names every agent the tour's Sources reads", () => {
   const works = /<div class="works">([\s\S]*?)<\/div\s*>/.exec(page)?.[1] ?? "";

@@ -69,12 +69,12 @@ async function distFolder(withPage: boolean): Promise<string> {
  * stand-in `claude` that lists no sessions, an empty Codex home, empty
  * Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent,
  * Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx,
- * Unreal Agent, Autohand Code and DeepSeek Harness folders, an empty folder of status files and tmux turned off, on a free port. The poller runs in
+ * Unreal Agent, Autohand Code, DeepSeek Harness and Droid folders, an empty folder of status files and tmux turned off, on a free port. The poller runs in
  * this process, so anything less would read the real `~/.claude`, `~/.codex`, `~/.vibe`,
  * `~/.gemini`, `~/.local/share/opencode`, `~/.qwen`, `~/.hermes`, `~/.cline`,
  * `~/.local/share/goose`, `~/.pi`, `~/.kimi-code`, `~/.continue`, `~/.local/share/crush`,
  * `~/.local/share/kilo`, `~/.local/share/mimocode`, `~/.config/kimchi`, `~/.prime/agent`, `~/.fx`,
- * `~/.local/state/unreal-agent`, `~/.autohand`, `~/.dsh` and `~/.agent-lookout` and run the real `claude`.
+ * `~/.local/state/unreal-agent`, `~/.autohand`, `~/.dsh`, `~/.factory` and `~/.agent-lookout` and run the real `claude`.
  */
 async function isolatedEnv(overrides: Record<string, string> = {}) {
   const claudeHome = await makeClaudeHome();
@@ -100,6 +100,7 @@ async function isolatedEnv(overrides: Record<string, string> = {}) {
   const unrealAgentSessionDir = await tempDir();
   const autohandHome = await tempDir();
   const deepseekHarnessHome = await tempDir();
+  const droidHome = await tempDir();
   const statusDir = await tempDir();
   const stub = await writeStub("echo '[]'");
   return {
@@ -126,6 +127,7 @@ async function isolatedEnv(overrides: Record<string, string> = {}) {
     unrealAgentSessionDir,
     autohandHome,
     deepseekHarnessHome,
+    droidHome,
     statusDir,
     env: {
       AGENT_LOOKOUT_CLAUDE_HOME: claudeHome,
@@ -152,6 +154,7 @@ async function isolatedEnv(overrides: Record<string, string> = {}) {
       AGENT_LOOKOUT_UNREAL_AGENT_SESSION_DIR: unrealAgentSessionDir,
       AGENT_LOOKOUT_AUTOHAND_HOME: autohandHome,
       AGENT_LOOKOUT_DEEPSEEK_HARNESS_HOME: deepseekHarnessHome,
+      AGENT_LOOKOUT_DROID_HOME: droidHome,
       AGENT_LOOKOUT_STATUS_DIR: statusDir,
       AGENT_LOOKOUT_TMUX: "off",
       AGENT_LOOKOUT_PORT: "0",
@@ -236,6 +239,7 @@ describe("the standalone host", () => {
       unrealAgentSessionDir,
       autohandHome,
       deepseekHarnessHome,
+      droidHome,
       statusDir,
     } = await isolatedEnv();
     const host = await start(await distFolder(true), env);
@@ -467,6 +471,13 @@ describe("the standalone host", () => {
             state: "ok",
             watching: expect.arrayContaining([
               { label: "Sessions folder", value: path.join(deepseekHarnessHome, "sessions") },
+            ]),
+          },
+          {
+            id: "droid",
+            state: "ok",
+            watching: expect.arrayContaining([
+              { label: "Sessions folder", value: path.join(droidHome, "sessions") },
             ]),
           },
           {

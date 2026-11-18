@@ -22,6 +22,7 @@ import {
   EMPTY_CLINE_HOME,
   EMPTY_CRUSH_HOME,
   EMPTY_DEEPSEEK_HARNESS_HOME,
+  EMPTY_DROID_HOME,
   EMPTY_FX_HOME,
   EMPTY_GOOSE_HOME,
   EMPTY_PI_HOME,
@@ -218,6 +219,12 @@ delete process.env.AUTOHAND_HOME;
 mkdirSync(path.join(EMPTY_DEEPSEEK_HARNESS_HOME, "sessions"), { recursive: true });
 process.env.AGENT_LOOKOUT_DEEPSEEK_HARNESS_HOME = EMPTY_DEEPSEEK_HARNESS_HOME;
 delete process.env.DSH_HOME;
+
+// Nor Droid's, in `~/.factory`: the adapter is pointed at an empty folder. It
+// follows none of Factory's own variables, so none is dropped. A test of the
+// adapter names a folder of its own.
+mkdirSync(path.join(EMPTY_DROID_HOME, "sessions"), { recursive: true });
+process.env.AGENT_LOOKOUT_DROID_HOME = EMPTY_DROID_HOME;
 
 // And `os.homedir()` is an empty folder, never the home of the person running
 // the tests, so a collector whose environment forgets to name a folder of an

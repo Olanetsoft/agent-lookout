@@ -145,6 +145,10 @@ test("the fingerprint of the folders sessions are read from names none of them, 
     const expected = value === "~" ? sourcesFingerprint({ DSH_HOME: HOME }, HOME) : defaults;
     expect(sourcesFingerprint({ DSH_HOME: value }, HOME), value).toBe(expected);
   }
+  // Droid's folder is moved by Agent Lookout's setting alone: FACTORY_HOME_OVERRIDE
+  // is not followed, and Droid's own folder named outright is the default.
+  expect(sourcesFingerprint({ FACTORY_HOME_OVERRIDE: "/tmp/factory" }, HOME)).toBe(defaults);
+  expect(sourcesFingerprint({ AGENT_LOOKOUT_DROID_HOME: `${HOME}/.factory` }, HOME)).toBe(defaults);
   // Agent Lookout's names the root outright. A home folder is a whole path,
   // with a drive on Windows, as the system gives it.
   const home = path.resolve(HOME);
@@ -224,6 +228,7 @@ test("the fingerprint of the folders sessions are read from names none of them, 
       HOME,
     ),
     sourcesFingerprint({ DSH_HOME: path.resolve("/tmp/dsh-home") }, HOME),
+    sourcesFingerprint({ AGENT_LOOKOUT_DROID_HOME: "/tmp/empty-droid" }, HOME),
     sourcesFingerprint({}, "/Users/someone-else"),
   ];
   for (const other of others) expect(other).not.toBe(defaults);

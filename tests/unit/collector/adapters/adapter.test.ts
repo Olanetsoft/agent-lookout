@@ -80,6 +80,8 @@ import {
   DEEPSEEK_HARNESS_CAPABILITIES,
 } from "@collector/adapters/deepseek-harness/index";
 import { deepseekHarnessSession } from "@collector/adapters/deepseek-harness/toSession";
+import { createDroidAdapter, DROID_CAPABILITIES } from "@collector/adapters/droid/index";
+import { droidSession } from "@collector/adapters/droid/toSession";
 import { createPiAdapter, PI_CAPABILITIES } from "@collector/adapters/pi/index";
 import { piSession } from "@collector/adapters/pi/toSession";
 import {
@@ -102,6 +104,7 @@ import {
 import { mapClaudeCodeStatus } from "@core/mapping/claudeCodeMapping";
 import { mapClineStatus } from "@core/mapping/cline/clineMapping";
 import { mapCrushStatus } from "@core/mapping/crush/crushMapping";
+import { mapDroidStatus } from "@core/mapping/droid/droidMapping";
 import { mapFxStatus } from "@core/mapping/fx/fxMapping";
 import { mapGooseStatus } from "@core/mapping/goose/gooseMapping";
 import { mapKimiCodeStatus } from "@core/mapping/kimi-code/kimiCodeMapping";
@@ -174,6 +177,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Unreal Agent", UNREAL_AGENT_CAPABILITIES],
   ["Autohand Code", AUTOHAND_CODE_CAPABILITIES],
   ["DeepSeek Harness", DEEPSEEK_HARNESS_CAPABILITIES],
+  ["Droid", DROID_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -282,6 +286,9 @@ test("each adapter carries its own declaration, for the poller to pass on", () =
     expect(
       createDeepseekHarnessAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
     ).toBe(DEEPSEEK_HARNESS_CAPABILITIES);
+    expect(
+      createDroidAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
+    ).toBe(DROID_CAPABILITIES);
   }
   expect(createMistralVibeAdapter({ env: {}, homeDir: home, io: files.io }).capabilities).toBe(
     MISTRAL_VIBE_CAPABILITIES,
@@ -1178,6 +1185,41 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(KIMCHI_CAPABILITIES.jump.level).toBe("no");
     expect(KIMCHI_CAPABILITIES.stop.level).toBe("no");
     expect(KIMCHI_CAPABILITIES.answer.level).toBe("no");
+  });
+
+  test("Droid: a session is unknown or finished, and never working, idle, waiting or failed", () => {
+    expect(statuses([mapDroidStatus(true), mapDroidStatus(false)])).toEqual(
+      new Set(["unknown", "finished"]),
+    );
+    expect(DROID_CAPABILITIES["working-and-idle"].level).toBe("no");
+    expect(DROID_CAPABILITIES["needs-you"].level).toBe("no");
+    expect(DROID_CAPABILITIES.failed.level).toBe("no");
+    expect(DROID_CAPABILITIES.finished.level).toBe("partly");
+  });
+
+  test("Droid: a session has its folder's name, and no time of its last write, tokens, jump, stop or link", () => {
+    const session = droidSession({
+      file: { id: "00000000-0000-4000-8000-000000000001", cwd: "/Users/example/code/demo" },
+      open: true,
+      writtenAt: NOW - 10_000,
+      now: NOW,
+    });
+    expect(session).toMatchObject({
+      id: "droid:00000000-0000-4000-8000-000000000001",
+      source: "droid",
+      name: "demo",
+      startedAt: null,
+    });
+    for (const absent of ["lastWriteAt", "tokens", "jump", "stop", "pid", "alive", "ask"]) {
+      expect(session, absent).not.toHaveProperty(absent);
+    }
+    expect(session.links).toEqual({});
+    expect(DROID_CAPABILITIES.names.level).toBe("partly");
+    expect(DROID_CAPABILITIES["quiet-for"].level).toBe("no");
+    expect(DROID_CAPABILITIES.tokens.level).toBe("no");
+    expect(DROID_CAPABILITIES.jump.level).toBe("no");
+    expect(DROID_CAPABILITIES.stop.level).toBe("no");
+    expect(DROID_CAPABILITIES.answer.level).toBe("no");
   });
 
   test("Prime Agent: a session is working, idle, finished or unknown, and never waiting or failed", () => {
