@@ -126,39 +126,55 @@ export interface WriterInput {
   answerAt: number;
   /** Whether that answer was asked because the clock was set back: then nothing is allowed for a rounded write time. */
   clockSetBack?: boolean;
-  /** The earliest last write the start rule may finish (`DshClockGuard`). */
+  /** The clock guard's bounds (`DshClockGuard`): a last write stamped at or after `lowAt` and before `startFloor` is not finished by the start rule. */
   startFloor: number;
+  lowAt: number;
 }
 
 /** What the clock guard keeps between polls, in memory only. */
 export interface DshClockGuard {
-  /** The earliest last write the start rule may finish. */
+  /** The latest time a poll had seen when the clock was set back: a write stamped at or after it may be finished by the start rule. */
   startFloor: number;
+  /** No later than the time the clock was set back to: a write stamped before it was made before every set-back seen, so it may be finished by the start rule too. */
+  lowAt: number;
   /** The latest time a poll has seen. */
   highAt: number;
+  /** The last poll's time on the clock that can be set and on one that cannot, or null before the first. */
+  last: { wall: number; mono: number } | null;
 }
 
 export const startDshClockGuard = (): DshClockGuard => ({
   startFloor: -Infinity,
+  lowAt: Infinity,
   highAt: -Infinity,
+  last: null,
 });
 
 /**
- * The guard after one more poll at `at`. On macOS a start stays as it was
- * taken, so after the clock is set back by more than a minute a program that
- * started before then looks started after the writes it makes since. Writes
- * before the latest time a poll saw are then not finished by the start rule.
+ * The guard after one more poll at `wall`, with `mono` from a clock that is
+ * never set. On macOS a start stays as it was taken, so after the clock is
+ * set back by more than a minute a program that started before then looks
+ * started after the writes it makes since. A write stamped between the time
+ * the clock was set back to and the latest time a poll saw is then not
+ * finished by the start rule. The clock read no less than this poll's time,
+ * less the time since the last poll, when it was set back, so a write stamped
+ * earlier was made before then, on the clock the starts were taken on. That
+ * time is read with `mono`, which stops while the Mac sleeps.
  */
 export function guardDshClock(
   guard: DshClockGuard,
   platform: NodeJS.Platform,
-  at: number,
+  wall: number,
+  mono: number,
 ): DshClockGuard {
-  let { startFloor } = guard;
-  if (platform === "darwin" && at < guard.highAt - SAME_START_WITHIN_MS) {
+  let { startFloor, lowAt } = guard;
+  if (platform === "darwin" && wall < guard.highAt - SAME_START_WITHIN_MS) {
     startFloor = Math.max(startFloor, guard.highAt);
+    // The clock read no less than this when it was set back, so no write since is stamped earlier.
+    const elapsed = guard.last === null ? 0 : Math.max(0, mono - guard.last.mono);
+    lowAt = Math.min(lowAt, wall - elapsed);
   }
-  return { startFloor, highAt: Math.max(guard.highAt, at) };
+  return { startFloor, lowAt, highAt: Math.max(guard.highAt, wall), last: { wall, mono } };
 }
 
 /**
@@ -172,15 +188,15 @@ export function guardDshClock(
  *   start by that much. A start that cannot be read counts as before. An
  *   answer asked because the clock was set back allows nothing for that. On
  *   macOS, once a poll's time is more than a minute behind the latest one
- *   seen, a write before that latest time is never finished this way while
- *   such a program runs.
+ *   seen, a write stamped between the time the clock was set back to and
+ *   that latest time is never finished this way while such a program runs.
  * - The desktop app backs it when such a program of its names runs.
  * - Otherwise one may. So it is on Windows, with no time that can be right,
  *   when `ps` could not say, and when its table did not list Agent Lookout's
  *   own process.
  */
 export function dshWriter(input: WriterInput): DeepseekHarnessWriter {
-  const { platform, writtenAt, bootAt, answer, answerAt, startFloor } = input;
+  const { platform, writtenAt, bootAt, answer, answerAt, startFloor, lowAt } = input;
   if ((platform !== "darwin" && platform !== "linux") || writtenAt === null) return "maybe";
   if (bootAt !== null && writtenAt < bootAt - SAME_START_WITHIN_MS) return "gone";
   if (!usable(answer)) return "maybe";
@@ -188,8 +204,9 @@ export function dshWriter(input: WriterInput): DeepseekHarnessWriter {
     ({ start }) => start === null || start <= writtenAt + SAME_START_WITHIN_MS,
   );
   const step = input.clockSetBack === true ? 0 : WRITE_TIME_STEP_MS;
-  // A program that started after the write finishes it only past the clock guard's floor.
-  const startsTrusted = answer.programs.length === 0 || writtenAt >= startFloor;
+  // A program that started after the write finishes it only outside the clock guard's bounds.
+  const startsTrusted =
+    answer.programs.length === 0 || writtenAt >= startFloor || writtenAt < lowAt;
   if (answerAt >= writtenAt + step && before.length === 0 && startsTrusted) return "gone";
   return before.some(({ desktop }) => desktop) ? "backed" : "maybe";
 }

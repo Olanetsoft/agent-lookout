@@ -903,16 +903,36 @@ describe("ps", () => {
     const files = memoryFiles();
     files.mkdir(SESSIONS_DIR);
     const clock = handClock();
+    let mono = 0;
     const ps = standInPs([psLine(100, NOW - 2 * MINUTE, "node")]);
-    const adapter = deepseekHarnessAdapterFor(files, { now: clock.now, ps });
+    const adapter = deepseekHarnessAdapterFor(files, { now: clock.now, monotonic: () => mono, ps });
     await adapter.poll();
-    // Set back 10 minutes: the node's start stays as it was taken, after every write it makes since.
+    // Set back 10 minutes within the 10 seconds since: the node's start stays as it was taken, after every write it makes since.
     clock.set(NOW - 10 * MINUTE + 10 * SECOND);
+    mono += 10 * SECOND;
     const written = NOW - 10 * MINUTE + 5 * SECOND;
     plain(files, headerLine() + batch(line.turnStart(0, written)), { mtimeMs: written });
     const { sessions } = await adapter.poll();
     expect(ps.runs).toHaveLength(1);
     expect(sessions[0]?.status).toBe("working");
+  });
+
+  test("on macOS, a clock set back by more than a minute does not reopen a session finished before then", async () => {
+    const files = memoryFiles();
+    const clock = handClock();
+    let mono = 0;
+    const written = NOW - 15 * MINUTE;
+    plain(files, headerLine() + batch(line.turnStart(0, written), line.approvalAsked(1, written)), {
+      mtimeMs: written,
+    });
+    const ps = standInPs([psLine(100, NOW - 5 * MINUTE, "node")]);
+    const adapter = deepseekHarnessAdapterFor(files, { now: clock.now, monotonic: () => mono, ps });
+    expect((await adapter.poll()).sessions[0]?.status).toBe("finished");
+    // Written before the clock was set back, on the clock the node's start was taken on.
+    clock.set(NOW - 10 * MINUTE);
+    mono += 2 * SECOND;
+    expect((await adapter.poll()).sessions[0]?.status).toBe("finished");
+    expect(ps.runs).toHaveLength(2);
   });
 
   test("that cannot say keeps the way of reading named apart once every session is settled", async () => {

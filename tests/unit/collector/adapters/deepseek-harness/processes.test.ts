@@ -30,6 +30,7 @@ const writer = (answer: DshPrograms | null, extra: Partial<Parameters<typeof dsh
     answer,
     answerAt: NOW,
     startFloor: -Infinity,
+    lowAt: Infinity,
     ...extra,
   });
 
@@ -169,13 +170,17 @@ describe("whether a program that could write a session may still run", () => {
     expect(writer(table(), { answerAt: WRITTEN - SECOND, clockSetBack: true })).toBe("maybe");
   });
 
-  test("on macOS, after the clock was set back, a write before the latest time a poll saw is not finished by a program's start", () => {
+  test("on macOS, after the clock was set back, a write stamped between the time it was set back to and the latest time a poll saw is not finished by a program's start", () => {
     const answer = table(psLine(11, WRITTEN + 8 * MINUTE, "node"));
     expect(writer(answer)).toBe("gone");
-    expect(writer(answer, { startFloor: WRITTEN + 10 * MINUTE })).toBe("maybe");
-    expect(writer(answer, { startFloor: WRITTEN })).toBe("gone");
+    const back = { startFloor: WRITTEN + 10 * MINUTE, lowAt: WRITTEN - MINUTE };
+    expect(writer(answer, back)).toBe("maybe");
+    expect(writer(answer, { ...back, lowAt: WRITTEN })).toBe("maybe");
+    expect(writer(answer, { ...back, startFloor: WRITTEN })).toBe("gone");
+    // One stamped before the time it was set back to was written before, on the clock the starts were taken on.
+    expect(writer(answer, { ...back, lowAt: WRITTEN + MINUTE })).toBe("gone");
     // With no such program at all, none could write it, whatever the clock did.
-    expect(writer(table(), { startFloor: WRITTEN + 10 * MINUTE })).toBe("gone");
+    expect(writer(table(), back)).toBe("gone");
   });
 
   test("a table that does not list Agent Lookout's own process, or no answer, cannot say", () => {
@@ -200,24 +205,65 @@ describe("whether a program that could write a session may still run", () => {
 });
 
 describe("the clock guard", () => {
-  test("on macOS, a poll more than a minute behind the latest one keeps writes before that time from the start rule", () => {
-    const seen = guardDshClock(startDshClockGuard(), "darwin", NOW);
-    expect(seen).toEqual({ startFloor: -Infinity, highAt: NOW });
-    const back = guardDshClock(seen, "darwin", NOW - 10 * MINUTE);
-    expect(back).toEqual({ startFloor: NOW, highAt: NOW });
-    // It stays raised, as the clock comes back.
-    expect(guardDshClock(back, "darwin", NOW + MINUTE)).toEqual({
-      startFloor: NOW,
-      highAt: NOW + MINUTE,
-    });
-    expect(guardDshClock(seen, "darwin", NOW - 59 * SECOND)).toEqual({
+  test("starts with no write kept from the start rule", () => {
+    expect(startDshClockGuard()).toEqual({
       startFloor: -Infinity,
+      lowAt: Infinity,
+      highAt: -Infinity,
+      last: null,
+    });
+  });
+
+  test("on macOS, a poll more than a minute behind the latest one keeps writes stamped between the time the clock was set back to and that latest time from the start rule", () => {
+    const seen = guardDshClock(startDshClockGuard(), "darwin", NOW, 0);
+    expect(seen).toEqual({
+      startFloor: -Infinity,
+      lowAt: Infinity,
       highAt: NOW,
+      last: { wall: NOW, mono: 0 },
+    });
+    // Set back 10 minutes within the 2 seconds since: the clock read no less than this when it was.
+    const back = guardDshClock(seen, "darwin", NOW - 10 * MINUTE, 2 * SECOND);
+    expect(back).toEqual({
+      startFloor: NOW,
+      lowAt: NOW - 10 * MINUTE - 2 * SECOND,
+      highAt: NOW,
+      last: { wall: NOW - 10 * MINUTE, mono: 2 * SECOND },
+    });
+    // Both stay, as the clock comes back.
+    const ahead = guardDshClock(back, "darwin", NOW + MINUTE, 11 * MINUTE + 2 * SECOND);
+    expect(ahead).toEqual({
+      startFloor: NOW,
+      lowAt: NOW - 10 * MINUTE - 2 * SECOND,
+      highAt: NOW + MINUTE,
+      last: { wall: NOW + MINUTE, mono: 11 * MINUTE + 2 * SECOND },
+    });
+    // A later set-back raises the floor to the latest time and only lowers the low.
+    const lesser = guardDshClock(ahead, "darwin", NOW - 5 * MINUTE, 11 * MINUTE + 4 * SECOND);
+    expect(lesser).toMatchObject({
+      startFloor: NOW + MINUTE,
+      lowAt: NOW - 10 * MINUTE - 2 * SECOND,
+    });
+    const further = guardDshClock(lesser, "darwin", NOW - 30 * MINUTE, 11 * MINUTE + 6 * SECOND);
+    expect(further).toMatchObject({
+      startFloor: NOW + MINUTE,
+      lowAt: NOW - 30 * MINUTE - 2 * SECOND,
+    });
+    // A clock that seems to run backwards between polls takes nothing off.
+    expect(guardDshClock(seen, "darwin", NOW - 10 * MINUTE, -SECOND).lowAt).toBe(NOW - 10 * MINUTE);
+    expect(guardDshClock(seen, "darwin", NOW - 59 * SECOND, SECOND)).toEqual({
+      startFloor: -Infinity,
+      lowAt: Infinity,
+      highAt: NOW,
+      last: { wall: NOW - 59 * SECOND, mono: SECOND },
     });
   });
 
   test("on Linux, nothing is raised", () => {
-    const seen = guardDshClock(startDshClockGuard(), "linux", NOW);
-    expect(guardDshClock(seen, "linux", NOW - 10 * MINUTE).startFloor).toBe(-Infinity);
+    const seen = guardDshClock(startDshClockGuard(), "linux", NOW, 0);
+    expect(guardDshClock(seen, "linux", NOW - 10 * MINUTE, 2 * SECOND)).toMatchObject({
+      startFloor: -Infinity,
+      lowAt: Infinity,
+    });
   });
 });

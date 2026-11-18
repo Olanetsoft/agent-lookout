@@ -216,6 +216,8 @@ export interface DeepseekHarnessAdapterOptions {
   env?: NodeJS.ProcessEnv;
   homeDir?: string;
   now?: () => number;
+  /** A clock that is never set, for telling when the other one was. Defaults to `performance.now()`. */
+  monotonic?: () => number;
   io?: ReadOnlyIo;
   /** The system it runs on, which says whether `ps` is asked. Defaults to this one. */
   platform?: NodeJS.Platform;
@@ -287,6 +289,7 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
   const env = options.env ?? process.env;
   const homeDir = options.homeDir ?? os.homedir();
   const now = options.now ?? Date.now;
+  const monotonic = options.monotonic ?? (() => performance.now());
   const io = options.io ?? nodeIo;
   const platform = options.platform ?? process.platform;
   const zstd = options.zstd === undefined ? zstdOf(zlib) : options.zstd;
@@ -501,7 +504,7 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
 
   async function poll(): Promise<AdapterResult> {
     const checkedAt = now();
-    clock = guardDshClock(clock, platform, checkedAt);
+    clock = guardDshClock(clock, platform, checkedAt, monotonic());
 
     // A missing DeepSeek Harness is believed missing for a while, so a machine
     // without it pays nothing on most polls. A clock set back counts as time
@@ -590,6 +593,7 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
           answer: null,
           answerAt: 0,
           startFloor: clock.startFloor,
+          lowAt: clock.lowAt,
         }) === "gone";
       return { family, own, children, writtenAt, settled };
     });
@@ -616,6 +620,7 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
           answerAt,
           clockSetBack,
           startFloor: clock.startFloor,
+          lowAt: clock.lowAt,
         });
       const writer = writerOf(writtenAt);
       // Each subagent's by its own last write, as reopening a session reopens none of them.
