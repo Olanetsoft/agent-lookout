@@ -27,11 +27,12 @@ const ON_DISK: HistoryKept = {
   problem: null,
 };
 
-/** Today at this time on the clock. */
+/**
+ * This time on the clock on Jan 5, 2026. The words are always asked for with
+ * `now` on that day too, so these times are today's whenever the tests run.
+ */
 function today(hours: number, minutes: number): number {
-  const date = new Date();
-  date.setHours(hours, minutes, 0, 0);
-  return date.getTime();
+  return new Date(2026, 0, 5, hours, minutes).getTime();
 }
 
 /** A host that answers every request with this status and body. */

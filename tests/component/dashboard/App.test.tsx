@@ -1238,9 +1238,27 @@ function longNamedState(): CollectorState {
   });
 }
 
+/**
+ * Stands the clock at noon on Jan 5, 2026 until the test ends, and begins the
+ * test and its collector there. Waited on you cuts its waits at midnight, so
+ * timed from the real clock just after it they would be only the seconds since.
+ * Only the time is faked, so timers run as ever.
+ */
+function atNoon() {
+  const noon = new Date(2026, 0, 5, 12, 0).getTime();
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(noon);
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+  testBegan = noon;
+  collectorStartedAt = noon - 10 * MINUTE;
+}
+
 test.each([1280, 1000, 760, 375, 320])(
   "at %i pixels waiting sessions with very long names are cut in the hero and its bars, and nothing runs off the side",
   async (width) => {
+    atNoon();
     await page.viewport(width, 900);
     const screen = await render(<App store={fixedStore(longNamedState())} />);
     await expect.element(screen.getByRole("region", { name: "Sessions" })).toBeVisible();
