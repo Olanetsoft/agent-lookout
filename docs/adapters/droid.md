@@ -92,7 +92,7 @@ The ID is the file's name without `.jsonl`, as both SDKs take it (`py:discovery.
 
 Its first line is a `session_start` entry (`ts:chunk-KAAWCHO4.js, SessionStartEventSchema`), with `type`, an optional `sessionId`, `title`, an optional `owner` and `cwd`, and the Missions fields `decompSessionType` and `decompMissionId`. Factory's own test sets `owner` to an email address (`py:tests/test_v5_discovery.py:31`). A title is made from your first prompt, and a rename writes another (`ts-repo:examples/node/rename-session.ts:4-7`, `:33-38`).
 
-- The line is read up to its first line break. It is turned into text and parsed only when it holds `"session_start"` as bytes, with its opening quote not escaped: JSON writes a `"` inside a string as `\"`, so that can only be a key or a value. A line that holds a prompt is not turned into text.
+- The line is read up to its first line break. It is turned into text and parsed only when it holds `"session_start"` as bytes, with its opening quote not escaped: JSON writes a `"` inside a string as `\"`, so that can only be a key or a value. A message line, which holds your prompts, is not turned into text.
 - It must parse as a JSON object with `type` `session_start`, as both SDKs require (`py:discovery.py:138-142`).
 - It must have a title, as both SDKs require of a session: a `title` that is text, even empty (`py:discovery.py:143-145`), or an older `sessionTitle` that is text other than spaces, which the TypeScript SDK takes in its place (`ts:chunk-KAAWCHO4.js, normalizeSessionStartEvent`). The Python SDK does not take `sessionTitle`. Neither is kept.
 - `cwd` is kept when it is a full path, at most 4096 characters and with no control character, by the rules of the system Agent Lookout runs on. It is not resolved.
@@ -180,11 +180,11 @@ Nothing Droid writes to a session's files says what it is doing. The SDKs' lists
 
 ## Names
 
-A session takes its folder's name, the last part of `cwd`, else `droid:<id>`. The title is never read: Droid makes it from your first prompt, or you set it by renaming the session, and nothing on the first line says which. The `owner`, which can be your email address, and the tags are never kept. The project folder's own name is never decoded.
+A session takes its folder's name, the last part of `cwd`, else `droid:<id>`. The title is never kept: Droid makes it from your first prompt, or you set it by renaming the session, and nothing on the first line says which. The `owner`, which can be your email address, and the tags are never kept. The project folder's own name is never decoded.
 
 ## Quiet for, tokens, Jump, Stop and Answer
 
-None. A Droid session never shows as working, its token counts are in its settings file, of which only `archivedAt` is read, its files name no process or terminal, and Agent Lookout makes no request to Droid. There is no last message either. When it started is not known: the first line has no time, and the SDKs take the file's creation time, which Agent Lookout does not read.
+None. A Droid session never shows as working, its token counts are in its settings file, of which only whether `archivedAt` is set is kept, its files name no process or terminal, and Agent Lookout makes no request to Droid. There is no last message either. When it started is not known: the first line has no time, and the SDKs take the file's creation time, which Agent Lookout does not read.
 
 ## On Windows
 

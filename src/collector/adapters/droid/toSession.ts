@@ -23,7 +23,7 @@ export interface DroidSessionInput {
  *   cannot (`mapDroidStatus`). It never shows as working, as needing you or as
  *   failed.
  * - The name is its folder's, else its ID. Droid's own title is made from the
- *   first prompt, or from a rename, and is never read.
+ *   first prompt, or from a rename, and is never kept.
  * - The status time of a finished session is the file's last write, the last
  *   thing known of it. An unknown status has no time. Its first line has no
  *   time of its own, so when it started is not known.

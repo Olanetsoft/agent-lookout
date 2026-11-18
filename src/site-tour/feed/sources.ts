@@ -1049,12 +1049,12 @@ export const DROID_CAPABILITIES: SourceCapabilities = {
   failed: {
     level: "no",
     reason:
-      "Nothing on a Droid session's first line says a turn failed, and nothing after it is read.",
+      "Nothing on a Droid session's first line says a turn failed, and nothing after it is parsed.",
   },
   names: {
     level: "partly",
     reason:
-      "The folder's. Droid names a session from your first prompt, or you rename it, and that title is never read.",
+      "The folder's. Droid names a session from your first prompt, or you rename it, and that title is never kept.",
   },
   jump: { level: "no", reason: "A Droid session's file names no process or terminal." },
   "quiet-for": {
@@ -1064,7 +1064,7 @@ export const DROID_CAPABILITIES: SourceCapabilities = {
   tokens: {
     level: "no",
     reason:
-      "Droid keeps a session's counts in its settings file, of which only archivedAt is read.",
+      "Droid keeps a session's counts in its settings file, of which only whether archivedAt is set is kept.",
   },
   stop: {
     level: "no",
