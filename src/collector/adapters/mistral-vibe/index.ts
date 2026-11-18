@@ -17,7 +17,7 @@ import type {
   SourceHealth,
   SourceState,
 } from "../../../core/sessions/session.ts";
-import { plausibleTime } from "../../../core/time.ts";
+import { plausibleTime, WRITE_TIME_STEP_MS } from "../../../core/time.ts";
 import { tildify } from "../../files/paths.ts";
 import { isMissing, nodeIo, type FileInfo, type ReadOnlyIo } from "../../files/readOnlyIo.ts";
 import { POLL_INTERVAL_MS } from "../../poller.ts";
@@ -98,10 +98,11 @@ export const SCAN_MAX_MS = 5 * 60_000;
 /**
  * How long a lease must have been held before it lists a session Vibe last
  * wrote to more than a day ago, or opens a session Vibe has not written to
- * since it took the lease. To clear old process output, Vibe takes the lease
- * of every stored session that ran a process, however old, and holds them all
- * until it is done (harness/.../vibe/_host.py, `_cleanup_process_output_once`).
- * Those sessions are not listed, or shown as open, for that.
+ * since it took the lease (`writtenSince`). To clear old process output, Vibe
+ * takes the lease of every stored session that ran a process, however old, and
+ * holds them all until it is done (harness/.../vibe/_host.py,
+ * `_cleanup_process_output_once`). Those sessions are not listed, or shown as
+ * open, for that.
  */
 export const OLD_SESSION_LEASE_MS = 30_000;
 
@@ -157,9 +158,9 @@ export const WITHOUT_LEASES_NOTE =
  *   flight (`vibeWaitOf`). A subagent's wait is in the subagent's own store,
  *   which is not read, so its session shows as working.
  * - Finished is a session no Vibe program holds the lease of, or whose lease
- *   was taken less than 30 seconds ago with nothing written to it since. The
- *   desktop app lets go of a session's lease after each turn, so its sessions
- *   finish then.
+ *   was taken less than 30 seconds ago with nothing written to it since
+ *   (`writtenSince`). The desktop app lets go of a session's lease after each
+ *   turn, so its sessions finish then.
  * - Failed is a turn that ended on an error Vibe recorded. A Vibe that stops
  *   mid-turn without closing records none, and its lease is left behind for a
  *   program that no longer runs, so the session shows as finished.
@@ -251,6 +252,28 @@ const sameMark = (a: Mark, b: Mark) =>
 const leaseMark = (id: string, pid: number | null, acquiredAt: number | null) =>
   `${id} ${pid} ${acquiredAt}`;
 
+/** What tells one write to a session from the next, though a disk gives both the same time. */
+const writeMark = (current: FileInfo, journal: FileInfo | null) =>
+  [current, journal]
+    .map((info) => (info === null ? "none" : `${info.ino} ${info.size} ${info.mtimeMs}`))
+    .join(" ");
+
+/**
+ * Whether Vibe wrote to a session after it took the lease at `takenAt`, as far
+ * as the time of its newest write, `writtenAt`, can tell. A disk that keeps a
+ * file's modified time in whole seconds, or steps of 2 seconds, rounds it down,
+ * so a write at a whole second up to 2 seconds before `takenAt` counts too,
+ * unless a poll saw it before then, at `seenAt`, and every poll since that did
+ * not end in an error did too (`writesSeen`). Then it came before the lease, as
+ * when Vibe takes the lease of a session it has just closed to clear its old
+ * output. Such a disk gives only whole seconds, so a time with any fraction of
+ * a second counts from `takenAt` on.
+ */
+function writtenSince(writtenAt: number, seenAt: number, takenAt: number): boolean {
+  if (Math.floor(writtenAt) >= takenAt) return true;
+  return writtenAt % 1_000 === 0 && seenAt >= takenAt && writtenAt + WRITE_TIME_STEP_MS > takenAt;
+}
+
 /** Whether a lease's process is the one that took it: an answer that was told for sure. */
 type LeaseAnswer = Exclude<StartMatch, "unknown">;
 
@@ -296,9 +319,11 @@ function processCheckFacts(asksPs: boolean, pollIntervalMs: number): SourceFact[
  * its journal, and while a Vibe program holds it. One older than that is
  * listed only once its lease is 30 seconds old (`OLD_SESSION_LEASE_MS`), and
  * nothing of its store is opened before. A lease younger than that, with
- * nothing written to the session since, does not show it as open. A lease
- * whose `.lock.json` gives no time yet counts from the poll that first found
- * it so. The stores
+ * nothing written to the session since, does not show it as open. On a disk
+ * that keeps a file's time in whole seconds, or steps of 2 seconds, a write up
+ * to 2 seconds before counts, unless a poll saw it before then and every poll
+ * since that did not end in an error did too. A lease whose `.lock.json` gives
+ * no time yet counts from the poll that first found it so. The stores
  * of sessions no program holds are looked through on the first poll, and then
  * at most every 30 seconds, when `unified/` or the session folder changed, and
  * at least every 5 minutes.
@@ -392,6 +417,15 @@ export function createMistralVibeAdapter(options: MistralVibeAdapterOptions = {}
    * was taken.
    */
   const untimedSince = new Map<string, number>();
+  /**
+   * Each session's newest write as the last poll saw it, by `writeMark`, and
+   * when the first of the polls that saw it, one after another up to the last,
+   * had looked it up. A poll that ends in an error before it reads the sessions
+   * leaves it as it is, and a session folder or `unified/` found missing clears
+   * it. A write they saw from before a lease's time is not counted as one after
+   * it (`writtenSince`).
+   */
+  let writesSeen = new Map<string, { mark: string; at: number }>();
   /** Each session's wait as the last poll showed it. */
   let waits = new Map<string, VibeWait>();
   /**
@@ -492,6 +526,7 @@ export function createMistralVibeAdapter(options: MistralVibeAdapterOptions = {}
     if (dirMark === null) {
       tracked = new Set();
       lastNewest.clear();
+      writesSeen = new Map();
       scannedAt = null;
       legacyAt = null;
       if (dirFrom === "agent-lookout") {
@@ -558,6 +593,7 @@ export function createMistralVibeAdapter(options: MistralVibeAdapterOptions = {}
     if (storesMark === null) {
       tracked = new Set();
       lastNewest.clear();
+      writesSeen = new Map();
       if (legacySeen) extra.push(LEGACY_NOTE);
       if (!found.supported) extra.push(WITHOUT_LEASES_NOTE);
       const answer = result(
@@ -581,6 +617,7 @@ export function createMistralVibeAdapter(options: MistralVibeAdapterOptions = {}
       recent: boolean;
     }[] = [];
     const stillAnswered = new Map<string, LeaseAnswer>();
+    const seenNow = new Map<string, { mark: string; at: number }>();
     let tooNewSeen = false;
 
     for (const id of [...candidates].sort()) {
@@ -651,6 +688,8 @@ export function createMistralVibeAdapter(options: MistralVibeAdapterOptions = {}
         }
         callbacks = openCallbacks(store.pending, journals.callbacks(file));
       }
+      // When this poll had looked up the session's files: any write they show came before it.
+      const readAt = now();
 
       // Every record Vibe adds moves the segment's time, and every save moves `CURRENT`'s.
       const lastWrite = Math.max(current.mtimeMs, journalInfo?.mtimeMs ?? -Infinity);
@@ -660,15 +699,23 @@ export function createMistralVibeAdapter(options: MistralVibeAdapterOptions = {}
       kept.add(id);
       if (!isMistralVibeUserSession(id, store.kind) || store.deleting) continue;
 
+      const write = writeMark(current, journalInfo);
+      const seen = writesSeen.get(id);
+      const seenAt = seen?.mark === write ? seen.at : readAt;
+      seenNow.set(id, { mark: write, at: seenAt });
+
       // Vibe takes the lease of a closed session for a moment, as it does for
       // every session with old process output while it clears that output. So
       // a lease taken less than 30 seconds ago opens the session only once Vibe
-      // writes to it, as a program that uses the session does at once.
+      // writes to it, as a program that uses the session does at once. On a disk
+      // that keeps whole seconds, or steps of 2, a write up to 2 seconds before
+      // the lease's time counts, unless a poll saw it before then and every
+      // poll since that did not end in an error did too (`writtenSince`).
       const justTaken =
         takenAt !== null &&
         checkedAt >= takenAt &&
         checkedAt - takenAt < OLD_SESSION_LEASE_MS &&
-        Math.floor(lastWrite) < takenAt;
+        !writtenSince(lastWrite, seenAt, takenAt);
 
       const envelope: Envelope | null =
         newest.kind === "state" ? newest.envelope : newest.kind === "none" ? store.snapshot : null;
@@ -730,6 +777,7 @@ export function createMistralVibeAdapter(options: MistralVibeAdapterOptions = {}
     });
     waits = shownWaits;
     answers = stillAnswered;
+    writesSeen = seenNow;
 
     tracked = kept;
     stores.keepOnly(kept);

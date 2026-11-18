@@ -13,6 +13,7 @@ Changes that a user of Agent Lookout would notice, newest first.
 ### Fixed
 
 - A Pi, Kimchi, Antigravity CLI or Antigravity session begun just after `ps` showed none of its agent's programs no longer shows as finished for up to 10 seconds on a disk that keeps a file's modified time in whole seconds, or steps of 2 seconds: `ps` is asked again within seconds when a session was written up to 2 seconds before that answer, since the write may have come after it. An Antigravity CLI conversation written in the 2 seconds before `ps` finds its program gone now shows as it was until the next check, 2 to 4 seconds later. (#349)
+- A Mistral Vibe session a program takes back, or starts, no longer shows as finished for up to 30 seconds on a disk that keeps a file's modified time in whole seconds, or steps of 2 seconds: there, a write up to 2 seconds before the program took the session now counts as one after it, unless Agent Lookout saw that write before then, and on every poll since that did not end in an error. So on such a disk a session Vibe closes and takes back within 2 seconds to clear its old output can stay open until Vibe lets go. (#353)
 
 ## 0.2.22 - 2026-11-17
 
