@@ -38,7 +38,8 @@ export const PI_PROGRAMS: ReadonlySet<string> = new Set(["pi", "pi-rpc"]);
 
 /**
  * Whether one line of what `ps -A -o comm=` printed is Pi's program: one of its
- * names, or a path ending in one. The Kimchi adapter passes its own names.
+ * names, or a path ending in one. The Kimchi and Droid adapters pass their own
+ * names.
  */
 export function piInTable(stdout: string, programs: ReadonlySet<string> = PI_PROGRAMS): boolean {
   return stdout.split("\n").some((line) => {

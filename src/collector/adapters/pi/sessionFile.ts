@@ -52,7 +52,11 @@ export const MAX_NAME_LINE_BYTES = 4 * 1024;
 /** The newest format this reads. A higher one is a newer Pi's. Older ones are read as they are. */
 export const SESSION_VERSION = 3;
 
-/** A session's id as `assertValidSessionId` allows, of 200 characters or less. */
+/**
+ * A session's id as `assertValidSessionId` allows, of 200 characters or less.
+ * Droid's adapter holds the name of a session's file to it too, before it
+ * opens the file (`../droid/sessionFile.ts`).
+ */
 export const SESSION_ID = /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,198}[A-Za-z0-9])?$/;
 
 /** A time as Pi writes one, with `Date.toISOString()`. */
@@ -117,7 +121,8 @@ function timeOf(value: unknown): number | null {
   return Number.isNaN(at) ? null : at;
 }
 
-function folder(value: unknown, platform: NodeJS.Platform): string | null {
+/** A session's folder, when it is a full path of a sensible length with no control character, else null. */
+export function folder(value: unknown, platform: NodeJS.Platform): string | null {
   if (typeof value !== "string" || value === "" || value.length > MAX_CWD_LENGTH) return null;
   if (CONTROL.test(value)) return null;
   return pathsOf(platform).isAbsolute(value) ? value : null;
