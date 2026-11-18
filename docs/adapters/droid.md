@@ -246,7 +246,7 @@ Everything here is read from Factory's documentation and SDKs, so each of these 
 | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | The sessions folder moves from `~/.factory/sessions`                          | Droid is not found, or found with no sessions                                                                           |
 | The first line's type is renamed, or the title made optional                  | Sessions are not listed, and the Sources view says so                                                                   |
-| The ID stops being the file's name                                            | Sessions are listed by the file's name, or not at all                                                                   |
+| The ID stops being the file's name without `.jsonl`                           | Sessions are listed by the file's name, or not at all                                                                   |
 | `archivedAt` is renamed                                                       | Archived sessions are listed                                                                                            |
 | The program is renamed, or runs as `node`                                     | Sessions show as finished while Droid runs, except in the seconds after each write, when every session shows as unknown |
 | Droid starts to write a status or a pid                                       | Nothing changes until the adapter reads it, and sessions stay unknown                                                   |
