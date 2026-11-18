@@ -188,7 +188,7 @@ None. A Droid session never shows as working, its token counts are in its settin
 
 The files are read as on any system, from `%USERPROFILE%\.factory\sessions`, and `cwd` by Windows' rules. `ps` is not run, so every session shows as unknown until it leaves the list, and the way of reading is always `files-without-processes`. The card says so.
 
-An Agent Lookout in WSL pointed at Windows' `.factory` runs `ps` in Linux, which cannot see `droid.exe`, so it shows each session there as finished. A `C:\` folder is not a full path in Linux, so such a session is named `droid:<id>`.
+An Agent Lookout in WSL pointed at Windows' `.factory` runs `ps` in Linux, which cannot see `droid.exe`, so each session there shows as finished, except in the seconds after each write, when every session shows as unknown. A `C:\` folder is not a full path in Linux, so such a session is named `droid:<id>`.
 
 ## A hook, later
 
@@ -219,7 +219,7 @@ Droid documents hooks that could tell working, waiting and finished apart: `Noti
 - A session with only lines Droid's hooks add after its first line is listed (a user report, Factory-AI/factory issue #1).
 - Favourites are not marked.
 - After the clock is set back, a session file stamped ahead of the clock keeps every session unknown until the clock passes its write.
-- On Windows every session is unknown, and in WSL pointed at Windows' folder every session shows as finished.
+- On Windows every session is unknown. In WSL pointed at Windows' folder, every session shows as finished, except in the seconds after each write, when every session shows as unknown.
 
 ## Not yet checked
 
