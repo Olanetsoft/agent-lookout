@@ -2,6 +2,12 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
+## Unreleased
+
+### Fixed
+
+- In a Gemini CLI session longer than the 256 KB Last message reads, it no longer takes an older reply for the newest once a tool ends. Gemini CLI 0.69.0 then writes again the reply that called the tool, found by its calls' ids, and in the IDE mode that speaks ACP, or with one session open in two Gemini CLIs, newer replies can come before that. In the IDE mode, once Gemini CLI has compressed the session, it writes an older reply again instead. When the end that is read cannot tell where that reply stands, the details now say its last message is further back than that, until the session replies again. (#373)
+
 ## 0.2.25 - 2026-11-19
 
 Amp threads can show through a plugin, Autohand Code sessions have Jump, and Gemini CLI 0.69.0 sessions show as working while a tool waits or runs.
