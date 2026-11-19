@@ -709,7 +709,12 @@ const AMP_STAND_IN = [
   "}",
 ].join("\n");
 
-/** What the stand-in for Amp is told: a thread's session starts, its state changes, a minute passes, or Amp unloads the plugin. */
+/**
+ * What the stand-in for Amp is told: a thread's session starts, its state
+ * changes, its clock is set, a minute passes, a file is written just after the
+ * plugin reads it, the next hard link fails, the plugin is loaded again, or Amp
+ * unloads the plugin, or only its first run.
+ */
 type AmpCommand =
   | { start: string }
   | { thread: string; state: string }
@@ -1194,11 +1199,14 @@ describe.skipIf(!stripsTypes())(
       await amp.send({ start: THREAD });
       const file = path.join(folder, AMP_FILE);
       const theirs = JSON.stringify({ agent: "Amp", status: "working", pid: process.pid });
+      // Writing over a file keeps it the same file, and so would a rename back. A copy is a new one.
+      const before = (await stat(file, { bigint: true })).ino;
       await amp.send({ afterRead: { file, text: theirs } });
       await amp.send({ linkFails: {} });
       await amp.send({ dispose: true });
       expect(await readdir(folder)).toEqual([AMP_FILE]);
       expect(await readFile(file, "utf8")).toBe(theirs);
+      expect((await stat(file, { bigint: true })).ino).not.toBe(before);
       expect(await amp.end()).toEqual({ code: 0, signal: null });
     }, 20_000);
 

@@ -1654,7 +1654,7 @@ export default function (amp: PluginAPI) {
   // is put back, unless a newer one has taken its place.
   function remove(file: string, passes: (text: string) => boolean) {
     if (!passes(fs.readFileSync(file, "utf8"))) return;
-    const taken = path.join(folder, `.${process.pid}-gone-${path.basename(file)}`);
+    const taken = path.join(folder, `.${run}-gone-${path.basename(file)}`);
     fs.renameSync(file, taken);
     let gone = false;
     try {
