@@ -345,6 +345,7 @@ function inspect({ name, width, ratio = 0.75 }) {
         "Autohand Code",
         "DeepSeek Harness",
         "Droid",
+        "Grok Build",
         "Status files",
       ]) {
         if (!rows.includes(agent)) missing.push(`a row for ${agent}`);

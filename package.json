@@ -30,6 +30,7 @@
     "deepseek-harness",
     "dsh",
     "droid",
+    "grok-build",
     "mcp",
     "mcp-server",
     "tmux",

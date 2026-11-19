@@ -424,9 +424,10 @@ const MAX_AGENTS = 30;
 /**
  * The most parts read for one source: as many as the collector takes from one
  * machine (`MAX_REMOTE_PARTS` in `src/collector/remotes/remoteSessions.ts`), so
- * both compare that machine's sessions alike.
+ * both compare that machine's sessions alike. Raised with it from 60 to 61
+ * for Grok Build.
  */
-const MAX_PARTS = 60;
+const MAX_PARTS = 61;
 
 /** The way another machine read each of its sources, by the start of their sessions' ids, or null. */
 function readParts(value: unknown): Record<string, string> | null {

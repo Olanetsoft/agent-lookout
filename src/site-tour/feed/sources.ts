@@ -8,8 +8,8 @@ import { MACHINE } from "@site-tour/feed/hour";
  * collector's order: Claude Code, Codex, the Antigravity CLI, Antigravity,
  * Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi,
  * Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx,
- * Unreal Agent, Autohand Code, DeepSeek Harness and Droid, none of the
- * twenty-two installed here, and status files. Then the other machine,
+ * Unreal Agent, Autohand Code, DeepSeek Harness, Droid and Grok Build, none of
+ * the twenty-three installed here, and status files. Then the other machine,
  * connected over SSH.
  *
  * The adapters run in Node, so their declarations cannot be bundled into the
@@ -1076,6 +1076,58 @@ export const DROID_CAPABILITIES: SourceCapabilities = {
   },
 };
 
+export const GROK_BUILD_CAPABILITIES: SourceCapabilities = {
+  "working-and-idle": {
+    level: "partly",
+    reason:
+      "Sessions in its terminal app only. Idle can mean background work still runs. On Linux and Windows, a crash can leave one open.",
+  },
+  "needs-you": {
+    level: "partly",
+    reason:
+      "While it asks a question or to approve a plan. Waits for a tool's approval, a subagent or an MCP server show as working or idle.",
+  },
+  finished: {
+    level: "partly",
+    reason:
+      "Once Grok Build closes it or its process ends, if Agent Lookout saw it open or it was left behind. After /new, once its turn ends.",
+  },
+  failed: {
+    level: "partly",
+    reason:
+      "When its last turn ended on an error, or was cut off by a crash and the session reopened, until a new turn starts.",
+  },
+  names: {
+    level: "partly",
+    reason:
+      "A title marked as set by you, as with /rename, else the folder's. Grok Build's own titles are not shown: one can be your prompt.",
+  },
+  jump: {
+    level: "partly",
+    reason:
+      "In tmux, and in a tab of Terminal or iTerm2 on a Mac. Not in another terminal or on Windows.",
+  },
+  "quiet-for": {
+    level: "partly",
+    reason:
+      "The time since its event log was last written. A long reply or command writes nothing until it ends.",
+  },
+  tokens: {
+    level: "no",
+    reason:
+      "Grok Build counts tokens by turn, not by reply, and Agent Lookout does not read its usage file.",
+  },
+  stop: {
+    level: "no",
+    reason: "Agent Lookout stops Claude Code sessions only so far.",
+  },
+  answer: {
+    level: "no",
+    reason:
+      "Agent Lookout never connects to Grok Build's socket or ACP server, so it cannot send an answer.",
+  },
+};
+
 /**
  * What Claude Code on the other machine can report, as it is seen from here:
  * what its Agent Lookout says, with Jump, Stop and Answer as no, since each
@@ -1688,6 +1740,41 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
       checkedAt,
     },
     {
+      // The adapter's card on a Mac with tmux, when Grok Build is not installed: its list, its sessions folder and tmux's program are looked for, and nothing more.
+      id: "grok-build",
+      label: "Grok Build",
+      state: "unavailable",
+      detail:
+        "Grok Build was not found: there is no ~/.grok/active_sessions.json or ~/.grok/sessions folder. Agent Lookout looks again every minute.",
+      watching: [
+        { label: "Session list", value: "~/.grok/active_sessions.json" },
+        { label: "Read", value: "not found" },
+        { label: "Sessions folder", value: "~/.grok/sessions" },
+        {
+          label: "Event logs",
+          value: "events.jsonl in each listed session's folder, when it changes",
+        },
+        { label: "Process IDs", value: "signal 0, every 2 seconds" },
+        { label: "Process check", value: "ps -o pid=,lstart= -p <pids>" },
+        {
+          label: "Process check run",
+          value: "every 30 seconds while a session's process runs, and sooner when another appears",
+        },
+        {
+          label: "Pane check",
+          value:
+            "tmux -u list-panes -a -F '#{pane_pid} #{pane_id} #{window_index} #{pane_index} #{session_name}'",
+        },
+        { label: "Pane check run", value: "not run" },
+        { label: "Pane parent check", value: "ps -A -o pid=,ppid=" },
+        { label: "Pane parent check run", value: "not run" },
+        { label: "Tab check", value: "ps -A -o pid=,ppid=,tty=,comm=" },
+        { label: "Tab check run", value: "not run" },
+      ],
+      capabilities: GROK_BUILD_CAPABILITIES,
+      checkedAt,
+    },
+    {
       id: "status-files",
       label: "Status files",
       state: "ok",
@@ -1738,6 +1825,7 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "Autohand Code there", value: "Not found" },
         { label: "DeepSeek Harness there", value: "Not found" },
         { label: "Droid there", value: "Not found" },
+        { label: "Grok Build there", value: "Not found" },
         { label: "Status files there", value: "Not set up" },
       ],
       agents: [{ label: "Claude Code", capabilities: CLAUDE_CODE_THERE_CAPABILITIES }],
