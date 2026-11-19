@@ -29,6 +29,7 @@ import {
   PRIVATE_WORDS,
   REPLY_COUNTS,
   rewindLine,
+  scheduledToolCall,
   setLine,
   titleLine,
   tokensOf,
@@ -430,10 +431,69 @@ describe("what is kept of each line", () => {
           note: false,
           failedRequest: false,
         },
-        toolCalls: { allCancelled: true, lastAt: NOW },
+        toolCalls: { allCancelled: true, state: "ended", lastAt: NOW },
         tokens: REPLY_COUNTS,
       },
     });
+  });
+
+  /** What a reply whose calls have these statuses keeps of them. */
+  const callsOf = (...calls: unknown[]) => {
+    const record = readLine(geminiLine("g1", NOW, { content: "", toolCalls: calls }), otherIds());
+    if (record?.kind !== "message") throw new Error("Not read as a message.");
+    return record.message.toolCalls;
+  };
+  const withStatus = (status: unknown) => ({ ...scheduledToolCall(NOW), status });
+
+  test("a call ends in success, error or cancelled, and not in scheduled, validating, awaiting_approval or executing", () => {
+    // `isTerminal` in Gemini CLI's scheduler, and the rest of `CoreToolCallStatus`, at v0.69.0.
+    for (const status of ["success", "error", "cancelled"]) {
+      expect(callsOf(toolCall(status, NOW))?.state, status).toBe("ended");
+    }
+    for (const status of ["scheduled", "validating", "awaiting_approval", "executing"]) {
+      expect(callsOf(scheduledToolCall(NOW, "call-0001", status))?.state, status).toBe("open");
+    }
+  });
+
+  test("a call Gemini CLI 0.69.0 writes as soon as the reply ends has not ended, and keeps when it was written", () => {
+    expect(callsOf(scheduledToolCall(NOW - 1_000), scheduledToolCall(NOW, "call-0002"))).toEqual({
+      allCancelled: false,
+      state: "open",
+      lastAt: NOW,
+    });
+  });
+
+  test("one call that has not ended leaves the reply open, whatever the others say", () => {
+    // As Gemini CLI's IDE mode writes each call as it ends, one at a time.
+    expect(callsOf(toolCall("success", NOW), scheduledToolCall(NOW, "call-0002"))?.state).toBe(
+      "open",
+    );
+    expect(callsOf(withStatus("paused"), scheduledToolCall(NOW, "call-0002"))?.state).toBe("open");
+  });
+
+  test("a status Gemini CLI does not write, or none, is not known, and is compared as it is written", () => {
+    for (const status of [
+      "Scheduled",
+      " scheduled",
+      "scheduled ",
+      "done",
+      "",
+      3,
+      null,
+      ["success"],
+    ]) {
+      expect(callsOf(withStatus(status))?.state, JSON.stringify(status)).toBe("unknown");
+      expect(callsOf(toolCall("success", NOW), withStatus(status))?.state).toBe("unknown");
+    }
+    const { status: _status, ...none } = scheduledToolCall(NOW);
+    expect(callsOf(none)?.state).toBe("unknown");
+    expect(callsOf("scheduled")?.state).toBe("unknown");
+  });
+
+  test("keeps nothing of a call's status but whether it ended", () => {
+    for (const status of ["scheduled", "awaiting_approval", "executing", "validating", "paused"]) {
+      expect(JSON.stringify(callsOf(withStatus(status)))).not.toContain(status);
+    }
   });
 
   test("a $patch keeps its own change first, then its updates, removals and order", () => {

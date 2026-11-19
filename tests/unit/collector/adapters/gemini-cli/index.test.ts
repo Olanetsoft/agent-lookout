@@ -16,7 +16,11 @@ import {
   UNKNOWN_NOTE,
   type GeminiCliAdapterOptions,
 } from "@collector/adapters/gemini-cli/index";
-import { geminiCliSessionId } from "@collector/adapters/gemini-cli/toSession";
+import {
+  BATCH_GRACE_MS,
+  geminiCliSessionId,
+  QUIET_MS,
+} from "@collector/adapters/gemini-cli/toSession";
 import { createEventStore } from "@collector/eventStore";
 import type { FileInfo, ReadOnlyIo } from "@collector/files/readOnlyIo";
 import { createHistoryStore } from "@collector/historyStore";
@@ -53,6 +57,7 @@ import {
   REPLY_COUNTS,
   resumedToolRoundAsOf063,
   rewindLine,
+  scheduledToolCall,
   SEATBELT_DIR,
   SEATBELT_TMP_DIR,
   SECOND,
@@ -437,6 +442,153 @@ describe("a request that fails", () => {
     const lines = failed.with(5, noticeLine("error", error, NOW - 2 * MINUTE));
     const { sessions } = await geminiCliAdapterFor(filesOf(lines)).poll();
     expect(sessions[0]).toMatchObject({ status: "idle", statusSince: NOW - 2 * MINUTE });
+  });
+});
+
+describe("a reply whose tool waits or runs, as Gemini CLI 0.69.0 writes it", () => {
+  const sessionId = sessionIdOf("06");
+  const AGENT = "22222222-2222-4222-8222-222222222222";
+  const began = NOW - 10 * MINUTE;
+  const FILE = chatPath(chatName(began, sessionId));
+  const [prompt = "", reply = "", result = "", notice = ""] = ["61", "62", "63", "64"].map(
+    messageIdOf,
+  );
+
+  /**
+   * The prompt, then the reply as Gemini CLI 0.69.0 writes it when it ends, at
+   * `NOW`: the reply, the time, then the reply again with its call `scheduled`.
+   */
+  function waiting(content: unknown = "") {
+    const clock = handClock(NOW);
+    const files = memoryFiles(clock.now);
+    files.write(projectRootPath(), PROJECT);
+    files.write(
+      FILE,
+      chatFile([
+        headerLine({ sessionId, startTime: began }),
+        userLine(prompt, NOW - MINUTE),
+        updatedLine(NOW - MINUTE),
+        geminiLine(reply, NOW, { content }),
+        updatedLine(NOW),
+        geminiLine(reply, NOW, { content, toolCalls: [scheduledToolCall(NOW)] }),
+      ]),
+    );
+    const adapter = geminiCliAdapterFor(files, { now: clock.now });
+    const status = async () => (await adapter.poll()).sessions[0];
+    return { clock, files, adapter, status };
+  }
+
+  test("is working since the prompt past 30 seconds, judged against the clock on every poll, and unknown 30 quiet minutes on", async () => {
+    const { clock, files, adapter, status } = waiting();
+    expect(await status()).toMatchObject({ status: "working", statusSince: NOW - MINUTE });
+    files.forget();
+    clock.set(NOW + BATCH_GRACE_MS + SECOND);
+    expect(await status()).toMatchObject({ status: "working", statusSince: NOW - MINUTE });
+    clock.set(NOW + QUIET_MS - SECOND);
+    expect(await status()).toMatchObject({ status: "working", statusSince: NOW - MINUTE });
+    // Nothing was read again: the same lines, judged against a later clock.
+    expect(files.opened()).toEqual([]);
+
+    // A session closed or killed while its tool was scheduled leaves the same line.
+    clock.set(NOW + QUIET_MS);
+    const later = await adapter.poll();
+    expect(later.sessions[0]).toMatchObject({ status: "unknown", statusSince: null });
+    expect(later.health.detail).toBe(`${healthy()} ${UNKNOWN_NOTE}`);
+  });
+
+  test("a reply with text whose tool waits or runs is working, not idle", async () => {
+    const { clock, status } = waiting("A placeholder reply that also calls a tool.");
+    clock.set(NOW + 5 * MINUTE);
+    expect(await status()).toMatchObject({ status: "working", statusSince: NOW - MINUTE });
+  });
+
+  test("a subagent's writes keep it working, and it is unknown 30 minutes after the last", async () => {
+    const { clock, files, status } = waiting();
+    const agentFile = subagentPath(sessionId, AGENT);
+    files.write(agentFile, "placeholder: must never be opened", { mtimeMs: NOW + 25 * MINUTE });
+    clock.set(NOW + 40 * MINUTE);
+    expect(await status()).toMatchObject({ status: "working", lastWriteAt: NOW + 25 * MINUTE });
+    clock.set(NOW + 55 * MINUTE);
+    expect((await status())?.status).toBe("unknown");
+  });
+
+  test("a title a later start adds does not keep it working", async () => {
+    const { clock, files, status } = waiting();
+    clock.set(NOW + HOUR);
+    files.append(FILE, `${titleLine("Tidy the demo readme")}\n`, { mtimeMs: NOW + HOUR });
+    expect(await status()).toMatchObject({
+      status: "unknown",
+      name: "Tidy the demo readme",
+      lastWriteAt: NOW + HOUR,
+    });
+  });
+
+  test("once the batch has ended, its line is today's batch: working at 29 seconds and unknown at 31", async () => {
+    const { clock, files, status } = waiting();
+    const ended = NOW + 5 * MINUTE;
+    clock.set(ended);
+    files.append(
+      FILE,
+      `${geminiLine(reply, NOW, { content: "", toolCalls: [toolCall("success", ended)] })}\n`,
+    );
+    clock.set(ended + 29 * SECOND);
+    expect(await status()).toMatchObject({ status: "working", statusSince: NOW - MINUTE });
+    clock.set(ended + 31 * SECOND);
+    expect(await status()).toMatchObject({ status: "unknown", statusSince: null });
+
+    // Its results come next, as ever.
+    files.append(FILE, `${toolResultLine(result, ended + 32 * SECOND)}\n`);
+    clock.set(ended + 33 * SECOND);
+    expect(await status()).toMatchObject({ status: "working", statusSince: NOW - MINUTE });
+  });
+
+  test("the take-back after Deny or Esc makes it idle", async () => {
+    const { clock, files, status } = waiting();
+    const declined = NOW + 2 * MINUTE;
+    clock.set(declined);
+    files.append(
+      FILE,
+      chatFile([
+        geminiLine(reply, NOW, { content: "", toolCalls: [toolCall("cancelled", declined)] }),
+        noticeLine("info", notice, declined),
+        rewindLine(reply),
+        updatedLine(declined + SECOND),
+      ]),
+    );
+    clock.set(declined + 2 * SECOND);
+    expect(await status()).toMatchObject({ status: "idle", statusSince: declined + SECOND });
+  });
+});
+
+test("a batch from a Gemini CLI before 0.69.0, written only once it ended, is working at 29 seconds and unknown at 31", async () => {
+  const sessionId = sessionIdOf("07");
+  const clock = handClock(NOW);
+  const files = memoryFiles(clock.now);
+  files.write(projectRootPath(), PROJECT);
+  files.write(
+    chatPath(chatName(NOW - 10 * MINUTE, sessionId)),
+    chatFile([
+      headerLine({ sessionId, startTime: NOW - 10 * MINUTE }),
+      userLine(messageIdOf("71"), NOW - 5 * MINUTE),
+      updatedLine(NOW - 5 * MINUTE),
+      geminiLine(messageIdOf("72"), NOW - 4 * MINUTE, { content: "" }),
+      updatedLine(NOW - 4 * MINUTE),
+      geminiLine(messageIdOf("72"), NOW - 4 * MINUTE, {
+        content: "",
+        toolCalls: [toolCall("success", NOW), toolCall("error", NOW - SECOND, "call-0002")],
+      }),
+    ]),
+  );
+  const adapter = geminiCliAdapterFor(files, { now: clock.now });
+  clock.set(NOW + 29 * SECOND);
+  expect((await adapter.poll()).sessions[0]).toMatchObject({
+    status: "working",
+    statusSince: NOW - 5 * MINUTE,
+  });
+  clock.set(NOW + 31 * SECOND);
+  expect((await adapter.poll()).sessions[0]).toMatchObject({
+    status: "unknown",
+    statusSince: null,
   });
 });
 

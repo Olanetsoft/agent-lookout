@@ -1,7 +1,8 @@
 // Test fixtures only. Every id, name and path here is invented and generic.
 // The lines follow the shapes in Gemini CLI's source at v0.64.0
 // (packages/core/src/services/chatRecordingService.ts and chatRecordingTypes.ts),
-// and at v0.63.0 for the helpers whose names end `AsOf063`, as written up in
+// at v0.63.0 for the helpers whose names end `AsOf063`, and at v0.69.0 for
+// `scheduledToolCall`, as written up in
 // docs/adapters/gemini-cli.md, and nothing in them is copied from a real
 // machine. Product code never imports this file.
 //
@@ -185,6 +186,25 @@ export function toolCall(status: string, time: number, callId = "call-0001") {
 }
 
 /**
+ * A tool call as Gemini CLI 0.69.0 records it as soon as the reply ends, before
+ * it runs: no result, the status `scheduled` unless a test gives another, and
+ * the fields `recordToolCalls` adds (geminiChat.ts:1857-1884 and
+ * chatRecordingService.ts:1199-1212 at v0.69.0).
+ */
+export function scheduledToolCall(time: number, callId = "call-0001", status = "scheduled") {
+  return {
+    id: callId,
+    name: "run_shell_command",
+    args: { command: `echo ${PRIVATE_WORDS}` },
+    status,
+    timestamp: at(time),
+    displayName: "Shell",
+    description: `A placeholder description. ${PRIVATE_WORDS}`,
+    renderOutputAsMarkdown: false,
+  };
+}
+
+/**
  * A reply's `tokens` as Gemini CLI writes them from the Gemini API's usage
  * (`recordMessageTokens`), with 0 for a count the API did not send. The total
  * is the sum of the others but `cached`, as the API gives it, unless a test
@@ -218,7 +238,8 @@ export const MODEL = "gemini-placeholder";
 export interface GeminiFields {
   /** The visible text, or "" for a reply that was only calls for tools, or a list of parts. */
   content?: unknown;
-  toolCalls?: ReturnType<typeof toolCall>[];
+  /** The calls as Gemini CLI writes them (`toolCall`, `scheduledToolCall`), or anything else a test needs. */
+  toolCalls?: unknown[];
   /** The reply's `tokens`: `REPLY_TOKENS` unless given. `null` as Gemini CLI writes for none, and `undefined` for no field. */
   tokens?: unknown;
 }

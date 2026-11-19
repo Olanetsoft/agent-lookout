@@ -6,6 +6,7 @@ import {
   geminiCliSession,
   geminiCliSessionId,
   lastActivity,
+  QUIET_MS,
 } from "@collector/adapters/gemini-cli/toSession";
 import { DAY, HOUR, ids, MINUTE, NOW, PROJECT, SLUG } from "@tests/fixtures/gemini-cli/geminiCli";
 
@@ -112,6 +113,83 @@ describe("geminiCliSession", () => {
     // With no time it ended, or one that could not be right, it stays unknown.
     expect(sessionOf(stateWith({ status: batchAt(null) })).status).toBe("unknown");
     expect(sessionOf(stateWith({ status: batchAt(NOW + HOUR) })).status).toBe("unknown");
+  });
+
+  describe("a reply with a tool call that has not ended", () => {
+    const pending = {
+      status: "unknown" as const,
+      since: null,
+      pending: { workingSince: NOW - HOUR },
+    };
+    /** The session whose lines were last written `ago` before the clock, with no other time. */
+    const writtenAgo = (ago: number, extra: Parameters<typeof sessionOf>[1] = {}) =>
+      sessionOf(
+        stateWith({
+          status: pending,
+          updatedAt: NOW - ago,
+          messageAt: NOW - ago,
+          toolAt: NOW - ago,
+        }),
+        extra,
+      );
+
+    test("is working since the prompt with no 30-second window, while the session wrote in the last QUIET_MS", () => {
+      // A tool waits for approval or runs: Gemini CLI writes nothing until the batch ends.
+      for (const ago of [0, BATCH_GRACE_MS + 1_000, QUIET_MS - 1]) {
+        expect(writtenAgo(ago), String(ago)).toMatchObject({
+          status: "working",
+          statusSince: NOW - HOUR,
+          stale: false,
+        });
+      }
+    });
+
+    test("is unknown once the session has written nothing for QUIET_MS, as a session killed mid-tool leaves it", () => {
+      expect(writtenAgo(QUIET_MS)).toMatchObject({ status: "unknown", statusSince: null });
+      expect(writtenAgo(DAY - MINUTE).status).toBe("unknown");
+      expect(QUIET_MS).toBe(30 * MINUTE);
+    });
+
+    test("goes by the newest of the times its lines give", () => {
+      const at = (fields: Partial<ChatFileState>) =>
+        sessionOf(
+          stateWith({
+            status: pending,
+            updatedAt: NOW - HOUR,
+            messageAt: NOW - HOUR,
+            toolAt: NOW - HOUR,
+            ...fields,
+          }),
+        ).status;
+      expect(at({})).toBe("unknown");
+      expect(at({ updatedAt: NOW - MINUTE })).toBe("working");
+      expect(at({ messageAt: NOW - MINUTE })).toBe("working");
+      expect(at({ toolAt: NOW - MINUTE })).toBe("working");
+    });
+
+    test("a subagent's write keeps it working, as a subagent adds to its file while it works", () => {
+      expect(writtenAgo(HOUR, { subagentWrittenAt: NOW - MINUTE }).status).toBe("working");
+      expect(writtenAgo(HOUR, { subagentWrittenAt: NOW - QUIET_MS }).status).toBe("unknown");
+      // One that could not be right is not believed.
+      expect(writtenAgo(HOUR, { subagentWrittenAt: NOW + HOUR }).status).toBe("unknown");
+    });
+
+    test("the file's own time does not keep it working: a title a later start adds moves it", () => {
+      expect(writtenAgo(HOUR, { writtenAt: NOW - MINUTE })).toMatchObject({
+        status: "unknown",
+        lastWriteAt: NOW - MINUTE,
+      });
+    });
+
+    test("is unknown when no time could be right, as with lines written ahead of the clock", () => {
+      expect(writtenAgo(-HOUR).status).toBe("unknown");
+      expect(
+        sessionOf(stateWith({ status: pending, updatedAt: null, messageAt: null, toolAt: null }))
+          .status,
+      ).toBe("unknown");
+      // A moment ahead, within the clock's slack, is a write now.
+      expect(writtenAgo(-30_000).status).toBe("working");
+    });
   });
 
   test("its last write is the file's time, unless that is before the session began", () => {

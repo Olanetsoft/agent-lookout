@@ -55,7 +55,10 @@ const toolResult = (id: string, at: number) => message(id, "user", at, { functio
 const reply = (id: string, at: number) => message(id, "gemini", at);
 const callsOnly = (id: string, at: number) => message(id, "gemini", at, { empty: true });
 const batch = (id: string, at: number, allCancelled = false, lastAt = at + 5_000) =>
-  message(id, "gemini", at, { empty: true }, { allCancelled, lastAt });
+  message(id, "gemini", at, { empty: true }, { allCancelled, state: "ended", lastAt });
+/** A reply whose calls have not all ended, as Gemini CLI 0.69.0 writes it as soon as it ends. */
+const scheduled = (id: string, at: number, content: Partial<GeminiCliContent> = { empty: true }) =>
+  message(id, "gemini", at, content, { allCancelled: false, state: "open", lastAt: at });
 const notice = (type: "info" | "warning" | "error", id: string, at: number) =>
   message(id, type, at);
 const failure = (id: string, at: number) => message(id, "error", at, { failedRequest: true });
@@ -160,6 +163,85 @@ describe("mapGeminiCliStatus, by the newest message that says how the session st
     });
   });
 
+  test("a reply with a tool call that has not ended is unknown, with since when it would work for the collector", () => {
+    // As Gemini CLI 0.69.0 writes a reply's calls as soon as it ends, and a closed session leaves them.
+    for (const content of [{ empty: true }, {}]) {
+      const records = [
+        header(),
+        prompt("p1", T + 60_000),
+        scheduled("g1", T + 70_000, content),
+        updated(T + 70_000),
+        notice("info", "i1", T + 80_000),
+      ];
+      expect(statusOf(records), JSON.stringify(content)).toEqual({
+        status: "unknown",
+        since: null,
+        pending: { workingSince: T + 60_000 },
+      });
+    }
+  });
+
+  test("the batch written again once its calls ended replaces it: then the batch's own rule holds", () => {
+    const records = [
+      header(),
+      prompt("p1", T + 60_000),
+      scheduled("g1", T + 70_000),
+      updated(T + 70_000),
+      batch("g1", T + 70_000, false, T + 90_000),
+    ];
+    expect(statusOf(records)).toEqual({
+      status: "unknown",
+      since: null,
+      batch: { endedAt: T + 90_000, workingSince: T + 60_000 },
+    });
+    // And its results, as they come next, are working as ever.
+    expect(statusOf([...records, toolResult("r1", T + 91_000)])).toEqual({
+      status: "working",
+      since: T + 60_000,
+    });
+  });
+
+  test("the take-back after Deny or Esc replaces it: idle since the $set after it", () => {
+    const begun = [header(), prompt("p1", T + 60_000), scheduled("g1", T + 70_000)];
+    // Every call declined: written as cancelled, then the reply taken back.
+    const declined = [
+      ...begun,
+      batch("g1", T + 70_000, true, T + 95_000),
+      notice("info", "i1", T + 95_000),
+      rewind("g1"),
+      updated(T + 95_500),
+    ];
+    expect(statusOf(declined)).toEqual({ status: "idle", since: T + 95_500 });
+    // A take-back with nothing written between, and one by a $patch.
+    expect(statusOf([...begun, rewind("g1"), updated(T + 96_000)])).toEqual({
+      status: "idle",
+      since: T + 96_000,
+    });
+    expect(statusOf([...begun, patch({ removeIds: ["g1"] }), updated(T + 97_000)])).toEqual({
+      status: "idle",
+      since: T + 97_000,
+    });
+  });
+
+  test("a reply with a call in a status Gemini CLI does not write is unknown, with nothing for the collector", () => {
+    const records = [
+      header(),
+      prompt("p1", T + 60_000),
+      message(
+        "g1",
+        "gemini",
+        T + 70_000,
+        { empty: true },
+        {
+          allCancelled: false,
+          state: "unknown",
+          lastAt: T + 75_000,
+        },
+      ),
+    ];
+    expect(statusOf(records)).toEqual({ status: "unknown", since: null });
+  });
+
   test.each<[string, GeminiCliRecord[]]>([
     [
       "a batch of tool calls whose every call was cancelled, with nothing after it",
@@ -218,6 +300,7 @@ describe("mapGeminiCliStatus, by the newest message that says how the session st
       [callsOnly("g", T)],
       [batch("g", T)],
       [batch("g", T, true)],
+      [scheduled("g", T)],
       [notice("error", "e", T)],
       [failure("e", T)],
       [notice("info", "i", T)],
