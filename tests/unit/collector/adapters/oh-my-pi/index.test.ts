@@ -662,6 +662,25 @@ describe("asking ps", () => {
     expect(ps.runs).toHaveLength(2);
   });
 
+  test("allows for a rounded write time again for a file that changed since that answer and could not be opened", async () => {
+    const STEP = NOW - 2 * SECOND;
+    const files = filesWith(sessionText(message("user")), STEP);
+    const clock = handClock(STEP + SECOND / 2);
+    const ps = standInPs([]);
+    const adapter = ohMyPiAdapterFor(files, { now: clock.now, ps });
+    expect((await adapter.poll()).sessions[0]?.status).toBe("unknown");
+    clock.set(STEP + SECOND / 10);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("finished");
+    // An omp started since adds a prompt, and the file cannot be opened again on this poll.
+    appendSession(files, FILE, message("user"), STEP);
+    files.failOpen(FILE);
+    ps.set([psLine(7002, STEP + SECOND, "omp")]);
+    clock.advance(1.8 * SECOND);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("unknown");
+    expect(ps.runs).toHaveLength(2);
+    files.heal(FILE);
+  });
+
   test("keeps allowing nothing for a file that changed between its lstat and its open on the poll that asked", async () => {
     const STEP = NOW - 2 * SECOND;
     const files = filesWith(sessionText(message("user")), STEP);

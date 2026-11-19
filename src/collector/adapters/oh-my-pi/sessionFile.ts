@@ -110,7 +110,10 @@ export type OmpFileRead =
       file: OmpSessionFile;
       /** Its modified time as it was opened for this, never before its `lstat`'s. */
       writtenAt: number;
-      /** The open file's identity, size and time its lines were read at, which can be later than its `lstat`'s. */
+      /**
+       * The open file's identity, size and time its lines were read at, which can be later than its
+       * `lstat`'s, or this poll's `lstat` when the file could not be read again after that changed.
+       */
       info: FileInfo;
     }
   /** No session yet: gone, not in a real folder, not whole, or with no line that decides. */
@@ -284,7 +287,7 @@ export function createOmpSessionReader(
 ): OmpSessionReader {
   const remembered = new Map<string, Known>();
 
-  function answer(known: Known, writtenAt: number): OmpFileRead {
+  function answer(known: Known, writtenAt: number, info: FileInfo = known.info): OmpFileRead {
     if (known.verdict !== "ok" || known.header === null || known.tail === null) {
       return { state: known.verdict === "ok" ? "none" : known.verdict };
     }
@@ -294,7 +297,7 @@ export function createOmpSessionReader(
       state: "ok",
       file: { ...known.header, title: known.title, tail },
       writtenAt,
-      info: known.info,
+      info,
     };
   }
 
@@ -426,7 +429,9 @@ export function createOmpSessionReader(
         // Gone since its `lstat`, replaced, refused, or a read error: what it
         // showed stands, and it is tried again on the next poll, since
         // nothing here took note of it.
-        return known === undefined ? { state: "none" } : answer(known, ref.info.mtimeMs);
+        // This poll's `lstat` stands for what was read, so a write since an answer is never taken
+        // for one read before it.
+        return known === undefined ? { state: "none" } : answer(known, ref.info.mtimeMs, ref.info);
       }
     },
     keepOnly(paths) {
