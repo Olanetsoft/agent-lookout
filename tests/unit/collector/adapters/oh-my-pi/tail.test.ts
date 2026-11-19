@@ -202,6 +202,13 @@ describe("each line, from its first bytes", () => {
         message: { role: "user" },
       },
       { type: "message", id: "a1", parentId: null, timestamp: "", message: { role: "user" } },
+      {
+        type: "message",
+        id: "a1",
+        parentId: null,
+        timestamp: "unknown",
+        message: { role: "assistant" },
+      },
     ];
     for (const shape of shapes) expect(judge(line(shape)).sort).toBe("unreadable");
   });

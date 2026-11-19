@@ -77,8 +77,9 @@ describe("the title slot", () => {
       expect(slot.byteLength).toBe(SLOT_BYTES);
       expect(slotShape(slot)).toMatchObject({ state: "ok", source: source ?? null });
     }
-    // A title that fills the slot leaves no spaces.
-    const full = slotOf({ title: "x".repeat(150), source: "user" });
+    // A title that fills the slot leaves no spaces, as when Oh My Pi cuts a long title to fit.
+    const full = slotOf({ title: "x".repeat(158), source: "user" });
+    expect(full.toString().endsWith('"pad":""}\n')).toBe(true);
     expect(slotShape(full)).toMatchObject({ state: "ok", source: "user" });
   });
 

@@ -32,7 +32,9 @@ import { bytesAt, timeAt, wordAt } from "../autohand-code/jsonBytes.ts";
  *   over. Any other role, or a message line of any other shape, cannot be
  *   read. A reply's and a result's `timestamp` is when Oh My Pi added the
  *   line, `new Date().toISOString()` (session-manager.ts:171-173,
- *   :2150-2157), and is kept as its time, or null when it is not one.
+ *   :2150-2157), and is kept as its time, or null when its bytes, digits and
+ *   `:.TZ+-`, are not one. A `timestamp` that is empty, longer than 64 bytes
+ *   or holds any other byte is another shape.
  * - Any other line that begins `{"type":"<word>",` is passed over: the title
  *   slot, the header, `model_usage`, `title_change` and the rest.
  *
