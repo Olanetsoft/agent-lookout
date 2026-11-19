@@ -375,6 +375,32 @@ describe("a session's status, with a Muse Code that started before it was writte
     expect((await adapter.poll()).sessions[0]?.status).toBe("needs-you");
   });
 
+  test.each([
+    ["its log", (f: string) => f],
+    ["its session folder", (f: string) => f.slice(0, f.lastIndexOf("/"))],
+  ])(
+    "a session that needs you stays listed however old after a poll where %s cannot be looked up",
+    async (_, place) => {
+      const clock = handClock();
+      const { files, file } = oldSession((id) =>
+        asked(RUN, PROMPT, NOW - 2 * MINUTE, { session: id }),
+      );
+      const adapter = museCodeAdapterFor(files, { now: clock.now });
+      expect((await adapter.poll()).sessions[0]?.status).toBe("needs-you");
+      clock.advance(2 * DAY);
+      expect((await adapter.poll()).sessions[0]?.status).toBe("needs-you");
+      files.fail(place(file), "EIO");
+      clock.advance(2 * SECOND);
+      expect((await adapter.poll()).sessions).toEqual([]);
+      files.heal(place(file));
+      clock.advance(2 * SECOND);
+      expect((await adapter.poll()).sessions[0]).toMatchObject({
+        status: "needs-you",
+        statusSince: NOW - 2 * MINUTE,
+      });
+    },
+  );
+
   test("a session that needs you stays listed however old through a poll where ps cannot say, with its wait's time", async () => {
     const clock = handClock();
     const ps = standInPs([MUSE_LINE]);
