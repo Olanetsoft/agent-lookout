@@ -14,6 +14,7 @@ Amp threads can show through a plugin, Autohand Code sessions have Jump, and Gem
 ### Fixed
 
 - A Gemini CLI 0.69.0 session whose tool waits for your approval, or runs for more than 30 seconds, shows as working, not unknown, whether or not the model's reply had text. Gemini CLI 0.69.0 writes a reply's tool calls as `scheduled` as soon as the reply ends, and Agent Lookout now reads each call's status. Gemini CLI's files name no process, and a session closed or killed while a tool was scheduled leaves the same line, so a session whose tool waits or runs, or that was closed then, turns unknown once neither it nor a subagent of it has written for 30 minutes, the time keep-awake counts a quiet working session for. Older versions show as before: there a reply with text whose tool waits or runs still shows as idle. (#371)
+- In a long Gemini CLI session, Last message no longer takes an older reply for the newest once that reply's tools end. Gemini CLI 0.69.0 writes the reply again then, in its own place, and in the IDE mode that speaks ACP, or with one session open in two Gemini CLIs, newer replies can come before that. When the reply's own first lines are further back than the 256 KB that is read, the details now say its last message is further back than that, until the session replies again. (#373)
 
 ## 0.2.24 - 2026-11-19
 

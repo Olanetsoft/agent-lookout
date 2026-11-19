@@ -30,6 +30,7 @@ import {
   patchLine,
   PRIVATE_WORDS,
   rewindLine,
+  scheduledToolCall,
   SECOND,
   sessionIdOf,
   setLine,
@@ -552,6 +553,172 @@ describe("the end of a longer file, which can begin after the line a rewind or a
         setMessagesLine([prompt(P1, 1), reply(R1, 2, "From the set.")], at(2)),
       ),
     ).toBe("From the set.");
+  });
+});
+
+describe("a reply Gemini CLI 0.69.0 writes again as its tool calls end, which it finds by their ids", () => {
+  const [B1, B2] = ["b3", "b4"].map(messageIdOf) as [string, string];
+
+  /** A reply with a tool call: its own line, the `$set` after it, then its line with the call `scheduled`. */
+  const replyWithCall = (id: string, seconds: number, content: unknown) => [
+    reply(id, seconds, content),
+    updatedLine(at(seconds)),
+    geminiLine(id, at(seconds), { content, toolCalls: [scheduledToolCall(at(seconds))] }),
+  ];
+
+  /** That reply's line again once its call has ended, at `ended`, with the reply's own time. */
+  const callEnded = (
+    id: string,
+    seconds: number,
+    ended: number,
+    content: unknown,
+    status = "success",
+  ) => geminiLine(id, at(seconds), { content, toolCalls: [toolCall(status, at(ended))] });
+
+  test("stays where it stood, behind the info, warning and error lines written while its tool ran", () => {
+    // A hook's message, a tool's warning, `/vim` or `/stats`: the only lines the terminal writes then.
+    const turn = [
+      prompt(P1, 1),
+      ...replyWithCall(R1, 2, "Running the tests now."),
+      noticeLine("info", X1, at(3)),
+      updatedLine(at(3)),
+      noticeLine("warning", B1, at(4)),
+      updatedLine(at(4)),
+      noticeLine("error", B2, at(5)),
+      updatedLine(at(5)),
+      callEnded(R1, 2, 6, "Running the tests now."),
+    ];
+    expect(textOf(...opening(), ...turn)).toBe("Running the tests now.");
+    expect(endOf(...turn)).toBe("Running the tests now.");
+  });
+
+  test("stopped with Esc, it is written again as cancelled, behind the notice, then taken back", () => {
+    const turn = [
+      prompt(P1, 1),
+      reply(R1, 2, "The one before."),
+      prompt(P2, 3),
+      ...replyWithCall(R2, 4, PRIVATE_WORDS),
+      callEnded(R2, 4, 5, PRIVATE_WORDS, "cancelled"),
+      // "Request cancelled.", then the same calls again from the scheduler.
+      noticeLine("info", X1, at(5)),
+      callEnded(R2, 4, 5, PRIVATE_WORDS, "cancelled"),
+      patchLine({ removeIds: [R2, X1] }),
+      updatedLine(at(5)),
+    ];
+    expect(textOf(...turn)).toBe("The one before.");
+    expect(endOf(...turn)).toBe("The one before.");
+  });
+
+  test("a newer reply written while its tool ran stays the newest, as when the IDE mode that speaks ACP takes a new prompt", () => {
+    // The new prompt answers the open call, Gemini CLI writes a turn in the model's place, then the
+    // model replies, while the old tool is still ending. Another Gemini CLI on the same file can do the same.
+    const turn = [
+      prompt(P1, 1),
+      ...replyWithCall(R1, 2, PRIVATE_WORDS),
+      toolResultLine(P2, at(3)),
+      geminiLine(R2, at(3), {
+        content: [{ text: "[The previous response was interrupted before it completed.]" }],
+        tokens: null,
+      }),
+      prompt(P3, 4),
+      reply(R3, 5, "The newest reply."),
+      callEnded(R1, 2, 6, PRIVATE_WORDS),
+    ];
+    expect(textOf(...turn)).toBe("The newest reply.");
+    expect(endOf(...turn)).toBe("The newest reply.");
+  });
+
+  test("whose own first lines are further back than the end is never taken as the newest reply, though written last", () => {
+    const ending = (content: unknown) => [
+      noticeLine("info", X1, at(3)),
+      updatedLine(at(3)),
+      callEnded(R1, 2, 4, content),
+    ];
+    // Read whole, it is where it stood, and the newest reply.
+    expect(textOf(prompt(P1, 1), ...replyWithCall(R1, 2, "Whole."), ...ending("Whole."))).toBe(
+      "Whole.",
+    );
+    // Read from part way, it may stand before replies the end does not hold.
+    expect(endOf(...ending(PRIVATE_WORDS))).toBeNull();
+    expect(answerFrom(chatFile(["x", ...ending(PRIVATE_WORDS)]), false)).toEqual({
+      message: null,
+      reason: "too-far-back",
+    });
+    // Or before the replies it does hold, as a new prompt in the IDE mode that speaks ACP writes.
+    expect(
+      endOf(prompt(P2, 3), reply(R2, 4, PRIVATE_WORDS), callEnded(R1, 2, 5, PRIVATE_WORDS)),
+    ).toBeNull();
+    // A reply written after it is the newest.
+    expect(
+      endOf(...ending(PRIVATE_WORDS), toolResultLine(P2, at(5)), reply(R2, 6, "After the call.")),
+    ).toBe("After the call.");
+  });
+
+  test("whose content only calls the tool is passed over for the newer reply the end holds", () => {
+    expect(endOf(prompt(P2, 3), reply(R2, 4, "The newest reply."), callEnded(R1, 2, 5, ""))).toBe(
+      "The newest reply.",
+    );
+  });
+
+  test("written as the reply ends, with every call scheduled, is the newest message", () => {
+    expect(
+      endOf(
+        updatedLine(at(2)),
+        geminiLine(R1, at(2), {
+          content: "Running the tests now.",
+          toolCalls: [scheduledToolCall(at(2)), scheduledToolCall(at(2), "call-0002")],
+        }),
+      ),
+    ).toBe("Running the tests now.");
+    // A call that has ended beside one still scheduled, as the IDE mode that speaks ACP writes them one at a time.
+    expect(
+      endOf(
+        updatedLine(at(2)),
+        geminiLine(R1, at(2), {
+          content: PRIVATE_WORDS,
+          toolCalls: [toolCall("success", at(3)), scheduledToolCall(at(2), "call-0002")],
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  test("a $rewindTo to it, from the end, drops every reply the end holds", () => {
+    // Another Gemini CLI wrote a prompt and a reply, then the first takes back the reply whose tool you declined.
+    expect(
+      endOf(
+        prompt(P2, 3),
+        reply(R2, 4, PRIVATE_WORDS),
+        callEnded(R1, 2, 5, "", "cancelled"),
+        rewindLine(R1),
+      ),
+    ).toBeNull();
+  });
+
+  test("a $patch that names it in orderIds puts it where the order says", () => {
+    // Taken up again, Gemini CLI writes the call's result again, then the history's order.
+    expect(
+      endOf(
+        callEnded(R1, 2, 3, "Done, the tests pass."),
+        updatedLine(at(3)),
+        setLine({ sessionId: sessionIdOf("01") }),
+        historyCopyLine(R1, at(4)),
+        patchLine({ orderIds: [P1, R1, `${R1}_response`] }),
+        updatedLine(at(4)),
+      ),
+    ).toBe("Done, the tests pass.");
+  });
+
+  test("a line of the id of a message the order moved from before the end, written as its call ends, leaves no reply known", () => {
+    // If the moved message was there, its line stands where the order put it, before the reply.
+    const lines = [
+      prompt(P2, 3),
+      reply(R2, 4, PRIVATE_WORDS),
+      patchLine({ orderIds: [X1, P2, R2] }),
+      callEnded(X1, 2, 5, PRIVATE_WORDS),
+    ];
+    expect(endOf(...lines)).toBeNull();
+    // A reply written after it is the newest.
+    expect(endOf(...lines, toolResultLine(P3, at(6)), reply(R3, 7, "After it."))).toBe("After it.");
   });
 });
 

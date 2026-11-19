@@ -9,8 +9,8 @@ import { createTailReader, type TailLimits, type TailReader } from "../../messag
  * it.
  *
  * The session file is JSON Lines, written by `chatRecordingService.ts`. These
- * notes are from Gemini CLI's source at v0.64.0, not yet checked on a machine
- * running it:
+ * notes are from Gemini CLI's source at v0.64.0, and the lines it writes again
+ * from its source at v0.69.0, not yet checked on a machine running it:
  *
  * - A message is a line with a string `id` and no `$patch`. Its `type` is
  *   `user`, `gemini`, `info`, `warning` or `error`. The model's reply is a
@@ -20,10 +20,13 @@ import { createTailReader, type TailLimits, type TailReader } from "../../messag
  *   `functionCall` calls a tool, and says nothing. The reply's `thoughts`
  *   and `toolCalls`, with the tools' results, are fields of their own.
  * - A line with the id of a message in the list replaces it where it stands.
- *   Gemini CLI writes one only for the newest message, as it adds the reply's
- *   token counts or its tool calls (`recordMessageTokens`,
- *   `recordToolCalls`). Every other message line has an id not in the list,
- *   and is added at the end.
+ *   Gemini CLI 0.69.0 writes one only for a reply: for the newest message, as
+ *   it adds its token counts (`recordMessageTokens`), or with its tool calls
+ *   (`recordToolCalls`), first as the reply ends, when it is the newest and
+ *   every call is `scheduled`, then as its calls end, for the reply that has
+ *   their ids, which by then may not be the newest (chatRecordingService.ts,
+ *   lines 1168-1197 and 1199-1288 at v0.69.0). Every other message line has
+ *   an id not in the list, and is added at the end.
  * - `{"$rewindTo":"<id>"}` drops that message and every one after it, or
  *   every message when no message has that id.
  * - `{"$patch":{…}}` replaces the content of the message its `id` names,
@@ -48,8 +51,9 @@ import { createTailReader, type TailLimits, type TailReader } from "../../messag
  * or is none of these, is passed over, as Gemini CLI passes it over.
  *
  * The end that is read can begin after the message a `$rewindTo` or a
- * `$patch` names. Then what that line did is known only in part, and the text
- * is the newest reply only when it surely still stands:
+ * `$patch` names, or after a reply Gemini CLI writes again as its calls end.
+ * Then what that line did is known only in part, and the text is the newest
+ * reply only when it surely still stands and is the newest:
  *
  * - Messages from before the end are always first in the list, as they were
  *   written first and a `$patch` moves only the ids it names.
@@ -58,7 +62,15 @@ import { createTailReader, type TailLimits, type TailReader } from "../../messag
  * - A `$patch` that moves an id the end does not hold puts there a message
  *   that may or may not be in the list, and whose type is not known. Only a
  *   reply after it can be the newest. A `$rewindTo` to it drops every message
- *   the end holds, and a line of its id every one but that line's.
+ *   the end holds, and a line of its id every one but that line's. That line
+ *   is the newest reply, unless it is a reply written again as below.
+ * - A reply's line with a tool call that is not `scheduled`, of an id the end
+ *   does not hold, may be a reply from before the end written again where it
+ *   stands: before every message the end holds, and maybe before other
+ *   replies from before the end. When it has text, the newest reply cannot be
+ *   told until one is written after it. A `$rewindTo` to it drops every
+ *   message the end holds, and a `$patch` that names it in `orderIds` puts it
+ *   where the order says.
  * - When no reply the end holds comes after every message it does not, the
  *   newest reply cannot be told, and there is no text.
  */
@@ -68,8 +80,13 @@ const PART_BREAK = "";
 
 /** One message, in the list as the end of the file replays it. */
 type Entry =
-  /** A message whose own line is in the end: the text of its reply, or null when it is not a reply with text. */
-  | { seen: true; gemini: boolean; reply: string | null }
+  /**
+   * A message whose own line is in the end: the text of its reply, or null
+   * when it is not a reply with text. Not `placed` when its line may be a
+   * reply from before the end written again, which then stands before every
+   * message ahead of it here, and maybe before others the end does not hold.
+   */
+  | { seen: true; gemini: boolean; reply: string | null; placed: boolean }
   /** A message from before the end that a `$patch` moved here, if there is one of that id at all. */
   | { seen: false };
 
@@ -117,24 +134,46 @@ export function replyTextOf(content: unknown): string | null {
   return text.trim() === "" ? null : text;
 }
 
+/**
+ * Whether a line may be that of a reply Gemini CLI wrote again as its calls
+ * ended, which it finds by their ids, so that it need not be the newest: a
+ * reply with a call that is not `scheduled`. Every call is `scheduled` only as
+ * the reply ends, when it is the newest. Only the answer is kept.
+ */
+function mayBeWrittenAgain(message: Record<string, unknown>): boolean {
+  const calls = message.toolCalls;
+  if (message.type !== "gemini" || !Array.isArray(calls) || calls.length === 0) return false;
+  return !calls.every((call) => isObject(call) && call.status === "scheduled");
+}
+
 /** Adds a message, or replaces the one of its id where it stands. */
 function put(replay: Replay, message: Record<string, unknown> & { id: string }): void {
   const gemini = message.type === "gemini";
-  const entry: Entry = { seen: true, gemini, reply: gemini ? replyTextOf(message.content) : null };
-  if (replay.entries.get(message.id)?.seen === false) {
+  const reply = gemini ? replyTextOf(message.content) : null;
+  const held = replay.entries.get(message.id);
+  if (held?.seen) {
+    // Where it stands, as well known as it was.
+    replay.entries.set(message.id, { seen: true, gemini, reply, placed: held.placed });
+    return;
+  }
+  if (held !== undefined) {
     // It stands where a message from before the end was moved, if that one is
     // there, and otherwise comes last. Either way, what the end holds before
     // it may not be before it.
     replay.entries.clear();
     replay.before = true;
   }
-  replay.entries.set(message.id, entry);
+  // An id the end does not hold is a new message, added last, unless the line
+  // may be that of a reply from before the end, which stands before them all.
+  const placed = !(replay.before && mayBeWrittenAgain(message));
+  replay.entries.set(message.id, { seen: true, gemini, reply, placed });
 }
 
 function rewind(replay: Replay, id: string): void {
   const held = replay.entries.get(id);
-  if (held === undefined || !held.seen) {
-    // Before every message the end holds, or nowhere, which drops them all.
+  if (held === undefined || !held.seen || !held.placed) {
+    // Before every message the end holds, or nowhere, which drops them all,
+    // or maybe before them all, so none surely stands.
     replay.entries.clear();
     return;
   }
@@ -162,7 +201,8 @@ function patch(replay: Replay, change: Record<string, unknown>): void {
     for (const id of change.orderIds) {
       if (typeof id !== "string" || moved.has(id)) continue;
       const held = replay.entries.get(id);
-      if (held !== undefined) moved.set(id, held);
+      // Moved, a message stands where the order says, wherever it stood.
+      if (held !== undefined) moved.set(id, held.seen ? { ...held, placed: true } : held);
       // One the end does not hold may be among those from before it.
       else if (replay.before) moved.set(id, { seen: false });
     }
@@ -217,7 +257,8 @@ export function lastSaidInSessionFile(tail: string, fromStart: boolean): string 
   for (const entry of [...replay.entries.values()].reverse()) {
     // A message from before the end, which may be a newer reply.
     if (!entry.seen) return null;
-    if (entry.reply !== null) return entry.reply;
+    // A reply that may stand before others, any of them newer.
+    if (entry.reply !== null) return entry.placed ? entry.reply : null;
   }
   return null;
 }
