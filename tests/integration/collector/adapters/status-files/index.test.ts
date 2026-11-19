@@ -26,6 +26,7 @@ import { MAX_FILE_BYTES, MAX_FILES } from "@collector/adapters/status-files/stat
 import { nodeIo, type ReadOnlyIo } from "@collector/files/readOnlyIo";
 import { statusFile } from "@tests/fixtures/statusFiles";
 import { tempDir } from "@tests/support/node/tempFiles";
+import { asWritten } from "@tests/support/paths";
 
 /** The real file system, with every call written down. */
 function recordingIo() {
@@ -394,16 +395,8 @@ const RUNNERS: Runner[] = [
   },
 ];
 
-/** One run of an example, in a folder of its own, which is stopped when the test ends. */
-async function startExample(runner: Runner, parent: string, env: NodeJS.ProcessEnv) {
-  const work = path.join(parent, "work");
-  await mkdir(work);
-  await writeFile(path.join(work, runner.file), await guideExample(runner.language));
-  const [command, args] = await runner.command(work);
-  // By its real path, which is the one the example finds itself in on macOS,
-  // and on Windows its long name, rather than the short one a temporary folder
-  // can be given.
-  const cwd = await realpath(work);
+/** A program the test talks to through its stdin and stdout, which is stopped when the test ends. */
+function startProgram(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv) {
   const child = spawn(command, args, { cwd, env, stdio: ["pipe", "pipe", "pipe"] });
   let errors = "";
   child.stderr.setEncoding("utf8").on("data", (chunk: string) => (errors += chunk));
@@ -419,16 +412,35 @@ async function startExample(runner: Runner, parent: string, env: NodeJS.ProcessE
   });
   const lines = readline.createInterface({ input: child.stdout })[Symbol.asyncIterator]();
   return {
+    child,
+    exited,
+    /** Resolves at the next line that is `marker`, and fails with `ended` if the program ends first. */
+    async until(marker: string, ended: string) {
+      for (;;) {
+        const line = await lines.next();
+        if (line.done) throw new Error(`${ended}\n${errors}`);
+        if (line.value === marker) return;
+      }
+    },
+  };
+}
+
+/** One run of an example, in a folder of its own, which is stopped when the test ends. */
+async function startExample(runner: Runner, parent: string, env: NodeJS.ProcessEnv) {
+  const work = path.join(parent, "work");
+  await mkdir(work);
+  await writeFile(path.join(work, runner.file), await guideExample(runner.language));
+  const [command, args] = await runner.command(work);
+  // By its real path, which is the one the example finds itself in on macOS,
+  // and on Windows its long name, rather than the short one a temporary folder
+  // can be given.
+  const cwd = await realpath(work);
+  const { child, exited, until } = startProgram(command, args, cwd, env);
+  return {
     pid: child.pid,
     cwd,
     /** Resolves once the example has written its file and come to its next wait. */
-    async paused() {
-      for (;;) {
-        const line = await lines.next();
-        if (line.done) throw new Error(`The example ended before its next wait.\n${errors}`);
-        if (line.value === PAUSED) return;
-      }
-    },
+    paused: () => until(PAUSED, "The example ended before its next wait."),
     /** Lets it go on from the wait it is at. */
     goOn() {
       child.stdin.write("\n");
@@ -445,24 +457,24 @@ async function startExample(runner: Runner, parent: string, env: NodeJS.ProcessE
   };
 }
 
+/** The adapter on a folder that does not exist yet, and the environment an example runs in. */
+async function setUp() {
+  const watched = await watch({ make: false });
+  const home = path.join(watched.parent, "home");
+  // Windows keeps the home folder in USERPROFILE.
+  const env = {
+    ...process.env,
+    HOME: home,
+    USERPROFILE: home,
+    [STATUS_DIR_ENV]: watched.folder,
+  };
+  return { ...watched, env };
+}
+
 for (const runner of RUNNERS) {
   describe.skipIf(!runner.available)(
     `the ${runner.name} example in docs/GUIDE.md, run against the status-file source`,
     () => {
-      /** The adapter on a folder that does not exist yet, and the example's environment. */
-      async function setUp() {
-        const watched = await watch({ make: false });
-        const home = path.join(watched.parent, "home");
-        // Windows keeps the home folder in USERPROFILE.
-        const env = {
-          ...process.env,
-          HOME: home,
-          USERPROFILE: home,
-          [STATUS_DIR_ENV]: watched.folder,
-        };
-        return { ...watched, env };
-      }
-
       test("its session appears as it starts, waits on a question, works again, and goes as it ends", async () => {
         const { folder, parent, poll, env } = await setUp();
         expect((await poll()).health.state).toBe("not-set-up");
@@ -574,3 +586,249 @@ for (const runner of RUNNERS) {
     },
   );
 }
+
+/** What the stand-in for Amp prints each time it has done what it was told. */
+const DONE = "<done>";
+
+/**
+ * A stand-in for Amp, written by hand from its Plugin API page, with only what
+ * the guide's plugin uses: `on` for `session.start`, `threads.get` with a state
+ * to watch and to get, `system.workspaceRoot`, `system.executor.kind`,
+ * `helpers.filePathFromURI`, `logger` and `onDispose`. It loads the plugin by
+ * calling its default export, then does what each line from the test says and
+ * prints `DONE`. A thread is running until the test says otherwise. The
+ * plugin's minute is no timer: it comes when the test says so.
+ */
+const AMP_STAND_IN = [
+  'import readline from "node:readline";',
+  'import { fileURLToPath, pathToFileURL } from "node:url";',
+  "const [kind, root] = process.argv.slice(2);",
+  "let minute = () => {};",
+  "globalThis.setInterval = (callback) => ((minute = callback), 1);",
+  "globalThis.clearInterval = () => (minute = () => {});",
+  "const threads = new Map();",
+  "function threadOf(id) {",
+  "  if (!threads.has(id)) {",
+  '    const thread = { value: "running", watchers: new Set() };',
+  "    thread.state = {",
+  "      get: async () => thread.value,",
+  "      subscribe(watcher) {",
+  "        thread.watchers.add(watcher);",
+  "        return { unsubscribe: () => thread.watchers.delete(watcher) };",
+  "      },",
+  "    };",
+  "    threads.set(id, thread);",
+  "  }",
+  "  return threads.get(id);",
+  "}",
+  "const handlers = new Map();",
+  "const disposers = [];",
+  "const amp = {",
+  '  system: { workspaceRoot: root === "none" ? null : new URL(root), executor: { kind } },',
+  "  helpers: { filePathFromURI: (uri) => fileURLToPath(uri.toString()) },",
+  "  logger: { log: (...values) => console.error(...values) },",
+  "  on: (event, handler) => (handlers.set(event, handler), { unsubscribe() {} }),",
+  "  threads: { get: (id) => ({ id, state: threadOf(id).state }) },",
+  "  onDispose: (callback) => (disposers.push(callback), { unsubscribe() {} }),",
+  "};",
+  'const plugin = await import(pathToFileURL("agent-lookout.ts").href);',
+  "await plugin.default(amp);",
+  `console.log("${DONE}");`,
+  "for await (const line of readline.createInterface({ input: process.stdin })) {",
+  "  const command = JSON.parse(line);",
+  '  if (command.start) await handlers.get("session.start")?.({ thread: { id: command.start } }, {});',
+  "  if (command.state) {",
+  "    const thread = threadOf(command.thread);",
+  "    thread.value = command.state;",
+  "    for (const watcher of thread.watchers) watcher(command.state);",
+  "  }",
+  "  if (command.minute) minute();",
+  "  if (command.dispose) for (const callback of disposers) await callback();",
+  `  console.log("${DONE}");`,
+  "}",
+].join("\n");
+
+/** What the stand-in for Amp is told: a thread's session starts, its state changes, a minute passes, or Amp unloads the plugin. */
+type AmpCommand =
+  { start: string } | { thread: string; state: string } | { minute: true } | { dispose: true };
+
+/**
+ * Whether this Node runs a TypeScript file with its types stripped, as the Amp
+ * example needs. Node 22.12 to 22.17 do it only with the flag, and later Node
+ * takes the flag too.
+ */
+function stripsTypes(): boolean {
+  try {
+    const answer = execFileSync(
+      process.execPath,
+      ["--experimental-strip-types", "--print", "process.features.typescript"],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+    );
+    return ["strip", "transform"].includes(answer.trim());
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The guide's Amp plugin, as published, saved as `agent-lookout.ts` in a folder
+ * of its own and loaded by the stand-in for Amp with its types stripped. `kind`
+ * is the executor's kind, and `root` the workspace's address, or `none`.
+ */
+async function startAmp(parent: string, env: NodeJS.ProcessEnv, kind: string, root: string) {
+  const work = path.join(parent, "amp");
+  await mkdir(work);
+  await writeFile(path.join(work, "agent-lookout.ts"), await guideExample("ts"));
+  await writeFile(path.join(work, "amp.mjs"), AMP_STAND_IN);
+  // So that every Node takes the plugin as a module, as Amp's runtime does.
+  await writeFile(path.join(work, "package.json"), '{ "type": "module" }\n');
+  const args = ["--experimental-strip-types", "amp.mjs", kind, root];
+  const { child, exited, until } = startProgram(process.execPath, args, work, env);
+  const done = () => until(DONE, "The plugin's run ended.");
+  await done();
+  return {
+    pid: child.pid,
+    /** Resolves once the stand-in and the plugin have done it. */
+    async send(command: AmpCommand) {
+      child.stdin.write(`${JSON.stringify(command)}\n`);
+      await done();
+    },
+    end() {
+      child.stdin.end();
+      return exited;
+    },
+    kill(signal: NodeJS.Signals) {
+      child.kill(signal);
+      return exited;
+    },
+  };
+}
+
+const THREAD = "T-demo-1";
+const AMP_FILE = `amp-${THREAD}.json`;
+
+describe.skipIf(!stripsTypes())(
+  "the Amp plugin in docs/GUIDE.md, run against the status-file source",
+  () => {
+    test("a thread shows as working, then waiting for permission, then idle, and goes when Amp unloads the plugin", async () => {
+      const { folder, parent, poll, env } = await setUp();
+      const project = path.join(parent, "demo-project");
+      await mkdir(project);
+      expect((await poll()).health.state).toBe("not-set-up");
+      const amp = await startAmp(parent, env, "local", pathToFileURL(project).href);
+
+      await amp.send({ start: THREAD });
+      const working = await poll();
+      expect(working.sessions).toMatchObject([
+        {
+          id: `status-files:${AMP_FILE}`,
+          agent: "Amp",
+          name: "demo-project",
+          project: "demo-project",
+          surface: "terminal",
+          status: "working",
+          pid: amp.pid,
+          alive: true,
+        },
+      ]);
+      expect(asWritten(working.sessions[0]?.cwd ?? "")).toBe(asWritten(project));
+      // Renamed into place, with only the fields the guide lists, and no name.
+      expect(await readdir(folder)).toEqual([AMP_FILE]);
+      const file = path.join(folder, AMP_FILE);
+      const written = JSON.parse(await readFile(file, "utf8"));
+      expect(Object.keys(written).sort()).toEqual([
+        "agent",
+        "app",
+        "cwd",
+        "pid",
+        "since",
+        "status",
+      ]);
+      expect(working.sessions[0]?.statusSince).toBe(written.since);
+
+      await amp.send({ thread: THREAD, state: "awaiting-approval" });
+      const waiting = await poll();
+      expect(waiting.sessions).toMatchObject([
+        { status: "needs-you", waitingReason: "permission" },
+      ]);
+      const waitedFrom = waiting.sessions[0]?.statusSince ?? Infinity;
+      expect(waitedFrom).toBeGreaterThanOrEqual(written.since);
+
+      // Working again, its file is written again each minute, with the same since.
+      await amp.send({ thread: THREAD, state: "running" });
+      const again = await readFile(file, "utf8");
+      expect(JSON.parse(again).since).toBeGreaterThanOrEqual(waitedFrom);
+      const tenMinutesAgo = new Date(Date.now() - 10 * 60_000);
+      await utimes(file, tenMinutesAgo, tenMinutesAgo);
+      await amp.send({ minute: true });
+      expect((await stat(file)).mtimeMs).toBeGreaterThan(tenMinutesAgo.getTime() + 60_000);
+      expect(await readFile(file, "utf8")).toBe(again);
+
+      await amp.send({ thread: THREAD, state: "error" });
+      expect((await poll()).sessions).toMatchObject([{ status: "failed" }]);
+
+      await amp.send({ thread: THREAD, state: "idle" });
+      expect((await poll()).sessions).toMatchObject([{ status: "idle" }]);
+      // Opening the thread again starts its session again, and changes nothing.
+      const idle = await readFile(file, "utf8");
+      await amp.send({ start: THREAD });
+      expect(await readFile(file, "utf8")).toBe(idle);
+
+      await amp.send({ dispose: true });
+      expect(await readdir(folder)).toEqual([]);
+      expect((await poll()).sessions).toEqual([]);
+      // Once unloaded, it writes nothing, whatever the thread does.
+      await amp.send({ thread: THREAD, state: "running" });
+      await amp.send({ minute: true });
+      expect(await readdir(folder)).toEqual([]);
+      expect(await amp.end()).toEqual({ code: 0, signal: null });
+    }, 20_000);
+
+    for (const kind of ["remote", "unknown"]) {
+      test(`a thread whose executor is ${kind} writes nothing`, async () => {
+        const { parent, poll, env } = await setUp();
+        const amp = await startAmp(parent, env, kind, "none");
+        await amp.send({ start: THREAD });
+        await amp.send({ thread: THREAD, state: "awaiting-approval" });
+        await amp.send({ minute: true });
+
+        expect(await readdir(parent)).not.toContain("sessions");
+        expect((await poll()).health.state).toBe("not-set-up");
+      }, 20_000);
+    }
+
+    test("killed outright, it leaves its file, and its session goes because of its pid", async () => {
+      const { folder, parent, poll, env } = await setUp();
+      const amp = await startAmp(parent, env, "local", "none");
+      await amp.send({ start: THREAD });
+      // With no workspace, the session is named after its file.
+      expect((await poll()).sessions).toMatchObject([
+        { name: `amp-${THREAD}`, cwd: null, status: "working", alive: true },
+      ]);
+
+      expect(await amp.kill("SIGKILL")).toEqual({ code: null, signal: "SIGKILL" });
+      expect(await readdir(folder)).toEqual([AMP_FILE]);
+      const after = await poll();
+      expect(after.sessions).toEqual([]);
+      expect(after.health.detail).toContain(
+        "1 file names a process that has ended, so its session is not shown.",
+      );
+    }, 20_000);
+
+    test("with no setting, it makes ~/.agent-lookout/sessions and writes there", async () => {
+      const { parent, env } = await setUp();
+      const home = path.join(parent, "home");
+      const folder = path.join(home, ".agent-lookout", "sessions");
+      const adapter = createStatusFileAdapter({ env: {}, homeDir: home });
+      const { [STATUS_DIR_ENV]: _setting, ...withoutSetting } = env;
+      const amp = await startAmp(parent, withoutSetting, "local", "none");
+
+      await amp.send({ start: THREAD });
+      expect(await readdir(folder)).toEqual([AMP_FILE]);
+      expect((await adapter.poll()).sessions).toMatchObject([{ status: "working" }]);
+
+      await amp.send({ dispose: true });
+      expect(await readdir(folder)).toEqual([]);
+    }, 20_000);
+  },
+);
