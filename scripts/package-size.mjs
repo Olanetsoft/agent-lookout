@@ -68,11 +68,17 @@ import { gunzipSync } from "node:zlib";
  * MB, from 4.29 MB. It added 71 KB, 49 KB of code in the command and 21 KB of
  * the documents the package ships. Installed, at 6.18 MB from 6.11 MB, is still
  * under its 6.20 MB, so it was left as it was.
+ *
+ * Installed was raised from 6.20 MB to 6.30 MB once the Amp plugin in the guide
+ * and the Gemini CLI 0.69.0 fix took it 1,389 bytes past 6.20 MB, from 6.187 MB
+ * with Autohand Code's Jump. They added 14 KB, most of it the guide's Amp
+ * section. Unpacked, at 4.387 MB, is still under its 4.40 MB, so it was left as
+ * it was.
  */
 const LIMITS = {
   tarball: 1_200_000,
   unpacked: 4_400_000,
-  installed: 6_200_000,
+  installed: 6_300_000,
 };
 
 /** Bytes as megabytes, as npm gives sizes. */
