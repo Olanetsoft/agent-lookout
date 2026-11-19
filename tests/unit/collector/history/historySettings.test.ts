@@ -76,7 +76,14 @@ test("the fingerprint of the folders sessions are read from names none of them, 
   expect(sourcesFingerprint({ CODEX_HOME: "/Users/example/.codex" }, HOME)).toBe(defaults);
   expect(sourcesFingerprint({ VIBE_HOME: "/Users/example/.vibe" }, HOME)).toBe(defaults);
   expect(sourcesFingerprint({ GEMINI_CLI_HOME: "/Users/example" }, HOME)).toBe(defaults);
-  expect(sourcesFingerprint({ XDG_DATA_HOME: "/Users/example/.local/share" }, HOME)).toBe(defaults);
+  // Oh My Pi's folder in XDG_DATA_HOME counts only when the variable is set, on
+  // macOS and Linux, so its default named outright is the default elsewhere alone.
+  expect(sourcesFingerprint({ XDG_DATA_HOME: "/Users/example/.local/share" }, HOME, "win32")).toBe(
+    sourcesFingerprint({}, HOME, "win32"),
+  );
+  expect(
+    sourcesFingerprint({ XDG_DATA_HOME: "/Users/example/.local/share" }, HOME, "linux"),
+  ).not.toBe(sourcesFingerprint({}, HOME, "linux"));
   expect(sourcesFingerprint({ OPENCODE_DB: "opencode.db" }, HOME)).toBe(defaults);
   expect(
     sourcesFingerprint(
@@ -157,6 +164,17 @@ test("the fingerprint of the folders sessions are read from names none of them, 
   }
   expect(sourcesFingerprint({ GROK_HOME: `${HOME}/.grok` }, HOME)).toBe(defaults);
   expect(sourcesFingerprint({ AGENT_LOOKOUT_GROK_HOME: `${HOME}/.grok` }, HOME)).toBe(defaults);
+  // Oh My Pi's default profile and folder, named outright, are the default, and
+  // so is a profile it would refuse, as it then does not start.
+  for (const env of [
+    { AGENT_LOOKOUT_OMP_HOME: `${HOME}/.omp/agent` },
+    { OMP_PROFILE: "default" },
+    { OMP_PROFILE: "", PI_PROFILE: "work" },
+    { PI_PROFILE: "Not Valid" },
+    { PI_CONFIG_DIR: ".omp" },
+  ]) {
+    expect(sourcesFingerprint(env, HOME), JSON.stringify(env)).toBe(defaults);
+  }
   // Agent Lookout's names the root outright. A home folder is a whole path,
   // with a drive on Windows, as the system gives it.
   const home = path.resolve(HOME);
@@ -239,6 +257,9 @@ test("the fingerprint of the folders sessions are read from names none of them, 
     sourcesFingerprint({ AGENT_LOOKOUT_DROID_HOME: "/tmp/empty-droid" }, HOME),
     sourcesFingerprint({ AGENT_LOOKOUT_GROK_HOME: "/tmp/empty-grok" }, HOME),
     sourcesFingerprint({ GROK_HOME: path.resolve("/tmp/grok-home") }, HOME),
+    sourcesFingerprint({ AGENT_LOOKOUT_OMP_HOME: "/tmp/empty-omp" }, HOME),
+    sourcesFingerprint({ OMP_PROFILE: "work" }, HOME),
+    sourcesFingerprint({ PI_CONFIG_DIR: ".omp-work" }, HOME),
     sourcesFingerprint({}, "/Users/someone-else"),
   ];
   for (const other of others) expect(other).not.toBe(defaults);

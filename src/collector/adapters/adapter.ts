@@ -150,6 +150,13 @@ export interface AdapterResult {
    *
    * The Grok Build adapter has one, `files`: Grok Build's list of open
    * sessions and each one's event log.
+   *
+   * The Oh My Pi adapter has two:
+   * - `files`: Oh My Pi's session files, with `ps` able to say which programs
+   *   that could write them run. The usual one.
+   * - `files-without-processes`: the same while `ps` cannot say, and always on
+   *   Windows, when a session is finished only if Oh My Pi wrote that it
+   *   stopped or it was last written before the computer started.
    */
   basis?: string;
 }

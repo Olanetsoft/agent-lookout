@@ -22,6 +22,7 @@ import { kimchiSessionsDirFor } from "../adapters/kimchi/index.ts";
 import { kimiCodeHomeFor } from "../adapters/kimi-code/index.ts";
 import { mimoCodeDatabaseFor } from "../adapters/mimo-code/index.ts";
 import { vibeSessionDirFor } from "../adapters/mistral-vibe/index.ts";
+import { ompSessionsDirsFor } from "../adapters/oh-my-pi/index.ts";
 import { opencodeDatabaseFor } from "../adapters/opencode/index.ts";
 import { piSessionsDirFor } from "../adapters/pi/index.ts";
 import { primeAgentAgentDirFor, primeAgentSessionsDirFor } from "../adapters/prime-agent/index.ts";
@@ -72,14 +73,16 @@ export function readHistorySetup(
 }
 
 /**
- * The folders the twenty-two other sources read, and OpenCode's, Goose's, Kilo
+ * The folders the twenty-three other sources read, and OpenCode's, Goose's, Kilo
  * Code's and MiMo Code's databases,
  * as the adapters work them out on this system, made into a short fingerprint that
  * names none of them. Two copies of Agent Lookout with the same one see the
  * same sessions. The writer lock carries it, so a copy can say when the one
  * writing the history watches other folders, such as a dev server pointed at
  * empty test folders. Gemini CLI's folder kept under macOS Seatbelt is in it
- * only where the adapter reads that folder.
+ * only where the adapter reads that folder, and Oh My Pi's both where
+ * `XDG_DATA_HOME` would put it and where it is without, as which it reads
+ * hangs on a folder being there.
  */
 export function sourcesFingerprint(
   env: NodeJS.ProcessEnv,
@@ -117,6 +120,7 @@ export function sourcesFingerprint(
     deepseekHarnessSessionsDirFor(env, homeDir, platform),
     droidSessionsDirFor(env, homeDir),
     grokBuildHomeFor(env, homeDir, platform),
+    ...ompSessionsDirsFor(env, homeDir, platform),
   ];
   return createHash("sha256").update(JSON.stringify(folders)).digest("hex").slice(0, 32);
 }

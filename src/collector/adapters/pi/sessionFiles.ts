@@ -42,6 +42,13 @@ import type { FileInfo, ReadOnlyIo } from "../../files/readOnlyIo.ts";
  * with `-` counts, and keeps older sessions loose in its sessions folder
  * (`../droid/index.ts`). Its `<id>.settings.json` beside each session is not a
  * session file, so it is never listed here.
+ *
+ * Oh My Pi's adapter uses it too, with the same test of project folders:
+ * Oh My Pi names a project's folder `-` and its path under the home folder,
+ * `-tmp-` and its path under the temporary folder, or `--<path>--`. Any name
+ * that ends in `.jsonl` counts, as for Oh My Pi's own list, and the folder of
+ * each session's files beside it is never listed (`../oh-my-pi/index.ts`).
+ * With `PI_CODING_AGENT_SESSION_DIR` its files sit in that folder, flat.
  */
 
 /** How often every project folder is listed and every session file looked up. */

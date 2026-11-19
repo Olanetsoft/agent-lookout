@@ -8,8 +8,8 @@ import { MACHINE } from "@site-tour/feed/hour";
  * collector's order: Claude Code, Codex, the Antigravity CLI, Antigravity,
  * Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi,
  * Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx,
- * Unreal Agent, Autohand Code, DeepSeek Harness, Droid and Grok Build, none of
- * the twenty-three installed here, and status files. Then the other machine,
+ * Unreal Agent, Autohand Code, DeepSeek Harness, Droid, Grok Build and Oh My
+ * Pi, none of the twenty-four installed here, and status files. Then the other machine,
  * connected over SSH.
  *
  * The adapters run in Node, so their declarations cannot be bundled into the
@@ -1129,6 +1129,58 @@ export const GROK_BUILD_CAPABILITIES: SourceCapabilities = {
   },
 };
 
+export const OH_MY_PI_CAPABILITIES: SourceCapabilities = {
+  "working-and-idle": {
+    level: "partly",
+    reason:
+      "Working while a turn is open and an omp that could have written it runs, on macOS and Linux. Idle never shows.",
+  },
+  "needs-you": {
+    level: "partly",
+    reason:
+      "While its ask tool waits for you, for up to 30 minutes, on macOS and Linux. A tool waiting for your approval shows as working.",
+  },
+  finished: {
+    level: "partly",
+    reason:
+      "When omp writes that the session ended, or once no omp started before its last write runs, on macOS and Linux.",
+  },
+  failed: {
+    level: "partly",
+    reason:
+      "When omp writes that it stopped on an error of its own. A failed reply is not read: it reads the same while omp retries it.",
+  },
+  names: {
+    level: "partly",
+    reason:
+      "The title you or a model gave the session, else the folder's. A Codex import's title, your first prompt there, is not shown.",
+  },
+  jump: {
+    level: "no",
+    reason:
+      "An Oh My Pi session's file names no process, and the terminal records Oh My Pi keeps are not read.",
+  },
+  "quiet-for": {
+    level: "partly",
+    reason:
+      "From the session file's last write, while it is working, for up to 30 minutes: after that it shows as unknown.",
+  },
+  tokens: {
+    level: "no",
+    reason:
+      "Oh My Pi keeps counts beside the prompt and reply text of each request, and that is not parsed.",
+  },
+  stop: {
+    level: "no",
+    reason:
+      "An Oh My Pi session's file names no process that Agent Lookout could confirm and stop.",
+  },
+  answer: {
+    level: "no",
+    reason: "Agent Lookout makes no request to Oh My Pi, so it cannot send an answer.",
+  },
+};
+
 /**
  * What Claude Code on the other machine can report, as it is seen from here:
  * what its Agent Lookout says, with Jump, Stop and Answer as no, since each
@@ -1786,6 +1838,31 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
       checkedAt,
     },
     {
+      // The adapter's card on a Mac, when Oh My Pi is not installed: its sessions folder is looked for, and nothing more.
+      id: "oh-my-pi",
+      label: "Oh My Pi",
+      state: "unavailable",
+      detail:
+        "Oh My Pi was not found: there is no ~/.omp/agent/sessions folder. Agent Lookout looks again every minute.",
+      watching: [
+        { label: "Sessions folder", value: "~/.omp/agent/sessions" },
+        { label: "Read", value: "not found" },
+        {
+          label: "Files read",
+          value:
+            "Line 1 and line 2 of each .jsonl, the start of line 3, and its newest lines back to the one that decides, at most 8 MiB, as bytes. Only the title, line 2 and two times become text",
+        },
+        { label: "Process check", value: "ps -A -o pid=,lstart=,comm=" },
+        {
+          label: "Process check run",
+          value:
+            "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no omp, .omp-wrapped or bun",
+        },
+      ],
+      capabilities: OH_MY_PI_CAPABILITIES,
+      checkedAt,
+    },
+    {
       id: "status-files",
       label: "Status files",
       state: "ok",
@@ -1837,6 +1914,7 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "DeepSeek Harness there", value: "Not found" },
         { label: "Droid there", value: "Not found" },
         { label: "Grok Build there", value: "Not found" },
+        { label: "Oh My Pi there", value: "Not found" },
         { label: "Status files there", value: "Not set up" },
       ],
       agents: [{ label: "Claude Code", capabilities: CLAUDE_CODE_THERE_CAPABILITIES }],
