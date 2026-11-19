@@ -7,6 +7,7 @@ import {
   UNCHECKED_NOTE,
   UNKNOWN_NOTE,
 } from "@collector/adapters/grok-build/index";
+import { MAX_LOG_BYTES } from "@collector/adapters/grok-build/eventLog";
 import { NO_OUTPUT_MS } from "@core/mapping/grok-build/grokBuildMapping";
 import type { Session } from "@core/sessions/session";
 import { WRITE_TIME_STEP_MS } from "@core/time";
@@ -18,6 +19,7 @@ import {
   eventsPath,
   firstToken,
   HOUR,
+  mcpServerStarting,
   MINUTE,
   NOW,
   OPENED_AT,
@@ -283,11 +285,27 @@ describe("a listed session", () => {
     expect(health.detail).toBe(`${healthy()} ${UNKNOWN_NOTE}`);
   });
 
+  test("unknown, with the note, when its log is longer than 8 MiB with no turn's line in its last 8 MiB", async () => {
+    const padding = mcpServerStarting(T + SECOND);
+    const lines = Math.ceil(MAX_LOG_BYTES / padding.length) + 1;
+    const heads = { started: turnStarted(T), ended: turnEnded(T), none: "" };
+    for (const [label, head] of Object.entries(heads)) {
+      const files = oneSession(head + padding.repeat(lines));
+      const { health, sessions } = await grokBuildAdapterFor(files).poll();
+      expect(byId(sessions), label).toMatchObject({ status: "unknown", statusSince: null });
+      expect(health.detail, label).toBe(`${healthy()} ${UNKNOWN_NOTE}`);
+      expect(health.detail, label).toContain(
+        "longer than 8 MiB with no turn's start or end in its last 8 MiB",
+      );
+    }
+  });
+
   test("the note names every cause of unknown", () => {
     for (const cause of [
       "folder cannot be found",
       "event log or plan file cannot be read",
       "ends in a way Grok Build 1.0.45 does not write",
+      "longer than 8 MiB with no turn's start or end in its last 8 MiB",
       "nothing from the model for 2 minutes",
       "more than a minute before Grok Build listed it with nothing from the turn since",
     ]) {
