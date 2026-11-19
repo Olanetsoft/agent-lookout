@@ -1,9 +1,12 @@
 import {
   applyGeminiCliRecord,
   emptyGeminiCliReplay,
+  GEMINI_CLI_ENDED_CALL_STATUSES,
   GEMINI_CLI_MESSAGE_TYPES,
+  GEMINI_CLI_OPEN_CALL_STATUSES,
   mapGeminiCliStatus,
   newestGeminiCliTokens,
+  type GeminiCliCallsState,
   type GeminiCliContent,
   type GeminiCliMessage,
   type GeminiCliMessageType,
@@ -38,8 +41,10 @@ import type { FileInfo, OpenFile, ReadOnlyIo } from "../../files/readOnlyIo.ts";
  *   (`GeminiCliContent`: whether it is "", asks for a tool, answers one, is
  *   only thoughts, or begins as a note Gemini CLI writes itself or as a failed
  *   request's error does), and for a reply whether every tool call was
- *   cancelled and when the newest ended, and three numbers worked out from its
- *   `tokens`, the reply's token counts (`summaryCountsOf`).
+ *   cancelled, whether each one's `status` says it ended, compared exactly
+ *   with the statuses Gemini CLI writes (`callStateOf`), when the newest was
+ *   written, and three numbers worked out from its `tokens`, the reply's token
+ *   counts (`summaryCountsOf`).
  * - From a `$rewindTo`, its id. From a `$patch`, the ids it changes, removes
  *   and reorders, and the shape of any new content.
  * - From a `$set`, its `lastUpdated`, its title, whether it sets `sessionId`,
@@ -178,7 +183,7 @@ export interface ChatFileState {
   updatedAt: number | null;
   /** The time of the last message line written. */
   messageAt: number | null;
-  /** The newest time a tool call ended, of the last reply written with tool calls. */
+  /** The newest time a tool call was written, of the last reply written with tool calls. */
   toolAt: number | null;
   /**
    * The token counts of the newest reply left that has them
@@ -244,6 +249,29 @@ export function contentShapeOf(content: unknown): GeminiCliContent {
   };
 }
 
+/**
+ * Whether one tool call's `status` ends it, does not, or is not one Gemini CLI
+ * writes. The value is compared exactly with the statuses Gemini CLI writes,
+ * and only the answer is kept.
+ */
+function callStateOf(call: unknown): GeminiCliCallsState {
+  const status = isRecord(call) ? call.status : undefined;
+  if ((GEMINI_CLI_ENDED_CALL_STATUSES as readonly unknown[]).includes(status)) return "ended";
+  if ((GEMINI_CLI_OPEN_CALL_STATUSES as readonly unknown[]).includes(status)) return "open";
+  return "unknown";
+}
+
+/**
+ * How a reply's calls stand together: open when any call has not ended,
+ * whatever the others say, since a batch has not ended while one of its calls
+ * has not. Otherwise unknown when any status is not one Gemini CLI writes.
+ */
+function callsStateOf(calls: readonly unknown[]): GeminiCliCallsState {
+  const states = calls.map(callStateOf);
+  if (states.includes("open")) return "open";
+  return states.includes("unknown") ? "unknown" : "ended";
+}
+
 function toolCallsOf(value: unknown): GeminiCliToolCalls | null {
   if (!Array.isArray(value) || value.length === 0) return null;
   let lastAt: number | null = null;
@@ -253,6 +281,7 @@ function toolCallsOf(value: unknown): GeminiCliToolCalls | null {
   }
   return {
     allCancelled: value.every((call) => isRecord(call) && call.status === "cancelled"),
+    state: callsStateOf(value),
     lastAt,
   };
 }

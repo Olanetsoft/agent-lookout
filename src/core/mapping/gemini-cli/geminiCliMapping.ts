@@ -8,14 +8,16 @@
 // session's details, or with `messages` replaces the whole list. This module
 // replays the small records the collector keeps of each line by the same rules,
 // and reads a status, and the newest reply's token counts, from what is left.
-// Gemini CLI writes nothing to a session's file while a tool waits for approval
-// or runs, and no mark when a session ends, so a session is working, idle,
-// failed or unknown here, never "needs-you" or "finished". See
+// Gemini CLI keeps an approval wait in memory alone, and writes no mark when a
+// session ends, so a session is working, idle, failed or unknown here, never
+// "needs-you" or "finished". From 0.69.0 it writes a reply's tool calls as
+// `scheduled` as soon as the reply ends, and again once the batch has ended,
+// so a call that has not ended says a tool waits or runs. See
 // docs/adapters/gemini-cli.md for where each value comes from.
 //
 // Built from Gemini CLI's source at v0.64.0
-// (packages/core/src/services/chatRecordingService.ts), and not yet checked
-// against a machine running it.
+// (packages/core/src/services/chatRecordingService.ts), with its tool calls
+// checked again at v0.69.0, and not yet checked against a machine running it.
 
 import type { SessionStatus, TokenCounts } from "../../sessions/session.ts";
 
@@ -63,11 +65,46 @@ export interface GeminiCliContent {
   failedRequest: boolean;
 }
 
-/** What a reply's tool calls say. Gemini CLI writes them only once every call in the batch has ended. */
+/**
+ * The statuses a tool call ends in: `isTerminal` in
+ * packages/core/src/scheduler/scheduler.ts:335-341 at v0.69.0, and the
+ * `CompletedToolCall` that is written once a batch has ended
+ * (packages/core/src/scheduler/types.ts:206-209).
+ */
+export const GEMINI_CLI_ENDED_CALL_STATUSES = ["success", "error", "cancelled"] as const;
+
+/**
+ * The statuses of a tool call that has not ended, the rest of
+ * `CoreToolCallStatus` (packages/core/src/scheduler/types.ts:26-34 at
+ * v0.69.0). Gemini CLI 0.69.0 writes only `scheduled`, as soon as the reply
+ * ends (packages/core/src/core/geminiChat.ts:1857-1884). The other three are
+ * read in case a later version writes them too.
+ */
+export const GEMINI_CLI_OPEN_CALL_STATUSES = [
+  "scheduled",
+  "validating",
+  "awaiting_approval",
+  "executing",
+] as const;
+
+/**
+ * How a reply's tool calls stand, from each call's status: every one in a
+ * status that ends a call, one in a status that does not, or, with none of
+ * those, one in a status Gemini CLI does not write.
+ */
+export type GeminiCliCallsState = "ended" | "open" | "unknown";
+
+/**
+ * What a reply's tool calls say. Gemini CLI writes them once every call in the
+ * batch has ended, and from 0.69.0 also as `scheduled` as soon as the reply
+ * ends.
+ */
 export interface GeminiCliToolCalls {
   /** Every call ended as cancelled. */
   allCancelled: boolean;
-  /** The newest time a call ended, in epoch milliseconds, when one could be read. */
+  /** Whether every call ended, one has not, or a status is not one Gemini CLI writes. */
+  state: GeminiCliCallsState;
+  /** The newest time a call was written, in epoch milliseconds, when one could be read. */
   lastAt: number | null;
 }
 
@@ -168,7 +205,7 @@ export interface GeminiCliReplay {
   updatedAt: number | null;
   /** The time of the last message line written, in the order they were written. */
   messageAt: number | null;
-  /** The newest time a tool call ended, of the last reply written with tool calls. */
+  /** The newest time a tool call was written, of the last reply written with tool calls. */
   toolAt: number | null;
   /** The last title written. */
   summary?: string;
@@ -466,6 +503,17 @@ export interface GeminiCliStatus {
     /** The newest prompt's time, as a tool's result would give it. */
     workingSince: number | null;
   };
+  /**
+   * Only when the status is unknown because the newest message is a reply with
+   * a tool call that has not ended: a tool waits for approval or runs. A
+   * session closed or killed then leaves the same line, and Gemini CLI's files
+   * name no process, so the collector, which knows the time and the session's
+   * newest write, shows it as working only while that write is recent.
+   */
+  pending?: {
+    /** The newest prompt's time, as a tool's result would give it. */
+    workingSince: number | null;
+  };
 }
 
 /**
@@ -516,18 +564,25 @@ function workingSince(newestFirst: readonly GeminiCliMessage[]): number | null {
  * | `gemini`: content "", or a call for a tool, and no tool calls recorded: a tool waits or runs | working | the newest prompt |
  * | `gemini`: only thoughts, Gemini CLI's note before it asks about a file a tool sent back | working | the newest prompt |
  * | `gemini` with text and no tool calls | idle | the reply |
- * | `gemini` with tool calls: the batch ended, and nothing says what came next | unknown, with `batch` unless every call was cancelled | |
+ * | `gemini` with a tool call that has not ended: a tool waits or runs, or the session was closed then | unknown, with `pending` | |
+ * | `gemini` with tool calls in a status Gemini CLI does not write, and none that has not ended | unknown | |
+ * | `gemini` with tool calls that all ended, and nothing says what came next | unknown, with `batch` unless every call was cancelled | |
  * | `error` that begins as a failed request's does | failed | the error |
  * | any other `error` | idle | the error |
  * | a type Gemini CLI 0.64.0 does not write, a line that could not be read, or a `gemini` line too long to read | unknown | |
  *
- * A reply with text that also calls for a tool is written just as a final
- * answer is, and its call only once it has ended, so a session whose tool
- * waits for approval or runs after such a reply shows as idle. A batch of
- * tool calls ends most often a moment before its result is sent, but a tool
- * that stops the agent, or one the CLI ran itself, leaves the batch last with
- * nothing after it, so the batch alone is unknown rather than a guess. Its
- * `batch` lets the collector show it as working while it is new
+ * Before 0.69.0, a reply with text that also calls for a tool is written just
+ * as a final answer is, and its call only once it has ended, so a session
+ * whose tool waits for approval or runs after such a reply shows as idle. From
+ * 0.69.0 the reply is written again at once with its calls as `scheduled`, and
+ * again with their own statuses once the batch has ended. A call that has not
+ * ended says a tool waits or runs, but a session closed or killed then leaves
+ * the same line, so the reply alone is unknown, and its `pending` lets the
+ * collector show it as working while the session writes. A batch of tool calls
+ * ends most often a moment before its result is sent, but a tool that stops the
+ * agent, or one the CLI ran itself, leaves the batch last with nothing after
+ * it, so the batch alone is unknown rather than a guess. Its `batch` lets the
+ * collector show it as working while it is new
  * (`src/collector/adapters/gemini-cli/toSession.ts`).
  *
  * Gemini CLI records every error it shows as an `error` message, so only the
@@ -562,9 +617,11 @@ export function mapGeminiCliStatus(replay: GeminiCliReplay): GeminiCliStatus {
     case "gemini": {
       if (content === null) return unknown;
       if (newest.toolCalls !== null) {
-        if (newest.toolCalls.allCancelled) return unknown;
-        const batch = { endedAt: newest.toolCalls.lastAt, workingSince: workingSince(newestFirst) };
-        return { ...unknown, batch };
+        const { state, allCancelled, lastAt } = newest.toolCalls;
+        if (state === "open")
+          return { ...unknown, pending: { workingSince: workingSince(newestFirst) } };
+        if (state === "unknown" || allCancelled) return unknown;
+        return { ...unknown, batch: { endedAt: lastAt, workingSince: workingSince(newestFirst) } };
       }
       if (content.empty || content.functionCall || content.thoughtOnly) {
         return { status: "working", since: workingSince(newestFirst) };

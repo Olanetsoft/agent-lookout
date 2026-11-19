@@ -666,8 +666,10 @@ describe("each declaration agrees with what its adapter does", () => {
     );
     const toolCalls = [
       null,
-      { allCancelled: false, lastAt: NOW },
-      { allCancelled: true, lastAt: NOW },
+      { allCancelled: false, state: "ended" as const, lastAt: NOW },
+      { allCancelled: true, state: "ended" as const, lastAt: NOW },
+      { allCancelled: false, state: "open" as const, lastAt: NOW },
+      { allCancelled: false, state: "unknown" as const, lastAt: NOW },
     ];
     const messages = [...GEMINI_CLI_MESSAGE_TYPES, "other" as const].flatMap((type) =>
       [...shapes, null].flatMap((content) =>
