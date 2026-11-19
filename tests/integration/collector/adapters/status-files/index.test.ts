@@ -727,6 +727,19 @@ const THREAD = "T-demo-1";
 const AMP_FILE = `amp-${THREAD}.json`;
 const OTHER_THREAD = "T-demo-2";
 
+/** A process that runs as long as the system does: the first one, or on Windows the System process. */
+const OTHERS_PID = process.platform === "win32" ? 4 : 1;
+
+/** Whether signal 0 to a process, which sends it nothing, is refused, as for another user's process. */
+function refused(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return false;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
 describe.skipIf(!stripsTypes())(
   "the Amp plugin in docs/GUIDE.md, run against the status-file source",
   () => {
@@ -859,6 +872,19 @@ describe.skipIf(!stripsTypes())(
         expect(await readdir(parent)).not.toContain("sessions");
         expect((await poll()).health.state).toBe("not-set-up");
       }, 20_000);
+
+      test(`with executor ${kind}, it deletes no file as it loads`, async () => {
+        const { folder, parent, env } = await setUp();
+        const ended = await runningProcess();
+        await ended.stop();
+        await mkdir(folder);
+        const left = { agent: "Amp", status: "working", pid: ended.pid };
+        await writeFile(path.join(folder, AMP_FILE), JSON.stringify(left));
+
+        const amp = await startAmp(parent, env, kind, "none");
+        expect(await readdir(folder)).toEqual([AMP_FILE]);
+        expect(await amp.end()).toEqual({ code: 0, signal: null });
+      }, 20_000);
     }
 
     test("killed outright, it leaves its file, its session goes because of its pid, and the next run deletes it", async () => {
@@ -889,7 +915,7 @@ describe.skipIf(!stripsTypes())(
       const ended = await runningProcess();
       await ended.stop();
       await mkdir(folder);
-      const files: Record<string, object> = {
+      const files: Record<string, unknown> = {
         // Its own, from a process that still runs, and with no process.
         "amp-T-demo-2.json": { agent: "Amp", status: "working", pid: process.pid },
         "amp-T-demo-3.json": { agent: "Amp", status: "working" },
@@ -899,19 +925,98 @@ describe.skipIf(!stripsTypes())(
         // Its own, failed or idle, from a process that has ended.
         "amp-T-demo-5.json": { agent: "Amp", status: "failed", pid: ended.pid },
         "amp-T-demo-6.json": { agent: "Amp", status: "idle", pid: ended.pid },
+        // A pid that is no process ID: the ended one as a string, and as a
+        // negative number, which names a group of processes.
+        "amp-T-demo-7.json": { agent: "Amp", status: "working", pid: String(ended.pid) },
+        "amp-T-demo-8.json": { agent: "Amp", status: "working", pid: -ended.pid },
+        // JSON that is no object.
+        "amp-T-demo-9.json": null,
       };
       for (const [name, fields] of Object.entries(files)) {
         await writeFile(path.join(folder, name), JSON.stringify(fields));
       }
+      // A folder named as its files are.
+      await mkdir(path.join(folder, "amp-T-demo-10.json"));
 
       const amp = await startAmp(parent, env, "local", "none");
       expect((await readdir(folder)).sort()).toEqual([
+        "amp-T-demo-10.json",
         "amp-T-demo-2.json",
         "amp-T-demo-3.json",
         "amp-T-demo-4.json",
+        "amp-T-demo-7.json",
+        "amp-T-demo-8.json",
+        "amp-T-demo-9.json",
         "my-agent.json",
       ]);
       expect(await amp.end()).toEqual({ code: 0, signal: null });
+    }, 20_000);
+
+    test.skipIf(!refused(OTHERS_PID))(
+      "as it loads, it keeps a file whose process runs but is not this user's to signal",
+      async () => {
+        const { folder, parent, env } = await setUp();
+        await mkdir(folder);
+        const theirs = { agent: "Amp", status: "working", pid: OTHERS_PID };
+        await writeFile(path.join(folder, AMP_FILE), JSON.stringify(theirs));
+
+        const amp = await startAmp(parent, env, "local", "none");
+        expect(await readdir(folder)).toEqual([AMP_FILE]);
+        expect(await amp.end()).toEqual({ code: 0, signal: null });
+      },
+      20_000,
+    );
+
+    test("a file it cannot rename into place leaves no file of its own behind", async () => {
+      const { folder, parent, env } = await setUp();
+      // A file cannot be renamed over a folder.
+      await mkdir(path.join(folder, AMP_FILE), { recursive: true });
+      const amp = await startAmp(parent, env, "local", "none");
+      await amp.send({ start: THREAD });
+      expect(await readdir(folder)).toEqual([AMP_FILE]);
+      expect(await amp.end()).toEqual({ code: 0, signal: null });
+    }, 20_000);
+
+    test("a thread it followed but never showed keeps another Amp's file as Amp unloads the plugin", async () => {
+      const { folder, parent, env } = await setUp();
+      const shows = await startAmp(parent, env, "local", "none");
+      await shows.send({ start: THREAD });
+      const file = path.join(folder, AMP_FILE);
+      expect(JSON.parse(await readFile(file, "utf8")).pid).toBe(shows.pid);
+
+      // The same thread, opened in a second Amp while it is idle there.
+      const opens = await startAmp(parent, env, "local", "none");
+      await opens.send({ thread: THREAD, state: "idle" });
+      await opens.send({ start: THREAD });
+      await opens.send({ dispose: true });
+      expect(JSON.parse(await readFile(file, "utf8")).pid).toBe(shows.pid);
+    }, 20_000);
+
+    test("a thread it followed but never showed keeps its file as Amp unloads the plugin, even one that names the plugin's process", async () => {
+      const { folder, parent, env } = await setUp();
+      const amp = await startAmp(parent, env, "local", "none");
+      // As another run of the plugin in the same process would write it.
+      await mkdir(folder);
+      const file = path.join(folder, AMP_FILE);
+      await writeFile(file, JSON.stringify({ agent: "Amp", status: "working", pid: amp.pid }));
+
+      await amp.send({ thread: THREAD, state: "idle" });
+      await amp.send({ start: THREAD });
+      await amp.send({ dispose: true });
+      expect(await readdir(folder)).toEqual([AMP_FILE]);
+    }, 20_000);
+
+    test("after a reload, unloading the old run keeps the file the new run wrote", async () => {
+      const { folder, parent, env } = await setUp();
+      const old = await startAmp(parent, env, "local", "none");
+      await old.send({ start: THREAD });
+      // The new run loads with the thread open and writes its file before the old run is unloaded.
+      const fresh = await startAmp(parent, env, "local", "none", THREAD);
+      const file = path.join(folder, AMP_FILE);
+      expect(JSON.parse(await readFile(file, "utf8")).pid).toBe(fresh.pid);
+
+      await old.send({ dispose: true });
+      expect(JSON.parse(await readFile(file, "utf8")).pid).toBe(fresh.pid);
     }, 20_000);
 
     test("a file it cannot delete as Amp unloads it does not keep it from deleting the rest", async () => {
