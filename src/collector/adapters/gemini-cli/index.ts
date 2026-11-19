@@ -103,7 +103,7 @@ export function subagentsUnreadNote({ refused, failed }: SubagentsUnread): strin
  * - Needs you never: an approval wait is kept in memory alone.
  * - Finished never: it writes no lock and no mark when a session ends, so a
  *   closed session keeps its last status, working when it closed mid-turn,
- *   and from 0.69.0 unknown 30 minutes after it closed with a tool call open.
+ *   and from 0.69.0 unknown 30 minutes after its last write with a tool call open.
  * - Failed partly: an `error` message says a request failed only by how its
  *   text begins, and `gemini -p` records no error at all.
  * - Its name is the title Gemini CLI saves at a later start in the same folder.
@@ -128,7 +128,7 @@ export const GEMINI_CLI_CAPABILITIES: SourceCapabilities = {
   finished: {
     level: "no",
     reason:
-      "Gemini CLI writes no end mark, so a closed session keeps its last status a day, or, from 0.69.0, 30 minutes with a tool open.",
+      "With no end mark, a closed session keeps its status a day after its last update, or, from 0.69.0, 30 minutes with a tool open.",
   },
   failed: {
     level: "partly",

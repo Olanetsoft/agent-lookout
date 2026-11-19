@@ -11,7 +11,7 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 ### Fixed
 
-- A Gemini CLI 0.69.0 session whose tool waits for your approval, or runs for more than 30 seconds, shows as working, not unknown. Gemini CLI 0.69.0 writes a reply's tool calls as `scheduled` as soon as the reply ends, and Agent Lookout now reads each call's status. Gemini CLI's files name no process, and a session closed or killed while a tool was scheduled leaves the same line, so such a session turns unknown once neither it nor a subagent of it has written for 30 minutes, the time keep-awake counts a quiet working session for. A reply with text whose tool waits or runs no longer shows as idle on 0.69.0. Older versions show as before. (#371)
+- A Gemini CLI 0.69.0 session whose tool waits for your approval, or runs for more than 30 seconds, shows as working, not unknown, whether or not the model's reply had text. Gemini CLI 0.69.0 writes a reply's tool calls as `scheduled` as soon as the reply ends, and Agent Lookout now reads each call's status. Gemini CLI's files name no process, and a session closed or killed while a tool was scheduled leaves the same line, so a session whose tool waits or runs, or that was closed then, turns unknown once neither it nor a subagent of it has written for 30 minutes, the time keep-awake counts a quiet working session for. Older versions show as before: there a reply with text whose tool waits or runs still shows as idle. (#371)
 
 ## 0.2.24 - 2026-11-19
 
