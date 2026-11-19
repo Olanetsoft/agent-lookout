@@ -757,7 +757,7 @@ From each file it keeps these fields and drops the rest: `agent`, `name`, `cwd`,
 
 For a file that names a `pid`, Agent Lookout asks the operating system whether that process still exists, with the same signal-0 check it makes for Claude Code, which sends nothing to the process. Nothing from a file is run or used as a link. The `cwd` is shown, and is looked in for a git repository as it is for every session, as [Git repositories](#git-repositories) describes. Nothing else in it is read.
 
-Amp's threads can show through a plugin in the [guide](docs/GUIDE.md#amp) that writes these files. Agent Lookout reads none of Amp's own files, and the plugin writes only `agent`, `cwd`, `status`, `reason`, `since`, `pid` and `app`.
+Amp's threads can show through a plugin in the [guide](docs/GUIDE.md#amp) that writes these files. Agent Lookout reads none of Amp's own files, and the plugin writes only `agent`, `cwd`, `status`, `reason`, `since`, `pid`, `app` and `run`, a random ID for each run of the plugin, which Agent Lookout ignores.
 
 ### Git repositories
 

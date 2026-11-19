@@ -1613,6 +1613,7 @@ Amp's threads can show here through a small Amp plugin that writes a status file
 Save this as `~/.config/amp/plugins/agent-lookout.ts` for every project, or `$XDG_CONFIG_HOME/amp/plugins/agent-lookout.ts` when `XDG_CONFIG_HOME` is set, or in `.amp/plugins/` at the root of one repository for that repository only. Then open Amp's command palette with Ctrl+O and run `plugins: reload`, as Amp's [page on plugins](https://ampcode.com/docs/customize/plugins) says:
 
 ```ts
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -1645,6 +1646,8 @@ export default function (amp: PluginAPI) {
   const root = amp.system.workspaceRoot;
   const cwd = root ? amp.helpers.filePathFromURI(root) : undefined;
   const threads = new Map<string, Thread>();
+  // Written in each file, so that no two runs of the plugin ever write the same bytes.
+  const run = randomUUID();
 
   // Deletes a file while what it holds passes the check. It is moved to a name of this
   // run's and checked again there, so a file another run writes after the first check
@@ -1661,7 +1664,16 @@ export default function (amp: PluginAPI) {
       try {
         fs.linkSync(taken, file);
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "EEXIST") fs.renameSync(taken, file);
+        // EEXIST: a newer file has taken its place. Where a hard link can't be made, it is
+        // put back as a copy, which never replaces a file either. One that can't be put
+        // back is kept under its dot-name.
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+          try {
+            fs.copyFileSync(taken, file, fs.constants.COPYFILE_EXCL);
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+          }
+        }
       }
     }
     fs.rmSync(taken, { force: true });
@@ -1692,7 +1704,16 @@ export default function (amp: PluginAPI) {
 
   function write(thread: Thread) {
     const { status, reason, since } = thread;
-    const fields = { agent: "Amp", cwd, status, reason, since, app: "terminal", pid: process.pid };
+    const fields = {
+      agent: "Amp",
+      cwd,
+      status,
+      reason,
+      since,
+      app: "terminal",
+      pid: process.pid,
+      run,
+    };
     const text = JSON.stringify(fields);
     // Written whole under a name that starts with a dot, which is never read, then renamed.
     const temp = path.join(folder, `.${process.pid}-${path.basename(thread.file)}`);
@@ -1778,7 +1799,7 @@ export default function (amp: PluginAPI) {
 
 For each thread, the plugin writes `amp-<thread ID>.json`. The session shows as working while Amp works, in Needs you as Waiting for permission while a tool waits for your approval, as idle once a turn is done, and as failed when a turn stopped with an error Amp will not retry. Amp asks for no approval by default, so a thread shows there only when Amp's permissions are turned on, such as with `amp.permissions` in its settings. Its `cwd` is the folder Amp has open, and the session is named after that folder, or after its file when no folder is open. The plugin writes no `name`: Amp's pages say only that its agent chooses a thread's title, which you can rename, not what it makes the title from, so a title can hold what you typed, and a name here never does. While a thread works, its file is written again every minute, so it is not shown as quiet. A file the plugin could not write, as when the disk is full, is tried again each minute too.
 
-The plugin follows a thread from when Amp starts its session: when a new thread gets its first message, or you open or switch to a thread. When the plugin loads, it also follows the thread you have open. A thread shows from when it first works, or waits for your approval, while the plugin is loaded, and stays on the list, idle once its turn is done, until Amp unloads the plugin, since Amp has no event for leaving a thread. A thread you only open to read does not show, because Amp does not say how long it has been idle or failed. When Amp unloads the plugin, as it does on a reload and when it quits normally, the plugin deletes the files it wrote, but not one that another run of it has written since, such as the run a reload starts or one in another Amp. When it loads, it deletes any file it left whose process has ended, as one left when Amp was killed. It writes nothing when Amp runs it anywhere but where you use Amp, as in an orb.
+The plugin follows a thread from when Amp starts its session: when a new thread gets its first message, or you open or switch to a thread. When the plugin loads, it also follows the thread you have open. A thread shows from when it first works, or waits for your approval, while the plugin is loaded, and stays on the list, idle once its turn is done, until Amp unloads the plugin, since Amp has no event for leaving a thread. A thread you only open to read does not show, because Amp does not say how long it has been idle or failed. When Amp unloads the plugin, as it does on a reload and when it quits normally, the plugin deletes the files it wrote, but not one that another run of it has written since, such as the run a reload starts or one in another Amp. To tell its runs apart, each writes a random ID of its own in `run`, which Agent Lookout ignores. When it loads, it deletes any file it left whose process has ended, as one left when Amp was killed. It writes nothing when Amp runs it anywhere but where you use Amp, as in an orb.
 
 This was built from Amp's pages on plugins and has not yet been checked on a computer running Amp. These are not known yet:
 

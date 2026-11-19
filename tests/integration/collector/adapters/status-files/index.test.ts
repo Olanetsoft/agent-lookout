@@ -601,13 +601,18 @@ const DONE = "<done>";
  * until the test says otherwise. The plugin's minute is no timer: it comes when
  * the test says so. To stand for another run of the plugin writing a file just
  * after this one reads it, `afterRead`, or `STAND_IN_AFTER_READ` for while the
- * plugin loads, names the file and what to write in it then.
+ * plugin loads, names the file and what to write in it then. `linkFails` makes
+ * the next hard link fail as on a file system without them, after writing what
+ * it is given where the link would go, `load` loads the plugin again in the same
+ * process with that thread open, `dispose: "first"` unloads only the first run,
+ * and `STAND_IN_NOW` stops the clock.
  */
 const AMP_STAND_IN = [
   'import fs from "node:fs";',
   'import readline from "node:readline";',
   'import { fileURLToPath, pathToFileURL } from "node:url";',
   "const [kind, root, active] = process.argv.slice(2);",
+  "if (process.env.STAND_IN_NOW) Date.now = () => Number(process.env.STAND_IN_NOW);",
   "function afterRead({ file, text }) {",
   "  const read = fs.readFileSync;",
   "  fs.readFileSync = (...args) => {",
@@ -617,6 +622,14 @@ const AMP_STAND_IN = [
   "      fs.writeFileSync(file, text);",
   "    }",
   "    return result;",
+  "  };",
+  "}",
+  "function linkFails({ text }) {",
+  "  const link = fs.linkSync;",
+  "  fs.linkSync = (from, to) => {",
+  "    fs.linkSync = link;",
+  "    if (text !== undefined) fs.writeFileSync(to, text);",
+  '    throw Object.assign(new Error("operation not permitted"), { code: "EPERM" });',
   "  };",
   "}",
   "if (process.env.STAND_IN_AFTER_READ) afterRead(JSON.parse(process.env.STAND_IN_AFTER_READ));",
@@ -638,25 +651,37 @@ const AMP_STAND_IN = [
   "  }",
   "  return threads.get(id);",
   "}",
-  "const handlers = new Map();",
-  "const disposers = [];",
-  "const amp = {",
-  '  system: { workspaceRoot: root === "none" ? null : new URL(root), executor: { kind } },',
-  '  activeThread: { current: active && active !== "none" ? { id: active } : null },',
-  "  helpers: { filePathFromURI: (uri) => fileURLToPath(uri.toString()) },",
-  "  logger: { log: (...values) => console.error(...values) },",
-  "  on: (event, handler) => (handlers.set(event, handler), { unsubscribe() {} }),",
-  "  threads: { get: (id) => ({ id, state: threadOf(id).state }) },",
-  "  onDispose: (callback) => (disposers.push(callback), { unsubscribe() {} }),",
-  "};",
-  'const plugin = await import(pathToFileURL("agent-lookout.ts").href);',
-  "await plugin.default(amp);",
-  "// What the plugin started as it loaded has its turn before the test goes on.",
-  "await new Promise((resolve) => setImmediate(resolve));",
+  "// Each run of the plugin in this process, the first and any loaded again.",
+  "const runs = [];",
+  "async function load(open) {",
+  "  const handlers = new Map();",
+  "  const disposers = [];",
+  "  const amp = {",
+  '    system: { workspaceRoot: root === "none" ? null : new URL(root), executor: { kind } },',
+  '    activeThread: { current: open && open !== "none" ? { id: open } : null },',
+  "    helpers: { filePathFromURI: (uri) => fileURLToPath(uri.toString()) },",
+  "    logger: { log: (...values) => console.error(...values) },",
+  "    on: (event, handler) => (handlers.set(event, handler), { unsubscribe() {} }),",
+  "    threads: { get: (id) => ({ id, state: threadOf(id).state }) },",
+  "    onDispose: (callback) => (disposers.push(callback), { unsubscribe() {} }),",
+  "  };",
+  "  // A query makes a module of its own, as a run loaded again in the same process.",
+  '  const url = `${pathToFileURL("agent-lookout.ts").href}?run=${runs.length}`;',
+  "  const plugin = await import(url);",
+  "  await plugin.default(amp);",
+  "  runs.push({ handlers, disposers });",
+  "  // What the plugin started as it loaded has its turn before the test goes on.",
+  "  await new Promise((resolve) => setImmediate(resolve));",
+  "}",
+  "await load(active);",
   `console.log("${DONE}");`,
   "for await (const line of readline.createInterface({ input: process.stdin })) {",
   "  const command = JSON.parse(line);",
-  '  if (command.start) await handlers.get("session.start")?.({ thread: { id: command.start } }, {});',
+  "  if (command.start) {",
+  "    for (const { handlers } of runs) {",
+  '      await handlers.get("session.start")?.({ thread: { id: command.start } }, {});',
+  "    }",
+  "  }",
   "  if (command.state) {",
   "    const thread = threadOf(command.thread);",
   "    thread.value = command.state;",
@@ -664,12 +689,16 @@ const AMP_STAND_IN = [
   "  }",
   "  if (command.minute) minute();",
   "  if (command.afterRead) afterRead(command.afterRead);",
+  "  if (command.linkFails) linkFails(command.linkFails);",
+  "  if (command.load) await load(command.load);",
   "  if (command.dispose) {",
-  "    for (const callback of disposers) {",
-  "      try {",
-  "        await callback();",
-  "      } catch (error) {",
-  "        console.error(error);",
+  '    for (const { disposers } of command.dispose === "first" ? runs.slice(0, 1) : runs) {',
+  "      for (const callback of disposers) {",
+  "        try {",
+  "          await callback();",
+  "        } catch (error) {",
+  "          console.error(error);",
+  "        }",
   "      }",
   "    }",
   "  }",
@@ -683,7 +712,10 @@ type AmpCommand =
   | { thread: string; state: string }
   | { minute: true }
   | { dispose: true }
-  | { afterRead: { file: string; text: string } };
+  | { dispose: "first" }
+  | { afterRead: { file: string; text: string } }
+  | { linkFails: { text?: string } }
+  | { load: string };
 
 /**
  * Whether this Node runs a TypeScript file with its types stripped, as the Amp
@@ -794,9 +826,11 @@ describe.skipIf(!stripsTypes())(
         "app",
         "cwd",
         "pid",
+        "run",
         "since",
         "status",
       ]);
+      expect(written.run).toMatch(/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/);
       expect(working.sessions[0]?.statusSince).toBe(written.since);
 
       await amp.send({ thread: THREAD, state: "awaiting-approval" });
@@ -1115,6 +1149,59 @@ describe.skipIf(!stripsTypes())(
       await amp.send({ dispose: true });
       expect(await readdir(folder)).toEqual([AMP_FILE]);
       expect(await readFile(file, "utf8")).toBe(theirs);
+      expect(await amp.end()).toEqual({ code: 0, signal: null });
+    }, 20_000);
+
+    test("as Amp unloads the old run of a reload in the same process, it keeps the wait the new run wrote in the same millisecond", async () => {
+      const { folder, parent, env } = await setUp();
+      const amp = await startAmp(
+        parent,
+        { ...env, STAND_IN_NOW: "1795060000000" },
+        "local",
+        "none",
+      );
+      await amp.send({ start: THREAD });
+      // The new run loads with the thread open, and both see the wait begin at once.
+      await amp.send({ load: THREAD });
+      await amp.send({ thread: THREAD, state: "awaiting-approval" });
+      const file = path.join(folder, AMP_FILE);
+      const theirs = await readFile(file, "utf8");
+      expect(JSON.parse(theirs)).toMatchObject({ status: "waiting", since: 1795060000000 });
+
+      await amp.send({ dispose: "first" });
+      expect(await readFile(file, "utf8")).toBe(theirs);
+      await amp.send({ dispose: true });
+      expect(await readdir(folder)).toEqual([]);
+      expect(await amp.end()).toEqual({ code: 0, signal: null });
+    }, 20_000);
+
+    test("where a hard link can't be made, it puts a file another run wrote back as a copy", async () => {
+      const { folder, parent, env } = await setUp();
+      const amp = await startAmp(parent, env, "local", "none");
+      await amp.send({ start: THREAD });
+      const file = path.join(folder, AMP_FILE);
+      const theirs = JSON.stringify({ agent: "Amp", status: "working", pid: process.pid });
+      await amp.send({ afterRead: { file, text: theirs } });
+      await amp.send({ linkFails: {} });
+      await amp.send({ dispose: true });
+      expect(await readdir(folder)).toEqual([AMP_FILE]);
+      expect(await readFile(file, "utf8")).toBe(theirs);
+      expect(await amp.end()).toEqual({ code: 0, signal: null });
+    }, 20_000);
+
+    test("where a hard link can't be made, the copy it puts back never replaces a newer file", async () => {
+      const { folder, parent, env } = await setUp();
+      const amp = await startAmp(parent, env, "local", "none");
+      await amp.send({ start: THREAD });
+      const file = path.join(folder, AMP_FILE);
+      const theirs = JSON.stringify({ agent: "Amp", status: "working", pid: process.pid });
+      const newer = JSON.stringify({ agent: "Amp", status: "idle", pid: process.pid });
+      await amp.send({ afterRead: { file, text: theirs } });
+      // A third run writes the file after it was taken, before it is put back.
+      await amp.send({ linkFails: { text: newer } });
+      await amp.send({ dispose: true });
+      expect(await readdir(folder)).toEqual([AMP_FILE]);
+      expect(await readFile(file, "utf8")).toBe(newer);
       expect(await amp.end()).toEqual({ code: 0, signal: null });
     }, 20_000);
 
