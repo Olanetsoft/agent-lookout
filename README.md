@@ -4,7 +4,7 @@ See every AI coding agent running on your computer on one page, and which one is
 
 [![npm](https://img.shields.io/npm/v/agent-lookout)](https://www.npmjs.com/package/agent-lookout) [![CI](https://img.shields.io/github/actions/workflow/status/Olanetsoft/agent-lookout/ci.yml?branch=main&label=CI)](https://github.com/Olanetsoft/agent-lookout/actions/workflows/ci.yml) [![License](https://img.shields.io/npm/l/agent-lookout)](LICENSE) ![Node.js](https://img.shields.io/node/v/agent-lookout)
 
-It finds your Claude Code, Codex, Antigravity, Antigravity CLI, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx, Unreal Agent, Autohand Code, DeepSeek Harness, Droid and Grok Build sessions on its own, with no setup. It never starts a session, and it stops one or answers a prompt only when you press the button, or by a rule you set.
+It finds your Claude Code, Codex, Antigravity, Antigravity CLI, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx, Unreal Agent, Autohand Code, DeepSeek Harness, Droid, Grok Build and Oh My Pi sessions on its own, with no setup. It never starts a session, and it stops one or answers a prompt only when you press the button, or by a rule you set.
 
 [Install](#install) · [Download for Mac](https://github.com/Olanetsoft/agent-lookout/releases/latest) · [Guide](docs/GUIDE.md) · [Privacy](#privacy) · [Changelog](CHANGELOG.md) · [Website](https://www.agentlookout.app)
 
@@ -80,6 +80,7 @@ Any other agent can show up by writing one small file per session, and Amp throu
 | DeepSeek Harness | Partly    | No     | Partly    | No     | No     | No     |
 | Droid            | No        | No     | No        | No     | No     | No     |
 | Grok Build       | Partly    | Partly | Partly    | No     | No     | No     |
+| Oh My Pi         | Partly    | No     | Partly    | No     | No     | No     |
 | Status files     | Partly    | No     | Partly    | No     | No     | No     |
 
 Codex doesn't record when it waits for your approval, so a waiting session shows as working, and after 5 minutes its row says how long it has been quiet. The Antigravity CLI and the Antigravity app show as needing you while they ask you to approve a step, but not what they ask. [What each agent can report](docs/GUIDE.md#what-each-agent-can-report) explains every Partly and No.
@@ -125,6 +126,8 @@ DeepSeek Harness support reads the event log DeepSeek Harness keeps for each ses
 Droid support reads the first line of its session files, in `~/.factory/sessions`, and leaves out archived sessions. A session shows as unknown while a `droid` program runs and as finished once `ps` finds none, 2 seconds or more after any session was last written, or at or after it when the clock was just set back, as nothing ties a session to a process, and takes its folder's name. On Windows it stays unknown. It was built from Factory's documentation and its Droid SDKs, droid-sdk 0.5.0 and @factory/droid-sdk 0.11.0, not from Droid's own program, and has not yet been checked on a computer running it.
 
 Grok Build support reads the list of open sessions its terminal app keeps, in `~/.grok/active_sessions.json`, and each session's event log, as bytes. A session shows as working, idle, failed or finished, and as needing you while Grok Build asks you a question or waits for you to approve a plan. A wait for a tool's approval shows as working. It takes a title only when Grok Build marks it as set by you, else its folder's name. Jump works in tmux and in a Terminal or iTerm2 tab on a Mac. It was built from Grok Build's source at 1.0.45, while released builds are at 1.0.89, and has not yet been checked on a computer running it.
+
+Oh My Pi support reads the title slot, the header and the newest lines of each session's file, in `~/.omp/agent/sessions`, as bytes. A session shows as finished or failed once Oh My Pi writes that it stopped, and on macOS and Linux as working while a turn is open, as needing you while its `ask` tool waits, and as finished once no `omp` that could have written it runs. Idle never shows, and a wait for a tool's approval shows as working. It takes the title you or a model gave it, else its folder's name. It was built from Oh My Pi's source at v19.0.0 and has not yet been checked on a computer running it.
 
 |                                                    | macOS | Linux | Windows |
 | -------------------------------------------------- | ----- | ----- | ------- |
