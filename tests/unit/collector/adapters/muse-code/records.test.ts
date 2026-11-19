@@ -371,6 +371,29 @@ describe("a line longer than what is walked", () => {
       newer: false,
     });
   });
+
+  test("an approval request's phase past the first 1 MiB is not needed, so it is read as none", () => {
+    const line = JSON.stringify({
+      schema_version: 1,
+      stream: { kind: "session", id: SESSION_ID },
+      recorded_at: AT * 1000,
+      payload_type: "runtime.session",
+      payload: {
+        kind: "approval",
+        run_id: RUN,
+        event: {
+          kind: "requested",
+          pending_action_id: ACTION,
+          raw_args: "x".repeat(2 * LINE_MAX),
+          presentation_phase: "human_pending",
+        },
+      },
+    });
+    expect(judgeLine(Buffer.from(line).subarray(0, LINE_MAX), false, FOLDER)).toEqual({
+      sort: "record",
+      record: { sort: "requested", run: RUN, action: ACTION, phase: "none", at: AT },
+    });
+  });
 });
 
 describe("times", () => {

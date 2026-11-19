@@ -21,7 +21,7 @@ export const PENDING_MAX = 64;
 /** How a run ended, from its `terminal` record. `other` is a word this does not know, which still ends it. */
 export type MuseEnd = "completed" | "failed" | "cancelled" | "other";
 
-/** An approval request's `presentation_phase`, or `none` when the request has none. */
+/** An approval request's `presentation_phase`, or `none` when none was read: the request has none, or it lies past the line's first 1 MiB. */
 export type MusePhase = "automated_reviewing" | "human_pending" | "other" | "none";
 
 /**

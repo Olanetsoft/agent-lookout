@@ -44,7 +44,9 @@ let folderTime = NOW - 60 * 60 * 1000;
 /**
  * Writes a session's log in place of any other, and moves the times of its
  * folder and of every folder above it up to the sessions folder, as making a
- * folder in each does on a disk.
+ * folder in each does on a disk. A session added to a day folder already
+ * there moves that folder's time alone, so a test of that uses `files.write`
+ * and `files.touch` on the day folder.
  */
 export function writeLog(
   files: MemoryFiles,

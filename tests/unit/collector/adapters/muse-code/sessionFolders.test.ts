@@ -134,9 +134,12 @@ describe("finding the logs", () => {
     const listed = files.calls.filter(({ method }) => method === "readdir").map(({ path }) => path);
     expect(listed).not.toContain(dayFolder(days[3]));
     expect((await found(finder, NOW + MINUTE)).paths).toContain(logPath(ID(9, days[3]), days[3]));
-    // One made in a newest day folder is seen at once.
-    writeLog(files, logPath(ID(8)), opening(NOW), NOW + MINUTE + 1_000);
+    // One made in a newest day folder is seen at once. On a disk only that folder's time moves, and only it is listed again.
+    files.forget();
+    files.write(logPath(ID(8)), opening(NOW), { mtimeMs: NOW + MINUTE + 1_000 });
+    files.touch(dayFolder(), NOW + MINUTE + 1_000);
     expect((await found(finder, NOW + MINUTE + 2_000)).paths).toContain(logPath(ID(8)));
+    expect(files.count("readdir", (called) => asWritten(called) !== dayFolder())).toBe(0);
     files.forget();
     await found(finder, NOW + MINUTE + 4_000);
     expect(files.count("readdir")).toBe(0);

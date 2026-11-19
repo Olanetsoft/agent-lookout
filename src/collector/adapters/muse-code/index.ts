@@ -95,9 +95,10 @@ export const BASIS = "files";
 /**
  * The way it reads while `ps` cannot say which programs run, as its last
  * answer could not, and always on Windows: a session is finished then only
- * when Muse Code wrote that it let it go, or it was last written before the
- * computer started, and none is working, idle or needs you. Named apart, so
- * every finished session does not seem to start again.
+ * when Muse Code wrote that it let it go, or its newest status record was
+ * written more than a minute before the computer started, and none is working,
+ * idle or needs you. Named apart, so every finished session does not seem to
+ * start again.
  */
 export const BASIS_WITHOUT_PROCESSES = "files-without-processes";
 
@@ -121,7 +122,7 @@ export const UNCHECKED_NOT =
 export const STATUS_GONE =
   "Otherwise it shows as finished once no Muse Code that started before its newest status record, or a minute after, runs, by ps.";
 export const STATUS_BOOT =
-  "A session last written before the computer started shows as finished as well.";
+  "A session whose newest status record was written more than a minute before the computer started shows as finished as well.";
 export const STATUS_HELD =
   "While such a Muse Code runs, it shows as working while a turn runs, for up to 30 quiet minutes, and as idle between turns.";
 export const STATUS_WAITS =
@@ -470,7 +471,7 @@ export function createMuseCodeAdapter(options: MuseCodeAdapterOptions = {}): Ada
       const { view } = one.log;
       const writtenAt = plausibleTime(Math.floor(one.log.writtenAt), checkedAt);
       const decidedAt = decidedAtOf(view.state === "ok" ? view.fold : null, writtenAt, checkedAt);
-      // Whether `ps` could change its status: not once the log settles it, nor when it was last written before the computer started.
+      // Whether `ps` could change its status: not once the log settles it, nor when its newest status record was written more than a minute before the computer started.
       const settled =
         settledByLog(view) ||
         dshWriter({
