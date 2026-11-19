@@ -13,6 +13,7 @@ import * as fx from "@collector/adapters/fx/index";
 import * as geminiCli from "@collector/adapters/gemini-cli/index";
 import * as goose from "@collector/adapters/goose/index";
 import * as grokBuild from "@collector/adapters/grok-build/index";
+import * as museCode from "@collector/adapters/muse-code/index";
 import * as ohMyPi from "@collector/adapters/oh-my-pi/index";
 import * as pi from "@collector/adapters/pi/index";
 import * as primeAgent from "@collector/adapters/prime-agent/index";
@@ -348,6 +349,7 @@ describe("readRemoteSnapshot", () => {
       droid,
       "grok-build": grokBuild,
       "oh-my-pi": ohMyPi,
+      "muse-code": museCode,
       fx,
       "kilo-code": kiloCode,
       "mimo-code": mimoCode,

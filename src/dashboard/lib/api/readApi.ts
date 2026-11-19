@@ -424,10 +424,10 @@ const MAX_AGENTS = 30;
 /**
  * The most parts read for one source: as many as the collector takes from one
  * machine (`MAX_REMOTE_PARTS` in `src/collector/remotes/remoteSessions.ts`), so
- * both compare that machine's sessions alike. Raised with it from 61 to 62
- * for Oh My Pi.
+ * both compare that machine's sessions alike. Raised with it from 62 to 63
+ * for Muse Code.
  */
-const MAX_PARTS = 62;
+const MAX_PARTS = 63;
 
 /** The way another machine read each of its sources, by the start of their sessions' ids, or null. */
 function readParts(value: unknown): Record<string, string> | null {

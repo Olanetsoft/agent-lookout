@@ -85,6 +85,7 @@ export const KNOWN_WAYS: ReadonlyMap<string, readonly string[]> = new Map([
   ["droid", ["files", "files-closed", "files-without-processes"]],
   ["grok-build", ["files"]],
   ["oh-my-pi", ["files", "files-without-processes"]],
+  ["muse-code", ["files", "files-without-processes"]],
   ["status-files", ["files"]],
 ]);
 
@@ -93,9 +94,9 @@ export const KNOWN_WAYS: ReadonlyMap<string, readonly string[]> = new Map([
  * source (`MAX_PARTS` in `src/dashboard/lib/api/readApi.ts`), so the page
  * compares that machine's sessions as this one does.
  *
- * A machine's sources can name 62: 20 Crush projects, 17 Hermes Agent profiles,
- * its default one and 16 named, and one for each of the other 25 sources. It
- * was 61 until Oh My Pi came, and none is left for a source to come: the
+ * A machine's sources can name 63: 20 Crush projects, 17 Hermes Agent profiles,
+ * its default one and 16 named, and one for each of the other 26 sources. It
+ * was 62 until Muse Code came, and none is left for a source to come: the
  * next one must raise this and `MAX_PARTS` in
  * `src/dashboard/lib/api/readApi.ts` together, or a machine past this goes
  * back to one part for each source. A test fails when the limits of Crush and
@@ -103,7 +104,7 @@ export const KNOWN_WAYS: ReadonlyMap<string, readonly string[]> = new Map([
  * parts of its own must be added to `everySourceThere`, in
  * `tests/fixtures/remote.ts`, or no test counts them.
  */
-export const MAX_REMOTE_PARTS = 62;
+export const MAX_REMOTE_PARTS = 63;
 
 /** One of the other machine's sources, as its card says it: its name and its state. */
 export interface RemoteSource {

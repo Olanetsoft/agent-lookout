@@ -157,6 +157,13 @@ export interface AdapterResult {
    * - `files-without-processes`: the same while `ps` cannot say, and always on
    *   Windows, when a session is finished only if Oh My Pi wrote that it
    *   stopped or it was last written before the computer started.
+   *
+   * The Muse Code adapter has two:
+   * - `files`: Muse Code's session logs, with `ps` able to say which Muse Code
+   *   programs run. The usual one.
+   * - `files-without-processes`: the same while `ps` cannot say, and always on
+   *   Windows, when a session is finished only if Muse Code wrote that it let
+   *   it go or it was last written before the computer started.
    */
   basis?: string;
 }

@@ -175,6 +175,10 @@ test("the fingerprint of the folders sessions are read from names none of them, 
   ]) {
     expect(sourcesFingerprint(env, HOME), JSON.stringify(env)).toBe(defaults);
   }
+  // Muse Code's data folder named outright is the default.
+  expect(
+    sourcesFingerprint({ AGENT_LOOKOUT_MUSE_CODE_HOME: `${HOME}/.local/share/muse` }, HOME),
+  ).toBe(defaults);
   // Agent Lookout's names the root outright. A home folder is a whole path,
   // with a drive on Windows, as the system gives it.
   const home = path.resolve(HOME);
@@ -260,6 +264,7 @@ test("the fingerprint of the folders sessions are read from names none of them, 
     sourcesFingerprint({ AGENT_LOOKOUT_OMP_HOME: "/tmp/empty-omp" }, HOME),
     sourcesFingerprint({ OMP_PROFILE: "work" }, HOME),
     sourcesFingerprint({ PI_CONFIG_DIR: ".omp-work" }, HOME),
+    sourcesFingerprint({ AGENT_LOOKOUT_MUSE_CODE_HOME: "/tmp/empty-muse" }, HOME),
     sourcesFingerprint({}, "/Users/someone-else"),
   ];
   for (const other of others) expect(other).not.toBe(defaults);

@@ -93,6 +93,8 @@ import {
   grokBuildSession,
   withJump as grokBuildJump,
 } from "@collector/adapters/grok-build/toSession";
+import { createMuseCodeAdapter, MUSE_CODE_CAPABILITIES } from "@collector/adapters/muse-code/index";
+import { museCodeSession } from "@collector/adapters/muse-code/toSession";
 import { createOhMyPiAdapter, OH_MY_PI_CAPABILITIES } from "@collector/adapters/oh-my-pi/index";
 import { ohMyPiSession } from "@collector/adapters/oh-my-pi/toSession";
 import { createPiAdapter, PI_CAPABILITIES } from "@collector/adapters/pi/index";
@@ -122,6 +124,8 @@ import { emptyGrokBuildTurn, mapGrokBuildStatus } from "@core/mapping/grok-build
 import { mapFxStatus } from "@core/mapping/fx/fxMapping";
 import { mapGooseStatus } from "@core/mapping/goose/gooseMapping";
 import { mapKimiCodeStatus } from "@core/mapping/kimi-code/kimiCodeMapping";
+import { startMuseFold, type MuseFold } from "@core/mapping/muse-code/museCodeFold";
+import { museCodeStatusOf, type MuseCodeFacts } from "@core/mapping/muse-code/museCodeMapping";
 import { ohMyPiStatusOf, type OhMyPiFacts } from "@core/mapping/oh-my-pi/ohMyPiMapping";
 import { mapCodexStatus } from "@core/mapping/codexMapping";
 import {
@@ -195,6 +199,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Droid", DROID_CAPABILITIES],
   ["Grok Build", GROK_BUILD_CAPABILITIES],
   ["Oh My Pi", OH_MY_PI_CAPABILITIES],
+  ["Muse Code", MUSE_CODE_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -312,6 +317,9 @@ test("each adapter carries its own declaration, for the poller to pass on", () =
     expect(
       createOhMyPiAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
     ).toBe(OH_MY_PI_CAPABILITIES);
+    expect(
+      createMuseCodeAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
+    ).toBe(MUSE_CODE_CAPABILITIES);
   }
   expect(createMistralVibeAdapter({ env: {}, homeDir: home, io: files.io }).capabilities).toBe(
     MISTRAL_VIBE_CAPABILITIES,
@@ -1388,6 +1396,87 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(OH_MY_PI_CAPABILITIES.jump.level).toBe("no");
     expect(OH_MY_PI_CAPABILITIES.stop.level).toBe("no");
     expect(OH_MY_PI_CAPABILITIES.answer.level).toBe("no");
+  });
+
+  test("Muse Code: a session is working, idle, needs you for a question or an approval, finished, failed or unknown", () => {
+    const fold = (change: (fold: MuseFold) => void = () => {}): MuseFold => {
+      const made = startMuseFold({ sort: "started", run: "run-1", at: NOW - 60_000 });
+      change(made);
+      return made;
+    };
+    const facts = (fields: Partial<MuseCodeFacts>): MuseCodeFacts => ({
+      view: { state: "ok", fold: fold() },
+      writer: "backed",
+      writtenAt: NOW - 1_000,
+      decidedAt: NOW - 1_000,
+      now: NOW,
+      waited: new Set(),
+      ...fields,
+    });
+    const ended = (end: "completed" | "failed") =>
+      fold((made) => {
+        made.run.state = "ended";
+        made.lastEnd = { end, at: NOW - 5_000 };
+      });
+    const mapped = [
+      facts({}),
+      facts({ view: { state: "ok", fold: ended("completed") } }),
+      facts({ view: { state: "ok", fold: ended("failed") } }),
+      facts({ view: { state: "ok", fold: fold((made) => made.prompts.set("p-1", NOW - 5_000)) } }),
+      facts({
+        view: {
+          state: "ok",
+          fold: fold((made) =>
+            made.approvals.set("a-1", {
+              requestedAt: NOW - 5_000,
+              phase: "human_pending",
+              reviewed: false,
+              completion: null,
+            }),
+          ),
+        },
+      }),
+      facts({ writer: "gone" }),
+      facts({ writer: "maybe" }),
+      facts({ view: { state: "unsure" } }),
+    ].map((given) => museCodeStatusOf(given));
+    expect(statuses(mapped.map((status) => status.status))).toEqual(
+      new Set(["working", "idle", "needs-you", "finished", "failed", "unknown"]),
+    );
+    expect(new Set(mapped.flatMap((status) => status.waitingReason ?? []))).toEqual(
+      new Set(["question", "permission"]),
+    );
+    expect(MUSE_CODE_CAPABILITIES["working-and-idle"].level).toBe("partly");
+    expect(MUSE_CODE_CAPABILITIES["needs-you"].level).toBe("partly");
+    expect(MUSE_CODE_CAPABILITIES.failed.level).toBe("partly");
+    expect(MUSE_CODE_CAPABILITIES.finished.level).toBe("partly");
+  });
+
+  test("Muse Code: a session has its workspace folder's name and its last write while it works, and no tokens, jump, stop or link", () => {
+    const session = museCodeSession({
+      folderName: "019a9a00-0000-7000-8000-000000000001",
+      cwd: "/Users/example/code/demo",
+      metadataAt: NOW - 60_000,
+      status: { status: "working", since: NOW - 60_000, showsLastWrite: true },
+      writtenAt: NOW - 1_000,
+      now: NOW,
+    });
+    expect(session).toMatchObject({
+      id: "muse-code:019a9a00-0000-7000-8000-000000000001",
+      source: "muse-code",
+      name: "demo",
+      lastWriteAt: NOW - 1_000,
+    });
+    for (const absent of ["tokens", "stop", "ask", "waitingText", "jump", "pid"]) {
+      expect(session, absent).not.toHaveProperty(absent);
+    }
+    expect(session.links).toEqual({});
+    expect(MUSE_CODE_CAPABILITIES.names.level).toBe("partly");
+    expect(MUSE_CODE_CAPABILITIES["quiet-for"].level).toBe("partly");
+    expect(MUSE_CODE_CAPABILITIES.tokens.level).toBe("no");
+    expect(MUSE_CODE_CAPABILITIES.jump.level).toBe("no");
+    expect(MUSE_CODE_CAPABILITIES.stop.level).toBe("no");
+    expect(MUSE_CODE_CAPABILITIES.answer.level).toBe("no");
   });
 
   test("Prime Agent: a session is working, idle, finished or unknown, and never waiting or failed", () => {
