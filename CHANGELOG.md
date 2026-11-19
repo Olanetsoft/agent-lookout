@@ -2,7 +2,9 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
-## Unreleased
+## 0.2.26 - 2026-11-19
+
+Oh My Pi sessions show, a long Gemini CLI session no longer takes an older reply for its last message, and a Gemini CLI 0.69.0 session stays working through an error shown during a tool.
 
 ### Added
 
