@@ -29,6 +29,7 @@ import {
   type DshPrograms,
 } from "@collector/adapters/deepseek-harness/processes";
 import type { ReadOnlyIo } from "@collector/files/readOnlyIo";
+import { EMPTY_CHANGE_MEMORY, sessionChanges } from "@core/notices/sessionChanges";
 import { CLOCK_SLACK_MS, WRITE_TIME_STEP_MS } from "@core/time";
 import {
   codexLines,
@@ -334,6 +335,100 @@ describe("a session's status", () => {
       expect(renamed, platform).not.toHaveProperty("lastWriteAt");
       expect(ps.runs, platform).toHaveLength(0);
     }
+  });
+
+  test("a rename long after a session ended on a reply or a result with no exit leaves it finished since that line, with one Finished", async () => {
+    const endAt = NOW - 2 * HOUR;
+    /** The line a rename from another omp's picker adds, as its slot is rewritten: no prompt. */
+    const rename = (at: number) =>
+      line({
+        type: "title_change",
+        id: "0000000a",
+        parentId: "00000009",
+        timestamp: iso(at),
+        title: "demo-project",
+        source: "user",
+      });
+    const ended = [
+      // `/new` leaves the old session on its reply, with no exit.
+      message("user", { at: endAt - MINUTE }) + message("assistant", { at: endAt }),
+      // A crash leaves it on a tool's result.
+      message("user", { at: endAt - MINUTE }) +
+        toolStart("bash", endAt - MINUTE) +
+        message("toolResult", { at: endAt }),
+    ];
+    const header = { at: endAt - 2 * MINUTE };
+    for (const lines of ended) {
+      const files = filesWith(sessionText(lines, { header }), endAt);
+      const clock = handClock();
+      // The omp that wrote it, which started before.
+      const ps = standInPs([psLine(7001, endAt - HOUR, "omp")]);
+      const adapter = ohMyPiAdapterFor(files, { now: clock.now, ps });
+      let memory = EMPTY_CHANGE_MEMORY;
+      const shown: { status?: string; since?: number | null }[] = [];
+      const changes: string[] = [];
+      const poll = async () => {
+        const result = await adapter.poll();
+        const session = result.sessions[0];
+        shown.push({ status: session?.status, since: session?.statusSince });
+        const next = sessionChanges(memory, {
+          generatedAt: clock.now(),
+          sources: [{ ...result.health, basis: result.basis }],
+          sessions: result.sessions,
+        });
+        memory = next.memory;
+        changes.push(...next.changes.map(({ event }) => event));
+      };
+      await poll();
+      // It quits.
+      ps.set([]);
+      clock.advance(PROCESS_CHECK_MS);
+      await poll();
+      // Another omp, started long after, renames it from its picker.
+      clock.advance(PROCESS_CHECK_MS);
+      ps.set([psLine(7003, clock.now() - 8 * SECOND, "omp")]);
+      const renameAt = clock.now() - 4 * SECOND;
+      const slot = { title: "demo-project", source: "user", updatedAt: renameAt } as const;
+      files.rewrite(FILE, sessionText(lines + rename(renameAt), { slot, header }), {
+        mtimeMs: renameAt,
+      });
+      await poll();
+      // That omp quits.
+      ps.set([]);
+      clock.advance(PROCESS_CHECK_MS);
+      await poll();
+      expect(shown).toEqual([
+        { status: "unknown", since: null },
+        { status: "finished", since: endAt },
+        { status: "finished", since: endAt },
+        { status: "finished", since: endAt },
+      ]);
+      expect(changes).toEqual(["finished"]);
+    }
+  });
+
+  test("a copy, as a fork, a branch or an import makes, whose lines keep their times, is backed by the omp that made it", async () => {
+    const endAt = NOW - 2 * HOUR;
+    const copiedAt = NOW - MINUTE;
+    const text = sessionText(
+      message("user", { at: endAt - MINUTE }) + message("assistant", { at: endAt }),
+      { header: { at: copiedAt } },
+    );
+    const clock = handClock();
+    // The omp that made the copy, which started after the reply it copied.
+    const ps = standInPs([psLine(7003, copiedAt - 10 * MINUTE, "omp")]);
+    const adapter = ohMyPiAdapterFor(filesWith(text, copiedAt), { now: clock.now, ps });
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "unknown",
+      statusSince: null,
+    });
+    ps.set([]);
+    clock.advance(PROCESS_CHECK_MS);
+    // Finished since it was made, not since a reply from before it began.
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "finished",
+      statusSince: copiedAt,
+    });
   });
 
   test("an aborted line after the exit, written more than 15 seconds after it, is not finished by it, whenever the file was last written", async () => {

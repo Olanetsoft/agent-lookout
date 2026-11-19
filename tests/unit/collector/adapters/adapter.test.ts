@@ -1328,6 +1328,7 @@ describe("each declaration agrees with what its adapter does", () => {
       behind: null,
       cutOff: null,
       writtenAt: NOW - 1_000,
+      startedAt: NOW - 60_000,
       writer: "backed",
       now: NOW,
       ...fields,

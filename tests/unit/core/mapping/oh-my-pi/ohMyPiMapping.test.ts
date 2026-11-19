@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   CUT_OFF_MS,
+  decidedAtOf,
   exitOf,
   ohMyPiStatusOf,
   QUIET_MS,
@@ -32,6 +33,7 @@ function statusOf(facts: Partial<OhMyPiFacts>) {
     behind: null,
     cutOff: null,
     writtenAt: WRITTEN,
+    startedAt: NOW - HOUR,
     writer: "backed",
     now: NOW,
     ...facts,
@@ -68,6 +70,25 @@ describe("each row", () => {
         since: WRITTEN,
         showsLastWrite: false,
       });
+    }
+  });
+
+  test("3. after a reply or a result, finished since the time on its line, or the header's when later, as a rename written since moves only the last write", () => {
+    const at = NOW - 2 * HOUR;
+    for (const line of [reply, result]) {
+      const facts = { newest: line(at), writtenAt: NOW - MINUTE, writer: "gone" } as const;
+      expect(statusOf({ ...facts, startedAt: at - HOUR })).toEqual({
+        status: "finished",
+        since: at,
+        showsLastWrite: false,
+      });
+      // A fork, a branch or an import keeps each line's time under a header of its own.
+      expect(statusOf({ ...facts, startedAt: at + MINUTE }).since).toBe(at + MINUTE);
+      expect(statusOf({ ...facts, startedAt: null }).since).toBe(at);
+      // With no time on its line that can be right, the last write, as before.
+      for (const none of [null, NOW + CLOCK_SLACK_MS + 1]) {
+        expect(statusOf({ ...facts, newest: line(none) }).since).toBe(NOW - MINUTE);
+      }
     }
   });
 
@@ -204,6 +225,48 @@ describe("an exit a quit cut a turn off after", () => {
     const ahead = exit(false, NOW + CLOCK_SLACK_MS + 1);
     expect(exitOf({ newest: result(ahead.at), behind: null, cutOff: ahead, now: NOW })).toBeNull();
     expect(statusOf({ newest: result(ahead.at), cutOff: ahead }).status).toBe("working");
+  });
+});
+
+describe("the last write ps is judged against", () => {
+  const at = NOW - 2 * HOUR;
+  const judged = (facts: Partial<Parameters<typeof decidedAtOf>[0]>) =>
+    decidedAtOf({
+      newest: reply(at),
+      writtenAt: WRITTEN,
+      startedAt: at - HOUR,
+      now: NOW,
+      ...facts,
+    });
+
+  test("is a newest reply's or result's own time, or the header's when later, never later than the file's last write", () => {
+    for (const line of [reply, result]) {
+      expect(judged({ newest: line(at) })).toBe(at);
+      expect(judged({ newest: line(at), startedAt: at + SECOND })).toBe(at + SECOND);
+      expect(judged({ newest: line(at), startedAt: null })).toBe(at);
+      expect(judged({ newest: line(WRITTEN + SECOND) })).toBe(WRITTEN);
+      expect(judged({ newest: line(at), startedAt: WRITTEN + SECOND })).toBe(WRITTEN);
+    }
+  });
+
+  test("is the file's last write for any other line, or a reply or a result with no time that can be right", () => {
+    const others = [
+      { sort: "prompt" },
+      { sort: "tool" },
+      ask,
+      exit(false, at),
+      { sort: "unreadable" },
+      null,
+      reply(null),
+      result(NOW + CLOCK_SLACK_MS + 1),
+      reply(Date.UTC(2019, 0, 1)),
+    ] as const;
+    for (const newest of others) expect(judged({ newest, writtenAt: WRITTEN + 0.5 })).toBe(WRITTEN);
+  });
+
+  test("is none when the file's last write cannot be right", () => {
+    expect(judged({ writtenAt: null })).toBeNull();
+    expect(judged({ writtenAt: NOW + CLOCK_SLACK_MS + 1 })).toBeNull();
   });
 });
 

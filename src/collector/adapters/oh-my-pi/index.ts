@@ -1,6 +1,10 @@
 import os from "node:os";
 
-import { exitOf, ohMyPiStatusOf } from "../../../core/mapping/oh-my-pi/ohMyPiMapping.ts";
+import {
+  decidedAtOf,
+  exitOf,
+  ohMyPiStatusOf,
+} from "../../../core/mapping/oh-my-pi/ohMyPiMapping.ts";
 import type {
   Session,
   SourceCapabilities,
@@ -114,7 +118,7 @@ export const BASIS_WITHOUT_PROCESSES = "files-without-processes";
 
 /** Said whenever Oh My Pi is watched, because it is what a person would otherwise expect to see. */
 export const STATUS_NOTE =
-  "An Oh My Pi session shows as finished or failed once Oh My Pi writes, at a time that can be right, that it stopped, unless a turn it cut off ends on a tool's start, or on a reply or a result not written within 15 seconds of the stop, and on macOS and Linux as working while a turn is open and as needing you while its ask tool waits, while an omp that could have written it runs and it was written in the last 30 minutes, and as finished once no such program could still write it, by ps or since the computer started. Nothing it writes says a turn is over, so a session never shows as idle, and an approval it waits for is not written, so that shows as working. Anything else shows as unknown. No Oh My Pi program is run.";
+  "An Oh My Pi session shows as finished or failed once Oh My Pi writes, at a time that can be right, that it stopped, unless a tool's start follows the stop and the newest line is then a tool's start, or a reply or a result not written within 15 seconds of the stop, and on macOS and Linux as working while a turn is open and as needing you while its ask tool waits, while an omp that could have written it runs and it was written in the last 30 minutes, and as finished once no such program could still write it, by ps or since the computer started. Nothing it writes says a turn is over, so a session never shows as idle, and an approval it waits for is not written, so that shows as working. Anything else shows as unknown. No Oh My Pi program is run.";
 
 /** Said whenever Oh My Pi is watched, until the adapter has been checked on a computer running it. */
 export const UNCHECKED_NOTE =
@@ -518,22 +522,30 @@ export function createOhMyPiAdapter(options: OhMyPiAdapterOptions = {}): Adapter
       const writtenAt = plausibleTime(Math.floor(one.writtenAt), checkedAt);
       // By the same rule as its status: an exit cut off decides by the newest line's own time, never the file's last write.
       const exit = exitOf({ newest, behind, cutOff, now: checkedAt });
+      // A newest reply's or result's own time, so a rename another omp writes later backs nothing.
+      const decidedAt = decidedAtOf({
+        newest,
+        writtenAt,
+        startedAt: one.file.startedAt,
+        now: checkedAt,
+      });
       // Whether `ps` could change its status: not once Oh My Pi wrote that it stopped, nor when it was last written before the computer started.
       const settled =
         (exit !== null && plausibleTime(exit.at, checkedAt) !== null) ||
         dshWriter({
           platform,
-          writtenAt,
+          writtenAt: decidedAt,
           bootAt,
           answer: null,
           answerAt: 0,
           startFloor: clock.startFloor,
           lowAt: clock.lowAt,
         }) === "gone";
-      return { ...one, newest, behind, cutOff, writtenAt, settled };
+      return { ...one, newest, behind, cutOff, writtenAt, decidedAt, settled };
     });
 
     const unsettled = facts.filter(({ settled }) => !settled);
+    // Each file's own last write, never earlier than the time judged, so a write after an answer that listed no omp is asked about sooner, whatever line it adds.
     const answer =
       psRuns && unsettled.length > 0
         ? await asker.programsFor(
@@ -545,10 +557,10 @@ export function createOhMyPiAdapter(options: OhMyPiAdapterOptions = {}): Adapter
 
     let unread = false;
     let tooFar = false;
-    const sessions = facts.map(({ ref, file, newest, behind, cutOff, writtenAt }) => {
+    const sessions = facts.map(({ ref, file, newest, behind, cutOff, writtenAt, decidedAt }) => {
       const writer = dshWriter({
         platform,
-        writtenAt,
+        writtenAt: decidedAt,
         bootAt,
         answer,
         answerAt: asker.answerAt,
@@ -557,7 +569,16 @@ export function createOhMyPiAdapter(options: OhMyPiAdapterOptions = {}): Adapter
         startFloor: clock.startFloor,
         lowAt: clock.lowAt,
       });
-      const status = ohMyPiStatusOf({ newest, behind, cutOff, writtenAt, writer, now: checkedAt });
+      const { startedAt } = file;
+      const status = ohMyPiStatusOf({
+        newest,
+        behind,
+        cutOff,
+        writtenAt,
+        startedAt,
+        writer,
+        now: checkedAt,
+      });
       if (status.status === "unknown") {
         if (newest === null) tooFar = true;
         else if (newest.sort === "unreadable") unread = true;
