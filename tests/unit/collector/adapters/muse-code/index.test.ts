@@ -493,6 +493,38 @@ describe("a session's status, with a Muse Code that started before it was writte
     expect(ps.runs).toHaveLength(3);
   });
 
+  test("an approval that ended while ps could not say lends its time to no later one", async () => {
+    const clock = handClock();
+    const ps = standInPs([MUSE_LINE]);
+    const files = filesWith(
+      `${opening(OPENED)}${requested(RUN, ACTION, NOW - 3 * MINUTE, "human_pending")}`,
+    );
+    const adapter = museCodeAdapterFor(files, { now: clock.now, ps });
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "needs-you",
+      statusSince: NOW - 3 * MINUTE,
+    });
+    // Resumed, on a poll where ps cannot say: the log shows the approval closed.
+    appendLog(files, FILE, sessionResumed(NOW + SECOND), NOW + SECOND);
+    ps.own(false);
+    clock.advance(PROCESS_CHECK_MS);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("unknown");
+    // Recovery requests the same approval again.
+    ps.own(true);
+    appendLog(
+      files,
+      FILE,
+      requested(RUN, ACTION, NOW + 12 * SECOND, "human_pending"),
+      NOW + 12 * SECOND,
+    );
+    clock.advance(PROCESS_CHECK_MS);
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "needs-you",
+      statusSince: NOW + 12 * SECOND,
+    });
+    expect(ps.runs).toHaveLength(3);
+  });
+
   test("a session resumed after a crash never shows the dead turn as working or waiting", async () => {
     const text = [
       opening(OPENED),
