@@ -570,7 +570,8 @@ test("the way another machine read each of its sources is kept, so each is compa
     Array.from({ length: 70 }, (_, index) => [`remote:devbox:s${index}:`, "files"]),
   );
   const kept = readSource({ id: "remote:devbox", state: "ok", parts: many }, T)?.parts;
-  expect(Object.keys(kept ?? {})).toHaveLength(60);
+  // As many as the collector takes from one machine, `MAX_REMOTE_PARTS`.
+  expect(Object.keys(kept ?? {})).toHaveLength(61);
 });
 
 test("what a source can report is kept whole, or not at all, so no cell is a guess", () => {
