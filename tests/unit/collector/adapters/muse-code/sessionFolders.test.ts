@@ -1,3 +1,4 @@
+import path from "node:path";
 import { describe, expect, test } from "vitest";
 
 import { createSessionFinder, NotAFolderError } from "@collector/adapters/muse-code/sessionFolders";
@@ -172,7 +173,9 @@ describe("finding the logs", () => {
     writeLog(files, old, opening(NOW - 3 * DAY), NOW - 2 * DAY);
     const finder = finderOf(files, 2);
     expect((await found(finder)).paths).toEqual([logPath(ID(1)), logPath(ID(2))]);
-    expect((await found(finder, NOW + 2_000, new Set([logPath(ID(4)), old]))).paths).toEqual([
+    // As the finder writes them, as a poll's own refs give them.
+    const needed = new Set([path.normalize(logPath(ID(4))), path.normalize(old)]);
+    expect((await found(finder, NOW + 2_000, needed)).paths).toEqual([
       logPath(ID(1)),
       logPath(ID(2)),
       logPath(ID(4)),
@@ -297,10 +300,13 @@ describe("links and other things that are not folders or files", () => {
     for (const one of odd) writeLog(files, one, opening(NOW - HOUR));
     const folders = odd.map((one) => one.slice(0, one.lastIndexOf("/")));
     const finder = finderOf(files);
-    expect(await found(finder, NOW, new Set(odd))).toEqual({ paths: [], ids: [], link: false });
-    expect(files.calls.filter(({ path }) => folders.some((one) => path.startsWith(one)))).toEqual(
-      [],
-    );
+    const needed = new Set(odd.map((one) => path.normalize(one)));
+    expect(await found(finder, NOW, needed)).toEqual({ paths: [], ids: [], link: false });
+    expect(
+      files.calls.filter(({ path: called }) =>
+        folders.some((one) => asWritten(called).startsWith(one)),
+      ),
+    ).toEqual([]);
   });
 
   test("a missing log, as one being made, is looked up again on the next poll", async () => {
