@@ -44,6 +44,9 @@ import type { RunPs } from "../antigravity/cli/agyProcesses.ts";
  * own (`../oh-my-pi/index.ts`): `omp` and `.omp-wrapped` back a session as
  * the desktop app's names do here, and on macOS `bun` is one that may write
  * it, as `node` is here. So does when `ps` is asked (`createDshProcessAsker`).
+ * Muse Code's adapter does too (`../muse-code/index.ts`): `muse`, `muse.exe`
+ * and any name that begins `muse-` back a session, by `backingPrefix`, and no
+ * name may write one.
  */
 
 /** Each process's ID, when it started and the name it gives its program, and nothing else. */
@@ -60,11 +63,21 @@ export const DESKTOP_PROGRAMS: ReadonlySet<string> = new Set([
 /**
  * The names a table is read for: those of a program that backs a session,
  * as DeepSeek Harness's desktop app does, and those of one that may write
- * one, as any `node` may.
+ * one, as any `node` may. With `backingPrefix`, a name that begins with it
+ * and has more after it backs a session too, as Muse Code's running names
+ * differ between installs.
  */
 export interface DshNames {
   backing: ReadonlySet<string>;
+  backingPrefix?: string;
   maybe: ReadonlySet<string>;
+}
+
+/** Whether a program's name, without its folders, is one that backs a session. */
+export function backs(name: string, names: DshNames): boolean {
+  if (names.backing.has(name)) return true;
+  const prefix = names.backingPrefix;
+  return prefix !== undefined && name.length > prefix.length && name.startsWith(prefix);
 }
 
 /** DeepSeek Harness's names, which a table is read for when no others are given. */
@@ -80,7 +93,8 @@ export interface DshProgram {
   start: number | null;
   /**
    * Whether it is the desktop app: one of the backing names. For Oh My Pi
-   * it is a program named `omp` or `.omp-wrapped`.
+   * it is a program named `omp` or `.omp-wrapped`, and for Muse Code one
+   * named `muse`, `muse.exe` or beginning `muse-`.
    */
   desktop: boolean;
 }
@@ -105,7 +119,7 @@ export function dshInTable(
     }
     const program = match[3] as string;
     const name = program.slice(program.lastIndexOf("/") + 1);
-    const desktop = names.backing.has(name);
+    const desktop = backs(name, names);
     if (!desktop && !names.maybe.has(name)) continue;
     programs.push({ start: processStartTime(match[2] as string), desktop });
   }
@@ -290,7 +304,7 @@ export interface DshProcessAsker {
 }
 
 /**
- * What asks `ps` for DeepSeek Harness's adapter and Oh My Pi's, and keeps
+ * What asks `ps` for DeepSeek Harness's adapter, Oh My Pi's and Muse Code's, and keeps
  * its last answer, when it was asked and whether the clock had been set back,
  * with the earliest start of the computer worked out while it runs. It keeps
  * nothing on disk.
