@@ -132,16 +132,20 @@ export function folder(value: unknown, platform: NodeJS.Platform): string | null
  * The kept fields of a header, `"newer"` for one of a newer format, or null for
  * anything else: not a JSON object, or not a session's. A bad value in another
  * field is treated as none. `version` is missing from Pi's first format.
+ * `newest` is the newest format read, Pi's unless a caller names its own:
+ * Oh My Pi's adapter reads its header on the second line and passes Oh My
+ * Pi's (`../oh-my-pi/sessionFile.ts`).
  */
 export function parseHeader(
   line: string,
   platform: NodeJS.Platform,
+  newest: number = SESSION_VERSION,
 ): Omit<PiSessionFile, "ownName"> | "newer" | null {
   const value = parseLine(line);
   if (!isRecord(value) || value.type !== "session") return null;
   const { version, id } = value;
   if (version !== undefined && typeof version !== "number") return null;
-  if (typeof version === "number" && version > SESSION_VERSION) return "newer";
+  if (typeof version === "number" && version > newest) return "newer";
   if (typeof id !== "string" || !SESSION_ID.test(id)) return null;
   return { id, cwd: folder(value.cwd, platform), startedAt: timeOf(value.timestamp) };
 }

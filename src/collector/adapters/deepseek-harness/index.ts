@@ -16,7 +16,6 @@ import type {
   SourceHealth,
   SourceState,
 } from "../../../core/sessions/session.ts";
-import { WRITE_TIME_STEP_MS } from "../../../core/time.ts";
 import { tildify } from "../../files/paths.ts";
 import { isMissing, nodeIo, type ReadOnlyIo } from "../../files/readOnlyIo.ts";
 import { POLL_INTERVAL_MS } from "../../poller.ts";
@@ -29,18 +28,20 @@ import type { DeepseekHarnessHeader } from "./lines.ts";
 import { createLogFinder, NotAFolderError, type FoundLogs, type LogRef } from "./logFiles.ts";
 import { createDeepseekHarnessLogReader, type DeepseekHarnessLog } from "./logReader.ts";
 import {
+  createDshProcessAsker,
   createDshProcessReader,
   DSH_TABLE_ARGS,
   dshWriter,
   guardDshClock,
+  PROMPT_PROCESS_CHECK_MS,
   startDshClockGuard,
   usable,
-  type DshPrograms,
 } from "./processes.ts";
 import { deepseekHarnessSession, lastWriteOf, sessionIdOf, SOURCE_ID } from "./toSession.ts";
 import { zstdOf, type ZstdDecoder } from "./zstdFrames.ts";
 
 export { DEEPSEEK_HARNESS_HOME_ENV, DSH_HOME_ENV, deepseekHarnessSessionsDirFor } from "./home.ts";
+export { PROMPT_PROCESS_CHECK_MS } from "./processes.ts";
 export { SOURCE_ID } from "./toSession.ts";
 export { zstdOf } from "./zstdFrames.ts";
 
@@ -59,13 +60,6 @@ export const RECHECK_MS = 60_000;
 
 /** How often, at most, `ps` is asked which programs run, while a session's status depends on it. */
 export const PROCESS_CHECK_MS = 10_000;
-
-/**
- * How soon `ps` is asked again when a session is written after it showed no
- * `node` or DeepSeek Harness program, or up to 2 seconds before, as a disk can
- * keep a write's time rounded down, since one may have been started since.
- */
-export const PROMPT_PROCESS_CHECK_MS = 2_000;
 
 /** The most sessions shown, newest first. */
 export const MAX_SESSIONS = 200;
@@ -258,9 +252,6 @@ interface Family {
   children: { ref: LogRef; header: DeepseekHarnessHeader; log: DeepseekHarnessLog | null }[];
 }
 
-/** A log's identity, size and time, as a poll's `lstat` found them. */
-type LogStamp = Pick<LogRef["info"], "ino" | "size" | "mtimeMs">;
-
 /**
  * Finds DeepSeek Harness's sessions on this machine from the event logs it
  * keeps, with nothing installed, no setting changed and no program of
@@ -306,6 +297,11 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
     run: options.runPs ?? runPs,
     ownPid: options.ownPid ?? process.pid,
   });
+  /**
+   * When `ps` is asked, its last answer, and the earliest the computer's
+   * start has been worked out to be while this runs (`processes.ts`).
+   */
+  const asker = createDshProcessAsker({ processes, platform, processCheckMs, uptimeMs });
 
   const { sessionsDir, named, relativeHome } = deepseekHarnessHome(env, homeDir, platform);
   const sessionsName = tildify(sessionsDir, homeDir);
@@ -319,26 +315,8 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
 
   /** When the folder was last found missing. Null while it is there, or before the first look. */
   let absentAt: number | null = null;
-  /** What `ps` last said, null before it was first asked, and when it was asked. */
-  let lastAnswer: DshPrograms | null = null;
-  let answerAt = 0;
-  /** Whether that answer was asked because the clock was set back. */
-  let clockSetBack = false;
-  /**
-   * While it was, each log as the poll that asked it found it. Every write
-   * that poll saw came before `ps` was asked. A log changed since may have
-   * been written after, so a rounded write time is allowed for again.
-   */
-  const seenAtAsk = new Map<string, LogStamp>();
   /** What a clock set back keeps the start rule from finishing. */
   let clock = startDshClockGuard();
-  /**
-   * The earliest the computer's start has been worked out to be while this
-   * runs, as the clock less `os.uptime()`, or null before then. Both count
-   * sleep, so it moves only when the clock is set, by as much, and a clock
-   * set forward cannot move it past writes made before then.
-   */
-  let bootFloor: number | null = null;
   /** Each session's wait on the last poll, so a wait that goes on keeps its time. */
   let waits = new Map<string, DeepseekHarnessWait>();
 
@@ -390,54 +368,6 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
       `DeepSeek Harness was not found: there is no ${sessionsName} folder. Agent Lookout looks again ${every(recheckMs)}.${homeNote}`,
       "not found",
       checkedAt,
-    );
-  }
-
-  /**
-   * What `ps` says, asked again when it is due: every 10 seconds, and sooner,
-   * though not within 2 seconds of the last ask, when a session was written
-   * after an answer that listed no `node` or DeepSeek Harness program, or up
-   * to 2 seconds before, as a disk can keep a write's time rounded down. A
-   * clock set back counts as time enough. When it is asked because the clock
-   * was set back, each log this poll found is kept as it was found.
-   */
-  async function programsFor(
-    checkedAt: number,
-    writes: readonly (number | null)[],
-    logs: readonly LogRef[],
-  ): Promise<DshPrograms> {
-    const since = checkedAt - answerAt;
-    let due = lastAnswer === null || since < 0 || since >= processCheckMs;
-    if (
-      !due &&
-      since >= PROMPT_PROCESS_CHECK_MS &&
-      usable(lastAnswer) &&
-      lastAnswer.programs.length === 0
-    ) {
-      due = writes.some((at) => at !== null && at + WRITE_TIME_STEP_MS > answerAt);
-    }
-    if (lastAnswer === null || due) {
-      clockSetBack = since < 0;
-      seenAtAsk.clear();
-      if (clockSetBack) {
-        for (const { path: file, info } of logs) {
-          seenAtAsk.set(file, { ino: info.ino, size: info.size, mtimeMs: info.mtimeMs });
-        }
-      }
-      lastAnswer = await processes.read();
-      answerAt = checkedAt;
-    }
-    return lastAnswer;
-  }
-
-  /** Whether a log is as the poll that asked the answer in use found it, once the clock was set back. */
-  function asAsked(ref: LogRef): boolean {
-    const seen = seenAtAsk.get(ref.path);
-    return (
-      seen !== undefined &&
-      seen.ino === ref.info.ino &&
-      seen.size === ref.info.size &&
-      seen.mtimeMs === ref.info.mtimeMs
     );
   }
 
@@ -534,7 +464,7 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
   const alwaysNotes = `${STATUS_NOTE} ${UNCHECKED_NOTE}`;
 
   /** Whether the last answer of `ps`, which this poll may not have asked, could not say which programs run. */
-  const psCannotSay = () => lastAnswer !== null && !usable(lastAnswer);
+  const psCannotSay = () => asker.lastAnswer !== null && !usable(asker.lastAnswer);
 
   function zstdNote(compressed: number): string {
     if (zstd !== null) return "";
@@ -601,11 +531,7 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
     for (const newer of found.newer) if (newer.current !== null) keep.add(newer.current);
     reader.keepOnly(keep);
 
-    if (psRuns) {
-      const seen = checkedAt - uptimeMs();
-      if (Number.isFinite(seen) && (bootFloor === null || seen < bootFloor)) bootFloor = seen;
-    }
-    const bootAt = psRuns ? bootFloor : null;
+    const bootAt = asker.bootAt(checkedAt);
     const facts = families.map((family) => {
       const { header } = family;
       const own: DeepseekHarnessTurn | null =
@@ -662,7 +588,7 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
     const unsettled = facts.filter(({ settled }) => !settled);
     const answer =
       psRuns && unsettled.length > 0
-        ? await programsFor(
+        ? await asker.programsFor(
             checkedAt,
             unsettled.map(({ writtenAt }) => writtenAt),
             found.logs,
@@ -679,22 +605,22 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
           writtenAt: at,
           bootAt,
           answer,
-          answerAt,
+          answerAt: asker.answerAt,
           // A log changed since that answer was asked may have been written after it.
-          clockSetBack: clockSetBack && asked,
+          clockSetBack: asker.clockSetBack && asked,
           startFloor: clock.startFloor,
           lowAt: clock.lowAt,
         });
       const unchanged =
         family.ref !== null &&
-        asAsked(family.ref) &&
-        family.children.every(({ ref }) => asAsked(ref));
+        asker.asAsked(family.ref) &&
+        family.children.every(({ ref }) => asker.asAsked(ref));
       const seen = writerOf(writtenAt, unchanged);
       const writer = anyUnknown && seen === "gone" ? "maybe" : seen;
       // Each subagent's by its own last write, as reopening a session reopens none of them.
       const judged = children.map(({ ref, ...child }) => ({
         ...child,
-        writer: writerOf(child.writtenAt, asAsked(ref)),
+        writer: writerOf(child.writtenAt, asker.asAsked(ref)),
       }));
       const status = deepseekHarnessStatusOf({
         own,

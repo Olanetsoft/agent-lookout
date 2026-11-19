@@ -57,6 +57,9 @@ export type RemoteSourceId = `remote:${string}`;
  * `grok-build` is SpaceXAI's Grok Build, in its terminal app `grok`, whose
  * sessions are read from the list of open sessions it keeps and the event log
  * it keeps for each.
+ * `oh-my-pi` is Oh My Pi, in its command `omp`, whose sessions are read from
+ * the title slot, the header and the newest lines of the file it keeps for
+ * each.
  */
 export type SourceId =
   | "claude-code"
@@ -84,6 +87,7 @@ export type SourceId =
   | "deepseek-harness"
   | "droid"
   | "grok-build"
+  | "oh-my-pi"
   | "status-files"
   | RemoteSourceId;
 

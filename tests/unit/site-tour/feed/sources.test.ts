@@ -19,6 +19,7 @@ import { GEMINI_CLI_CAPABILITIES } from "@collector/adapters/gemini-cli/index";
 import { GOOSE_CAPABILITIES } from "@collector/adapters/goose/index";
 import { GROK_BUILD_CAPABILITIES } from "@collector/adapters/grok-build/index";
 import { HERMES_AGENT_CAPABILITIES } from "@collector/adapters/hermes-agent/index";
+import { OH_MY_PI_CAPABILITIES } from "@collector/adapters/oh-my-pi/index";
 import { KILO_CODE_CAPABILITIES } from "@collector/adapters/kilo-code/index";
 import { KIMCHI_CAPABILITIES } from "@collector/adapters/kimchi/index";
 import { KIMI_CODE_CAPABILITIES } from "@collector/adapters/kimi-code/index";
@@ -61,6 +62,10 @@ import {
   memoryFiles as grokBuildFiles,
 } from "@tests/support/adapters/grok-build/grokBuildAdapter";
 import { kimiCodeAdapterFor } from "@tests/support/adapters/kimi-code/kimiCodeAdapter";
+import {
+  memoryFiles as ohMyPiFiles,
+  ohMyPiAdapterFor,
+} from "@tests/support/adapters/oh-my-pi/ohMyPiAdapter";
 import { mimoCodeAdapterFor } from "@tests/support/adapters/mimo-code/mimoCodeAdapter";
 import { vibeAdapterFor } from "@tests/support/adapters/mistralVibeAdapter";
 import { opencodeAdapterFor } from "@tests/support/adapters/opencodeAdapter";
@@ -117,6 +122,7 @@ test("each source says what its agent can report in its adapter's own words", ()
   expect(tour.DEEPSEEK_HARNESS_CAPABILITIES).toEqual(DEEPSEEK_HARNESS_CAPABILITIES);
   expect(tour.DROID_CAPABILITIES).toEqual(DROID_CAPABILITIES);
   expect(tour.GROK_BUILD_CAPABILITIES).toEqual(GROK_BUILD_CAPABILITIES);
+  expect(tour.OH_MY_PI_CAPABILITIES).toEqual(OH_MY_PI_CAPABILITIES);
   expect(tour.STATUS_FILE_CAPABILITIES).toEqual(STATUS_FILE_CAPABILITIES);
 });
 
@@ -148,6 +154,7 @@ test("this computer's sources come in the collector's order", () => {
     "deepseek-harness",
     "droid",
     "grok-build",
+    "oh-my-pi",
     "status-files",
   ]);
 });
@@ -467,6 +474,18 @@ test("Grok Build's card is the one its adapter shows on a Mac with tmux and with
   expect(sessions).toEqual([]);
 });
 
+test("Oh My Pi's card is the one its adapter shows on a Mac without it", async () => {
+  const adapter = ohMyPiAdapterFor(ohMyPiFiles());
+  const { health, sessions } = await adapter.poll();
+  const { capabilities, ...card } = tour
+    .sourcesAt(0, 1, "0.2.6")
+    .find((source) => source.id === "oh-my-pi")!;
+  // The poller adds what the adapter can report to each health it gives.
+  expect(card).toEqual({ ...health, checkedAt: card.checkedAt });
+  expect(capabilities).toEqual(adapter.capabilities);
+  expect(sessions).toEqual([]);
+});
+
 test("Kimi Code's card is the one its adapter shows on a computer without it", async () => {
   const adapter = kimiCodeAdapterFor(memoryFiles());
   const { health, sessions } = await adapter.poll();
@@ -641,6 +660,12 @@ test("the other machine's agents and its row for each source are what this compu
           capabilities: GROK_BUILD_CAPABILITIES,
         },
         {
+          id: "oh-my-pi",
+          label: "Oh My Pi",
+          state: "unavailable",
+          capabilities: OH_MY_PI_CAPABILITIES,
+        },
+        {
           id: "status-files",
           label: "Status files",
           state: "not-set-up",
@@ -679,7 +704,7 @@ test("the other machine's card names the ssh command the tunnel runs, as it runs
  * soon as it changes, so it names an agent at the release that ships it, and
  * the agent leaves this list then.
  */
-const NOT_ON_THE_PAGE_YET = new Set<string>();
+const NOT_ON_THE_PAGE_YET = new Set<string>(["Oh My Pi"]);
 
 test("the page's Works with names every agent the tour's Sources reads", () => {
   const works = /<div class="works">([\s\S]*?)<\/div\s*>/.exec(page)?.[1] ?? "";

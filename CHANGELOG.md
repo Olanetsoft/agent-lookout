@@ -4,6 +4,10 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 ## Unreleased
 
+### Added
+
+- Oh My Pi sessions, from its command `omp`, read from the file Oh My Pi keeps for each in `~/.omp/agent/sessions`, or the folder its profiles, `PI_CODING_AGENT_DIR`, `PI_CODING_AGENT_SESSION_DIR`, `PI_CONFIG_DIR`, `XDG_DATA_HOME` or `AGENT_LOOKOUT_OMP_HOME` give: its title slot, its header and its newest lines, as bytes. Each shows as finished or failed once Oh My Pi writes that it stopped, unless a prompt follows the stop, as in a resumed session, or a tool's start follows it and the newest line is then a tool's start, or a reply or a result not written within 15 seconds of the stop, and on macOS and Linux as working while a turn is open, as needing you while its `ask` tool waits, and as finished once `ps` shows no `omp` that could have written it. On a Mac, an `omp` installed with `bun install -g` runs as `bun`, which `ps` cannot tell from any other `bun`, so its sessions do not show as working or needing you, and while any `bun` runs, a session Oh My Pi did not write that it stopped can show as unknown instead of finished. Idle never shows, and a wait for a tool's approval shows as working. It takes the title you or a model gave it, but not a model's in a session Oh My Pi made from a Codex session, else its folder's name. No Oh My Pi program is run and no lock of Oh My Pi's is taken or tried. Built from Oh My Pi's source at v19.0.0, and not yet checked on a computer running it (#35).
+
 ### Fixed
 
 - In a Gemini CLI session longer than the 256 KB Last message reads, it no longer takes an older reply for the newest once a tool ends. Gemini CLI 0.69.0 then writes again the reply that called the tool, found by its calls' ids, and in the IDE mode that speaks ACP, or with one session open in two Gemini CLIs, newer replies can come before that. In the IDE mode, once Gemini CLI has compressed the session, it writes an older reply again instead. When the end that is read cannot tell where that reply stands, the details now say its last message is further back than that, until the session replies again. (#373)

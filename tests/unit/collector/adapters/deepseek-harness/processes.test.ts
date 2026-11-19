@@ -16,6 +16,14 @@ import {
   psLine,
   standInPs,
 } from "@tests/support/adapters/deepseek-harness/deepseekHarnessAdapter";
+import {
+  createDshProcessAsker,
+  DESKTOP_PROGRAMS,
+  DSH_NAMES,
+  NODE_PROGRAMS,
+  PROMPT_PROCESS_CHECK_MS,
+  type DshProcessReader,
+} from "@collector/adapters/deepseek-harness/processes";
 
 const WRITTEN = NOW - 5 * MINUTE;
 
@@ -267,3 +275,159 @@ describe("the clock guard", () => {
     });
   });
 });
+
+describe("the names a table is read for", () => {
+  test("are DeepSeek Harness's when none are given", async () => {
+    expect(DSH_NAMES).toEqual({ backing: DESKTOP_PROGRAMS, maybe: NODE_PROGRAMS });
+    const lines = [psLine(OWN_PID, NOW, "node"), psLine(11, NOW - MINUTE, "DeepSeek Harness")];
+    expect(dshInTable(lines.join("\n"), OWN_PID)).toEqual(
+      dshInTable(lines.join("\n"), OWN_PID, DSH_NAMES),
+    );
+  });
+
+  test("can be another agent's, backing and maybe alike", async () => {
+    const names = { backing: new Set(["omp"]), maybe: new Set(["bun"]) };
+    const lines = [
+      psLine(OWN_PID, NOW, "node"),
+      psLine(11, NOW - MINUTE, "/usr/local/bin/omp"),
+      psLine(12, NOW - 2 * MINUTE, "bun"),
+      psLine(13, NOW - 3 * MINUTE, "DeepSeek Harness"),
+      psLine(14, NOW - 4 * MINUTE, "omp daemon"),
+    ];
+    expect(dshInTable(lines.join("\n"), OWN_PID, names)).toEqual({
+      ok: true,
+      ownListed: true,
+      programs: [
+        { start: NOW - MINUTE, desktop: true },
+        { start: NOW - 2 * MINUTE, desktop: false },
+      ],
+    });
+    const ps = standInPs([psLine(11, NOW - MINUTE, "omp")]);
+    const read = await createDshProcessReader({
+      platform: "darwin",
+      run: ps.run,
+      ownPid: OWN_PID,
+      names,
+    }).read();
+    expect(read).toMatchObject({ ok: true, programs: [{ desktop: true }] });
+  });
+});
+
+describe("when ps is asked, as DeepSeek Harness's and Oh My Pi's adapters ask it", () => {
+  const STEP = 10 * SECOND;
+
+  /** A reader that answers what a test sets and counts its runs. */
+  function standIn(initial: DshPrograms) {
+    let answer = initial;
+    const asked = { count: 0 };
+    const processes: DshProcessReader = {
+      async read() {
+        asked.count += 1;
+        return answer;
+      },
+    };
+    return { processes, asked, set: (next: DshPrograms) => (answer = next) };
+  }
+
+  const none: DshPrograms = { ok: true, ownListed: true, programs: [] };
+  const one: DshPrograms = {
+    ok: true,
+    ownListed: true,
+    programs: [{ start: NOW - MINUTE, desktop: true }],
+  };
+  const file = (mtimeMs: number) => ({ path: "/x/a.jsonl", info: { ino: 1, size: 10, mtimeMs } });
+
+  function askerOf(
+    initial: DshPrograms,
+    platform: NodeJS.Platform = "darwin",
+    uptimeMs = () => MINUTE,
+  ) {
+    const reader = standIn(initial);
+    return {
+      ...reader,
+      asker: createDshProcessAsker({
+        processes: reader.processes,
+        platform,
+        processCheckMs: STEP,
+        uptimeMs,
+      }),
+    };
+  }
+
+  test("asks at the first poll, then every 10 seconds, keeping the answer and when it was asked", async () => {
+    const { asker, asked } = askerOf(one);
+    expect(asker.lastAnswer).toBeNull();
+    expect(await asker.programsFor(NOW, [NOW - MINUTE], [])).toBe(one);
+    expect(asker).toMatchObject({ lastAnswer: one, answerAt: NOW, clockSetBack: false });
+    await asker.programsFor(NOW + STEP - 1, [NOW + STEP - 2], []);
+    expect(asked.count).toBe(1);
+    await asker.programsFor(NOW + STEP, [], []);
+    expect(asked.count).toBe(2);
+    expect(asker.answerAt).toBe(NOW + STEP);
+  });
+
+  test("asks sooner, not within 2 seconds, for a write after, or up to 2 seconds before, an answer that listed none", async () => {
+    const { asker, asked } = askerOf(none);
+    await asker.programsFor(NOW, [NOW - MINUTE], []);
+    // A write 2 seconds or more before the answer was seen by it.
+    await asker.programsFor(
+      NOW + PROMPT_PROCESS_CHECK_MS,
+      [NOW - PROMPT_PROCESS_CHECK_MS, null],
+      [],
+    );
+    expect(asked.count).toBe(1);
+    await asker.programsFor(NOW + PROMPT_PROCESS_CHECK_MS - 1, [NOW + SECOND], []);
+    expect(asked.count).toBe(1);
+    await asker.programsFor(NOW + PROMPT_PROCESS_CHECK_MS, [NOW - PROMPT_PROCESS_CHECK_MS + 1], []);
+    expect(asked.count).toBe(2);
+  });
+
+  test("not sooner after an answer that listed a program, or that cannot be trusted", async () => {
+    for (const answer of [
+      one,
+      { ok: false } as const,
+      { ok: true, ownListed: false, programs: [] },
+    ]) {
+      const { asker, asked } = askerOf(answer);
+      await asker.programsFor(NOW, [], []);
+      await asker.programsFor(NOW + 3 * SECOND, [NOW + 2 * SECOND], []);
+      expect(asked.count).toBe(1);
+    }
+  });
+
+  test("a clock set back asks again and keeps each file as that poll found it, until the next ask", async () => {
+    const { asker, asked } = askerOf(none);
+    await asker.programsFor(NOW, [], [file(NOW - MINUTE)]);
+    expect(asker.asAsked(file(NOW - MINUTE))).toBe(false);
+    await asker.programsFor(NOW - HOUR_MS, [], [file(NOW - MINUTE)]);
+    expect(asked.count).toBe(2);
+    expect(asker.clockSetBack).toBe(true);
+    expect(asker.asAsked(file(NOW - MINUTE))).toBe(true);
+    expect(asker.asAsked(file(NOW - MINUTE + 1))).toBe(false);
+    expect(asker.asAsked({ ...file(NOW - MINUTE), path: "/x/b.jsonl" })).toBe(false);
+    await asker.programsFor(NOW - HOUR_MS + STEP, [], [file(NOW - MINUTE)]);
+    expect(asker.clockSetBack).toBe(false);
+    expect(asker.asAsked(file(NOW - MINUTE))).toBe(false);
+  });
+
+  test("keeps the computer's start at the earliest worked out, and has none where ps is not asked", () => {
+    let uptime = HOUR_MS;
+    const { asker } = askerOf(none, "linux", () => uptime);
+    expect(asker.bootAt(NOW)).toBe(NOW - HOUR_MS);
+    uptime = 0;
+    expect(asker.bootAt(NOW)).toBe(NOW - HOUR_MS);
+    uptime = 2 * HOUR_MS;
+    expect(asker.bootAt(NOW)).toBe(NOW - 2 * HOUR_MS);
+    uptime = Number.NaN;
+    expect(asker.bootAt(NOW)).toBe(NOW - 2 * HOUR_MS);
+    let looked = 0;
+    const windows = askerOf(none, "win32", () => {
+      looked += 1;
+      return 0;
+    });
+    expect(windows.asker.bootAt(NOW)).toBeNull();
+    expect(looked).toBe(0);
+  });
+});
+
+const HOUR_MS = 60 * MINUTE;

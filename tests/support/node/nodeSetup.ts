@@ -26,6 +26,7 @@ import {
   EMPTY_FX_HOME,
   EMPTY_GOOSE_HOME,
   EMPTY_GROK_HOME,
+  EMPTY_OMP_HOME,
   EMPTY_PI_HOME,
   EMPTY_GEMINI_CLI_HOME,
   EMPTY_HERMES_HOME,
@@ -233,6 +234,17 @@ process.env.AGENT_LOOKOUT_DROID_HOME = EMPTY_DROID_HOME;
 mkdirSync(path.join(EMPTY_GROK_HOME, "sessions"), { recursive: true });
 process.env.AGENT_LOOKOUT_GROK_HOME = EMPTY_GROK_HOME;
 delete process.env.GROK_HOME;
+
+// Nor Oh My Pi's, in `~/.omp/agent` or the folders its profiles, `PI_CONFIG_DIR`
+// and `XDG_DATA_HOME` give: the adapter is pointed at an empty folder, which wins
+// over all of them, and the profile and folder variables of Oh My Pi's own are
+// dropped. Pi's, which Oh My Pi reads too, are dropped above. A test of the
+// adapter names a folder of its own.
+mkdirSync(path.join(EMPTY_OMP_HOME, "sessions"), { recursive: true });
+process.env.AGENT_LOOKOUT_OMP_HOME = EMPTY_OMP_HOME;
+delete process.env.OMP_PROFILE;
+delete process.env.PI_PROFILE;
+delete process.env.PI_CONFIG_DIR;
 
 // And `os.homedir()` is an empty folder, never the home of the person running
 // the tests, so a collector whose environment forgets to name a folder of an

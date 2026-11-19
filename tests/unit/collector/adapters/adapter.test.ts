@@ -93,6 +93,8 @@ import {
   grokBuildSession,
   withJump as grokBuildJump,
 } from "@collector/adapters/grok-build/toSession";
+import { createOhMyPiAdapter, OH_MY_PI_CAPABILITIES } from "@collector/adapters/oh-my-pi/index";
+import { ohMyPiSession } from "@collector/adapters/oh-my-pi/toSession";
 import { createPiAdapter, PI_CAPABILITIES } from "@collector/adapters/pi/index";
 import { piSession } from "@collector/adapters/pi/toSession";
 import {
@@ -120,6 +122,7 @@ import { emptyGrokBuildTurn, mapGrokBuildStatus } from "@core/mapping/grok-build
 import { mapFxStatus } from "@core/mapping/fx/fxMapping";
 import { mapGooseStatus } from "@core/mapping/goose/gooseMapping";
 import { mapKimiCodeStatus } from "@core/mapping/kimi-code/kimiCodeMapping";
+import { ohMyPiStatusOf, type OhMyPiFacts } from "@core/mapping/oh-my-pi/ohMyPiMapping";
 import { mapCodexStatus } from "@core/mapping/codexMapping";
 import {
   ENVIRONMENT_CONTEXT_ID,
@@ -191,6 +194,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["DeepSeek Harness", DEEPSEEK_HARNESS_CAPABILITIES],
   ["Droid", DROID_CAPABILITIES],
   ["Grok Build", GROK_BUILD_CAPABILITIES],
+  ["Oh My Pi", OH_MY_PI_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -305,6 +309,9 @@ test("each adapter carries its own declaration, for the poller to pass on", () =
     expect(
       createGrokBuildAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
     ).toBe(GROK_BUILD_CAPABILITIES);
+    expect(
+      createOhMyPiAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
+    ).toBe(OH_MY_PI_CAPABILITIES);
   }
   expect(createMistralVibeAdapter({ env: {}, homeDir: home, io: files.io }).capabilities).toBe(
     MISTRAL_VIBE_CAPABILITIES,
@@ -1313,6 +1320,74 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(GROK_BUILD_CAPABILITIES.jump.level).toBe("partly");
     expect(GROK_BUILD_CAPABILITIES.stop.level).toBe("no");
     expect(GROK_BUILD_CAPABILITIES.answer.level).toBe("no");
+  });
+
+  test("Oh My Pi: a session is working, needs you for a question, finished, failed or unknown, and never idle", () => {
+    const facts = (fields: Partial<OhMyPiFacts>): OhMyPiFacts => ({
+      newest: { sort: "prompt" },
+      behind: null,
+      cutOff: null,
+      writtenAt: NOW - 1_000,
+      startedAt: NOW - 60_000,
+      writer: "backed",
+      now: NOW,
+      ...fields,
+    });
+    const mapped = [
+      facts({}),
+      facts({ newest: { sort: "ask", at: NOW - 5_000 } }),
+      facts({ newest: { sort: "exit", fatal: false, at: NOW - 5_000 } }),
+      facts({
+        newest: { sort: "reply", at: NOW - 1_000 },
+        behind: { sort: "exit", fatal: true, at: NOW - 5_000 },
+      }),
+      facts({ newest: { sort: "reply", at: NOW - 1_000 } }),
+      facts({ newest: { sort: "unreadable" } }),
+      facts({ newest: null }),
+      facts({ writer: "gone" }),
+      facts({ writer: "maybe" }),
+    ].map((given) => ohMyPiStatusOf(given));
+    expect(statuses(mapped.map((status) => status.status))).toEqual(
+      new Set(["working", "needs-you", "finished", "failed", "unknown"]),
+    );
+    expect(new Set(mapped.flatMap((status) => status.waitingReason ?? []))).toEqual(
+      new Set(["question"]),
+    );
+    expect(OH_MY_PI_CAPABILITIES["working-and-idle"].level).toBe("partly");
+    expect(OH_MY_PI_CAPABILITIES["needs-you"].level).toBe("partly");
+    expect(OH_MY_PI_CAPABILITIES.failed.level).toBe("partly");
+    expect(OH_MY_PI_CAPABILITIES.finished.level).toBe("partly");
+  });
+
+  test("Oh My Pi: a session has its title or folder's name and its last write while it works, and no tokens, jump, stop or link", () => {
+    const session = ohMyPiSession({
+      file: {
+        id: "019a9a00-0000-7000-8000-000000000001",
+        cwd: "/Users/example/code/demo",
+        startedAt: NOW - 60_000,
+        title: null,
+        tail: { state: "ok", newest: { sort: "prompt" }, behind: null, cutOff: null },
+      },
+      status: { status: "working", since: null, showsLastWrite: true },
+      writtenAt: NOW - 1_000,
+      now: NOW,
+    });
+    expect(session).toMatchObject({
+      id: "oh-my-pi:019a9a00-0000-7000-8000-000000000001",
+      source: "oh-my-pi",
+      name: "demo",
+      lastWriteAt: NOW - 1_000,
+    });
+    for (const absent of ["tokens", "stop", "ask", "waitingText", "jump", "pid"]) {
+      expect(session, absent).not.toHaveProperty(absent);
+    }
+    expect(session.links).toEqual({});
+    expect(OH_MY_PI_CAPABILITIES.names.level).toBe("partly");
+    expect(OH_MY_PI_CAPABILITIES["quiet-for"].level).toBe("partly");
+    expect(OH_MY_PI_CAPABILITIES.tokens.level).toBe("no");
+    expect(OH_MY_PI_CAPABILITIES.jump.level).toBe("no");
+    expect(OH_MY_PI_CAPABILITIES.stop.level).toBe("no");
+    expect(OH_MY_PI_CAPABILITIES.answer.level).toBe("no");
   });
 
   test("Prime Agent: a session is working, idle, finished or unknown, and never waiting or failed", () => {

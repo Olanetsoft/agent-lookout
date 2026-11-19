@@ -1,5 +1,6 @@
 import type { DeepseekHarnessWriter } from "../../../core/mapping/deepseek-harness/deepseekHarnessMapping.ts";
 import { WRITE_TIME_STEP_MS } from "../../../core/time.ts";
+import type { FileInfo } from "../../files/readOnlyIo.ts";
 import { processStartTime, SAME_START_WITHIN_MS } from "../../processes/processStart.ts";
 import type { RunPs } from "../antigravity/cli/agyProcesses.ts";
 
@@ -38,6 +39,11 @@ import type { RunPs } from "../antigravity/cli/agyProcesses.ts";
  * app's, is kept, and the rest is dropped. The rest of a process's
  * arguments, its owner and its environment are never asked for. It is run on
  * macOS and Linux only.
+ *
+ * Oh My Pi's adapter asks and judges `ps` with this too, with names of its
+ * own (`../oh-my-pi/index.ts`): `omp` and `.omp-wrapped` back a session as
+ * the desktop app's names do here, and on macOS `bun` is one that may write
+ * it, as `node` is here. So does when `ps` is asked (`createDshProcessAsker`).
  */
 
 /** Each process's ID, when it started and the name it gives its program, and nothing else. */
@@ -51,6 +57,19 @@ export const DESKTOP_PROGRAMS: ReadonlySet<string> = new Set([
   "@deepseek-aidsh",
 ]);
 
+/**
+ * The names a table is read for: those of a program that backs a session,
+ * as DeepSeek Harness's desktop app does, and those of one that may write
+ * one, as any `node` may.
+ */
+export interface DshNames {
+  backing: ReadonlySet<string>;
+  maybe: ReadonlySet<string>;
+}
+
+/** DeepSeek Harness's names, which a table is read for when no others are given. */
+export const DSH_NAMES: DshNames = { backing: DESKTOP_PROGRAMS, maybe: NODE_PROGRAMS };
+
 /** A line of the table: pid, `lstart` (five words) and the program, which can hold spaces. */
 const TABLE_LINE =
   /^\s*(\d+)\s+([A-Z][a-z]{2}\s+[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4})\s+(\S.*?)\s*$/;
@@ -59,7 +78,10 @@ const TABLE_LINE =
 export interface DshProgram {
   /** When it started, or null when that cannot be read. */
   start: number | null;
-  /** Whether it is the desktop app. */
+  /**
+   * Whether it is the desktop app: one of the backing names. For Oh My Pi
+   * it is a program named `omp` or `.omp-wrapped`.
+   */
   desktop: boolean;
 }
 
@@ -67,7 +89,11 @@ export interface DshProgram {
 export type DshPrograms = { ok: false } | { ok: true; ownListed: boolean; programs: DshProgram[] };
 
 /** Every program of these names in what `ps -A -o pid=,lstart=,comm=` printed, but Agent Lookout's own. */
-export function dshInTable(stdout: string, ownPid: number): DshPrograms {
+export function dshInTable(
+  stdout: string,
+  ownPid: number,
+  names: DshNames = DSH_NAMES,
+): DshPrograms {
   const programs: DshProgram[] = [];
   let ownListed = false;
   for (const line of stdout.split("\n")) {
@@ -79,8 +105,8 @@ export function dshInTable(stdout: string, ownPid: number): DshPrograms {
     }
     const program = match[3] as string;
     const name = program.slice(program.lastIndexOf("/") + 1);
-    const desktop = DESKTOP_PROGRAMS.has(name);
-    if (!desktop && !NODE_PROGRAMS.has(name)) continue;
+    const desktop = names.backing.has(name);
+    if (!desktop && !names.maybe.has(name)) continue;
     programs.push({ start: processStartTime(match[2] as string), desktop });
   }
   return { ok: true, ownListed, programs };
@@ -95,14 +121,17 @@ export function createDshProcessReader(options: {
   platform: NodeJS.Platform;
   run: RunPs;
   ownPid: number;
+  /** The names looked for. Defaults to DeepSeek Harness's. */
+  names?: DshNames;
 }): DshProcessReader {
   const { platform, run, ownPid } = options;
+  const names = options.names ?? DSH_NAMES;
   return {
     async read() {
       if (platform !== "darwin" && platform !== "linux") return { ok: false };
       try {
         const table = await run(DSH_TABLE_ARGS, { utc: true });
-        return table.ok ? dshInTable(table.stdout, ownPid) : { ok: false };
+        return table.ok ? dshInTable(table.stdout, ownPid, names) : { ok: false };
       } catch {
         return { ok: false };
       }
@@ -210,4 +239,131 @@ export function dshWriter(input: WriterInput): DeepseekHarnessWriter {
     answer.programs.length === 0 || writtenAt >= startFloor || writtenAt < lowAt;
   if (answerAt >= writtenAt + step && before.length === 0 && startsTrusted) return "gone";
   return before.some(({ desktop }) => desktop) ? "backed" : "maybe";
+}
+
+/**
+ * How soon `ps` is asked again when a session is written after it showed no
+ * program of the names looked for, or up to 2 seconds before, as a disk can
+ * keep a write's time rounded down, since one may have been started since.
+ */
+export const PROMPT_PROCESS_CHECK_MS = 2_000;
+
+/** A file as a poll found it, by its `lstat` or as it was read: where it is, and its identity, size and time. */
+export interface StampedFile {
+  path: string;
+  info: Pick<FileInfo, "ino" | "size" | "mtimeMs">;
+}
+
+/** When `ps` is asked, and what is kept of its last answer, from one poll to the next. */
+export interface DshProcessAsker {
+  /**
+   * What `ps` says, asked again when it is due: every `processCheckMs`, and
+   * sooner, though not within 2 seconds of the last ask, when a session was
+   * written after an answer that listed no program of the names looked for,
+   * or up to 2 seconds before, as a disk can keep a write's time rounded
+   * down. A clock set back counts as time enough. When it is asked because
+   * the clock was set back, each file this poll found is kept as it was
+   * found. `writes` are the last writes of the sessions `ps` could change,
+   * null for one whose time cannot be right.
+   */
+  programsFor(
+    checkedAt: number,
+    writes: readonly (number | null)[],
+    files: readonly StampedFile[],
+  ): Promise<DshPrograms>;
+  /** Whether a file is as the poll that asked the answer in use found it, once the clock was set back. */
+  asAsked(file: StampedFile): boolean;
+  /**
+   * When the computer started, the earliest worked out while this runs, after
+   * one more look on this poll: the clock less `uptimeMs()`. Both count sleep,
+   * so it moves only when the clock is set, by as much, and a clock set
+   * forward cannot move it past writes made before then. Null where `ps` is
+   * not asked, on a system other than macOS and Linux.
+   */
+  bootAt(checkedAt: number): number | null;
+  /** What `ps` last said, null before it was first asked. */
+  readonly lastAnswer: DshPrograms | null;
+  /** When that answer was asked. */
+  readonly answerAt: number;
+  /** Whether that answer was asked because the clock was set back. */
+  readonly clockSetBack: boolean;
+}
+
+/**
+ * What asks `ps` for DeepSeek Harness's adapter and Oh My Pi's, and keeps
+ * its last answer, when it was asked and whether the clock had been set back,
+ * with the earliest start of the computer worked out while it runs. It keeps
+ * nothing on disk.
+ */
+export function createDshProcessAsker(options: {
+  processes: DshProcessReader;
+  platform: NodeJS.Platform;
+  /** How often, at most, `ps` is asked. */
+  processCheckMs: number;
+  /** How long the computer has been on, in milliseconds. */
+  uptimeMs: () => number;
+}): DshProcessAsker {
+  const { processes, platform, processCheckMs, uptimeMs } = options;
+  const psRuns = platform === "darwin" || platform === "linux";
+  let lastAnswer: DshPrograms | null = null;
+  let answerAt = 0;
+  let clockSetBack = false;
+  /**
+   * While it was, each file as the poll that asked it found it. Every write
+   * that poll saw came before `ps` was asked. A file changed since may have
+   * been written after, so a rounded write time is allowed for again.
+   */
+  const seenAtAsk = new Map<string, StampedFile["info"]>();
+  let bootFloor: number | null = null;
+
+  return {
+    async programsFor(checkedAt, writes, files) {
+      const since = checkedAt - answerAt;
+      let due = lastAnswer === null || since < 0 || since >= processCheckMs;
+      if (
+        !due &&
+        since >= PROMPT_PROCESS_CHECK_MS &&
+        usable(lastAnswer) &&
+        lastAnswer.programs.length === 0
+      ) {
+        due = writes.some((at) => at !== null && at + WRITE_TIME_STEP_MS > answerAt);
+      }
+      if (lastAnswer === null || due) {
+        clockSetBack = since < 0;
+        seenAtAsk.clear();
+        if (clockSetBack) {
+          for (const { path: file, info } of files) {
+            seenAtAsk.set(file, { ino: info.ino, size: info.size, mtimeMs: info.mtimeMs });
+          }
+        }
+        lastAnswer = await processes.read();
+        answerAt = checkedAt;
+      }
+      return lastAnswer;
+    },
+    asAsked(file) {
+      const seen = seenAtAsk.get(file.path);
+      return (
+        seen !== undefined &&
+        seen.ino === file.info.ino &&
+        seen.size === file.info.size &&
+        seen.mtimeMs === file.info.mtimeMs
+      );
+    },
+    bootAt(checkedAt) {
+      if (!psRuns) return null;
+      const seen = checkedAt - uptimeMs();
+      if (Number.isFinite(seen) && (bootFloor === null || seen < bootFloor)) bootFloor = seen;
+      return bootFloor;
+    },
+    get lastAnswer() {
+      return lastAnswer;
+    },
+    get answerAt() {
+      return answerAt;
+    },
+    get clockSetBack() {
+      return clockSetBack;
+    },
+  };
 }

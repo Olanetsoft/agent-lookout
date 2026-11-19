@@ -50,6 +50,10 @@ import {
   UNCHECKED_NOTE as GROK_BUILD_UNCHECKED_NOTE,
 } from "@collector/adapters/grok-build/index";
 import {
+  OH_MY_PI_CAPABILITIES,
+  UNCHECKED_NOTE as OH_MY_PI_UNCHECKED_NOTE,
+} from "@collector/adapters/oh-my-pi/index";
+import {
   KIMCHI_CAPABILITIES,
   UNCHECKED_NOTE as KIMCHI_UNCHECKED_NOTE,
 } from "@collector/adapters/kimchi/index";
@@ -118,6 +122,9 @@ const DROID_NOTES = fileURLToPath(new URL("../../../../docs/adapters/droid.md", 
 const GROK_BUILD_NOTES = fileURLToPath(
   new URL("../../../../docs/adapters/grok-build.md", import.meta.url),
 );
+const OH_MY_PI_NOTES = fileURLToPath(
+  new URL("../../../../docs/adapters/oh-my-pi.md", import.meta.url),
+);
 
 const GUIDE_HEADING = "#### What each agent can report";
 const README_HEADING = "## Supported agents and systems";
@@ -149,6 +156,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["DeepSeek Harness", DEEPSEEK_HARNESS_CAPABILITIES],
   ["Droid", DROID_CAPABILITIES],
   ["Grok Build", GROK_BUILD_CAPABILITIES],
+  ["Oh My Pi", OH_MY_PI_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -826,6 +834,52 @@ test("PRIVACY.md and the Grok Build notes name what is read and from which versi
     }
   }
   for (const field of ["2bdd1d6", "1.0.45", "1.0.89", "xai-grok-active-sessions/src/lib.rs"]) {
+    expect(notes, field).toContain(field);
+  }
+});
+
+test("PRIVACY.md and the Oh My Pi notes name what is read and from which version", async () => {
+  const privacy = await readFile(PRIVACY, "utf8");
+  const notes = await readFile(OH_MY_PI_NOTES, "utf8");
+  const line = (start: string) => privacy.split("\n").find((one) => one.startsWith(start)) ?? "";
+
+  const omp = line("For Oh My Pi, Agent Lookout reads");
+  for (const words of ["built from Oh My Pi's source at v19.0.0", "`ps`", "no lock"]) {
+    expect(omp, words).toContain(words);
+  }
+  expect(omp).not.toContain("Grok Build");
+  expect(OH_MY_PI_UNCHECKED_NOTE).toContain("v19.0.0");
+  expect(notes).toContain("MIT");
+
+  const start = privacy.indexOf("### Oh My Pi's files");
+  expect(start).toBeGreaterThan(-1);
+  const section = privacy.slice(start, privacy.indexOf("\n### ", start));
+  for (const text of [section, notes]) {
+    for (const field of [
+      "~/.omp",
+      "AGENT_LOOKOUT_OMP_HOME",
+      "PI_CODING_AGENT_DIR",
+      "PI_CODING_AGENT_SESSION_DIR",
+      "OMP_PROFILE",
+      "PI_PROFILE",
+      "PI_CONFIG_DIR",
+      "XDG_DATA_HOME",
+      "session_exit",
+      "tool_execution_start",
+      "provider_refusal",
+      "session-owners",
+      "agent.db",
+      "codex-",
+      "256 bytes",
+      "64 KiB",
+      "8 MiB",
+      "1 KiB",
+      "ps -A -o pid=,lstart=,comm=",
+    ]) {
+      expect(text, field).toContain(field);
+    }
+  }
+  for (const field of ["57771ae", "v19.0.0", "session-title-slot.ts", "agent-session.ts"]) {
     expect(notes, field).toContain(field);
   }
 });
