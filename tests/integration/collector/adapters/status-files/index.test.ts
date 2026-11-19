@@ -605,14 +605,16 @@ const DONE = "<done>";
  * the next hard link fail as on a file system without them, after writing what
  * it is given where the link would go, `load` loads the plugin again in the same
  * process with that thread open, `dispose: "first"` unloads only the first run,
- * and `STAND_IN_NOW` stops the clock.
+ * and `STAND_IN_NOW` stops the clock, which `now` sets.
  */
 const AMP_STAND_IN = [
   'import fs from "node:fs";',
   'import readline from "node:readline";',
   'import { fileURLToPath, pathToFileURL } from "node:url";',
   "const [kind, root, active] = process.argv.slice(2);",
-  "if (process.env.STAND_IN_NOW) Date.now = () => Number(process.env.STAND_IN_NOW);",
+  "let now = process.env.STAND_IN_NOW ? Number(process.env.STAND_IN_NOW) : null;",
+  "const realNow = Date.now;",
+  "Date.now = () => (now === null ? realNow() : now);",
   "function afterRead({ file, text }) {",
   "  const read = fs.readFileSync;",
   "  fs.readFileSync = (...args) => {",
@@ -687,6 +689,7 @@ const AMP_STAND_IN = [
   "    thread.value = command.state;",
   "    for (const watcher of thread.watchers) watcher(command.state);",
   "  }",
+  "  if (command.now) now = command.now;",
   "  if (command.minute) minute();",
   "  if (command.afterRead) afterRead(command.afterRead);",
   "  if (command.linkFails) linkFails(command.linkFails);",
@@ -715,7 +718,8 @@ type AmpCommand =
   | { dispose: "first" }
   | { afterRead: { file: string; text: string } }
   | { linkFails: { text?: string } }
-  | { load: string };
+  | { load: string }
+  | { now: number };
 
 /**
  * Whether this Node runs a TypeScript file with its types stripped, as the Amp
@@ -889,19 +893,28 @@ describe.skipIf(!stripsTypes())(
     for (const state of ["idle", "error"]) {
       test(`a thread opened while its state is ${state} shows only once it runs, from when it runs`, async () => {
         const { parent, poll, env } = await setUp();
-        const amp = await startAmp(parent, env, "local", "none");
+        // The plugin's clock is stopped, and set on when the thread runs, so the
+        // time it writes is compared with no other process's clock.
+        const opened = Date.now() - 60_000;
+        const amp = await startAmp(
+          parent,
+          { ...env, STAND_IN_NOW: String(opened) },
+          "local",
+          "none",
+        );
         await amp.send({ thread: THREAD, state });
         await amp.send({ start: THREAD });
         expect(await readdir(parent)).not.toContain("sessions");
         expect((await poll()).health.state).toBe("not-set-up");
 
-        const ran = Date.now();
+        const ran = opened + 30_000;
+        await amp.send({ now: ran });
         await amp.send({ thread: THREAD, state: "running" });
         const working = await poll();
         expect(working.sessions).toMatchObject([
           { id: `status-files:${AMP_FILE}`, status: "working" },
         ]);
-        expect(working.sessions[0]?.statusSince).toBeGreaterThanOrEqual(ran);
+        expect(working.sessions[0]?.statusSince).toBe(ran);
       }, 20_000);
     }
 
