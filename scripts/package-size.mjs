@@ -82,9 +82,9 @@ import { gunzipSync } from "node:zlib";
  * they were.
  *
  * Unpacked was raised from 4.50 MB to 4.60 MB, and installed from 6.30 MB to
- * 6.40 MB, once Muse Code took unpacked to 4.54 MB and installed to 6.35 MB,
- * from 4.46 MB and 6.28 MB. It added 77 KB, 56 KB of code in the command and
- * 21 KB of the documents the package ships, and 20 KB to the tarball. The
+ * 6.40 MB, once Muse Code took unpacked to 4.54 MB and installed to 6.36 MB,
+ * from 4.46 MB and 6.28 MB. It added 78 KB, 56 KB of code in the command and
+ * 23 KB of the documents the package ships, and 21 KB to the tarball. The
  * tarball was raised from 1.20 MB to 1.25 MB on purpose, as Muse Code took it
  * to 1.20 MB, 2 KB under that limit, from 1.18 MB, which leaves no room for
  * another source.
