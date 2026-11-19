@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
 
@@ -16,6 +16,11 @@ import { LIST_CLIENTS_ARGS, describePaneArgs } from "@collector/tmux/selectPane"
 import { JUMP_INTERVAL_MS } from "@core/api";
 import type { Session, SessionsSnapshot, SourceHealth } from "@core/sessions/session";
 import { lstart } from "@tests/fixtures/antigravity";
+import {
+  heartbeat,
+  metadata,
+  SESSION_ID as AUTOHAND_ID,
+} from "@tests/fixtures/autohand-code/autohandCode";
 import { ids, registryFile } from "@tests/fixtures/claudeCode";
 import { NOW as CODEX_NOW } from "@tests/fixtures/codex";
 import { registryRecord as qwenRecord, sessionIdOf } from "@tests/fixtures/qwen-code/qwenCode";
@@ -104,6 +109,30 @@ async function qwenHome(pid: number, platform?: NodeJS.Platform): Promise<string
     path.join(home, "sessions", `${pid}.json`),
     qwenRecord({ pid, sessionId: QWEN_ID, kind: "tui", startedAt: QWEN_REGISTERED, pidNs }),
   );
+  return home;
+}
+
+const AUTOHAND_SESSION = `autohand-code:${AUTOHAND_ID}`;
+
+/**
+ * An Autohand Code folder laid out as Autohand Code lays it out, with one
+ * session whose heartbeat names `pid` and was written as the fake clock
+ * starts, and whose `metadata.json` was saved 20 seconds before.
+ */
+async function autohandHome(pid: number): Promise<string> {
+  const home = await tempDir();
+  const heartbeats = path.join(home, "active-agents");
+  const folder = path.join(home, "sessions", AUTOHAND_ID);
+  await mkdir(heartbeats, { recursive: true, mode: 0o700 });
+  await mkdir(folder, { recursive: true });
+  const heartbeatFile = path.join(heartbeats, `${AUTOHAND_ID}.json`);
+  await writeFile(heartbeatFile, heartbeat({ pid, updatedAt: T0, startedAt: T0 - 60_000 }), {
+    mode: 0o600,
+  });
+  await chmod(heartbeatFile, 0o600);
+  const metadataFile = path.join(folder, "metadata.json");
+  await writeFile(metadataFile, metadata({ createdAt: T0 - 60_000, lastActiveAt: T0 - 30_000 }));
+  await utimes(metadataFile, (T0 - 20_000) / 1000, (T0 - 20_000) / 1000);
   return home;
 }
 
@@ -1282,6 +1311,77 @@ describe.skipIf(process.platform === "win32")("POST /api/jump for a Qwen Code se
       expect(existsSync(server.mark)).toBe(true);
     },
   );
+});
+
+// Each test starts a stand-in for the heartbeat's process, and Agent Lookout
+// gives an Autohand Code session no Jump on Windows.
+describe.skipIf(process.platform === "win32")("POST /api/jump for an Autohand Code session", () => {
+  /**
+   * The collector with an Autohand Code session whose heartbeat names a
+   * stand-in this test starts, beside the Claude Code sessions, polled again
+   * once a look for a process that turned up is due, while the heartbeat is
+   * 5 seconds old and still fresh. The press goes through the route's own
+   * finders, so it finds the place only if the adapter asked those.
+   */
+  async function serveAutohand(
+    processes: (pid: number) => ProcessRow[] = () => [],
+    more: { inPane?: boolean } = {},
+  ) {
+    const standIn = await startStandIn();
+    const server = await serve(
+      { AGENT_LOOKOUT_AUTOHAND_HOME: await autohandHome(standIn.pid) },
+      processes(standIn.pid),
+      { panes: more.inPane === false ? [] : [`${standIn.pid} %9 0 0 demo-project`] },
+    );
+    server.clock.now += SOONEST_MS;
+    await server.collector.poller.pollOnce();
+    return { ...server, standIn };
+  }
+
+  const autohandOf = (sessions: Session[]) =>
+    sessions.find((session) => session.id === AUTOHAND_SESSION);
+
+  test("Jump selects the pane of the heartbeat's process", async () => {
+    const server = await serveAutohand();
+    expect(autohandOf(await server.sessions())).toMatchObject({
+      pid: server.standIn.pid,
+      jump: { kind: "tmux", place: "demo-project:0.0" },
+    });
+
+    server.tmux.where = "$1 0 0 demo-project";
+    const before = server.tmux.ran.length;
+    const response = await server.jump(AUTOHAND_SESSION);
+
+    expect(response.status).toBe(200);
+    expect(response.json()).toEqual({ ok: true, kind: "tmux", place: "demo-project:0.0" });
+    expect(server.tmux.ran.slice(before)).toEqual([
+      ["select-window", "-t", "%9"],
+      ["select-pane", "-t", "%9"],
+      describePaneArgs("%9"),
+      [...LIST_CLIENTS_ARGS],
+      ["switch-client", "-c", "/dev/ttys003", "-t", "%9"],
+      ["switch-client", "-c", "/dev/ttys004", "-t", "%9"],
+    ]);
+  });
+
+  test("in a tab of Terminal it is given the app, and Jump brings the tab forward", async () => {
+    const server = await serveAutohand((pid) => inTabOf(TERMINAL_PATH, pid), { inPane: false });
+
+    expect(autohandOf(await server.sessions())?.jump).toEqual({
+      kind: "terminal",
+      app: "Terminal",
+      place: "Terminal",
+    });
+    const response = await server.jump(AUTOHAND_SESSION);
+    expect(response.status).toBe(200);
+    expect(response.json()).toEqual({
+      ok: true,
+      kind: "terminal",
+      app: "Terminal",
+      place: "Terminal",
+    });
+    expect(server.osascript.ran).toEqual([focusTabArgs({ app: "Terminal", tty: "/dev/ttys009" })]);
+  });
 });
 
 describe("what POST /api/jump refuses", () => {
