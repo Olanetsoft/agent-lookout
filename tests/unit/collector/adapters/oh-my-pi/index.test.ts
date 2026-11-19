@@ -84,7 +84,7 @@ function watching(read: string, folder = "~/.omp/agent/sessions", processCheckRu
     {
       label: "Files read",
       value:
-        "Line 1 and line 2 of each .jsonl, the start of line 3, and its newest lines back to the one that decides, at most 8 MiB, as bytes. Only the title, line 2 and two times become text",
+        "Line 1 and line 2 of each .jsonl, the start of line 3, and its newest lines back to the one that decides, at most 8 MiB, as bytes. Only the title, line 2 and three times become text",
     },
     { label: "Process check", value: "ps -A -o pid=,lstart=,comm=" },
     { label: "Process check run", value: processCheckRun },
@@ -299,15 +299,15 @@ describe("a session's status", () => {
     expect(statuses).toEqual(["working", "working", "working", "working", "unknown"]);
   });
 
-  test("a rename more than 15 seconds after an exit its abort wrote a tool's start after reads as if no exit had been written", async () => {
+  test("a rename long after an exit its abort wrote a tool's start after leaves it finished since the exit, with no ps asked", async () => {
     const exitAt = NOW - 2 * HOUR;
-    /** A quit mid-turn: the aborted reply, then a tool's start and its aborted result. */
+    /** A quit mid-turn: the aborted reply, then a tool's start and its aborted result, a moment after the exit. */
     const text = sessionText(
       message("user", { at: exitAt - MINUTE }) +
         sessionExit("normal", exitAt) +
-        message("assistant", { at: exitAt }) +
-        toolStart("bash", exitAt) +
-        message("toolResult", { at: exitAt }),
+        message("assistant", { at: exitAt + SECOND }) +
+        toolStart("bash", exitAt + SECOND) +
+        message("toolResult", { at: exitAt + 2 * SECOND }),
     );
     const renameAt = NOW - MINUTE;
     /** The line a rename from the picker, or `/rename`, adds: no prompt. */
@@ -319,21 +319,40 @@ describe("a session's status", () => {
       title: "demo-project",
       source: "user",
     });
-    for (const platform of ["darwin", "win32"] as const) {
+    for (const platform of ["darwin", "linux", "win32"] as const) {
       const files = filesWith(text, exitAt + 5 * SECOND);
       // The omp whose picker renames it, which started after the exit.
-      const adapter = ohMyPiAdapterFor(files, { platform, ps: standInPs([OMP_LINE]) });
+      const ps = standInPs([OMP_LINE]);
+      const adapter = ohMyPiAdapterFor(files, { platform, ps });
       expect((await adapter.poll()).sessions[0]).toMatchObject({
         status: "finished",
         statusSince: exitAt,
       });
       appendSession(files, FILE, rename, renameAt);
-      expect((await adapter.poll()).sessions[0]).toMatchObject(
-        platform === "win32"
-          ? { status: "unknown", statusSince: null }
-          : { status: "working", statusSince: null, lastWriteAt: renameAt },
-      );
+      const renamed = (await adapter.poll()).sessions[0];
+      expect(renamed, platform).toMatchObject({ status: "finished", statusSince: exitAt });
+      expect(renamed, platform).not.toHaveProperty("lastWriteAt");
+      expect(ps.runs, platform).toHaveLength(0);
     }
+  });
+
+  test("an aborted line after the exit, written more than 15 seconds after it, is not finished by it, whenever the file was last written", async () => {
+    const exitAt = NOW - 2 * MINUTE;
+    const lateAt = exitAt + 15 * SECOND + 1;
+    const text = sessionText(
+      message("user", { at: exitAt - MINUTE }) +
+        sessionExit("normal", exitAt) +
+        toolStart("bash", exitAt) +
+        message("toolResult", { at: lateAt }),
+    );
+    // A disk that keeps a file's time in steps of 2 seconds puts its last write within 15 seconds of the exit.
+    const writtenAt = exitAt + 14 * SECOND;
+    const ps = standInPs([OMP_LINE]);
+    const adapter = ohMyPiAdapterFor(filesWith(text, writtenAt), { ps });
+    expect((await adapter.poll()).sessions[0]).toMatchObject({ status: "working" });
+    expect(ps.runs).toHaveLength(1);
+    const windows = ohMyPiAdapterFor(filesWith(text, writtenAt), { platform: "win32" });
+    expect((await windows.poll()).sessions[0]).toMatchObject({ status: "unknown" });
   });
 
   test("unknown after a reply, as idle never shows", async () => {

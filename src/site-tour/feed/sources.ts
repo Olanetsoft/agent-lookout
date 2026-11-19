@@ -1850,7 +1850,7 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         {
           label: "Files read",
           value:
-            "Line 1 and line 2 of each .jsonl, the start of line 3, and its newest lines back to the one that decides, at most 8 MiB, as bytes. Only the title, line 2 and two times become text",
+            "Line 1 and line 2 of each .jsonl, the start of line 3, and its newest lines back to the one that decides, at most 8 MiB, as bytes. Only the title, line 2 and three times become text",
         },
         { label: "Process check", value: "ps -A -o pid=,lstart=,comm=" },
         {

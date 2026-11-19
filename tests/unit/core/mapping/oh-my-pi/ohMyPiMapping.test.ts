@@ -8,13 +8,18 @@ import {
   type OhMyPiFacts,
   type OhMyPiLine,
 } from "@core/mapping/oh-my-pi/ohMyPiMapping";
-import { CLOCK_SLACK_MS, WRITE_TIME_STEP_MS } from "@core/time";
+import { CLOCK_SLACK_MS } from "@core/time";
 
 const NOW = Date.UTC(2026, 9, 1, 12, 0, 0);
+const SECOND = 1_000;
 const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
 const WRITTEN = NOW - MINUTE;
 
 const ask: OhMyPiLine = { sort: "ask", at: NOW - 5 * MINUTE };
+/** A reply, or a tool's result, with the time on its line, or none, as a refusal has. */
+const reply = (at: number | null = WRITTEN): OhMyPiLine => ({ sort: "reply", at });
+const result = (at: number | null = WRITTEN): OhMyPiLine => ({ sort: "result", at });
 const exit = (fatal: boolean, at = NOW - 2 * MINUTE): Extract<OhMyPiLine, { sort: "exit" }> => ({
   sort: "exit",
   fatal,
@@ -40,7 +45,7 @@ describe("each row", () => {
       since: NOW - 2 * MINUTE,
       showsLastWrite: false,
     });
-    expect(statusOf({ newest: { sort: "reply" }, behind: exit(true) })).toMatchObject({
+    expect(statusOf({ newest: reply(), behind: exit(true) })).toMatchObject({
       status: "failed",
     });
   });
@@ -53,7 +58,7 @@ describe("each row", () => {
         showsLastWrite: false,
       });
     }
-    expect(statusOf({ newest: { sort: "result" }, behind: exit(false) }).status).toBe("finished");
+    expect(statusOf({ newest: result(), behind: exit(false) }).status).toBe("finished");
   });
 
   test("3. no program that could have written it runs: finished, since its last write", () => {
@@ -85,8 +90,8 @@ describe("each row", () => {
   });
 
   test("6. a prompt, a result or a tool, bash among them, backed and written lately: working, with its last write", () => {
-    for (const sort of ["prompt", "result", "tool"] as const) {
-      expect(statusOf({ newest: { sort } })).toEqual({
+    for (const newest of [{ sort: "prompt" }, result(), { sort: "tool" }] as const) {
+      expect(statusOf({ newest })).toEqual({
         status: "working",
         since: null,
         showsLastWrite: true,
@@ -95,7 +100,7 @@ describe("each row", () => {
   });
 
   test("7. anything else: unknown, so a reply, and every line while no omp backs it", () => {
-    expect(statusOf({ newest: { sort: "reply" } }).status).toBe("unknown");
+    expect(statusOf({ newest: reply() }).status).toBe("unknown");
     for (const newest of [{ sort: "prompt" }, ask] as const) {
       expect(statusOf({ newest, writer: "maybe" }).status).toBe("unknown");
     }
@@ -105,11 +110,11 @@ describe("each row", () => {
 describe("an exit a quit cut a turn off after", () => {
   const at = NOW - 2 * MINUTE;
 
-  test("decides as failed or finished, since it was recorded, while the file was last written within 15 seconds after it", () => {
+  test("decides as failed or finished, since it was recorded, while the newest reply or result was written from it to 15 seconds after it", () => {
     for (const fatal of [true, false]) {
-      for (const sort of ["reply", "result"] as const) {
-        for (const writtenAt of [at, at + CUT_OFF_MS, at - WRITE_TIME_STEP_MS]) {
-          expect(statusOf({ newest: { sort }, cutOff: exit(fatal, at), writtenAt })).toEqual({
+      for (const line of [reply, result]) {
+        for (const written of [at, at + CUT_OFF_MS]) {
+          expect(statusOf({ newest: line(written), cutOff: exit(fatal, at) })).toEqual({
             status: fatal ? "failed" : "finished",
             since: at,
             showsLastWrite: false,
@@ -120,17 +125,57 @@ describe("an exit a quit cut a turn off after", () => {
     expect(CUT_OFF_MS).toBe(15_000);
   });
 
-  test("decides nothing once the file was written later than that, or more than 2 seconds before it", () => {
-    for (const writtenAt of [at + CUT_OFF_MS + 1, at - WRITE_TIME_STEP_MS - 1, null]) {
-      expect(statusOf({ newest: { sort: "result" }, cutOff: exit(true, at), writtenAt })).toEqual(
-        writtenAt === null
-          ? { status: "unknown", since: null, showsLastWrite: false }
-          : { status: "working", since: null, showsLastWrite: true },
+  test("decides by the newest line's own time, whenever the file was last written, as after a rename", () => {
+    for (const writtenAt of [at - HOUR, at + CUT_OFF_MS + 1, NOW, null]) {
+      expect(statusOf({ newest: result(at + SECOND), cutOff: exit(false, at), writtenAt })).toEqual(
+        { status: "finished", since: at, showsLastWrite: false },
       );
       expect(
-        statusOf({ newest: { sort: "reply" }, cutOff: exit(false, at), writtenAt }).status,
-      ).toBe("unknown");
+        exitOf({ newest: reply(at + SECOND), behind: null, cutOff: exit(true, at), now: NOW }),
+      ).toEqual(exit(true, at));
     }
+  });
+
+  test("decides nothing once the newest line was written more than 15 seconds after it, or before it", () => {
+    for (const written of [at + CUT_OFF_MS + 1, at - 1]) {
+      expect(statusOf({ newest: result(written), cutOff: exit(true, at) })).toEqual({
+        status: "working",
+        since: null,
+        showsLastWrite: true,
+      });
+      expect(statusOf({ newest: reply(written), cutOff: exit(false, at) }).status).toBe("unknown");
+    }
+  });
+
+  test("a reply or a result whose time cannot be read, as a refusal's, never takes it", () => {
+    for (const line of [reply, result]) {
+      expect(exitOf({ newest: line(null), behind: null, cutOff: exit(false, at), now: NOW })).toBe(
+        null,
+      );
+    }
+    expect(statusOf({ newest: result(null), cutOff: exit(true, at), writtenAt: at })).toEqual({
+      status: "working",
+      since: null,
+      showsLastWrite: true,
+    });
+    expect(statusOf({ newest: reply(null), cutOff: exit(false, at) }).status).toBe("unknown");
+    // With no tool's start after the exit, it is the exit behind, and decides whatever the time.
+    expect(
+      statusOf({ newest: reply(null), behind: exit(false, at), cutOff: exit(false, at) }),
+    ).toMatchObject({ status: "finished", since: at });
+  });
+
+  test("a newest line's time more than a minute ahead of the clock takes nothing, judged again on every poll", () => {
+    // The exit could be right; the result written 11 seconds after it cannot, yet.
+    const soon = exit(false, NOW + 50 * SECOND);
+    const ahead = result(NOW + CLOCK_SLACK_MS + 1);
+    expect(exitOf({ newest: ahead, behind: null, cutOff: soon, now: NOW })).toBeNull();
+    expect(statusOf({ newest: ahead, cutOff: soon }).status).toBe("working");
+    expect(exitOf({ newest: ahead, behind: null, cutOff: soon, now: NOW + 1 })).toBe(soon);
+    expect(statusOf({ newest: ahead, cutOff: soon, now: NOW + 1 })).toMatchObject({
+      status: "finished",
+      since: NOW + 50 * SECOND,
+    });
   });
 
   test("decides nothing when the newest line is a tool's start or an ask's, so a restored ask still needs you", () => {
@@ -141,35 +186,24 @@ describe("an exit a quit cut a turn off after", () => {
       statusOf({ newest: { sort: "ask", at }, cutOff: exit(false, at), writtenAt: at }),
     ).toMatchObject({ status: "needs-you", since: at });
     expect(
-      exitOf({ newest: { sort: "ask", at }, behind: null, cutOff: exit(false, at), writtenAt: at }),
+      exitOf({ newest: { sort: "ask", at }, behind: null, cutOff: exit(false, at), now: NOW }),
     ).toBeNull();
   });
 
-  test("the exit newest, or the exit behind, decides whenever the file was written", () => {
+  test("the exit newest, or the exit behind, decides whatever the times after it", () => {
     const late = at + CUT_OFF_MS + MINUTE;
-    expect(exitOf({ newest: exit(true, at), behind: null, cutOff: null, writtenAt: late })).toEqual(
+    expect(exitOf({ newest: exit(true, at), behind: null, cutOff: null, now: NOW })).toEqual(
       exit(true, at),
     );
     expect(
-      exitOf({
-        newest: { sort: "reply" },
-        behind: exit(false, at),
-        cutOff: exit(false, at),
-        writtenAt: late,
-      }),
+      exitOf({ newest: reply(late), behind: exit(false, at), cutOff: exit(false, at), now: NOW }),
     ).toEqual(exit(false, at));
   });
 
-  test("an exit cut off whose time cannot be right finishes nothing by itself", () => {
-    // Written within its window, at the latest time that can be right.
+  test("an exit cut off ahead of the clock takes nothing, as no line after it can be right either", () => {
     const ahead = exit(false, NOW + CLOCK_SLACK_MS + 1);
-    const writtenAt = NOW + CLOCK_SLACK_MS;
-    expect(exitOf({ newest: { sort: "result" }, behind: null, cutOff: ahead, writtenAt })).toBe(
-      ahead,
-    );
-    expect(statusOf({ newest: { sort: "result" }, cutOff: ahead, writtenAt }).status).toBe(
-      "working",
-    );
+    expect(exitOf({ newest: result(ahead.at), behind: null, cutOff: ahead, now: NOW })).toBeNull();
+    expect(statusOf({ newest: result(ahead.at), cutOff: ahead }).status).toBe("working");
   });
 });
 

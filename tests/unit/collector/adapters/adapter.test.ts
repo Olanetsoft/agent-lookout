@@ -1336,8 +1336,11 @@ describe("each declaration agrees with what its adapter does", () => {
       facts({}),
       facts({ newest: { sort: "ask", at: NOW - 5_000 } }),
       facts({ newest: { sort: "exit", fatal: false, at: NOW - 5_000 } }),
-      facts({ newest: { sort: "reply" }, behind: { sort: "exit", fatal: true, at: NOW - 5_000 } }),
-      facts({ newest: { sort: "reply" } }),
+      facts({
+        newest: { sort: "reply", at: NOW - 1_000 },
+        behind: { sort: "exit", fatal: true, at: NOW - 5_000 },
+      }),
+      facts({ newest: { sort: "reply", at: NOW - 1_000 } }),
       facts({ newest: { sort: "unreadable" } }),
       facts({ newest: null }),
       facts({ writer: "gone" }),

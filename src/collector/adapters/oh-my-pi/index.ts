@@ -114,7 +114,7 @@ export const BASIS_WITHOUT_PROCESSES = "files-without-processes";
 
 /** Said whenever Oh My Pi is watched, because it is what a person would otherwise expect to see. */
 export const STATUS_NOTE =
-  "An Oh My Pi session shows as finished or failed once Oh My Pi writes, at a time that can be right, that it stopped, unless a turn it cut off ends on a tool's start or its file is written more than 15 seconds later, and on macOS and Linux as working while a turn is open and as needing you while its ask tool waits, while an omp that could have written it runs and it was written in the last 30 minutes, and as finished once no such program could still write it, by ps or since the computer started. Nothing it writes says a turn is over, so a session never shows as idle, and an approval it waits for is not written, so that shows as working. Anything else shows as unknown. No Oh My Pi program is run.";
+  "An Oh My Pi session shows as finished or failed once Oh My Pi writes, at a time that can be right, that it stopped, unless a turn it cut off ends on a tool's start, or on a reply or a result not written within 15 seconds of the stop, and on macOS and Linux as working while a turn is open and as needing you while its ask tool waits, while an omp that could have written it runs and it was written in the last 30 minutes, and as finished once no such program could still write it, by ps or since the computer started. Nothing it writes says a turn is over, so a session never shows as idle, and an approval it waits for is not written, so that shows as working. Anything else shows as unknown. No Oh My Pi program is run.";
 
 /** Said whenever Oh My Pi is watched, until the adapter has been checked on a computer running it. */
 export const UNCHECKED_NOTE =
@@ -169,8 +169,9 @@ const OTHER_SYSTEM_NOTE =
  * - Needs you while its `ask` tool waits, on the same terms. An approval is
  *   not written, so a tool waiting for one shows as working.
  * - Finished when Oh My Pi writes that it stopped, as `exitOf` takes that
- *   line, or no `omp` that could have written it runs, by `ps`, or the
- *   computer started since.
+ *   line, by the times the lines carry and never the file's last write, or
+ *   no `omp` that could have written it runs, by `ps`, or the computer
+ *   started since.
  * - Failed when Oh My Pi writes that it stopped on an error of its own, as
  *   `exitOf` takes that line. A reply that failed is not read: it reads the
  *   same while Oh My Pi retries.
@@ -422,7 +423,7 @@ export function createOhMyPiAdapter(options: OhMyPiAdapterOptions = {}): Adapter
         {
           label: "Files read",
           value:
-            "Line 1 and line 2 of each .jsonl, the start of line 3, and its newest lines back to the one that decides, at most 8 MiB, as bytes. Only the title, line 2 and two times become text",
+            "Line 1 and line 2 of each .jsonl, the start of line 3, and its newest lines back to the one that decides, at most 8 MiB, as bytes. Only the title, line 2 and three times become text",
         },
         { label: "Process check", value: `ps ${DSH_TABLE_ARGS.join(" ")}` },
         { label: "Process check run", value: processCheckRun },
@@ -515,7 +516,8 @@ export function createOhMyPiAdapter(options: OhMyPiAdapterOptions = {}): Adapter
       const behind = tail.state === "ok" ? tail.behind : null;
       const cutOff = tail.state === "ok" ? tail.cutOff : null;
       const writtenAt = plausibleTime(Math.floor(one.writtenAt), checkedAt);
-      const exit = exitOf({ newest, behind, cutOff, writtenAt });
+      // By the same rule as its status: an exit cut off decides by the newest line's own time, never the file's last write.
+      const exit = exitOf({ newest, behind, cutOff, now: checkedAt });
       // Whether `ps` could change its status: not once Oh My Pi wrote that it stopped, nor when it was last written before the computer started.
       const settled =
         (exit !== null && plausibleTime(exit.at, checkedAt) !== null) ||

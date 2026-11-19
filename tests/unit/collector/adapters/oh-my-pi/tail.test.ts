@@ -27,7 +27,7 @@ import {
   sessionText,
   toolStart,
 } from "@tests/fixtures/oh-my-pi/ohMyPi";
-import { watchDecodingWhile } from "@tests/support/adapters/unreal-agent/decodeSpy";
+import { watchDecoding, watchDecodingWhile } from "@tests/support/adapters/unreal-agent/decodeSpy";
 
 const AT = NOW - MINUTE;
 
@@ -110,15 +110,16 @@ describe("each line, from its first bytes", () => {
     expect(judge(toolStart("ask", AT, { callId: "c".repeat(600) })).sort).toBe("unreadable");
   });
 
-  test("a provider's refusal is a reply", () => {
-    expect(judge(refusal())).toEqual({ sort: "reply" });
+  test("a provider's refusal is a reply with no time, since its line's time is after its data", () => {
+    expect(judge(refusal())).toEqual({ sort: "reply", at: null });
+    expect(watchDecoding(() => judge(refusal()))).toEqual([]);
   });
 
   test("each role of a message", () => {
     expect(judge(message("user"))).toEqual({ sort: "prompt" });
     expect(judge(message("developer"))).toEqual({ sort: "prompt" });
-    expect(judge(message("toolResult"))).toEqual({ sort: "result" });
-    expect(judge(message("assistant"))).toEqual({ sort: "reply" });
+    expect(judge(message("toolResult"))).toEqual({ sort: "result", at: AT });
+    expect(judge(message("assistant"))).toEqual({ sort: "reply", at: AT });
     for (const role of [
       "bashExecution",
       "pythonExecution",
@@ -131,6 +132,43 @@ describe("each line, from its first bytes", () => {
     expect(judge(message("someone")).sort).toBe("unreadable");
   });
 
+  test("a reply's and a result's time, as Oh My Pi wrote it on the line, and no time of any other message", () => {
+    const at = AT - 5_000;
+    expect(judge(message("assistant", { at }))).toEqual({ sort: "reply", at });
+    expect(judge(message("toolResult", { at, runtime: false }))).toEqual({ sort: "result", at });
+    // One decoding can pass through more than one of Node's ways, each noted.
+    expect(new Set(watchDecoding(() => judge(message("assistant", { at }))))).toEqual(
+      new Set([iso(at)]),
+    );
+    // A prompt's time, and a passed-over message's, is never turned into text.
+    for (const role of ["user", "developer", "bashExecution", "custom"]) {
+      expect(watchDecoding(() => judge(message(role, { at })))).toEqual([]);
+    }
+  });
+
+  test("a reply's or a result's time that is not a time is none, and the line still decides", () => {
+    for (const timestamp of [
+      "2026-10-01T11:59:00",
+      "2026-10-01",
+      "2026-13-45T99:99:99.000Z",
+      `2026-10-01T11:59:00.${"0".repeat(30)}Z`,
+    ]) {
+      for (const [role, sort] of [
+        ["assistant", "reply"],
+        ["toolResult", "result"],
+      ] as const) {
+        const text = line({
+          type: "message",
+          id: "a1",
+          parentId: null,
+          timestamp,
+          message: { role },
+        });
+        expect(judge(text)).toEqual({ sort, at: null });
+      }
+    }
+  });
+
   test("a message with no runtime, as one Oh My Pi made from another agent's session, and one with an empty one", () => {
     expect(judge(message("user", { runtime: false }))).toEqual({ sort: "prompt" });
     const empty = line({
@@ -141,7 +179,7 @@ describe("each line, from its first bytes", () => {
       runtime: {},
       message: { role: "assistant" },
     });
-    expect(judge(empty)).toEqual({ sort: "reply" });
+    expect(judge(empty)).toEqual({ sort: "reply", at: AT });
   });
 
   test("a message of another shape cannot be read", () => {
@@ -257,7 +295,7 @@ describe("the newest line that decides, read from the end", () => {
       const exit = { sort: "exit", fatal: kind === "fatal", at: AT };
       expect((await fresh(text)).view).toEqual({
         state: "ok",
-        newest: { sort: "reply" },
+        newest: { sort: "reply", at: AT },
         behind: exit,
         cutOff: exit,
       });
@@ -279,7 +317,7 @@ describe("the newest line that decides, read from the end", () => {
         const whole = start + added.join("");
         expect((await fresh(whole)).view).toEqual({
           state: "ok",
-          newest: { sort: newest },
+          newest: { sort: newest, at: AT },
           behind: null,
           cutOff: exit,
         });
@@ -312,7 +350,7 @@ describe("the newest line that decides, read from the end", () => {
       const text = sessionText(sessionExit("normal", AT) + stop + message("assistant"));
       expect((await fresh(text)).view).toEqual({
         state: "ok",
-        newest: { sort: "reply" },
+        newest: { sort: "reply", at: AT },
         behind: null,
         cutOff: exit,
       });
@@ -331,7 +369,7 @@ describe("the newest line that decides, read from the end", () => {
       const text = sessionText(sessionExit("normal", AT) + stop + message("assistant"));
       expect((await fresh(text)).view).toEqual({
         state: "ok",
-        newest: { sort: "reply" },
+        newest: { sort: "reply", at: AT },
         behind: null,
         cutOff: null,
       });
@@ -390,7 +428,7 @@ describe("the newest line that decides, read from the end", () => {
       );
       expect((await fresh(text)).view).toEqual({
         state: "ok",
-        newest: { sort: "reply" },
+        newest: { sort: "reply", at: AT },
         behind: null,
         cutOff: null,
       });
@@ -459,7 +497,7 @@ describe("reading on from the last line read", () => {
       onward as Tail,
     );
     expect(viewOf(whole as Tail, Buffer.byteLength(start + message("assistant")))).toMatchObject({
-      newest: { sort: "reply" },
+      newest: { sort: "reply", at: AT },
     });
   });
 
@@ -502,7 +540,7 @@ describe("reading on from the last line read", () => {
     expect(viewOf(onward, next.byteLength)).toEqual((await fresh(next)).view);
     expect(viewOf(onward, next.byteLength)).toEqual({
       state: "ok",
-      newest: { sort: "reply" },
+      newest: { sort: "reply", at: AT },
       behind: null,
       cutOff: null,
     });
@@ -530,7 +568,7 @@ describe("reading on from the last line read", () => {
     expect(viewOf(onward, next.byteLength)).toEqual((await fresh(next)).view);
     expect(viewOf(onward, next.byteLength)).toEqual({
       state: "ok",
-      newest: { sort: "reply" },
+      newest: { sort: "reply", at: AT },
       behind: null,
       cutOff: null,
     });
@@ -571,15 +609,15 @@ describe("the fold", () => {
 
   test("a reply or a result keeps the exit behind and the exit cut off, or takes the newest exit as both", () => {
     const exited = foldLine(empty, exit, 10);
-    const replied = foldLine(exited, { sort: "reply" }, 20);
+    const replied = foldLine(exited, { sort: "reply", at: AT }, 20);
     expect(replied).toMatchObject({
-      newest: { sort: "reply" },
+      newest: { sort: "reply", at: AT },
       behind: exit,
       behindStart: 10,
       cutOff: exit,
       cutOffStart: 10,
     });
-    expect(foldLine(replied, { sort: "result" }, 30)).toMatchObject({
+    expect(foldLine(replied, { sort: "result", at: AT }, 30)).toMatchObject({
       behind: exit,
       behindStart: 10,
       cutOff: exit,
@@ -588,12 +626,12 @@ describe("the fold", () => {
   });
 
   test("a tool or an ask drops the exit behind and keeps the exit cut off, or takes the newest exit as it", () => {
-    const replied = foldLine(foldLine(empty, exit, 10), { sort: "reply" }, 20);
+    const replied = foldLine(foldLine(empty, exit, 10), { sort: "reply", at: AT }, 20);
     for (const start of [{ sort: "tool" }, { sort: "ask", at: AT }] as const) {
       const started = foldLine(replied, start, 30);
       expect(started).toMatchObject({ newest: start, behind: null, cutOff: exit, cutOffStart: 10 });
       // A reply or a result after it takes no exit behind back.
-      expect(foldLine(started, { sort: "result" }, 40)).toMatchObject({
+      expect(foldLine(started, { sort: "result", at: AT }, 40)).toMatchObject({
         behind: null,
         cutOff: exit,
         cutOffStart: 10,
@@ -607,7 +645,7 @@ describe("the fold", () => {
   });
 
   test("a prompt, a line that cannot be read or another exit drops both, and a line passed over changes nothing", () => {
-    const replied = foldLine(foldLine(empty, exit, 10), { sort: "reply" }, 20);
+    const replied = foldLine(foldLine(empty, exit, 10), { sort: "reply", at: AT }, 20);
     expect(foldLine(replied, { sort: "passed" }, 30)).toBe(replied);
     for (const other of [
       { sort: "prompt" },

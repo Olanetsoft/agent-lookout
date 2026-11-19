@@ -326,7 +326,12 @@ describe("the header", () => {
         cwd: CWD,
         startedAt: NOW - HOUR,
         title: "Fix the flaky tests",
-        tail: { state: "ok", newest: { sort: "reply" }, behind: null, cutOff: null },
+        tail: {
+          state: "ok",
+          newest: { sort: "reply", at: NOW - MINUTE },
+          behind: null,
+          cutOff: null,
+        },
       },
       writtenAt: WRITTEN,
     });

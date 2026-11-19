@@ -13,7 +13,7 @@
 
 import { KEEP_AWAKE_WORKING_MS } from "../../keep-awake/keepAwakeRule.ts";
 import type { SessionStatus, WaitingReason } from "../../sessions/session.ts";
-import { plausibleTime, WRITE_TIME_STEP_MS } from "../../time.ts";
+import { plausibleTime } from "../../time.ts";
 import type { DeepseekHarnessWriter } from "../deepseek-harness/deepseekHarnessMapping.ts";
 
 /**
@@ -24,13 +24,14 @@ import type { DeepseekHarnessWriter } from "../deepseek-harness/deepseekHarnessM
 export const QUIET_MS = KEEP_AWAKE_WORKING_MS;
 
 /**
- * How long after an exit the file's last write may be for the exit cut off
- * to decide: 15 seconds. On a quit Oh My Pi writes its exit, runs its
- * extensions' shutdown handlers, which have no time limit, aborts the turn,
- * and goes on writing until it stops forwarding: after a wait of up to 5
- * seconds, one of up to 3, a teardown whose waits are up to 3 seconds each,
- * and up to 5 seconds more (agent-session.ts:638, :6983, :7202-7305). So 15
- * seconds covers a turn that stops at once, not the longest case.
+ * How long after an exit the newest reply or result may be written, by the
+ * time its own line carries, for the exit cut off to decide: 15 seconds. On a
+ * quit Oh My Pi writes its exit, runs its extensions' shutdown handlers,
+ * which have no time limit, aborts the turn, and goes on writing until it
+ * stops forwarding: after a wait of up to 5 seconds, one of up to 3, a
+ * teardown whose waits are up to 3 seconds each, and up to 5 seconds more
+ * (agent-session.ts:638, :6983, :7202-7305). So 15 seconds covers a turn that
+ * stops at once, not the longest case.
  */
 export const CUT_OFF_MS = 15_000;
 
@@ -44,10 +45,10 @@ export type OhMyPiLine =
   | { sort: "tool" }
   /** A prompt of the person's, or one Oh My Pi sent for them. */
   | { sort: "prompt" }
-  /** A tool's result. */
-  | { sort: "result" }
-  /** A reply, or a provider's refusal of one. */
-  | { sort: "reply" }
+  /** A tool's result, with the time Oh My Pi wrote on its line, or null when that cannot be read. */
+  | { sort: "result"; at: number | null }
+  /** A reply, with the time Oh My Pi wrote on its line, or a provider's refusal of one, which has none where it is read: null. */
+  | { sort: "reply"; at: number | null }
   /** A line of a kind that decides, in a shape this does not read. */
   | { sort: "unreadable" };
 
@@ -86,25 +87,28 @@ const UNKNOWN: OhMyPiStatus = { status: "unknown", since: null, showsLastWrite: 
 /**
  * The exit that decides a session's status, or null: the newest line when it
  * is an exit, else the exit behind it, else the exit cut off before a newest
- * reply or result. That one decides only while the file was last written
- * from 2 seconds before it, as a disk can round a time down, to 15 seconds
- * after it, as Oh My Pi's own aborted lines are. A turn whose aborted lines
- * take longer, a round run later with no prompt, as `/retry` and `--restore`
- * run, or any later write with no prompt, as a rename makes, reads as if no
- * exit had been written. A newest tool's or ask's start never takes it, so a
- * restored ask still needs you. Judged from `writtenAt` on every poll, and
- * never kept.
+ * reply or result. That one decides only while the newest line's own time,
+ * which Oh My Pi takes from the same clock as the exit's as it adds each line,
+ * is from the exit's time to 15 seconds after it, as Oh My Pi's own aborted
+ * lines are. A reply or a result whose time cannot be read, as a refusal's,
+ * or cannot be right, never takes it. A turn whose aborted lines take longer,
+ * or a round run later with no prompt, as `/retry` and `--restore` run, reads
+ * as if no exit had been written. A later line passed over, as a rename adds,
+ * changes nothing, since the file's last write is not looked at. A newest
+ * tool's or ask's start never takes it, so a restored ask still needs you.
+ * Judged against `now` on every poll, and never kept.
  */
 export function exitOf(
-  facts: Pick<OhMyPiFacts, "newest" | "behind" | "cutOff" | "writtenAt">,
+  facts: Pick<OhMyPiFacts, "newest" | "behind" | "cutOff" | "now">,
 ): ExitLine | null {
-  const { newest, behind, cutOff, writtenAt } = facts;
+  const { newest, behind, cutOff, now } = facts;
   if (newest?.sort === "exit") return newest;
   if (behind !== null) return behind;
-  if (cutOff === null || writtenAt === null) return null;
+  if (cutOff === null) return null;
   if (newest?.sort !== "reply" && newest?.sort !== "result") return null;
-  const soon = writtenAt >= cutOff.at - WRITE_TIME_STEP_MS && writtenAt <= cutOff.at + CUT_OFF_MS;
-  return soon ? cutOff : null;
+  const at = plausibleTime(newest.at, now);
+  if (at === null) return null;
+  return at >= cutOff.at && at <= cutOff.at + CUT_OFF_MS ? cutOff : null;
 }
 
 /**
@@ -129,7 +133,7 @@ export function exitOf(
 export function ohMyPiStatusOf(facts: OhMyPiFacts): OhMyPiStatus {
   const { newest, writer, now } = facts;
   const written = facts.writtenAt === null ? null : plausibleTime(Math.floor(facts.writtenAt), now);
-  const exit = exitOf({ ...facts, writtenAt: written });
+  const exit = exitOf(facts);
   if (exit !== null) {
     const at = plausibleTime(exit.at, now);
     if (at !== null)

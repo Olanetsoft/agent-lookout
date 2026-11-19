@@ -22,19 +22,23 @@ import { bytesAt, timeAt, wordAt } from "../autohand-code/jsonBytes.ts";
  *   (agent-session.ts:4191-4203): with `ask","startedAt":"<time>"`, its
  *   `ask` tool waits for an answer; with any other name, a tool runs.
  * - `{"type":"custom","customType":"provider_refusal",`: a provider refused a
- *   reply, which ends the turn as a reply does (provider-refusal.ts:12).
+ *   reply, which ends the turn as a reply does (provider-refusal.ts:12). Its
+ *   line's time comes after its `data`, which is not read, so it has none.
  * - `{"type":"message","id":"<id>","parentId":<null or id>,"timestamp":
  *   "<time>"`, then perhaps `,"runtime":{…}` of strings, then
  *   `,"message":{"role":"<role>"`: `user` and `developer` are a prompt,
  *   `toolResult` a tool's result, `assistant` a reply, and `bashExecution`,
  *   `pythonExecution`, `fileMention`, `hookMessage` and `custom` are passed
  *   over. Any other role, or a message line of any other shape, cannot be
- *   read.
+ *   read. A reply's and a result's `timestamp` is when Oh My Pi added the
+ *   line, `new Date().toISOString()` (session-manager.ts:171-173,
+ *   :2150-2157), and is kept as its time, or null when it is not one.
  * - Any other line that begins `{"type":"<word>",` is passed over: the title
  *   slot, the header, `model_usage`, `title_change` and the rest.
  *
- * Only the two times kept, `recordedAt` and an `ask`'s `startedAt`, are
- * turned into text, as ASCII checked by `INSTANT`. Nothing else is.
+ * Only the three times kept, `recordedAt`, an `ask`'s `startedAt` and a
+ * reply's or a result's `timestamp`, are turned into text, as ASCII checked by
+ * `INSTANT`. Nothing else is.
  *
  * The newest line not passed over decides. When it is a reply, a result or
  * a tool's or an ask's start, the lines before it are looked back over too,
@@ -47,7 +51,9 @@ import { bytesAt, timeAt, wordAt } from "../autohand-code/jsonBytes.ts";
  *   (agent-session.ts:7202-7305, agent-loop.ts:3557-3565, :1633-1660). A
  *   round run after the exit with no prompt, as `/retry` and `--restore` run,
  *   writes the same lines, so whether the exit cut off decides is judged by
- *   when the file was last written (`exitOf` in ohMyPiMapping.ts).
+ *   the time the newest reply or result carries (`exitOf` in
+ *   ohMyPiMapping.ts), never by when the file was last written, which a
+ *   rename moves.
  * - When no tool's or ask's start is passed, the newest included, the exit is
  *   also the exit behind, and decides as an exit does whenever the file was
  *   written.
@@ -261,7 +267,10 @@ function customLine(head: Buffer, at: number): TailLine {
   const is = (word: Buffer) => kindEnd - kind === word.byteLength && bytesAt(head, kind, word);
   if (is(SESSION_EXIT)) return exitLine(head, kindEnd + 1);
   if (is(TOOL_EXECUTION_START)) return toolLine(head, kindEnd + 1);
-  if (is(PROVIDER_REFUSAL)) return head[kindEnd + 1] === COMMA ? { sort: "reply" } : UNREADABLE;
+  // A refusal's time comes after its `data`, which is not read, so it has none.
+  if (is(PROVIDER_REFUSAL)) {
+    return head[kindEnd + 1] === COMMA ? { sort: "reply", at: null } : UNREADABLE;
+  }
   return PASSED;
 }
 
@@ -303,13 +312,15 @@ function messageLine(head: Buffer, at: number): TailLine {
   if (role < 0) return UNREADABLE;
   const index = wordAt(head, role, ROLE_WORDS);
   const sort = index < 0 ? "unreadable" : (ROLES[index] as [Buffer, TailLine["sort"]])[1];
+  // Only a reply's or a result's time is turned into text, once its role is known.
+  if (sort === "reply" || sort === "result") return { sort, at: timeAt(head, time) };
   return sort === "passed" ? PASSED : ({ sort } as TailLine);
 }
 
 /**
  * What a line is, without its line break, from its first `LINE_HEAD_BYTES`
- * bytes alone. Nothing but the times of an exit and an `ask` is turned into
- * text.
+ * bytes alone. Nothing but the times of an exit, an `ask`, a reply and a
+ * result is turned into text.
  */
 export function judgeLine(line: Buffer): TailLine {
   const head = line.subarray(0, LINE_HEAD_BYTES);
