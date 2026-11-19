@@ -2,7 +2,9 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
-## Unreleased
+## 0.2.24 - 2026-11-19
+
+Droid and Grok Build sessions show.
 
 ### Added
 

@@ -58,7 +58,7 @@ The Sessions list holds every session that is not waiting for you, grouped in th
 
 When the list is too narrow for every column, the app is left out first and then the folder with its branch, so names keep their room. In a narrow window both are left out and the status moves under the name. The Needs you panel still gives the branch of each session that needs you.
 
-A Claude Code session in VS Code, inside tmux or in a tab of Terminal or iTerm2 has a Jump button here too, and so does a Qwen Code session inside tmux or in a tab of Terminal or iTerm2. A Claude Code background job that has finished, failed or been stopped has a [Resume](#resume-a-session) button in the same place.
+A Claude Code session in VS Code, inside tmux or in a tab of Terminal or iTerm2 has a Jump button here too, and so does a Qwen Code or Grok Build session inside tmux or in a tab of Terminal or iTerm2. A Claude Code background job that has finished, failed or been stopped has a [Resume](#resume-a-session) button in the same place.
 
 Claude Code sessions idle for a day or more, or as long as the [idle rule](#time-rules) says, whose process still runs are also listed over the list, under Left running, where they can be hidden or ended: see [Sessions left running](#sessions-left-running).
 
@@ -231,7 +231,7 @@ If a way shows it answered or finished, or the way that last listed it shows it 
 
 ### Sources
 
-![The whole Sources view in the Night theme. Cards for Claude Code, Codex and status files, each marked Watching, list what Agent Lookout reads and runs and how often, how many sessions it found and when it last checked. Between Codex and status files, the cards of the other twenty-one agents, from the Antigravity CLI to DeepSeek Harness, each say Not found. The first, the Antigravity CLI's, says there is no ~/.gemini/antigravity-cli folder, and gives the conversations folder it would read, the ps command it would run every 10 seconds at most, and 0 sessions. Under them, the card for devbox, another machine, says Connected and gives the ssh target, the ssh command, the two routes it asks for, the version of Agent Lookout there and what each source there is doing. Last, What each agent can report gives Yes, No or Partly for each agent, the Antigravity CLI and Claude Code on devbox among them, and each thing it can show. Beside the cards, About sources says what a source is.](images/sources-night.png)
+![The whole Sources view in the Night theme. Cards for Claude Code, Codex and status files, each marked Watching, list what Agent Lookout reads and runs and how often, how many sessions it found and when it last checked. Between Codex and status files, the cards of the other twenty-three agents, from the Antigravity CLI to Grok Build, each say Not found. The first, the Antigravity CLI's, says there is no ~/.gemini/antigravity-cli folder, and gives the conversations folder it would read, the ps command it would run every 10 seconds at most, and 0 sessions. Under them, the card for devbox, another machine, says Connected and gives the ssh target, the ssh command, the two routes it asks for, the version of Agent Lookout there and what each source there is doing. Last, What each agent can report gives Yes, No or Partly for each agent, the Antigravity CLI and Claude Code on devbox among them, and each thing it can show. Beside the cards, About sources says what a source is.](images/sources-night.png)
 
 Sources has a card for Claude Code, one for Codex, one for the Antigravity CLI, one for Antigravity, one for Mistral Vibe, one for Gemini CLI, one for OpenCode, one for Qwen Code, one for Hermes Agent, one for Cline, one for Goose, one for Pi, one for Kimi Code, one for Continue, one for Crush, one for Kilo Code, one for MiMo Code, one for Kimchi, one for Prime Agent, one for fx, one for Unreal Agent, one for Autohand Code, one for DeepSeek Harness, one for Droid, one for Grok Build and one for status files, and under them a table of [what each agent can report](#what-each-agent-can-report). Each card says whether the agent was found: Watching, Searching, Not found or Not working. Under that, a short note says how its sessions are being read right now, then rows give what Agent Lookout reads and runs.
 
@@ -899,7 +899,7 @@ To turn Pushover off, start Agent Lookout again without `AGENT_LOOKOUT_PUSHOVER_
 
 ## Jump
 
-A Jump button takes you to a session. A Claude Code session has one when it runs in VS Code, when its process runs inside a tmux pane, or when it runs in a tab of Terminal or iTerm2 on a Mac. A Qwen Code session has one when its process runs inside a tmux pane, or in a tab of Terminal or iTerm2 on a Mac. The button is in the Needs you panel and in the Sessions list, or on the session's card when the list is shown as a board. No other session has one.
+A Jump button takes you to a session. A Claude Code session has one when it runs in VS Code, when its process runs inside a tmux pane, or when it runs in a tab of Terminal or iTerm2 on a Mac. A Qwen Code or Grok Build session has one when its process runs inside a tmux pane, or in a tab of Terminal or iTerm2 on a Mac. The button is in the Needs you panel and in the Sessions list, or on the session's card when the list is shown as a board. No other session has one.
 
 ### A session in VS Code
 
@@ -960,9 +960,9 @@ Jump for tmux has these limits.
 - It sends nothing to the session: no keys and no text.
 - If another pane of the window was zoomed, tmux ends the zoom when the selected pane changes.
 - It knows one tmux server: the one the `tmux` command reaches from where Agent Lookout was started. That is the default server, or the one Agent Lookout was itself started inside. A session in another tmux server, such as one started with `tmux -L`, gets no button.
-- It asks tmux where its panes are when it first finds a Claude Code or Qwen Code session, then every 30 seconds, and within about 5 seconds of a new session appearing. So a session that has just started can be a few seconds without its button. After you move a pane, the place named on the button can be up to 30 seconds out of date. The press still selects the right pane, because it goes by the pane's own ID.
+- It asks tmux where its panes are when it first finds a Claude Code, Qwen Code or Grok Build session, then every 30 seconds, and within about 5 seconds of a new session appearing. So a session that has just started can be a few seconds without its button. After you move a pane, the place named on the button can be up to 30 seconds out of date. The press still selects the right pane, because it goes by the pane's own ID.
 - When a window is linked into more than one tmux session, tmux chooses which of them is switched to.
-- It is for Claude Code and Qwen Code sessions. A session in a terminal that is not running tmux is reached through its tab when that is a tab of Terminal or iTerm2, as the next part says, and has no button otherwise.
+- It is for Claude Code, Qwen Code and Grok Build sessions. A session in a terminal that is not running tmux is reached through its tab when that is a tab of Terminal or iTerm2, as the next part says, and has no button otherwise.
 - It needs the `tmux` program, on your `PATH` or at `/opt/homebrew/bin`, `/usr/local/bin`, `/opt/local/bin` or `/usr/bin`. Without it, or while no tmux server is running, no session has the button and nothing else changes.
 
 To stop Agent Lookout running tmux at all, start it with `AGENT_LOOKOUT_TMUX=off`. [PRIVACY.md](../PRIVACY.md#tmux) lists each command it runs and what it reads from tmux.
@@ -1003,13 +1003,14 @@ In the [desktop app](#desktop-app) the collector runs inside Agent Lookout itsel
 
 #### Which sessions have the button
 
-- A Claude Code or Qwen Code session on a Mac whose process runs in a tab of Terminal or iTerm2, and is not inside tmux. A session inside tmux is reached through tmux, as above, even when tmux runs in a Terminal tab.
+- A Claude Code, Qwen Code or Grok Build session on a Mac whose process runs in a tab of Terminal or iTerm2, and is not inside tmux. A session inside tmux is reached through tmux, as above, even when tmux runs in a Terminal tab.
 - Agent Lookout tells which app it is by following the session's process up through its parents to Terminal, at `/System/Applications/Utilities/Terminal.app`, or to iTerm2, at `/Applications/iTerm.app`, or to the server iTerm2 runs its shells under, which it keeps in `~/Library/Application Support/iTerm2`. Every process on the way must have the session's terminal.
 - A session in Warp, Ghostty, Alacritty, kitty or WezTerm has no button, and nor does one in the terminal of VS Code or another editor. A session of the Claude Code extension in VS Code has its own Jump, as [A session in VS Code](#a-session-in-vs-code) says.
 - A session whose terminal could not be read has no button, and nor does a Codex session.
 - It asks once about each session, within about 5 seconds of it appearing, so a session that has just started can be a few seconds without its button.
 - With two copies of iTerm2 running at once, macOS chooses which of them is asked.
 - A Qwen Code session gets the button, in a tab or in tmux, only once `ps` says its process started by the time Qwen Code recorded the session, give or take a minute. One whose process ID another program was given after a crash has none, and on Linux and on a Mac it shows as finished.
+- A Grok Build session gets the button, in a tab or in tmux, only while Grok Build lists it, and only once `ps` says its process started by the time Grok Build listed the session, give or take a minute. One whose process ID another program was given after a crash has none, and on a Mac it shows as finished.
 
 To stop Agent Lookout looking for tabs at all, start it with `AGENT_LOOKOUT_TERMINAL_JUMP=off`. It then runs no `osascript` for Jump, and sessions in Terminal and iTerm2 have no button. The same `ps` still runs for Claude Code sessions, to look for the editor a session in VS Code runs under, unless `AGENT_LOOKOUT_EDITOR_JUMP` is `off` too, and with both off it is not run for this. [PRIVACY.md](../PRIVACY.md#terminal-and-iterm2) lists what it reads and runs.
 
@@ -2171,7 +2172,7 @@ For Grok Build it runs no Grok Build program, connects to no socket of Grok Buil
 
 For any other agent it reads the folder `~/.agent-lookout/sessions` every 2 seconds, when that folder exists. Each file in it is one session, written by the agent itself, as [Your own agents](#your-own-agents) describes. When each file was last written says how long a working session has been quiet.
 
-While a Claude Code or Qwen Code session is running, Agent Lookout also asks tmux, if it is installed, which panes it has, about every 30 seconds. A session whose process runs inside one of them gets a [Jump](#jump) button. On a Mac it also asks `ps`, once for each new Claude Code or Qwen Code session, which terminal the session's process has and which programs are its parents. A session in a tab of Terminal or iTerm2 gets a Jump button too. On Linux, for a Qwen Code session found in a pane, it asks `ps` when the session's process started, every 30 seconds, and sooner when another process is found in one. On a Mac, the start time it asks `ps` about each Qwen Code session's process, as above, serves Jump too.
+While a Claude Code, Qwen Code or Grok Build session is running, Agent Lookout also asks tmux, if it is installed, which panes it has, about every 30 seconds. A session whose process runs inside one of them gets a [Jump](#jump) button. On a Mac it also asks `ps`, once for each new Claude Code, Qwen Code or Grok Build session, which terminal the session's process has and which programs are its parents. A session in a tab of Terminal or iTerm2 gets a Jump button too. On Linux, for a Qwen Code or Grok Build session found in a pane, it asks `ps` when the session's process started, every 30 seconds, and sooner when another process is found in one. On a Mac, the start time it asks `ps` about each Qwen Code or Grok Build session's process, as above, serves Jump too.
 
 For every session, whatever its agent, Agent Lookout looks for the git repository the session's folder is in: it looks for `.git` in the folder, then in each folder above it, and stops at the first, or before your home folder. It reads which [branch](#branches) is checked out from the repository's `HEAD` file, following the `.git` file of a worktree or a submodule to the folder that holds it. Which [repository](#repositories) the folder belongs to it works out from where those files are and, for a worktree, from the `commondir` file beside its `HEAD`, which names the repository's own git folder. It reads nothing else in the repository.
 
