@@ -263,6 +263,38 @@ describe("a listed session", () => {
     expect(health.detail).toBe(`${healthy()} ${UNKNOWN_NOTE}`);
   });
 
+  test("unknown, with the note, when its plan file cannot be read", async () => {
+    const files = oneSession(wholeTurn(T));
+    writePlan(files, "{");
+    const { health, sessions } = await grokBuildAdapterFor(files).poll();
+    expect(byId(sessions)).toMatchObject({ status: "unknown", statusSince: null });
+    expect(health.detail).toBe(`${healthy()} ${UNKNOWN_NOTE}`);
+  });
+
+  test("unknown, with the note, when its turn began before the listing with nothing from it since", async () => {
+    // The model wrote before the listing, so this is not the 2 minutes with nothing from it.
+    const files = memoryFiles();
+    writeRegistry(files, [entry({ opened_at: openedAt(NOW) })]);
+    writeEvents(files, turnStarted(NOW - 5 * MINUTE) + firstToken(NOW - 5 * MINUTE + SECOND), {
+      mtimeMs: NOW - 5 * MINUTE + SECOND,
+    });
+    const { health, sessions } = await grokBuildAdapterFor(files).poll();
+    expect(byId(sessions)).toMatchObject({ status: "unknown", statusSince: null });
+    expect(health.detail).toBe(`${healthy()} ${UNKNOWN_NOTE}`);
+  });
+
+  test("the note names every cause of unknown", () => {
+    for (const cause of [
+      "folder cannot be found",
+      "event log or plan file cannot be read",
+      "ends in a way Grok Build 1.0.45 does not write",
+      "nothing from the model for 2 minutes",
+      "more than a minute before Grok Build listed it with nothing from the turn since",
+    ]) {
+      expect(UNKNOWN_NOTE).toContain(cause);
+    }
+  });
+
   test("unknown when its folder is not found, or its log is missing", async () => {
     const files = memoryFiles();
     writeRegistry(files, [entry()]);
