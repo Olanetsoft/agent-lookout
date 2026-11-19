@@ -30,7 +30,11 @@ import { tildify } from "../../files/paths.ts";
 import { isMissing, nodeIo, type FileInfo, type ReadOnlyIo } from "../../files/readOnlyIo.ts";
 import { POLL_INTERVAL_MS } from "../../poller.ts";
 import { isProcessAlive } from "../../processes/pids.ts";
+import type { TabAsker } from "../../terminal/tabFinder.ts";
+import type { PaneAsker } from "../../tmux/paneFinder.ts";
 import type { Adapter, AdapterResult } from "../adapter.ts";
+import { paneFacts } from "../paneFacts.ts";
+import { tabFacts } from "../tabFacts.ts";
 import { every } from "../words.ts";
 import {
   AUTOHAND_HOME_ENV,
@@ -45,7 +49,7 @@ import {
 } from "./folders.ts";
 import { createHeartbeatReader, type Heartbeat } from "./heartbeats.ts";
 import { createMetadataReader, type MetadataRead } from "./metadata.ts";
-import { autohandCodeSession, SOURCE_ID } from "./toSession.ts";
+import { autohandCodeSession, SOURCE_ID, withJump } from "./toSession.ts";
 
 export { AUTOHAND_HOME_ENV, AUTOHAND_OWN_HOME_ENV, autohandHomeFor } from "./folders.ts";
 export { SOURCE_ID } from "./toSession.ts";
@@ -133,7 +137,9 @@ export function noHeartbeatsNote(folder: string): string {
  *   `completed`.
  * - Its name is yours, from `/rename` or `autohand --rename`, else its
  *   folder's. Autohand Code's own title is never looked for.
- * - No Jump yet.
+ * - Jump is a pane for tmux, and a tab for Terminal or iTerm2 on a Mac, found
+ *   only for the process of a fresh heartbeat, so not for a run with
+ *   --no-daemon.
  * - Quiet for is when its `metadata.json` was last written.
  * - No tokens, Stop or Answer.
  */
@@ -164,8 +170,9 @@ export const AUTOHAND_CODE_CAPABILITIES: SourceCapabilities = {
       "Your /rename or autohand --rename, else the folder's. Autohand Code's own title can be your first words and is never looked for.",
   },
   jump: {
-    level: "no",
-    reason: "Agent Lookout does not yet look for the terminal an Autohand Code session runs in.",
+    level: "partly",
+    reason:
+      "In tmux, and in a tab of Terminal or iTerm2 on a Mac, while its heartbeat is fresh, so not for a run with --no-daemon.",
   },
   "quiet-for": {
     level: "partly",
@@ -209,6 +216,17 @@ export interface AutohandCodeAdapterOptions {
   recheckMs?: number;
   /** How often every session's folder is looked up. Defaults to a minute. */
   sweepMs?: number;
+  /**
+   * Finds the tmux pane the process of each fresh heartbeat runs in, so that
+   * Jump can select it. The collector passes an asker of the finder the jump
+   * route acts with. Left out, no pane is looked for and tmux is never run.
+   */
+  panes?: PaneAsker;
+  /**
+   * Finds the Terminal or iTerm2 tab the process of each fresh heartbeat runs
+   * in, for a session in no tmux pane. Left out, no tab is looked for.
+   */
+  terminals?: TabAsker;
 }
 
 /** A heartbeat of a session on this poll, as its status is chosen from it. */
@@ -266,10 +284,21 @@ const BUSY: readonly SessionStatus[] = ["needs-you", "working", "idle"];
  * whose process went on to another session. That memory goes when Agent
  * Lookout stops.
  *
+ * A session whose heartbeat chosen on this poll is fresh, written in the last
+ * 15 seconds with its process running, is given a `jump` that names the place
+ * when that process runs inside a tmux pane, or else in a tab of Terminal or
+ * iTerm2, and the adapter is handed something to find panes or tabs with. The
+ * finders are told of those processes alone: a process ID is taken for
+ * Autohand Code's only while a fresh heartbeat names it, since the system
+ * gives a gone process's ID to another program. So a session with a stale
+ * heartbeat, a gone process or none, as with --no-daemon, one whose process
+ * moved on to another session and one that is finished have no Jump.
+ *
  * Autohand Code not being installed costs nothing: when neither folder is
- * there, the adapter says so and looks again only once a minute. Someone who
- * sets `AGENT_LOOKOUT_AUTOHAND_HOME` means that folder: if it holds neither,
- * that is an answer, not a missing Autohand Code.
+ * there, the adapter says so and looks again only once a minute. A pane finder
+ * it is handed still looks for tmux's program, which starts nothing. Someone
+ * who sets `AGENT_LOOKOUT_AUTOHAND_HOME` means that folder: if it holds
+ * neither, that is an answer, not a missing Autohand Code.
  */
 export function createAutohandCodeAdapter(options: AutohandCodeAdapterOptions = {}): Adapter {
   const env = options.env ?? process.env;
@@ -302,6 +331,8 @@ export function createAutohandCodeAdapter(options: AutohandCodeAdapterOptions = 
   /** The folders last found to hold no session shown, looked up only by a sweep. */
   let settled = new Set<string>();
   let memory = new Map<string, Memory>();
+  /** The process of each session shown with a fresh heartbeat on this poll, by its ID in the model, for Jump. */
+  let jumpPids = new Map<string, number>();
 
   function result(
     state: SourceState,
@@ -321,6 +352,9 @@ export function createAutohandCodeAdapter(options: AutohandCodeAdapterOptions = 
         { label: "Sessions folder", value: sessionsName },
         { label: "Read", value: read },
         { label: "Process check", value: `signal 0 alone, ${every(pollIntervalMs)}` },
+        // Written before this poll's look, so what it finds shows at the next poll.
+        ...paneFacts(options.panes, platform),
+        ...tabFacts(options.terminals, platform),
       ],
       checkedAt,
     };
@@ -663,19 +697,22 @@ export function createAutohandCodeAdapter(options: AutohandCodeAdapterOptions = 
         standIn,
       });
       if (status === "unknown") unknown = true;
-      sessions.push(
-        autohandCodeSession({
-          sessionId: id,
-          status,
-          ...(waitingReason === undefined ? {} : { waitingReason }),
-          statusSince,
-          facts,
-          writtenAt,
-          heartbeat: said,
-          process: chosen === null ? null : { pid: chosen.pid, alive: chosen.alive },
-          now: checkedAt,
-        }),
-      );
+      const shown = autohandCodeSession({
+        sessionId: id,
+        status,
+        ...(waitingReason === undefined ? {} : { waitingReason }),
+        statusSince,
+        facts,
+        writtenAt,
+        heartbeat: said,
+        process: chosen === null ? null : { pid: chosen.pid, alive: chosen.alive },
+        now: checkedAt,
+      });
+      sessions.push(shown);
+      // Its process is looked for only while this poll's heartbeat of it is
+      // fresh. A session with one is never finished, and one whose process
+      // moved on to another session has no heartbeat of its own.
+      if (chosen?.heartbeatClass === "fresh") jumpPids.set(shown.id, chosen.pid);
     }
 
     settled = stillSettled;
@@ -694,17 +731,47 @@ export function createAutohandCodeAdapter(options: AutohandCodeAdapterOptions = 
     return result("ok", detail, every(pollIntervalMs), checkedAt, sessions, basis);
   }
 
+  /** Tells the finders which processes to look for: those of this poll's fresh heartbeats, and no other. */
+  async function lookFor(pids: readonly number[]): Promise<void> {
+    await Promise.all([options.panes?.look(pids), options.terminals?.look(pids)]);
+  }
+
+  /**
+   * The sessions of a poll, each one with a fresh heartbeat whose process
+   * runs inside a tmux pane, or else in a tab of Terminal or iTerm2, with the
+   * place Jump reaches it in. A poll with no such session tells the finders
+   * so, and they forget its processes.
+   */
+  async function withJumps(answer: AdapterResult): Promise<AdapterResult> {
+    if (!options.panes && !options.terminals) return answer;
+    await lookFor([...new Set(jumpPids.values())]);
+    if (jumpPids.size === 0) return answer;
+    return {
+      ...answer,
+      sessions: answer.sessions.map((session) => {
+        const pid = jumpPids.get(session.id);
+        if (pid === undefined) return session;
+        const pane = options.panes?.paneOf(pid);
+        const tab = pane ? undefined : options.terminals?.tabOf(pid);
+        return withJump(session, pane, tab);
+      }),
+    };
+  }
+
   return {
     id: SOURCE_ID,
     label: LABEL,
     capabilities: AUTOHAND_CODE_CAPABILITIES,
     lookingIn: `Looking for Autohand Code sessions in ${homeName}.`,
     async poll() {
+      jumpPids = new Map();
       try {
-        return await poll();
+        return await withJumps(await poll());
       } catch {
         // Nothing above is expected to throw. If it does, the poller still gets an
-        // answer, and the person sees a sentence, not a stack trace.
+        // answer, and the person sees a sentence, not a stack trace. No process is
+        // looked for.
+        await lookFor([]).catch(() => {});
         return result(
           "error",
           "Something unexpected went wrong while reading Autohand Code sessions.",

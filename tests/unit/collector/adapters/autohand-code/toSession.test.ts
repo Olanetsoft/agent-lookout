@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   autohandCodeSession,
+  withJump,
   type AutohandCodeSessionInput,
 } from "@collector/adapters/autohand-code/toSession";
 import type { MetadataFacts } from "@core/mapping/autohand-code/autohandCodeMapping";
@@ -99,7 +100,7 @@ describe("an Autohand Code session", () => {
     );
   });
 
-  test("has its process only from this poll's heartbeat, and no link, jump, stop or tokens", () => {
+  test("has its process only from this poll's heartbeat, and no link, Jump of its own, stop or tokens", () => {
     const session = autohandCodeSession(input());
     expect(session).toMatchObject({ pid: PID, alive: true, id: `autohand-code:${SESSION_ID}` });
     const ended = autohandCodeSession(input({ status: "finished", process: null }));
@@ -109,6 +110,24 @@ describe("an Autohand Code session", () => {
       expect(session, absent).not.toHaveProperty(absent);
     }
     expect(session.links).toEqual({});
+  });
+
+  test("Jump names the pane's place or the app, a pane before a tab, and nothing else", () => {
+    const session = autohandCodeSession(input());
+    const pane = { pid: PID, id: "%1", place: "demo-project:0.1" };
+    const tab = { app: "Terminal" as const, tty: "/dev/ttys001" };
+    expect(withJump(session, pane, undefined).jump).toEqual({
+      kind: "tmux",
+      place: "demo-project:0.1",
+    });
+    expect(withJump(session, undefined, tab).jump).toEqual({
+      kind: "terminal",
+      app: "Terminal",
+      place: "Terminal",
+    });
+    expect(withJump(session, pane, tab).jump).toEqual({ kind: "tmux", place: "demo-project:0.1" });
+    expect(withJump(session, undefined, undefined)).toBe(session);
+    expect(JSON.stringify(withJump(session, pane, tab))).not.toMatch(/%1|ttys001/);
   });
 
   test("gives a reason only while it needs you, and is stale after a day idle", () => {

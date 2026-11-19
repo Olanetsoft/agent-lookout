@@ -12,6 +12,8 @@ import type {
 } from "../../../core/sessions/session.ts";
 import { isStale } from "../../../core/sessions/staleness.ts";
 import { plausibleTime } from "../../../core/time.ts";
+import type { TerminalTab } from "../../terminal/terminalTabs.ts";
+import type { TmuxPane } from "../../tmux/panes.ts";
 
 export const SOURCE_ID: SourceId = "autohand-code";
 
@@ -63,7 +65,8 @@ function surfaceOf(facts: MetadataFacts | null, mode: AutohandMode | null | unde
  * - Its last write is when its `metadata.json` was last written, never the
  *   heartbeat's, which is rewritten every 5 seconds whatever the session does.
  * - It has its process only from this poll's heartbeat. It has no link, no
- *   Jump, no Stop and nothing it asks.
+ *   Stop and nothing it asks. Its Jump is added by `withJump`, once the
+ *   adapter has found where the process of a fresh heartbeat runs.
  */
 export function autohandCodeSession(input: AutohandCodeSessionInput): Session {
   const { facts, heartbeat, now, status } = input;
@@ -100,5 +103,20 @@ export function autohandCodeSession(input: AutohandCodeSessionInput): Session {
     session.alive = input.process.alive;
   }
   if (lastWriteAt !== null) session.lastWriteAt = lastWriteAt;
+  return session;
+}
+
+/**
+ * The session with the place Jump reaches it in: the tmux pane its process was
+ * found in, or else its tab of Terminal or iTerm2, as for Qwen Code. Only the
+ * place's name goes to the dashboard.
+ */
+export function withJump(
+  session: Session,
+  pane: TmuxPane | undefined,
+  tab: TerminalTab | undefined,
+): Session {
+  if (pane) return { ...session, jump: { kind: "tmux", place: pane.place } };
+  if (tab) return { ...session, jump: { kind: "terminal", app: tab.app, place: tab.app } };
   return session;
 }

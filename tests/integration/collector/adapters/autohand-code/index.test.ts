@@ -21,7 +21,7 @@ import {
   createAutohandCodeAdapter,
   type AutohandCodeAdapterOptions,
 } from "@collector/adapters/autohand-code/index";
-import { createCollector } from "@collector/collector";
+import { createCollector, type CollectorOptions } from "@collector/collector";
 import {
   CANARY_MARK,
   SESSION_ID,
@@ -29,6 +29,8 @@ import {
   metadata,
 } from "@tests/fixtures/autohand-code/autohandCode";
 import { makeClaudeHome, NO_SETTINGS_FILE, tempDir } from "@tests/support/node/tempFiles";
+import { fakeProcesses, inTab, TERMINAL_PATH } from "@tests/support/node/terminal";
+import { fakeTmux } from "@tests/support/node/tmux";
 
 const POSIX = process.platform !== "win32";
 
@@ -39,7 +41,9 @@ function endedPid(): number {
 }
 
 /** An Autohand Code folder with one session, laid out as Autohand Code lays it out, near the real clock. */
-async function autohandHome(options: { pid?: number; phase?: string; writtenAt?: number } = {}) {
+async function autohandHome(
+  options: { pid?: number; phase?: string; writtenAt?: number; updatedAt?: number } = {},
+) {
   const home = await tempDir();
   const now = Date.now();
   const heartbeats = path.join(home, "active-agents");
@@ -52,7 +56,7 @@ async function autohandHome(options: { pid?: number; phase?: string; writtenAt?:
     heartbeat({
       pid: options.pid ?? process.pid,
       phase: options.phase,
-      updatedAt: now,
+      updatedAt: options.updatedAt ?? now,
       startedAt: now - 60_000,
     }),
     { mode: 0o600 },
@@ -208,7 +212,19 @@ describe("the Autohand Code adapter, on real files", () => {
 });
 
 describe("the Autohand Code adapter, through the collector", () => {
-  async function pollOnce(home: string) {
+  /**
+   * One poll of the collector as every host builds it, with tmux, tabs and
+   * editors off unless a test turns them on, and a tmux or a table of
+   * processes of the test's own when it hands one in.
+   */
+  async function pollOnce(
+    home: string,
+    more: {
+      env?: Record<string, string>;
+      tmux?: CollectorOptions["tmux"];
+      readProcesses?: CollectorOptions["readProcesses"];
+    } = {},
+  ) {
     const collector = createCollector({
       version: "9.9.9-test",
       env: {
@@ -245,8 +261,11 @@ describe("the Autohand Code adapter, through the collector", () => {
         AGENT_LOOKOUT_EDITOR_JUMP: "off",
         AGENT_LOOKOUT_ANSWER: "off",
         AGENT_LOOKOUT_STOP: "off",
+        ...more.env,
       },
       intervalMs: 5_000,
+      ...(more.tmux && { tmux: more.tmux }),
+      ...(more.readProcesses && { readProcesses: more.readProcesses }),
     });
     onTestFinished(() => collector.stop());
     return collector.poller.pollOnce();
@@ -265,5 +284,61 @@ describe("the Autohand Code adapter, through the collector", () => {
       state: "ok",
       watching: expect.arrayContaining([{ label: "Read", value: "every 5 seconds" }]),
     });
+  });
+
+  const autohandOf = (sessions: { source: string }[]) =>
+    sessions.find(({ source }) => source === "autohand-code");
+
+  test("a session whose fresh heartbeat's process is in a tmux pane has Jump to it", async () => {
+    const { home } = await autohandHome();
+    const tmux = fakeTmux({ panes: [`${process.pid} %7 2 1 checkout-flow`] });
+    const ps = fakeProcesses();
+    const snapshot = await pollOnce(home, { tmux: tmux.run, readProcesses: ps.read });
+    expect(autohandOf(snapshot.sessions)).toMatchObject({
+      pid: process.pid,
+      jump: { kind: "tmux", place: "checkout-flow:2.1" },
+    });
+    expect(tmux.names()).toEqual(["list-panes"]);
+  });
+
+  test("one in a tab of Terminal has Jump to the tab", async () => {
+    const { home } = await autohandHome();
+    const ps = fakeProcesses(inTab(TERMINAL_PATH, process.pid));
+    const snapshot = await pollOnce(home, {
+      env: { AGENT_LOOKOUT_TERMINAL_JUMP: "on" },
+      readProcesses: ps.read,
+    });
+    expect(autohandOf(snapshot.sessions)).toMatchObject({
+      pid: process.pid,
+      jump: { kind: "terminal", app: "Terminal", place: "Terminal" },
+    });
+    expect(ps.runs).toBe(1);
+  });
+
+  test("with AGENT_LOOKOUT_TERMINAL_JUMP off its process is not looked for in a tab, as no editor is looked for it", async () => {
+    const { home } = await autohandHome();
+    const ps = fakeProcesses(inTab(TERMINAL_PATH, process.pid));
+    const snapshot = await pollOnce(home, {
+      env: { AGENT_LOOKOUT_TERMINAL_JUMP: "off", AGENT_LOOKOUT_EDITOR_JUMP: "on" },
+      readProcesses: ps.read,
+    });
+    expect(autohandOf(snapshot.sessions)).toMatchObject({ status: "working", pid: process.pid });
+    expect(autohandOf(snapshot.sessions)).not.toHaveProperty("jump");
+    expect(ps.runs).toBe(0);
+  });
+
+  test("a heartbeat over 15 seconds old whose process runs has no Jump, and runs no tmux or ps", async () => {
+    const { home } = await autohandHome({ updatedAt: Date.now() - 20_000 });
+    const tmux = fakeTmux({ panes: [`${process.pid} %7 2 1 checkout-flow`] });
+    const ps = fakeProcesses(inTab(TERMINAL_PATH, process.pid));
+    const snapshot = await pollOnce(home, {
+      env: { AGENT_LOOKOUT_TERMINAL_JUMP: "on" },
+      tmux: tmux.run,
+      readProcesses: ps.read,
+    });
+    expect(autohandOf(snapshot.sessions)).toMatchObject({ status: "unknown", pid: process.pid });
+    expect(autohandOf(snapshot.sessions)).not.toHaveProperty("jump");
+    expect(tmux.ran).toEqual([]);
+    expect(ps.runs).toBe(0);
   });
 });

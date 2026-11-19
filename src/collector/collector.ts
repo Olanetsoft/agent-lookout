@@ -387,10 +387,10 @@ export function createCollector(options: CollectorOptions): Collector {
     keeper ? keptHistoryStore(memoryHistory, keeper) : memoryHistory,
     ledger,
   );
-  // The panes the Claude Code, Qwen Code and Grok Build adapters find are the
-  // ones the jump route selects, so they share one finder and one way of
-  // running tmux. Each adapter asks through an asker of its own, so none drops
-  // another's.
+  // The panes the Claude Code, Qwen Code, Grok Build and Autohand Code adapters
+  // find are the ones the jump route selects, so they share one finder and one
+  // way of running tmux. Each adapter asks through an asker of its own, so none
+  // drops another's.
   const tmux = options.tmux ?? createTmuxRunner({ env });
   // A table a test hands in stands in for every `ps` the finders run: the pane
   // finder reads each process's parent from it.
@@ -603,7 +603,18 @@ export function createCollector(options: CollectorOptions): Collector {
     // Read from each session's file, with no last message.
     createUnrealAgentAdapter({ env: options.env, now, pollIntervalMs: intervalMs, platform }),
     // Read from each session's heartbeat and metadata.json, with no last message.
-    createAutohandCodeAdapter({ env: options.env, now, pollIntervalMs: intervalMs, platform }),
+    createAutohandCodeAdapter({
+      env: options.env,
+      now,
+      pollIntervalMs: intervalMs,
+      platform,
+      // Only the process of a heartbeat written in the last 15 seconds whose
+      // process runs is looked for.
+      panes: panes.asker(),
+      // No editor is looked for an Autohand Code session, so with tabs off
+      // its processes are not looked for.
+      terminals: tabs.asker({ editors: false }),
+    }),
     // Read from each session's event log and its subagents', with no last message.
     createDeepseekHarnessAdapter({ env: options.env, now, pollIntervalMs: intervalMs, platform }),
     // Read from each session's first line, as Pi is, with no last message.
