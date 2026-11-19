@@ -717,7 +717,7 @@ describe("a reply Gemini CLI 0.69.0 writes again as its tool calls end, which it
       }),
       userLine(K1, at(3)),
       geminiLine(K2, at(3), { content: [{ text: "An older reply." }], tokens: undefined }),
-      patchLine({ removeIds: [P1, R1], orderIds: [S1, S2, K1, K2] }),
+      patchLine({ removeIds: [P1, R1] }),
       updatedLine(at(3)),
       prompt(P2, 4),
       ...replyWithCall(R2, 5, "The newest reply."),
