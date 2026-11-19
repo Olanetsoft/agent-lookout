@@ -500,7 +500,7 @@ Grok Build's terminal app lists the sessions it has open in `active_sessions.jso
 - reads its `plan_mode.json` and `summary.json` in `sessionFiles.ts` when they changed, finding `awaiting_plan_approval`, `title_is_manual` and `generated_title` as bytes with Autohand Code's `jsonBytes.ts`;
 - keeps the sessions it saw listed and the ones that ended in `finishedSessions.ts`, and watches one Grok Build lists no more whose process runs, as after `/new`.
 
-A session's id is `grok-build:<id>`, its name a title marked as set by you, else its folder's, and its status one of six, by `grokBuildMapping.ts` in `src/core/mapping/grok-build/`. A turn with nothing from the model for 2 minutes, or one older than the listing with nothing written since, is unknown, and a wait for a plan keeps the time it began while it lasts. Jump is found for a listed session's process as for Qwen Code's.
+A session's id is `grok-build:<id>`, its name a title marked as set by you, else its folder's, and its status one of six, by `grokBuildMapping.ts` in `src/core/mapping/grok-build/`. A turn with nothing from the model for 2 minutes, or one that started more than a minute before the listing with no line of the turn's own since, is unknown, and a wait for a plan keeps the time it began while it lasts. Jump is found for a listed session's process as for Qwen Code's.
 
 ## The status-file adapter
 
