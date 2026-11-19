@@ -635,9 +635,11 @@ const AMP_STAND_IN = [
   "  };",
   "}",
   "if (process.env.STAND_IN_AFTER_READ) afterRead(JSON.parse(process.env.STAND_IN_AFTER_READ));",
-  "let minute = () => {};",
-  "globalThis.setInterval = (callback) => ((minute = callback), 1);",
-  "globalThis.clearInterval = () => (minute = () => {});",
+  "// Each run's timer by its handle, so that clearing one leaves the others.",
+  "const timers = new Map();",
+  "let timerHandles = 0;",
+  "globalThis.setInterval = (callback) => (timers.set(++timerHandles, callback), timerHandles);",
+  "globalThis.clearInterval = (handle) => timers.delete(handle);",
   "const threads = new Map();",
   "function threadOf(id) {",
   "  if (!threads.has(id)) {",
@@ -655,6 +657,7 @@ const AMP_STAND_IN = [
   "}",
   "// Each run of the plugin in this process, the first and any loaded again.",
   "const runs = [];",
+  "let loaded = 0;",
   "async function load(open) {",
   "  const handlers = new Map();",
   "  const disposers = [];",
@@ -668,7 +671,7 @@ const AMP_STAND_IN = [
   "    onDispose: (callback) => (disposers.push(callback), { unsubscribe() {} }),",
   "  };",
   "  // A query makes a module of its own, as a run loaded again in the same process.",
-  '  const url = `${pathToFileURL("agent-lookout.ts").href}?run=${runs.length}`;',
+  '  const url = `${pathToFileURL("agent-lookout.ts").href}?run=${loaded++}`;',
   "  const plugin = await import(url);",
   "  await plugin.default(amp);",
   "  runs.push({ handlers, disposers });",
@@ -690,12 +693,14 @@ const AMP_STAND_IN = [
   "    for (const watcher of thread.watchers) watcher(command.state);",
   "  }",
   "  if (command.now) now = command.now;",
-  "  if (command.minute) minute();",
+  "  if (command.minute) for (const callback of [...timers.values()]) callback();",
   "  if (command.afterRead) afterRead(command.afterRead);",
   "  if (command.linkFails) linkFails(command.linkFails);",
   "  if (command.load) await load(command.load);",
   "  if (command.dispose) {",
-  '    for (const { disposers } of command.dispose === "first" ? runs.slice(0, 1) : runs) {',
+  "    // An unloaded run is told nothing more.",
+  '    const unloaded = runs.splice(0, command.dispose === "first" ? 1 : runs.length);',
+  "    for (const { disposers } of unloaded) {",
   "      for (const callback of disposers) {",
   "        try {",
   "          await callback();",
@@ -1188,6 +1193,19 @@ describe.skipIf(!stripsTypes())(
 
       await amp.send({ dispose: "first" });
       expect(await readFile(file, "utf8")).toBe(theirs);
+
+      // The new run still follows the thread, and its minute still comes.
+      await amp.send({ now: 1795060060000 });
+      await amp.send({ thread: THREAD, state: "running" });
+      expect(JSON.parse(await readFile(file, "utf8"))).toMatchObject({
+        status: "working",
+        since: 1795060060000,
+      });
+      const tenMinutesAgo = new Date(Date.now() - 10 * 60_000);
+      await utimes(file, tenMinutesAgo, tenMinutesAgo);
+      await amp.send({ minute: true });
+      expect((await stat(file)).mtimeMs).toBeGreaterThan(tenMinutesAgo.getTime() + 60_000);
+
       await amp.send({ dispose: true });
       expect(await readdir(folder)).toEqual([]);
       expect(await amp.end()).toEqual({ code: 0, signal: null });
