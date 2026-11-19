@@ -21,10 +21,11 @@ import { trustedFile } from "./folders.ts";
  * millisecond (`log.rs:12-17`, `:64`, `types.rs:5-7`). So:
  *
  * - The first time, the end is read backwards, 64 KiB at a time and at most
- *   8 MiB in all, from the newest whole line to the newest that starts or ends
- *   a turn, and the lines from there on are folded. A whole log of 8 MiB or
- *   less with neither has no turn yet. One whose newest such line is not in
- *   its last 8 MiB, or that has more than 8 MiB after it, says nothing.
+ *   8 MiB, and the line break before it, from the newest whole line to the
+ *   newest that starts or ends a turn, and the lines from there on are folded.
+ *   A whole log of 8 MiB or less with neither has no turn yet. One whose
+ *   newest such line is not in its last 8 MiB, or that has more than 8 MiB
+ *   after it, says nothing.
  * - After that, only what was added is read, at most 8 MiB at once, and folded
  *   the same way, so what is kept is what a first read of the same file gives.
  *   A log that shrank, was replaced, or does not go on from the last line
@@ -34,9 +35,11 @@ import { trustedFile } from "./folders.ts";
  *   kind of `a`-`z`, digits and `_`, ends with `}`, and has no second
  *   `{"ts":"` in it, as two lines run together by a crash would. Of a line
  *   that counts only its first 512 bytes are compared, with the few words
- *   below, at the place each is written, so nothing a model, a tool, a hook or
- *   a server put in a field can match. Any other line at or after the newest
- *   that starts or ends a turn says nothing can be told.
+ *   below, each right after the kind but `schema_version`, which is looked for
+ *   anywhere after it. Each word begins `,"`, and JSON writes a quote inside
+ *   a string as `\"`, so nothing a model, a tool, a hook or a server put in a
+ *   field can match. Any other line at or after the newest that starts or
+ *   ends a turn says nothing can be told.
  *
  * Of each line only its time, its kind and these are kept, as numbers and
  * flags:
@@ -62,7 +65,7 @@ export const EVENTS_FILE = "events.jsonl";
 /** How much of a log's end is read at a time, going backwards. */
 export const PIECE_BYTES = 64 * 1024;
 
-/** The most of a log's end read, and the most read of what was added at once. */
+/** The most of a log's end read, and of what was added read at once, each with the line break before it. */
 export const MAX_LOG_BYTES = 8 * 1024 * 1024;
 
 /** The most of each line compared. */
@@ -341,7 +344,9 @@ function foldLines(
 
 /** Reads a log's end backwards, as a first read does. */
 async function readFromEnd(file: OpenFile, size: number): Promise<Omit<Known, "folder" | "info">> {
-  const floor = Math.max(0, size - MAX_LOG_BYTES);
+  // The last 8 MiB, and the byte before them, so a line that starts 8 MiB
+  // from the end is found whole, as reading onwards finds it.
+  const floor = Math.max(0, size - MAX_LOG_BYTES - 1);
   let memory = Buffer.alloc(0);
   /** The bytes held run from here to `size`. */
   let start = size;

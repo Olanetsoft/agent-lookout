@@ -406,6 +406,35 @@ describe("reading", () => {
     expect(long).toEqual({ ...emptyGrokBuildTurn(), tooFar: true });
   });
 
+  test("a turn's line 8 MiB from the end, or a byte either side, reads the same onwards and afresh", async () => {
+    // The turn's line starts after a line of the session's own, so not at the log's start.
+    const lead = mcpServerStarting(T);
+    const head = lead + turnStarted(T + 1);
+    const filler = mcpServerStarting(T + 2);
+    const room =
+      MAX_LOG_BYTES -
+      Buffer.byteLength(turnStarted(T + 1)) -
+      Buffer.byteLength(mcpServerStarting(T + 3, ""));
+    const count = Math.floor((room - 1) / Buffer.byteLength(filler));
+    const spare = room - count * Buffer.byteLength(filler);
+    for (const extra of [-1, 0, 1]) {
+      const rest = filler.repeat(count) + mcpServerStarting(T + 3, "x".repeat(spare + extra));
+      const text = head + rest;
+      expect(Buffer.byteLength(text)).toBe(Buffer.byteLength(lead) + MAX_LOG_BYTES + extra);
+      const files = memoryFiles();
+      const { reader } = readerOf(files);
+      writeEvents(files, head, { mtimeMs: T });
+      await reader.read(SESSION_ID, sessionFolder());
+      appendEvents(files, rest, { mtimeMs: T + MINUTE });
+      const onwards = await reader.read(SESSION_ID, sessionFolder());
+      expect(onwards, `${extra}`).toMatchObject({
+        state: "ok",
+        turn: extra > 0 ? { tooFar: true } : { boundary: "started", tooFar: false },
+      });
+      expect(await firstRead(text, T + MINUTE), `${extra}`).toEqual(onwards);
+    }
+  });
+
   test("more than 8 MiB since the newest turn's line says nothing, read onwards or afresh, until a turn's line", async () => {
     const files = memoryFiles();
     const { reader } = readerOf(files);
