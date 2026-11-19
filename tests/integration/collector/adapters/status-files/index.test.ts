@@ -2,6 +2,7 @@ import { execFileSync, spawn } from "node:child_process";
 import {
   chmod,
   mkdir,
+  mkdtemp,
   readdir,
   readFile,
   realpath,
@@ -592,17 +593,18 @@ const DONE = "<done>";
 
 /**
  * A stand-in for Amp, written by hand from its Plugin API page, with only what
- * the guide's plugin uses: `on` for `session.start`, `threads.get` with a state
- * to watch and to get, `system.workspaceRoot`, `system.executor.kind`,
- * `helpers.filePathFromURI`, `logger` and `onDispose`. It loads the plugin by
- * calling its default export, then does what each line from the test says and
- * prints `DONE`. A thread is running until the test says otherwise. The
- * plugin's minute is no timer: it comes when the test says so.
+ * the guide's plugin uses: `on` for `session.start`, `activeThread`,
+ * `threads.get` with a state to watch and to get, `system.workspaceRoot`,
+ * `system.executor.kind`, `helpers.filePathFromURI`, `logger` and
+ * `onDispose`. It loads the plugin by calling its default export, then does
+ * what each line from the test says and prints `DONE`. A thread is running
+ * until the test says otherwise. The plugin's minute is no timer: it comes when
+ * the test says so.
  */
 const AMP_STAND_IN = [
   'import readline from "node:readline";',
   'import { fileURLToPath, pathToFileURL } from "node:url";',
-  "const [kind, root] = process.argv.slice(2);",
+  "const [kind, root, active] = process.argv.slice(2);",
   "let minute = () => {};",
   "globalThis.setInterval = (callback) => ((minute = callback), 1);",
   "globalThis.clearInterval = () => (minute = () => {});",
@@ -625,6 +627,7 @@ const AMP_STAND_IN = [
   "const disposers = [];",
   "const amp = {",
   '  system: { workspaceRoot: root === "none" ? null : new URL(root), executor: { kind } },',
+  '  activeThread: { current: active && active !== "none" ? { id: active } : null },',
   "  helpers: { filePathFromURI: (uri) => fileURLToPath(uri.toString()) },",
   "  logger: { log: (...values) => console.error(...values) },",
   "  on: (event, handler) => (handlers.set(event, handler), { unsubscribe() {} }),",
@@ -633,6 +636,8 @@ const AMP_STAND_IN = [
   "};",
   'const plugin = await import(pathToFileURL("agent-lookout.ts").href);',
   "await plugin.default(amp);",
+  "// What the plugin started as it loaded has its turn before the test goes on.",
+  "await new Promise((resolve) => setImmediate(resolve));",
   `console.log("${DONE}");`,
   "for await (const line of readline.createInterface({ input: process.stdin })) {",
   "  const command = JSON.parse(line);",
@@ -643,7 +648,15 @@ const AMP_STAND_IN = [
   "    for (const watcher of thread.watchers) watcher(command.state);",
   "  }",
   "  if (command.minute) minute();",
-  "  if (command.dispose) for (const callback of disposers) await callback();",
+  "  if (command.dispose) {",
+  "    for (const callback of disposers) {",
+  "      try {",
+  "        await callback();",
+  "      } catch (error) {",
+  "        console.error(error);",
+  "      }",
+  "    }",
+  "  }",
   `  console.log("${DONE}");`,
   "}",
 ].join("\n");
@@ -673,16 +686,22 @@ function stripsTypes(): boolean {
 /**
  * The guide's Amp plugin, as published, saved as `agent-lookout.ts` in a folder
  * of its own and loaded by the stand-in for Amp with its types stripped. `kind`
- * is the executor's kind, and `root` the workspace's address, or `none`.
+ * is the executor's kind, `root` the workspace's address, or `none`, and
+ * `active` the ID of the thread open as the plugin loads, or `none`.
  */
-async function startAmp(parent: string, env: NodeJS.ProcessEnv, kind: string, root: string) {
-  const work = path.join(parent, "amp");
-  await mkdir(work);
+async function startAmp(
+  parent: string,
+  env: NodeJS.ProcessEnv,
+  kind: string,
+  root: string,
+  active = "none",
+) {
+  const work = await mkdtemp(path.join(parent, "amp-"));
   await writeFile(path.join(work, "agent-lookout.ts"), await guideExample("ts"));
   await writeFile(path.join(work, "amp.mjs"), AMP_STAND_IN);
   // So that every Node takes the plugin as a module, as Amp's runtime does.
   await writeFile(path.join(work, "package.json"), '{ "type": "module" }\n');
-  const args = ["--experimental-strip-types", "amp.mjs", kind, root];
+  const args = ["--experimental-strip-types", "amp.mjs", kind, root, active];
   const { child, exited, until } = startProgram(process.execPath, args, work, env);
   const done = () => until(DONE, "The plugin's run ended.");
   await done();
@@ -706,6 +725,7 @@ async function startAmp(parent: string, env: NodeJS.ProcessEnv, kind: string, ro
 
 const THREAD = "T-demo-1";
 const AMP_FILE = `amp-${THREAD}.json`;
+const OTHER_THREAD = "T-demo-2";
 
 describe.skipIf(!stripsTypes())(
   "the Amp plugin in docs/GUIDE.md, run against the status-file source",
@@ -784,6 +804,50 @@ describe.skipIf(!stripsTypes())(
       expect(await amp.end()).toEqual({ code: 0, signal: null });
     }, 20_000);
 
+    test("a thread open as the plugin loads, as after plugins: reload, shows with no session started", async () => {
+      const { folder, parent, poll, env } = await setUp();
+      const amp = await startAmp(parent, env, "local", "none", THREAD);
+      expect((await poll()).sessions).toMatchObject([
+        { id: `status-files:${AMP_FILE}`, status: "working", pid: amp.pid, alive: true },
+      ]);
+
+      // When Amp starts its session after all, nothing changes.
+      const file = path.join(folder, AMP_FILE);
+      const written = await readFile(file, "utf8");
+      await amp.send({ start: THREAD });
+      expect(await readdir(folder)).toEqual([AMP_FILE]);
+      expect(await readFile(file, "utf8")).toBe(written);
+    }, 20_000);
+
+    for (const state of ["idle", "error"]) {
+      test(`a thread opened while its state is ${state} shows only once it runs, from when it runs`, async () => {
+        const { parent, poll, env } = await setUp();
+        const amp = await startAmp(parent, env, "local", "none");
+        await amp.send({ thread: THREAD, state });
+        await amp.send({ start: THREAD });
+        expect(await readdir(parent)).not.toContain("sessions");
+        expect((await poll()).health.state).toBe("not-set-up");
+
+        const ran = Date.now();
+        await amp.send({ thread: THREAD, state: "running" });
+        const working = await poll();
+        expect(working.sessions).toMatchObject([
+          { id: `status-files:${AMP_FILE}`, status: "working" },
+        ]);
+        expect(working.sessions[0]?.statusSince).toBeGreaterThanOrEqual(ran);
+      }, 20_000);
+    }
+
+    test("a thread opened while it waits for approval shows in Needs you at once", async () => {
+      const { parent, poll, env } = await setUp();
+      const amp = await startAmp(parent, env, "local", "none");
+      await amp.send({ thread: THREAD, state: "awaiting-approval" });
+      await amp.send({ start: THREAD });
+      expect((await poll()).sessions).toMatchObject([
+        { status: "needs-you", waitingReason: "permission" },
+      ]);
+    }, 20_000);
+
     for (const kind of ["remote", "unknown"]) {
       test(`a thread whose executor is ${kind} writes nothing`, async () => {
         const { parent, poll, env } = await setUp();
@@ -797,7 +861,7 @@ describe.skipIf(!stripsTypes())(
       }, 20_000);
     }
 
-    test("killed outright, it leaves its file, and its session goes because of its pid", async () => {
+    test("killed outright, it leaves its file, its session goes because of its pid, and the next run deletes it", async () => {
       const { folder, parent, poll, env } = await setUp();
       const amp = await startAmp(parent, env, "local", "none");
       await amp.send({ start: THREAD });
@@ -813,6 +877,56 @@ describe.skipIf(!stripsTypes())(
       expect(after.health.detail).toContain(
         "1 file names a process that has ended, so its session is not shown.",
       );
+
+      const next = await startAmp(parent, env, "local", "none");
+      expect(await readdir(folder)).toEqual([]);
+      expect((await poll()).health.detail).not.toContain("names a process that has ended");
+      expect(await next.end()).toEqual({ code: 0, signal: null });
+    }, 20_000);
+
+    test("as it loads, it deletes only files of its own whose process has ended", async () => {
+      const { folder, parent, env } = await setUp();
+      const ended = await runningProcess();
+      await ended.stop();
+      await mkdir(folder);
+      const files: Record<string, object> = {
+        // Its own, from a process that still runs, and with no process.
+        "amp-T-demo-2.json": { agent: "Amp", status: "working", pid: process.pid },
+        "amp-T-demo-3.json": { agent: "Amp", status: "working" },
+        // Another agent's, and one not named as the plugin names its files.
+        "amp-T-demo-4.json": { agent: "my-agent", status: "working", pid: ended.pid },
+        "my-agent.json": { agent: "Amp", status: "working", pid: ended.pid },
+        // Its own, failed or idle, from a process that has ended.
+        "amp-T-demo-5.json": { agent: "Amp", status: "failed", pid: ended.pid },
+        "amp-T-demo-6.json": { agent: "Amp", status: "idle", pid: ended.pid },
+      };
+      for (const [name, fields] of Object.entries(files)) {
+        await writeFile(path.join(folder, name), JSON.stringify(fields));
+      }
+
+      const amp = await startAmp(parent, env, "local", "none");
+      expect((await readdir(folder)).sort()).toEqual([
+        "amp-T-demo-2.json",
+        "amp-T-demo-3.json",
+        "amp-T-demo-4.json",
+        "my-agent.json",
+      ]);
+      expect(await amp.end()).toEqual({ code: 0, signal: null });
+    }, 20_000);
+
+    test("a file it cannot delete as Amp unloads it does not keep it from deleting the rest", async () => {
+      const { folder, parent, env } = await setUp();
+      const amp = await startAmp(parent, env, "local", "none");
+      await amp.send({ start: THREAD });
+      await amp.send({ start: OTHER_THREAD });
+      expect((await readdir(folder)).sort()).toEqual([AMP_FILE, `amp-${OTHER_THREAD}.json`]);
+
+      // A folder where the first thread's file was cannot be deleted as a file is.
+      await rm(path.join(folder, AMP_FILE));
+      await mkdir(path.join(folder, AMP_FILE));
+      await amp.send({ dispose: true });
+      expect(await readdir(folder)).toEqual([AMP_FILE]);
+      expect(await amp.end()).toEqual({ code: 0, signal: null });
     }, 20_000);
 
     test("with no setting, it makes ~/.agent-lookout/sessions and writes there", async () => {

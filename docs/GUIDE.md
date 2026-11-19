@@ -1617,7 +1617,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import type { PluginAPI, Subscription, ThreadState } from "@ampcode/plugin";
+import type { PluginAPI, Subscription, ThreadID, ThreadState } from "@ampcode/plugin";
 
 const folder =
   process.env.AGENT_LOOKOUT_STATUS_DIR || path.join(os.homedir(), ".agent-lookout", "sessions");
@@ -1643,6 +1643,28 @@ export default function (amp: PluginAPI) {
   const cwd = root ? amp.helpers.filePathFromURI(root) : undefined;
   const threads = new Map<string, Thread>();
 
+  // Files left by a run of this plugin that was killed, whose process has ended.
+  if (amp.system.executor.kind === "local") {
+    let names: string[] = [];
+    try {
+      names = fs.readdirSync(folder);
+    } catch {}
+    for (const name of names.filter((name) => /^amp-.+\.json$/.test(name))) {
+      const file = path.join(folder, name);
+      try {
+        const { agent, pid } = JSON.parse(fs.readFileSync(file, "utf8"));
+        if (agent !== "Amp" || !Number.isInteger(pid)) continue;
+        try {
+          process.kill(pid, 0);
+          continue;
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ESRCH") continue;
+        }
+        fs.rmSync(file, { force: true });
+      } catch {}
+    }
+  }
+
   function write(thread: Thread) {
     const { status, reason, since } = thread;
     const fields = { agent: "Amp", cwd, status, reason, since, app: "terminal", pid: process.pid };
@@ -1657,8 +1679,7 @@ export default function (amp: PluginAPI) {
     }
   }
 
-  amp.on("session.start", async (event) => {
-    const id = event.thread.id;
+  async function follow(id: ThreadID) {
     // Only when the plugin runs where you use Amp, and each thread once, though
     // Amp starts a thread's session again each time it is opened.
     if (amp.system.executor.kind !== "local" || threads.has(id)) return;
@@ -1669,6 +1690,9 @@ export default function (amp: PluginAPI) {
       const next = STATUS[state];
       // A state not listed above is left out, and nothing is written once Amp unloads the plugin.
       if (!next || !threads.has(id)) return;
+      // A thread you only open is shown from when it next runs: Amp does not say
+      // how long it has been idle or failed.
+      if (!thread.status && (next.status === "idle" || next.status === "failed")) return;
       // since is when this status began, so it changes only with the status.
       if (next.status !== thread.status) thread.since = Date.now();
       thread.status = next.status;
@@ -1683,7 +1707,12 @@ export default function (amp: PluginAPI) {
     });
     const first = await state.get();
     if (!changed) show(first);
-  });
+  }
+
+  amp.on("session.start", (event) => follow(event.thread.id));
+  // A thread already open when the plugin loads, as after plugins: reload, starts no session.
+  const open = amp.activeThread.current;
+  if (open) void follow(open.id);
 
   // A working thread's file is written again every minute, so it is not shown as quiet.
   const timer = setInterval(() => {
@@ -1694,21 +1723,28 @@ export default function (amp: PluginAPI) {
     clearInterval(timer);
     for (const thread of threads.values()) {
       thread.watch?.unsubscribe();
-      fs.rmSync(thread.file, { force: true });
+      try {
+        fs.rmSync(thread.file, { force: true });
+      } catch (error) {
+        amp.logger.log(`Could not delete ${thread.file}: ${error}`);
+      }
     }
     threads.clear();
   });
 }
 ```
 
-For each thread, the plugin writes `amp-<thread ID>.json`. The session shows as working while Amp works, in Needs you as Waiting for permission while a tool waits for your approval, as idle once a turn is done, and as failed when a turn stopped with an error Amp will not retry. Its `cwd` is the folder Amp has open, and the session is named after that folder, or after its file when no folder is open. The plugin writes no `name`: how Amp makes a thread's title is not public, and a name here never holds what you typed. While a thread works, its file is written again every minute, so it is not shown as quiet. When Amp unloads the plugin, as it does on a reload and when it quits normally, the plugin deletes its files. It writes nothing when Amp runs it anywhere but where you use Amp, as in an orb.
+For each thread, the plugin writes `amp-<thread ID>.json`. The session shows as working while Amp works, in Needs you as Waiting for permission while a tool waits for your approval, as idle once a turn is done, and as failed when a turn stopped with an error Amp will not retry. Amp asks for no approval by default, so a thread shows there only when Amp's permissions are turned on, such as with `amp.permissions` in its settings. Its `cwd` is the folder Amp has open, and the session is named after that folder, or after its file when no folder is open. The plugin writes no `name`: Amp's pages say only that its agent chooses a thread's title, which you can rename, not what it makes the title from, so a title can hold what you typed, and a name here never does. While a thread works, its file is written again every minute, so it is not shown as quiet.
+
+The plugin follows a thread from when Amp starts its session: when a new thread gets its first message, or you open or switch to a thread. When the plugin loads, it also follows the thread you have open. A thread shows from when it first works, or waits for your approval, while the plugin is loaded, and stays on the list, idle once its turn is done, until Amp unloads the plugin, since Amp has no event for leaving a thread. A thread you only open to read does not show, because Amp does not say how long it has been idle or failed. When Amp unloads the plugin, as it does on a reload and when it quits normally, the plugin deletes its files. When it loads, it deletes any file it left whose process has ended, as one left when Amp was killed. It writes nothing when Amp runs it anywhere but where you use Amp, as in an orb.
 
 This was built from Amp's pages on plugins and has not yet been checked on a computer running Amp. These are not known yet:
 
-- Whether the plugin's process ends when Amp is killed, so that `pid` drops its sessions then too. A plugin that is killed cannot delete its files.
+- Whether the plugin's process ends when Amp is killed or crashes, so that `pid` drops its working, waiting and idle threads then too. A plugin that is killed cannot delete its files, so they stay until Amp loads the plugin again, and a thread that had failed stays on the list, as failed, until then or for a day.
 - Whether builds of Amp from before its rebuild in May 2026 need anything to load plugins.
 - Whether Amp lets a plugin write outside the cache folder it gives it. If it does not, the plugin logs each file it could not write.
-- How a thread you have left shows while the same Amp runs on. Amp has no event for leaving a thread, so it may stay on the list, idle, until Amp quits.
+- Whether Amp starts a thread's session again when it reloads the plugin, as on `plugins: reload` or a change of workspace. If it does not, a thread that runs in the background then shows only once you open it again.
+- Whether a question Amp asks with its built-in `ask_user_choice` tool shows as waiting. Amp counts a tool that is running as `running`, so it most likely shows as working, and its file is written again every minute while it asks.
 - Whether a thread the Amp app runs on this computer, through its runner, shows, and if it does, it shows as in Terminal.
 
 ## Another machine over SSH
