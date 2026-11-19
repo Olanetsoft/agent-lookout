@@ -95,9 +95,9 @@ export const BASIS = "files";
 /**
  * The way it reads while `ps` cannot say which programs run, as its last
  * answer could not, and always on Windows: a session is finished then only
- * when Muse Code wrote that it let it go, or its newest status record was
- * written more than a minute before the computer started, and none is working,
- * idle or needs you. Named apart, so every finished session does not seem to
+ * when Muse Code wrote that it let it go, or, on macOS and Linux, its newest
+ * status record was written more than a minute before the computer started,
+ * and none is working, idle or needs you. Named apart, so every finished session does not seem to
  * start again.
  */
 export const BASIS_WITHOUT_PROCESSES = "files-without-processes";

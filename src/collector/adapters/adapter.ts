@@ -163,8 +163,8 @@ export interface AdapterResult {
    *   programs run. The usual one.
    * - `files-without-processes`: the same while `ps` cannot say, and always on
    *   Windows, when a session is finished only if Muse Code wrote that it let
-   *   it go or its newest status record was written more than a minute before
-   *   the computer started.
+   *   it go or, on macOS and Linux, its newest status record was written more
+   *   than a minute before the computer started.
    */
   basis?: string;
 }
