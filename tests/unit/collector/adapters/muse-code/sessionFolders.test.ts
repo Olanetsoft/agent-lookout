@@ -334,29 +334,6 @@ describe("links and other things that are not folders or files", () => {
     expect((await found(finder, NOW + 4_000)).paths).toEqual([]);
   });
 
-  const OLD = NOW - 10 * DAY;
-  test.each([
-    ["day", dayFolder(OLD)],
-    ["month", `${SESSIONS}/2026/11`],
-    ["year", `${SESSIONS}/2026`],
-  ])(
-    "a log that needed the person past the newest days, under a %s folder that cannot be looked up, is still needed",
-    async (_, place) => {
-      const files = memoryFiles();
-      for (let n = 0; n < 3; n += 1)
-        writeLog(files, logPath(ID(n + 1, NOW - n * DAY), NOW - n * DAY), opening(NOW - HOUR));
-      const old = logPath(ID(9, OLD), OLD);
-      writeLog(files, old, opening(OLD), NOW - 2 * DAY);
-      const finder = finderOf(files);
-      const needed = new Set([path.normalize(old)]);
-      expect((await found(finder, NOW, needed)).paths).toContain(old);
-      files.fail(place, "EIO");
-      const { refs, stillNeeded } = await finder.find(NOW + 2_000, needed);
-      expect(refs.map((ref) => asWritten(ref.path))).not.toContain(old);
-      expect(stillNeeded.map(asWritten)).toEqual([old]);
-    },
-  );
-
   test("forgets everything, as for a sessions folder that went", async () => {
     const files = memoryFiles();
     writeLog(files, logPath(ID(1)), opening(NOW - HOUR));

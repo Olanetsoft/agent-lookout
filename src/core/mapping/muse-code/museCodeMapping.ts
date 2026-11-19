@@ -156,8 +156,8 @@ function earliest(times: readonly (number | null)[]): number | null {
  * | 1   | its newest turn is too far back, or its newest line that decides cannot be read | unknown | none             |
  * | 2   | its run is not open and the newest end is `failed`                          | failed    | that end's time    |
  * | 3   | its run is not open and Muse Code wrote `session.end`                       | finished  | that record's time |
- * | 4   | `ps` cannot say, on Windows, or no time to judge it by can be right         | unknown   | none               |
- * | 5   | no Muse Code that started no later than a minute after `decidedAt` runs, or the computer started since | finished | `decidedAt` |
+ * | 4   | on Windows, no time to judge it by can be right, or `ps` cannot say and `decidedAt` is not more than a minute before the computer started | unknown | none |
+ * | 5   | `decidedAt` is more than a minute before the computer started, or no Muse Code that started no later than a minute after it runs | finished | `decidedAt` |
  * | 6   | its open run asks a question, or an approval waits for the person           | needs-you | the wait's start   |
  * | 7   | its run is open and its file was written in the last 30 minutes             | working   | the run's opening  |
  * | 8   | its run is open, quiet longer                                               | unknown   | none               |

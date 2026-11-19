@@ -498,8 +498,7 @@ export function createMuseCodeAdapter(options: MuseCodeAdapterOptions = {}): Ada
         : null;
 
     const nextWaits = new Map<string, DeepseekHarnessWait>();
-    // A session whose log could not be looked up, though it was not gone, still needs the person.
-    const nextNeeded = new Set<string>(found.stillNeeded);
+    const nextNeeded = new Set<string>();
     let tooFar = false;
     let unread = false;
     let newer = false;
