@@ -46,6 +46,10 @@ import {
   UNCHECKED_NOTE as DROID_UNCHECKED_NOTE,
 } from "@collector/adapters/droid/index";
 import {
+  GROK_BUILD_CAPABILITIES,
+  UNCHECKED_NOTE as GROK_BUILD_UNCHECKED_NOTE,
+} from "@collector/adapters/grok-build/index";
+import {
   KIMCHI_CAPABILITIES,
   UNCHECKED_NOTE as KIMCHI_UNCHECKED_NOTE,
 } from "@collector/adapters/kimchi/index";
@@ -111,6 +115,9 @@ const DEEPSEEK_HARNESS_NOTES = fileURLToPath(
   new URL("../../../../docs/adapters/deepseek-harness.md", import.meta.url),
 );
 const DROID_NOTES = fileURLToPath(new URL("../../../../docs/adapters/droid.md", import.meta.url));
+const GROK_BUILD_NOTES = fileURLToPath(
+  new URL("../../../../docs/adapters/grok-build.md", import.meta.url),
+);
 
 const GUIDE_HEADING = "#### What each agent can report";
 const README_HEADING = "## Supported agents and systems";
@@ -141,6 +148,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Autohand Code", AUTOHAND_CODE_CAPABILITIES],
   ["DeepSeek Harness", DEEPSEEK_HARNESS_CAPABILITIES],
   ["Droid", DROID_CAPABILITIES],
+  ["Grok Build", GROK_BUILD_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -768,6 +776,56 @@ test("PRIVACY.md and the Droid notes name what is read and from which versions",
     }
   }
   for (const field of ["e6241cd", "aa6fd94", "a4103054"]) {
+    expect(notes, field).toContain(field);
+  }
+});
+
+test("PRIVACY.md and the Grok Build notes name what is read and from which version", async () => {
+  const privacy = await readFile(PRIVACY, "utf8");
+  const notes = await readFile(GROK_BUILD_NOTES, "utf8");
+  const line = (start: string) => privacy.split("\n").find((one) => one.startsWith(start)) ?? "";
+
+  const grok = line("For Grok Build, Agent Lookout reads");
+  for (const words of ["built from Grok Build's source at 1.0.45", "1.0.89", "`ps`", "signal-0"]) {
+    expect(grok, words).toContain(words);
+  }
+  expect(grok).not.toContain("Droid");
+  for (const version of ["1.0.45", "1.0.89"]) expect(GROK_BUILD_UNCHECKED_NOTE).toContain(version);
+  expect(notes).toContain("Apache-2.0");
+
+  const start = privacy.indexOf("### Grok Build's files");
+  expect(start).toBeGreaterThan(-1);
+  const section = privacy.slice(start, privacy.indexOf("\n### ", start));
+  for (const text of [section, notes]) {
+    for (const field of [
+      "~/.grok",
+      "GROK_HOME",
+      "AGENT_LOOKOUT_GROK_HOME",
+      "active_sessions.json",
+      "active_sessions.lock",
+      "active_sessions.json.tmp",
+      "events.jsonl",
+      "plan_mode.json",
+      "summary.json",
+      "title_is_manual",
+      "generated_title",
+      "awaiting_plan_approval",
+      "ask_user_question",
+      "exit_plan_mode",
+      "cancellation_context",
+      ".cwd",
+      "ps -o pid=,lstart= -p <pids>",
+      "1 MiB",
+      "64 KiB",
+      "8 MiB",
+      "512 bytes",
+      "1 KiB",
+      "2,000",
+    ]) {
+      expect(text, field).toContain(field);
+    }
+  }
+  for (const field of ["2bdd1d6", "1.0.45", "1.0.89", "xai-grok-active-sessions/src/lib.rs"]) {
     expect(notes, field).toContain(field);
   }
 });

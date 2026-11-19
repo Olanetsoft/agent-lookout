@@ -773,6 +773,7 @@ describe("over a long run of snapshots", () => {
     "autohand-code": [],
     "deepseek-harness": [],
     droid: [],
+    "grok-build": [],
     "status-files": [F],
   };
   const sourceOf = (id: string): SourceId =>

@@ -147,6 +147,9 @@ export interface AdapterResult {
    *   finished.
    * - `files-without-processes`: the same while `ps` cannot say, and always on
    *   Windows, when no session is shown as finished.
+   *
+   * The Grok Build adapter has one, `files`: Grok Build's list of open
+   * sessions and each one's event log.
    */
   basis?: string;
 }

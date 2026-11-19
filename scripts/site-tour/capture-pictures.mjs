@@ -153,8 +153,8 @@ const FEATURES = [
   { name: "allow-deny", scene: "Allow or Deny", step: 0, height: 800 },
   { name: "notifications", scene: "Settings", step: 0, height: 1000 },
   { name: "jump-stop", scene: "Stop", step: 0, height: 800, pressed: true, alone: true },
-  // With the rows of Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx, Unreal Agent, Autohand Code, DeepSeek Harness and Droid, the card is taller than its clip in a 2440-wide window. In a 2520-wide window it fits, and its clip fits a 1300-high one, so the window is 2520 by 1300.
-  { name: "agents", scene: "Sources", step: 2, width: 2520, height: 1300 },
+  // With the rows of Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx, Unreal Agent, Autohand Code, DeepSeek Harness, Droid and Grok Build, the card is taller than its clip in a 2520-wide window. In a 2600-wide window it fits, but its clip is taller than a 1300-high one, so the window is 2600 by 1350.
+  { name: "agents", scene: "Sources", step: 2, width: 2600, height: 1350 },
 ];
 
 /**
@@ -345,6 +345,7 @@ function inspect({ name, width, ratio = 0.75 }) {
         "Autohand Code",
         "DeepSeek Harness",
         "Droid",
+        "Grok Build",
         "Status files",
       ]) {
         if (!rows.includes(agent)) missing.push(`a row for ${agent}`);

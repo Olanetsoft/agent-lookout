@@ -63,10 +63,15 @@ import { gunzipSync } from "node:zlib";
  * from 6.07 MB. It added 36 KB, 18 KB of code in the command and 18 KB of the
  * documents the package ships. Unpacked, at 4.29 MB from 4.26 MB, is still
  * under its 4.30 MB, so it was left as it was.
+ *
+ * Unpacked was raised from 4.30 MB to 4.40 MB once Grok Build took it to 4.36
+ * MB, from 4.29 MB. It added 71 KB, 49 KB of code in the command and 21 KB of
+ * the documents the package ships. Installed, at 6.18 MB from 6.11 MB, is still
+ * under its 6.20 MB, so it was left as it was.
  */
 const LIMITS = {
   tarball: 1_200_000,
-  unpacked: 4_300_000,
+  unpacked: 4_400_000,
   installed: 6_200_000,
 };
 

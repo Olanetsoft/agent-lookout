@@ -25,6 +25,7 @@ import {
   EMPTY_DROID_HOME,
   EMPTY_FX_HOME,
   EMPTY_GOOSE_HOME,
+  EMPTY_GROK_HOME,
   EMPTY_PI_HOME,
   EMPTY_GEMINI_CLI_HOME,
   EMPTY_HERMES_HOME,
@@ -225,6 +226,13 @@ delete process.env.DSH_HOME;
 // adapter names a folder of its own.
 mkdirSync(path.join(EMPTY_DROID_HOME, "sessions"), { recursive: true });
 process.env.AGENT_LOOKOUT_DROID_HOME = EMPTY_DROID_HOME;
+
+// Nor Grok Build's, in `~/.grok`: the adapter is pointed at an empty folder,
+// and Grok Build's own variable for it is dropped. A test of the adapter names
+// a folder of its own.
+mkdirSync(path.join(EMPTY_GROK_HOME, "sessions"), { recursive: true });
+process.env.AGENT_LOOKOUT_GROK_HOME = EMPTY_GROK_HOME;
+delete process.env.GROK_HOME;
 
 // And `os.homedir()` is an empty folder, never the home of the person running
 // the tests, so a collector whose environment forgets to name a folder of an

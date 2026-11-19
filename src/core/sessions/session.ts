@@ -54,6 +54,9 @@ export type RemoteSourceId = `remote:${string}`;
  * are read from the event log it keeps for each.
  * `droid` is Droid, Factory's agent, in its command `droid`, whose sessions are
  * read from the first line of the file it keeps for each.
+ * `grok-build` is SpaceXAI's Grok Build, in its terminal app `grok`, whose
+ * sessions are read from the list of open sessions it keeps and the event log
+ * it keeps for each.
  */
 export type SourceId =
   | "claude-code"
@@ -80,6 +83,7 @@ export type SourceId =
   | "autohand-code"
   | "deepseek-harness"
   | "droid"
+  | "grok-build"
   | "status-files"
   | RemoteSourceId;
 

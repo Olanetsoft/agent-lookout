@@ -21,6 +21,7 @@ import { createDroidAdapter } from "./adapters/droid/index.ts";
 import { createFxAdapter } from "./adapters/fx/index.ts";
 import { createGeminiCliAdapter } from "./adapters/gemini-cli/index.ts";
 import { createGooseAdapter } from "./adapters/goose/index.ts";
+import { createGrokBuildAdapter } from "./adapters/grok-build/index.ts";
 import { createHermesAgentAdapter } from "./adapters/hermes-agent/index.ts";
 import { createKiloCodeAdapter } from "./adapters/kilo-code/index.ts";
 import { createKimchiAdapter } from "./adapters/kimchi/index.ts";
@@ -119,7 +120,7 @@ import { readWebhookSetup, webhookProblemLine } from "./webhook/webhookSettings.
 export interface CollectorOptions {
   /** The app version reported by `/api/health`. */
   version: string;
-  /** Defaults to every adapter the app ships: Claude Code, Codex, the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx, Unreal Agent, Autohand Code, DeepSeek Harness, Droid and status files. */
+  /** Defaults to every adapter the app ships: Claude Code, Codex, the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx, Unreal Agent, Autohand Code, DeepSeek Harness, Droid, Grok Build and status files. */
   adapters?: readonly Adapter[];
   /**
    * Where the default adapters read their settings, such as
@@ -134,8 +135,8 @@ export interface CollectorOptions {
    * `AGENT_LOOKOUT_MIMO_CODE_HOME`, `AGENT_LOOKOUT_KIMCHI_HOME`,
    * `AGENT_LOOKOUT_PRIME_AGENT_HOME`, `AGENT_LOOKOUT_FX_HOME`,
    * `AGENT_LOOKOUT_UNREAL_AGENT_SESSION_DIR`, `AGENT_LOOKOUT_AUTOHAND_HOME`,
-   * `AGENT_LOOKOUT_DEEPSEEK_HARNESS_HOME`, `AGENT_LOOKOUT_DROID_HOME` and
-   * `AGENT_LOOKOUT_STATUS_DIR`, and
+   * `AGENT_LOOKOUT_DEEPSEEK_HARNESS_HOME`, `AGENT_LOOKOUT_DROID_HOME`,
+   * `AGENT_LOOKOUT_GROK_HOME` and `AGENT_LOOKOUT_STATUS_DIR`, and
    * where `AGENT_LOOKOUT_NOTIFICATIONS`, the
    * history settings, the email settings, the webhook settings and
    * `AGENT_LOOKOUT_SETTINGS_FILE` are read. Defaults to `process.env`.
@@ -386,9 +387,10 @@ export function createCollector(options: CollectorOptions): Collector {
     keeper ? keptHistoryStore(memoryHistory, keeper) : memoryHistory,
     ledger,
   );
-  // The panes the Claude Code and Qwen Code adapters find are the ones the jump
-  // route selects, so they share one finder and one way of running tmux. Each
-  // adapter asks through an asker of its own, so neither drops the other's.
+  // The panes the Claude Code, Qwen Code and Grok Build adapters find are the
+  // ones the jump route selects, so they share one finder and one way of
+  // running tmux. Each adapter asks through an asker of its own, so none drops
+  // another's.
   const tmux = options.tmux ?? createTmuxRunner({ env });
   // A table a test hands in stands in for every `ps` the finders run: the pane
   // finder reads each process's parent from it.
@@ -606,6 +608,18 @@ export function createCollector(options: CollectorOptions): Collector {
     createDeepseekHarnessAdapter({ env: options.env, now, pollIntervalMs: intervalMs, platform }),
     // Read from each session's first line, as Pi is, with no last message.
     createDroidAdapter({ env: options.env, now, pollIntervalMs: intervalMs, platform }),
+    // Read from its list of open sessions and each one's event log, with no last message.
+    createGrokBuildAdapter({
+      env: options.env,
+      now,
+      pollIntervalMs: intervalMs,
+      platform,
+      panes: panes.asker(),
+      // No editor reaches a Grok Build session, so with tabs off its
+      // processes are not looked for.
+      terminals: tabs.asker({ editors: false }),
+      readProcessStarts: options.readProcessStarts,
+    }),
     createStatusFileAdapter({ env: options.env, now, pollIntervalMs: intervalMs }),
   ];
   const poller = createPoller({
