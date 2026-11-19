@@ -27,8 +27,9 @@ export interface OhMyPiSessionInput {
  * - The status is `ohMyPiStatusOf`'s.
  * - The name is the title the person or a model gave it, as its title slot
  *   holds it, else its folder's, else its ID. A Codex session's copy's title,
- *   the first prompt typed in Codex, and a title with no source are never
- *   decoded.
+ *   which can be the first prompt typed in Codex, and a title with no source
+ *   are never turned into text from the slot, and the header's copy is
+ *   dropped with the parsed header.
  * - The folder is the one its header names, where it began, never the name
  *   of the folder Oh My Pi keeps its file in.
  * - The last write is shown only while it works.

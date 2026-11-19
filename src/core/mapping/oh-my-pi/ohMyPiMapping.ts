@@ -13,7 +13,7 @@
 
 import { KEEP_AWAKE_WORKING_MS } from "../../keep-awake/keepAwakeRule.ts";
 import type { SessionStatus, WaitingReason } from "../../sessions/session.ts";
-import { plausibleTime } from "../../time.ts";
+import { plausibleTime, WRITE_TIME_STEP_MS } from "../../time.ts";
 import type { DeepseekHarnessWriter } from "../deepseek-harness/deepseekHarnessMapping.ts";
 
 /**
@@ -22,6 +22,14 @@ import type { DeepseekHarnessWriter } from "../deepseek-harness/deepseekHarnessM
  * turn behind, and so does a turn that ends with nothing written.
  */
 export const QUIET_MS = KEEP_AWAKE_WORKING_MS;
+
+/**
+ * How long after an exit the file's last write may be for the exit cut off
+ * to decide: 15 seconds. On a quit Oh My Pi writes its exit, aborts the turn,
+ * and goes on writing the lines the abort makes through two drains of up to
+ * 5 seconds each, then stops (agent-session.ts:638, :7202-7305).
+ */
+export const CUT_OFF_MS = 15_000;
 
 /** A line of a session's file that decides its status. Times are as written, in epoch milliseconds. */
 export type OhMyPiLine =
@@ -47,11 +55,15 @@ export type OhMyPiLine =
  */
 export type OhMyPiWriter = DeepseekHarnessWriter;
 
+type ExitLine = Extract<OhMyPiLine, { sort: "exit" }>;
+
 export interface OhMyPiFacts {
   /** The newest line that decides, or null when it is too far back to read. */
   newest: OhMyPiLine | null;
   /** An exit behind a newest reply or result, with only replies, results and lines passed over after it. */
-  behind: Extract<OhMyPiLine, { sort: "exit" }> | null;
+  behind: ExitLine | null;
+  /** An exit before a newest reply, result, tool or ask, with tools' and asks' starts after it too, as a quit that cuts a turn off leaves. */
+  cutOff: ExitLine | null;
   /** The file's last write, as written, in epoch milliseconds. */
   writtenAt: number | null;
   writer: OhMyPiWriter;
@@ -69,11 +81,34 @@ export interface OhMyPiStatus {
 const UNKNOWN: OhMyPiStatus = { status: "unknown", since: null, showsLastWrite: false };
 
 /**
+ * The exit that decides a session's status, or null: the newest line when it
+ * is an exit, else the exit behind it, else the exit cut off before a newest
+ * reply or result. That one decides only while the file was last written
+ * from 2 seconds before it, as a disk can round a time down, to 15 seconds
+ * after it, as Oh My Pi's own aborted lines are. A turn whose aborted lines
+ * take longer, or a round run later with no prompt, as `/retry` and
+ * `--restore` run, reads as if no exit had been written. A newest tool's or
+ * ask's start never takes it, so a restored ask still needs you. Judged from
+ * `writtenAt` on every poll, and never kept.
+ */
+export function exitOf(
+  facts: Pick<OhMyPiFacts, "newest" | "behind" | "cutOff" | "writtenAt">,
+): ExitLine | null {
+  const { newest, behind, cutOff, writtenAt } = facts;
+  if (newest?.sort === "exit") return newest;
+  if (behind !== null) return behind;
+  if (cutOff === null || writtenAt === null) return null;
+  if (newest?.sort !== "reply" && newest?.sort !== "result") return null;
+  const soon = writtenAt >= cutOff.at - WRITE_TIME_STEP_MS && writtenAt <= cutOff.at + CUT_OFF_MS;
+  return soon ? cutOff : null;
+}
+
+/**
  * A session's status, the first row that holds:
  *
  * | Row | When                                                                     | Status     | Since           |
  * | --- | ------------------------------------------------------------------------ | ---------- | --------------- |
- * | 1   | the newest line, or the exit behind it, is an exit of kind `fatal`       | failed     | its `recordedAt` |
+ * | 1   | the exit that decides, as `exitOf` gives it, is of kind `fatal`          | failed     | its `recordedAt` |
  * | 2   | the same, of any other kind                                              | finished   | its `recordedAt` |
  * | 3   | no program that could have written it runs, or it was written before the computer started | finished | its last write |
  * | 4   | the newest line cannot be read, or is too far back                       | unknown    | none            |
@@ -88,14 +123,14 @@ const UNKNOWN: OhMyPiStatus = { status: "unknown", since: null, showsLastWrite: 
  * none.
  */
 export function ohMyPiStatusOf(facts: OhMyPiFacts): OhMyPiStatus {
-  const { newest, behind, writer, now } = facts;
-  const exit = newest?.sort === "exit" ? newest : behind;
+  const { newest, writer, now } = facts;
+  const written = facts.writtenAt === null ? null : plausibleTime(Math.floor(facts.writtenAt), now);
+  const exit = exitOf({ ...facts, writtenAt: written });
   if (exit !== null) {
     const at = plausibleTime(exit.at, now);
     if (at !== null)
       return { status: exit.fatal ? "failed" : "finished", since: at, showsLastWrite: false };
   }
-  const written = facts.writtenAt === null ? null : plausibleTime(Math.floor(facts.writtenAt), now);
   if (writer === "gone") return { status: "finished", since: written, showsLastWrite: false };
   if (newest === null || newest.sort === "unreadable") return UNKNOWN;
   const recent = written !== null && now - written < QUIET_MS;

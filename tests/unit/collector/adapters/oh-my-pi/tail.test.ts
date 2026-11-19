@@ -229,7 +229,12 @@ describe("the newest line that decides, read from the end", () => {
     const { view } = await fresh(
       sessionText(message("user") + toolStart("ask", AT) + passedLines()),
     );
-    expect(view).toEqual({ state: "ok", newest: { sort: "ask", at: AT }, behind: null });
+    expect(view).toEqual({
+      state: "ok",
+      newest: { sort: "ask", at: AT },
+      behind: null,
+      cutOff: null,
+    });
   });
 
   test("a last line with no line break waits until it is whole", async () => {
@@ -249,11 +254,45 @@ describe("the newest line that decides, read from the end", () => {
           message("toolResult") +
           message("assistant"),
       );
+      const exit = { sort: "exit", fatal: kind === "fatal", at: AT };
       expect((await fresh(text)).view).toEqual({
         state: "ok",
         newest: { sort: "reply" },
-        behind: { sort: "exit", fatal: kind === "fatal", at: AT },
+        behind: exit,
+        cutOff: exit,
       });
+    }
+  });
+
+  test("a quit mid-turn whose abort starts tools after the exit: no exit behind, and the exit cut off, afresh and read on", async () => {
+    const start = sessionText(message("user") + toolStart("bash"));
+    for (const kind of ["signal", "fatal"] as const) {
+      const exit = { sort: "exit", fatal: kind === "fatal", at: AT };
+      for (const [lines, newest] of [
+        [
+          [message("toolResult"), toolStart("bash"), message("toolResult"), message("assistant")],
+          "reply",
+        ],
+        [[message("assistant"), toolStart("bash"), message("toolResult")], "result"],
+      ] as const) {
+        const added = [sessionExit(kind, AT), ...lines];
+        const whole = start + added.join("");
+        expect((await fresh(whole)).view).toEqual({
+          state: "ok",
+          newest: { sort: newest },
+          behind: null,
+          cutOff: exit,
+        });
+        // Read on a line at a time from before the exit, as a poll after each write would.
+        let text = start;
+        let known = (await fresh(text)).tail;
+        for (const step of added) {
+          text += step;
+          const data = Buffer.from(text);
+          known = (await readOnwards(openBytes(data).file, data.byteLength, known)) as Tail;
+        }
+        expect(viewOf(known, Buffer.byteLength(text))).toEqual((await fresh(whole)).view);
+      }
     }
   });
 
@@ -263,13 +302,41 @@ describe("the newest line that decides, read from the end", () => {
       state: "ok",
       newest: { sort: "prompt" },
       behind: null,
+      cutOff: null,
     });
   });
 
-  test("a prompt, a tool or a line that cannot be read stops the look back", async () => {
-    for (const stop of [message("user"), toolStart("bash"), toolStart("ask"), "garbage\n"]) {
+  test("a tool or an ask stops the exit behind but not the exit cut off, and a prompt or a line that cannot be read stops both", async () => {
+    const exit = { sort: "exit", fatal: false, at: AT };
+    for (const stop of [toolStart("bash"), toolStart("ask")]) {
       const text = sessionText(sessionExit("normal", AT) + stop + message("assistant"));
-      expect((await fresh(text)).view).toMatchObject({ newest: { sort: "reply" }, behind: null });
+      expect((await fresh(text)).view).toEqual({
+        state: "ok",
+        newest: { sort: "reply" },
+        behind: null,
+        cutOff: exit,
+      });
+    }
+    // A newest tool or ask looks back too.
+    expect((await fresh(sessionText(sessionExit("normal", AT) + toolStart("bash")))).view).toEqual({
+      state: "ok",
+      newest: { sort: "tool" },
+      behind: null,
+      cutOff: exit,
+    });
+    expect(
+      (await fresh(sessionText(sessionExit("normal", AT) + toolStart("ask", AT)))).view,
+    ).toEqual({ state: "ok", newest: { sort: "ask", at: AT }, behind: null, cutOff: exit });
+    for (const stop of [message("user"), "garbage\n"]) {
+      const text = sessionText(sessionExit("normal", AT) + stop + message("assistant"));
+      expect((await fresh(text)).view).toEqual({
+        state: "ok",
+        newest: { sort: "reply" },
+        behind: null,
+        cutOff: null,
+      });
+      const tooled = sessionText(sessionExit("normal", AT) + stop + toolStart("bash"));
+      expect((await fresh(tooled)).view).toMatchObject({ newest: { sort: "tool" }, cutOff: null });
     }
   });
 
@@ -278,6 +345,7 @@ describe("the newest line that decides, read from the end", () => {
       state: "ok",
       newest: { sort: "unreadable" },
       behind: null,
+      cutOff: null,
     });
   });
 
@@ -293,6 +361,7 @@ describe("the newest line that decides, read from the end", () => {
       state: "ok",
       newest: { sort: "ask", at: AT },
       behind: null,
+      cutOff: null,
     });
   });
 
@@ -312,15 +381,20 @@ describe("the newest line that decides, read from the end", () => {
     expect((await fresh(past)).view).toEqual({ state: "too-far" });
   });
 
-  test("an exit behind that is more than 8 MiB back is not found", async () => {
-    const text = Buffer.from(
-      sessionText(sessionExit("normal", AT) + passedOf(MAX_TAIL_BYTES) + message("assistant")),
-    );
-    expect((await fresh(text)).view).toEqual({
-      state: "ok",
-      newest: { sort: "reply" },
-      behind: null,
-    });
+  test("an exit behind, or one cut off, that is more than 8 MiB back is not found", async () => {
+    for (const between of ["", toolStart("bash")]) {
+      const text = Buffer.from(
+        sessionText(
+          sessionExit("normal", AT) + between + passedOf(MAX_TAIL_BYTES) + message("assistant"),
+        ),
+      );
+      expect((await fresh(text)).view).toEqual({
+        state: "ok",
+        newest: { sort: "reply" },
+        behind: null,
+        cutOff: null,
+      });
+    }
   });
 
   test("a last line longer than 8 MiB is too far back", async () => {
@@ -430,6 +504,35 @@ describe("reading on from the last line read", () => {
       state: "ok",
       newest: { sort: "reply" },
       behind: null,
+      cutOff: null,
+    });
+  });
+
+  test("an exit cut off before a reply that falls more than 8 MiB back is dropped, as afresh", async () => {
+    const exitLine = sessionExit("normal", AT);
+    const tool = toolStart("bash");
+    const reply = message("assistant");
+    const decided = sessionText(exitLine + tool + reply);
+    const known = (await fresh(decided)).tail;
+    expect(viewOf(known, Buffer.byteLength(decided))).toMatchObject({
+      behind: null,
+      cutOff: { sort: "exit" },
+    });
+    // The tool and the reply stay in the last 8 MiB, and the exit before them does not.
+    const added =
+      MAX_TAIL_BYTES -
+      Buffer.byteLength(reply) -
+      Buffer.byteLength(tool) -
+      Math.floor(Buffer.byteLength(exitLine) / 2);
+    const next = Buffer.from(decided + passedOf(added));
+    const onward = (await readOnwards(openBytes(next).file, next.byteLength, known)) as Tail;
+    expect(onward.cutOff).toMatchObject({ sort: "exit" });
+    expect(viewOf(onward, next.byteLength)).toEqual((await fresh(next)).view);
+    expect(viewOf(onward, next.byteLength)).toEqual({
+      state: "ok",
+      newest: { sort: "reply" },
+      behind: null,
+      cutOff: null,
     });
   });
 
@@ -455,29 +558,67 @@ describe("reading on from the last line read", () => {
 });
 
 describe("the fold", () => {
-  const empty: Tail = { end: 0, newest: null, newestStart: 0, behind: null, behindStart: 0 };
+  const empty: Tail = {
+    end: 0,
+    newest: null,
+    newestStart: 0,
+    behind: null,
+    behindStart: 0,
+    cutOff: null,
+    cutOffStart: 0,
+  };
   const exit = { sort: "exit" as const, fatal: false, at: AT };
 
-  test("a reply or a result keeps the exit behind, or takes the newest exit as it", () => {
+  test("a reply or a result keeps the exit behind and the exit cut off, or takes the newest exit as both", () => {
     const exited = foldLine(empty, exit, 10);
     const replied = foldLine(exited, { sort: "reply" }, 20);
-    expect(replied).toMatchObject({ newest: { sort: "reply" }, behind: exit, behindStart: 10 });
+    expect(replied).toMatchObject({
+      newest: { sort: "reply" },
+      behind: exit,
+      behindStart: 10,
+      cutOff: exit,
+      cutOffStart: 10,
+    });
     expect(foldLine(replied, { sort: "result" }, 30)).toMatchObject({
       behind: exit,
       behindStart: 10,
+      cutOff: exit,
+      cutOffStart: 10,
     });
   });
 
-  test("any other line that decides drops it, and a line passed over changes nothing", () => {
+  test("a tool or an ask drops the exit behind and keeps the exit cut off, or takes the newest exit as it", () => {
+    const replied = foldLine(foldLine(empty, exit, 10), { sort: "reply" }, 20);
+    for (const start of [{ sort: "tool" }, { sort: "ask", at: AT }] as const) {
+      const started = foldLine(replied, start, 30);
+      expect(started).toMatchObject({ newest: start, behind: null, cutOff: exit, cutOffStart: 10 });
+      // A reply or a result after it takes no exit behind back.
+      expect(foldLine(started, { sort: "result" }, 40)).toMatchObject({
+        behind: null,
+        cutOff: exit,
+        cutOffStart: 10,
+      });
+      expect(foldLine(foldLine(empty, exit, 10), start, 20)).toMatchObject({
+        behind: null,
+        cutOff: exit,
+        cutOffStart: 10,
+      });
+    }
+  });
+
+  test("a prompt, a line that cannot be read or another exit drops both, and a line passed over changes nothing", () => {
     const replied = foldLine(foldLine(empty, exit, 10), { sort: "reply" }, 20);
     expect(foldLine(replied, { sort: "passed" }, 30)).toBe(replied);
     for (const other of [
       { sort: "prompt" },
-      { sort: "tool" },
       { sort: "unreadable" },
-      { sort: "ask", at: AT },
+      { sort: "exit", fatal: true, at: AT },
     ] as const) {
-      expect(foldLine(replied, other, 30)).toMatchObject({ newest: other, behind: null });
+      expect(foldLine(replied, other, 30)).toMatchObject({
+        newest: other,
+        behind: null,
+        cutOff: null,
+      });
     }
   });
 });

@@ -36,23 +36,33 @@ import { bytesAt, timeAt, wordAt } from "../autohand-code/jsonBytes.ts";
  * Only the two times kept, `recordedAt` and an `ask`'s `startedAt`, are
  * turned into text, as ASCII checked by `INSTANT`. Nothing else is.
  *
- * The newest line not passed over decides. When it is a reply or a result,
- * the lines before it are looked back over too, past replies, results and
- * lines passed over only: an exit found before any other line is the exit
- * behind it, and decides as an exit does. So a turn cut off by a quit, whose
- * aborted results and reply Oh My Pi writes after its exit line
- * (agent-session.ts:7202-7221), still reads as ended.
+ * The newest line not passed over decides. When it is a reply, a result or
+ * a tool's or an ask's start, the lines before it are looked back over too,
+ * past replies, results, tools' and asks' starts and lines passed over, to
+ * the first exit, prompt or line that cannot be read:
+ *
+ * - An exit found so is the exit cut off. Oh My Pi writes its exit line, then
+ *   aborts the turn, and goes on writing the lines the abort makes, tools'
+ *   starts among them, for as long as it drains the turn
+ *   (agent-session.ts:7202-7305, agent-loop.ts:3557-3565, :1633-1660). A
+ *   round run after the exit with no prompt, as `/retry` and `--restore` run,
+ *   writes the same lines, so whether the exit cut off decides is judged by
+ *   when the file was last written (`exitOf` in ohMyPiMapping.ts).
+ * - When no tool's or ask's start is passed, the newest included, the exit is
+ *   also the exit behind, and decides as an exit does whenever the file was
+ *   written.
  *
  * - The first time, the end is read backwards, `PIECE_BYTES` at a time, to
- *   the line that decides and any exit behind it, looking through at most
- *   `MAX_TAIL_BYTES` and the byte before them. At most one piece and the
- *   start of the line after it are held at once.
+ *   the line that decides and any exit before it, looking through at most
+ *   `MAX_TAIL_BYTES` and the byte before them. At most one piece and 2 KiB
+ *   are held at once: the first `LINE_HEAD_BYTES` of the piece after it, and
+ *   a copy of a line's first bytes.
  * - After that, only what was added is read, onwards, a piece at a time,
  *   when the file is no shorter than the last line read, grew by
  *   `MAX_TAIL_BYTES` or less, and the byte before what was added is a line
  *   break. Otherwise it is read from its end again. Either way the same lines
  *   decide, so what is kept is what a first read of the same file gives.
- * - A line that decides, or an exit behind it, that begins more than
+ * - A line that decides, or an exit before it, that begins more than
  *   `MAX_TAIL_BYTES` before the end is too far back, as a first read would
  *   not reach it. A last line with no line break yet waits until it is whole.
  */
@@ -135,9 +145,12 @@ export interface Tail {
   newest: DecidingLine | null;
   /** Where it begins: 0 with none, when the whole file was read, and -1 when it is before what was read. */
   newestStart: number;
-  /** The exit behind it, or null. */
+  /** The exit behind it, with only replies, results and lines passed over after it, or null. */
   behind: ExitLine | null;
   behindStart: number;
+  /** The exit cut off before it, with tools' and asks' starts after it too, or null. */
+  cutOff: ExitLine | null;
+  cutOffStart: number;
 }
 
 /** What a file's newest lines say now. */
@@ -146,7 +159,7 @@ export type TailView =
   | { state: "none" }
   /** The newest line that decides is not in the last `MAX_TAIL_BYTES`. */
   | { state: "too-far" }
-  | { state: "ok"; newest: DecidingLine; behind: ExitLine | null };
+  | { state: "ok"; newest: DecidingLine; behind: ExitLine | null; cutOff: ExitLine | null };
 
 /** What a kept tail says of a file of `size` bytes. */
 export function viewOf(tail: Tail, size: number): TailView {
@@ -154,7 +167,8 @@ export function viewOf(tail: Tail, size: number): TailView {
   if (tail.newestStart < 0 || tail.newestStart < reach) return { state: "too-far" };
   if (tail.newest === null) return { state: "none" };
   const behind = tail.behind !== null && tail.behindStart >= reach ? tail.behind : null;
-  return { state: "ok", newest: tail.newest, behind };
+  const cutOff = tail.cutOff !== null && tail.cutOffStart >= reach ? tail.cutOff : null;
+  return { state: "ok", newest: tail.newest, behind, cutOff };
 }
 
 const isWordByte = (byte: number | undefined) =>
@@ -312,25 +326,46 @@ export function judgeLine(line: Buffer): TailLine {
 
 /** A tail with no lines read yet, of a file whose start is read: none decides. */
 function emptyTail(end: number | null): Tail {
-  return { end, newest: null, newestStart: 0, behind: null, behindStart: 0 };
+  return {
+    end,
+    newest: null,
+    newestStart: 0,
+    behind: null,
+    behindStart: 0,
+    cutOff: null,
+    cutOffStart: 0,
+  };
 }
+
+/** Whether a line lets the exit behind it stand: a reply or a result. */
+const keepsBehind = (line: DecidingLine) => line.sort === "reply" || line.sort === "result";
+
+/** Whether a line lets the exit cut off before it stand: a reply, a result, or a tool's or an ask's start. */
+const keepsCutOff = (line: DecidingLine) =>
+  keepsBehind(line) || line.sort === "tool" || line.sort === "ask";
 
 /**
  * The tail after one more line, newer than every line before it, beginning at
- * `start`: a reply or a result keeps the exit behind, or takes the newest line
- * as it when that is an exit, and any other line that decides drops it.
+ * `start`. A reply or a result keeps the exit behind and the exit cut off, or
+ * takes the newest line as both when that is an exit. A tool's or an ask's
+ * start keeps the exit cut off, or takes the newest exit as it, and drops the
+ * exit behind. Any other line that decides drops both.
  */
 export function foldLine(tail: Tail, line: TailLine, start: number): Tail {
   if (line.sort === "passed") return tail;
-  const next = { ...tail, newest: line, newestStart: start };
-  if (line.sort === "reply" || line.sort === "result") {
-    if (tail.newest?.sort === "exit") {
+  const next: Tail = { ...tail, newest: line, newestStart: start };
+  if (!keepsCutOff(line)) {
+    return { ...next, behind: null, behindStart: 0, cutOff: null, cutOffStart: 0 };
+  }
+  if (tail.newest?.sort === "exit") {
+    next.cutOff = tail.newest;
+    next.cutOffStart = tail.newestStart;
+    if (keepsBehind(line)) {
       next.behind = tail.newest;
       next.behindStart = tail.newestStart;
     }
-    return next;
   }
-  return { ...next, behind: null, behindStart: 0 };
+  return keepsBehind(line) ? next : { ...next, behind: null, behindStart: 0 };
 }
 
 class Changed extends Error {}
@@ -343,8 +378,9 @@ async function readExactly(file: OpenFile, position: number, length: number): Pr
 
 /**
  * Reads a file's end backwards, from its newest whole line to the line that
- * decides and any exit behind it. It holds one piece, and the first
- * `LINE_HEAD_BYTES` of the bytes after it, at once.
+ * decides and any exit before it. It holds one piece, the first
+ * `LINE_HEAD_BYTES` of the bytes after it, and a copy of a line's first bytes
+ * at once.
  */
 export async function readFromEnd(file: OpenFile, size: number): Promise<Tail> {
   // The last bytes looked through, and the byte before them, so a line that
@@ -359,9 +395,12 @@ export async function readFromEnd(file: OpenFile, size: number): Promise<Tail> {
   async function earlier(): Promise<boolean> {
     const want = Math.min(PIECE_BYTES, pieceStart - floor);
     if (want <= 0) return false;
-    const read = await readExactly(file, pieceStart - want, want);
+    // The start of the piece in hand becomes the carry, and the piece is let
+    // go before the next is read, so no two pieces are held at once.
+    carry = Buffer.alloc(0);
     carry = Buffer.from(piece.subarray(0, Math.min(LINE_HEAD_BYTES, piece.byteLength)));
-    piece = read;
+    piece = Buffer.alloc(0);
+    piece = await readExactly(file, pieceStart - want, want);
     pieceStart -= want;
     return true;
   }
@@ -401,6 +440,14 @@ export async function readFromEnd(file: OpenFile, size: number): Promise<Tail> {
   /** Lines judged, newest first, until the one that decides and the look back from it end. */
   let newest: DecidingLine | null = null;
   let newestStart = -1;
+  /** Whether a tool's or an ask's start was looked back past, the newest among them: then no exit is behind. */
+  let pastStart = false;
+  /** The newest line that decides, with no exit before it. */
+  const alone = (found: DecidingLine): Tail => ({
+    ...emptyTail(end),
+    newest: found,
+    newestStart,
+  });
   let lineEnd = last;
   for (;;) {
     const before = await newlineBefore(lineEnd);
@@ -408,34 +455,36 @@ export async function readFromEnd(file: OpenFile, size: number): Promise<Tail> {
     if (start < 0 || start < reach) {
       // Before what is read: with no line that decides yet, it is too far back.
       if (newest === null) return { ...emptyTail(end), newestStart: -1 };
-      return { end, newest, newestStart, behind: null, behindStart: 0 };
+      return alone(newest);
     }
     const line = judgeLine(headOf(start, lineEnd));
     if (line.sort !== "passed") {
       if (newest === null) {
         newest = line;
         newestStart = start;
-        if (line.sort !== "reply" && line.sort !== "result") {
-          return { end, newest, newestStart, behind: null, behindStart: 0 };
-        }
+        if (!keepsCutOff(line)) return alone(newest);
       } else if (line.sort === "exit") {
-        return { end, newest, newestStart, behind: line, behindStart: start };
-      } else if (line.sort !== "reply" && line.sort !== "result") {
-        return { end, newest, newestStart, behind: null, behindStart: 0 };
+        return {
+          ...alone(newest),
+          behind: pastStart ? null : line,
+          behindStart: pastStart ? 0 : start,
+          cutOff: line,
+          cutOffStart: start,
+        };
+      } else if (!keepsCutOff(line)) {
+        return alone(newest);
       }
+      if (!keepsBehind(line)) pastStart = true;
     }
-    if (start === 0) {
-      return newest === null
-        ? emptyTail(end)
-        : { end, newest, newestStart, behind: null, behindStart: 0 };
-    }
+    if (start === 0) return newest === null ? emptyTail(end) : alone(newest);
     lineEnd = start - 1;
   }
 }
 
 /**
  * Folds what was added since `known` was read, onwards, a piece at a time,
- * holding one piece and the first `LINE_HEAD_BYTES` of the line being read.
+ * holding one piece, the first `LINE_HEAD_BYTES` of the line being read, and
+ * a copy of them as more are added.
  * Null when the file does not go on from there: shorter, grown by more than
  * `MAX_TAIL_BYTES`, or with no line break before what was added.
  */

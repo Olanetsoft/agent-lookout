@@ -510,7 +510,7 @@ Oh My Pi keeps each session in one JSONL file in a project folder under `~/.omp/
 
 - finds the files with Pi's finder, `pi/sessionFiles.ts`, and Droid's test of a project folder's name;
 - reads in `sessionFile.ts`, when a file changed or its slot is not settled, the 256-byte title slot on line 1, taking a title only from two reads in a row that agree, the header on line 2 with Pi's `parseHeader`, and the start of line 3, for a session Oh My Pi made from a Codex session;
-- reads its newest lines in `tail.ts`, backwards from its end to the newest line that decides and an exit behind it, at most 8 MiB and the byte before it, then only what was added, comparing the first 1 KiB of each line as bytes;
+- reads its newest lines in `tail.ts`, backwards from its end to the newest line that decides and any exit before it, at most 8 MiB and the byte before it, then only what was added, comparing the first 1 KiB of each line as bytes;
 - asks `ps -A -o pid=,lstart=,comm=` through DeepSeek Harness's `deepseek-harness/processes.ts`, with Oh My Pi's names, while a shown session's status depends on it.
 
 A session's id is `oh-my-pi:<id>`, its name a title you or a model gave it, else its folder's, and its status one of five, never idle, by `ohMyPiMapping.ts` in `src/core/mapping/oh-my-pi/`. It runs no Oh My Pi program and never opens, lists or tries the session-owner records.

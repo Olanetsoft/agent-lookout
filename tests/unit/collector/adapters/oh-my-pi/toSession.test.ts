@@ -10,7 +10,7 @@ const FILE: OmpSessionFile = {
   cwd: CWD,
   startedAt: NOW - HOUR,
   title: "Fix the flaky tests",
-  tail: { state: "ok", newest: { sort: "prompt" }, behind: null },
+  tail: { state: "ok", newest: { sort: "prompt" }, behind: null, cutOff: null },
 };
 
 const WORKING = { status: "working" as const, since: null, showsLastWrite: true };

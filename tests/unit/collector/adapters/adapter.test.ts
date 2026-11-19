@@ -1326,6 +1326,7 @@ describe("each declaration agrees with what its adapter does", () => {
     const facts = (fields: Partial<OhMyPiFacts>): OhMyPiFacts => ({
       newest: { sort: "prompt" },
       behind: null,
+      cutOff: null,
       writtenAt: NOW - 1_000,
       writer: "backed",
       now: NOW,
@@ -1361,7 +1362,7 @@ describe("each declaration agrees with what its adapter does", () => {
         cwd: "/Users/example/code/demo",
         startedAt: NOW - 60_000,
         title: null,
-        tail: { state: "ok", newest: { sort: "prompt" }, behind: null },
+        tail: { state: "ok", newest: { sort: "prompt" }, behind: null, cutOff: null },
       },
       status: { status: "working", since: null, showsLastWrite: true },
       writtenAt: NOW - 1_000,

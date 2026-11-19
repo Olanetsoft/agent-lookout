@@ -707,8 +707,8 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 **How it reads.**
 
 - Pi's finder lists the files, with Droid's test of a project folder's name, and `folders.ts` works the folder out from Oh My Pi's profiles and folder settings.
-- The title slot is taken only from two reads in a row that agree, as Oh My Pi rewrites it in place, and the header is read with Pi's reader. The title of a session Oh My Pi made from a Codex session, your first Codex prompt, is never read (`sessionFile.ts`).
-- The newest lines are read from the end back to the one that decides, then only as the file grows, each line's first 1 KiB compared as bytes. An exit behind an aborted result and reply still reads as ended (`tail.ts`).
+- The title slot is taken only from two reads in a row that agree, as Oh My Pi rewrites it in place, and the header is read with Pi's reader. The title of a session Oh My Pi made from a Codex session, which can be your first Codex prompt, is never turned into text from the slot, and the header's copy is dropped with the parsed line (`sessionFile.ts`).
+- The newest lines are read from the end back to the one that decides, then only as the file grows, each line's first 1 KiB compared as bytes. An exit followed by an aborted result and reply still reads as ended, and so does one followed by the tools' starts the abort writes, while the last of its lines is written within 15 seconds of it (`tail.ts`, `exitOf` in `ohMyPiMapping.ts`).
 - DeepSeek Harness's question to `ps` says whether an `omp` that started before the last write runs (`deepseek-harness/processes.ts`).
 
 **How sure it is.** Not checked against Oh My Pi yet. A wait for a tool's approval writes nothing, so it shows as working, and nothing says a turn is over, so idle never shows.

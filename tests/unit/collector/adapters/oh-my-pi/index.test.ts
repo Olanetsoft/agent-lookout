@@ -133,6 +133,20 @@ describe("an Oh My Pi that is not there", () => {
     expect(ps.runs).toHaveLength(0);
   });
 
+  test("a missing Oh My Pi is looked for again on a poll whose clock was set back", async () => {
+    const files = memoryFiles();
+    const clock = handClock();
+    const adapter = ohMyPiAdapterFor(files, { now: clock.now });
+    expect((await adapter.poll()).health.state).toBe("unavailable");
+    writeSession(files, FILE, sessionText(message("user")), NOW - HOUR - MINUTE);
+    files.forget();
+    clock.set(NOW - HOUR);
+    const { health, sessions } = await adapter.poll();
+    expect(files.count("readdir", (target) => target === SESSIONS)).toBe(1);
+    expect(health.state).toBe("ok");
+    expect(sessions).toHaveLength(1);
+  });
+
   test("a home Agent Lookout's own setting names with no sessions is an answer, not a missing Oh My Pi", async () => {
     const files = memoryFiles();
     const adapter = ohMyPiAdapterFor(files, {
@@ -217,6 +231,70 @@ describe("a session's status", () => {
         ),
       ),
     ).toMatchObject({ status: "failed", statusSince: NOW - 3 * MINUTE });
+  });
+
+  test("finished or failed once Oh My Pi writes that it stopped, when its abort starts tools after the exit, and with no ps asked", async () => {
+    const exitAt = NOW - MINUTE;
+    /** A quit mid-turn: what Oh My Pi's abort writes after the exit, within 15 seconds of it. */
+    const quit = (kind: "normal" | "fatal") => [
+      sessionText(
+        message("user") +
+          toolStart("bash", exitAt - MINUTE) +
+          sessionExit(kind, exitAt) +
+          message("toolResult") +
+          toolStart("bash", exitAt) +
+          message("toolResult") +
+          message("assistant"),
+      ),
+      sessionText(
+        message("user") +
+          sessionExit(kind, exitAt) +
+          message("assistant") +
+          toolStart("bash", exitAt) +
+          message("toolResult"),
+      ),
+    ];
+    for (const kind of ["normal", "fatal"] as const) {
+      const status = kind === "fatal" ? "failed" : "finished";
+      for (const text of quit(kind)) {
+        const windows = ohMyPiAdapterFor(filesWith(text, exitAt + 5 * SECOND), {
+          platform: "win32",
+        });
+        expect((await windows.poll()).sessions[0]).toMatchObject({
+          status,
+          statusSince: exitAt,
+        });
+        const ps = standInPs([OMP_LINE]);
+        const mac = ohMyPiAdapterFor(filesWith(text, exitAt + 5 * SECOND), { ps });
+        expect((await mac.poll()).sessions[0]).toMatchObject({ status, statusSince: exitAt });
+        expect(ps.runs).toHaveLength(0);
+      }
+    }
+  });
+
+  test("a round after the exit, as /retry runs, written more than 15 seconds after it, is not finished by it", async () => {
+    const exitAt = NOW - MINUTE;
+    const files = filesWith(sessionText(message("user") + sessionExit("normal", exitAt)), exitAt);
+    const clock = handClock();
+    const adapter = ohMyPiAdapterFor(files, { now: clock.now });
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "finished",
+      statusSince: exitAt,
+    });
+    const roundAt = exitAt + 20 * SECOND;
+    const statuses: (string | undefined)[] = [];
+    for (const step of [
+      toolStart("bash", roundAt),
+      message("toolResult", { at: roundAt }),
+      toolStart("bash", roundAt),
+      message("toolResult", { at: roundAt }),
+      message("assistant", { at: roundAt }),
+    ]) {
+      appendSession(files, FILE, step, roundAt);
+      clock.advance(2 * SECOND);
+      statuses.push((await adapter.poll()).sessions[0]?.status);
+    }
+    expect(statuses).toEqual(["working", "working", "working", "working", "unknown"]);
   });
 
   test("unknown after a reply, as idle never shows", async () => {
@@ -489,6 +567,30 @@ describe("the files", () => {
     expect(result.health.watching?.[0]).toEqual({
       label: "Sessions folder",
       value: "~/flat-sessions",
+    });
+  });
+
+  test("works out the folder again on a poll whose clock was set back", async () => {
+    const xdg = "/Users/example/.local/share";
+    const files = filesWith(sessionText(message("user")));
+    const clock = handClock();
+    const adapter = ohMyPiAdapterFor(files, { now: clock.now, env: { XDG_DATA_HOME: xdg } });
+    expect((await adapter.poll()).health.watching?.[0]).toEqual({
+      label: "Sessions folder",
+      value: "~/.omp/agent/sessions",
+    });
+    writeSession(
+      files,
+      sessionPath(sessionIdOf(2), `${xdg}/omp/sessions/${PROJECT_FOLDER_NAME}`),
+      sessionText(message("user"), { header: { id: sessionIdOf(2) } }),
+      NOW - HOUR - MINUTE,
+    );
+    clock.set(NOW - HOUR);
+    const moved = await adapter.poll();
+    expect(moved.sessions.map((session) => session.id)).toEqual([`oh-my-pi:${sessionIdOf(2)}`]);
+    expect(moved.health.watching?.[0]).toEqual({
+      label: "Sessions folder",
+      value: "~/.local/share/omp/sessions",
     });
   });
 

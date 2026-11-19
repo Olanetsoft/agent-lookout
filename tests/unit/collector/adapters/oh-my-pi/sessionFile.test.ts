@@ -25,6 +25,7 @@ import {
   PROJECT_FOLDER,
   SECOND,
   SESSION_ID,
+  sessionIdOf,
   sessionPath,
   SESSIONS,
   sessionText,
@@ -219,6 +220,28 @@ describe("the title slot", () => {
     expect(await readAt(reader, files, NOW + 6 * SECOND)).toMatchObject({ file: { title: "New" } });
   });
 
+  test("a new file at the name that holds another session shows no title from before", async () => {
+    const files = memoryFiles();
+    files.write(FILE, sessionText(undefined, { slot: { title: "Old", source: "user" } }), {
+      mtimeMs: WRITTEN,
+    });
+    const reader = readerOf(files);
+    await readAt(reader, files, NOW);
+    expect(await readAt(reader, files, NOW + 2 * SECOND)).toMatchObject({ file: { title: "Old" } });
+    files.write(
+      FILE,
+      sessionText(undefined, {
+        slot: { title: "New", source: "user" },
+        header: { id: sessionIdOf(2) },
+      }),
+      { mtimeMs: WRITTEN },
+    );
+    expect(await readAt(reader, files, NOW + 4 * SECOND)).toMatchObject({
+      file: { id: sessionIdOf(2), title: null },
+    });
+    expect(await readAt(reader, files, NOW + 6 * SECOND)).toMatchObject({ file: { title: "New" } });
+  });
+
   test("a read again after the clock was set back reads the slot again", async () => {
     const files = memoryFiles();
     files.write(FILE, sessionText(), { mtimeMs: WRITTEN });
@@ -276,6 +299,21 @@ describe("a Codex session's copy", () => {
     await readAt(other, plain, NOW + SECOND);
     expect(await readAt(other, plain, NOW + 3 * SECOND)).toMatchObject({ file: { title: "Mine" } });
   });
+
+  test("an auto title read twice before its third line shows once a plain third line is added in place", async () => {
+    const files = memoryFiles();
+    files.write(FILE, sessionText("", { slot: { title: "Mine", source: "auto" } }), {
+      mtimeMs: WRITTEN,
+    });
+    const reader = readerOf(files);
+    expect(await readAt(reader, files, NOW)).toEqual({ state: "none" });
+    expect(await readAt(reader, files, NOW + 2 * SECOND)).toEqual({ state: "none" });
+    files.append(FILE, message("user"), { mtimeMs: WRITTEN + SECOND });
+    // The first read after the line is added: the slot is as it was, and the Codex check now says no.
+    expect(await readAt(reader, files, NOW + 4 * SECOND)).toMatchObject({
+      file: { title: "Mine" },
+    });
+  });
 });
 
 describe("the header", () => {
@@ -288,7 +326,7 @@ describe("the header", () => {
         cwd: CWD,
         startedAt: NOW - HOUR,
         title: "Fix the flaky tests",
-        tail: { state: "ok", newest: { sort: "reply" }, behind: null },
+        tail: { state: "ok", newest: { sort: "reply" }, behind: null, cutOff: null },
       },
       writtenAt: WRITTEN,
     });

@@ -1153,7 +1153,7 @@ export const OH_MY_PI_CAPABILITIES: SourceCapabilities = {
   names: {
     level: "partly",
     reason:
-      "The title you or a model gave the session, else the folder's. A Codex import's title, your first prompt there, is not shown.",
+      "The title you or a model gave it, else the folder's. A Codex import's title, which can be your first prompt there, is not shown.",
   },
   jump: {
     level: "no",

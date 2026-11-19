@@ -30,17 +30,19 @@ import { readFromEnd, readOnwards, viewOf, type Tail, type TailView } from "./ta
  *   The title is turned into text only when the bytes after it say it was set
  *   by the person (`user`) or by a model (`auto`), and for `auto` only when
  *   the session is not one Oh My Pi made from a Codex session, whose title
- *   is the first prompt typed in Codex: its third line begins
+ *   can be the first prompt typed in Codex: its third line begins
  *   `{"type":"<word>","id":"codex-<number>",` (codex-session-store.ts:620,
  *   :670), and Oh My Pi's own IDs never begin so (session-migrations.ts:5-11).
  *   A slot read that is not one Oh My Pi writes keeps the title from before.
- * - The header, from byte 256 to its line break within `MAX_HEAD_BYTES`, is
- *   read again only when the file's identity changes. Only its `id`,
- *   `timestamp`, `cwd` and `version` are kept, by Pi's `parseHeader`, with
- *   Oh My Pi's newest version. Everything else in it, its own copy of the
- *   title among them, is dropped with the parsed line.
- * - The first 64 bytes of the third line are compared as bytes, for the
- *   Codex check alone.
+ * - The `MAX_HEAD_BYTES` and `LINE3_BYTES` after the slot, or as many as the
+ *   file holds, are read in one piece when the file's identity changes, and
+ *   on each change until a header is found. Of them, the header, from byte
+ *   256 to its line break within `MAX_HEAD_BYTES`, is turned into text and
+ *   parsed. Only its `id`, `timestamp`, `cwd` and `version` are kept, by Pi's
+ *   `parseHeader`, with Oh My Pi's newest version. Everything else in it, its
+ *   own copy of the title among them, is dropped with the parsed line.
+ * - Of the rest, only the first `LINE3_BYTES` of the third line are compared
+ *   as bytes, for the Codex check alone, and the rest is dropped.
  * - A file whose first 256 bytes are not a title slot is not a session this
  *   reads: an Oh My Pi file from before v16.5.2, which began with its
  *   header, or a Pi file in a folder both keep. Nothing of it is turned into

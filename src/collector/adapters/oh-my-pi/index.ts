@@ -1,6 +1,6 @@
 import os from "node:os";
 
-import { ohMyPiStatusOf } from "../../../core/mapping/oh-my-pi/ohMyPiMapping.ts";
+import { exitOf, ohMyPiStatusOf } from "../../../core/mapping/oh-my-pi/ohMyPiMapping.ts";
 import type {
   Session,
   SourceCapabilities,
@@ -138,7 +138,7 @@ export const TOO_FAR_NOTE =
 
 /** Said on a Mac, where an `omp` installed with `bun install -g` runs as `bun`. */
 export const BUN_NOTE =
-  "On a Mac an omp installed with bun install -g runs as bun, which ps cannot tell from any other bun. While one runs, a session no omp backs shows as unknown, not as working or needing you, and not as finished until Oh My Pi writes that it stopped.";
+  "On a Mac an omp installed with bun install -g runs as bun, which ps cannot tell from any other bun. While a bun that started before a session's last write, or within a minute after, runs, a session no omp backs shows as unknown, not as working or needing you, and not as finished until Oh My Pi writes that it stopped.";
 
 /** Said when `PI_CODING_AGENT_SESSION_DIR` is set to a folder that is not absolute. */
 export const SESSION_DIR_NOTE = `${OMP_SESSIONS_ENV} is not an absolute folder, so it is passed over: Oh My Pi finds it from the folder it was started in, which Agent Lookout cannot know.`;
@@ -173,7 +173,9 @@ const OTHER_SYSTEM_NOTE =
  * - Failed when Oh My Pi writes that it stopped on an error of its own. A
  *   reply that failed is not read: it reads the same while Oh My Pi retries.
  * - The name is the title the person or a model gave it, else the folder's.
- *   A Codex session's copy's title, its first prompt there, is never decoded.
+ *   A Codex session's copy's title, which can be the first prompt typed in
+ *   Codex, is never turned into text from the slot, and the header's copy is
+ *   dropped with the parsed header.
  * - Quiet for is the time since its file was written, while it works.
  * - No Jump, Stop, Answer or Tokens: its file names no process or window, and
  *   a request's counts sit beside its prompt and reply and are never parsed.
@@ -202,7 +204,7 @@ export const OH_MY_PI_CAPABILITIES: SourceCapabilities = {
   names: {
     level: "partly",
     reason:
-      "The title you or a model gave the session, else the folder's. A Codex import's title, your first prompt there, is not shown.",
+      "The title you or a model gave it, else the folder's. A Codex import's title, which can be your first prompt there, is not shown.",
   },
   jump: {
     level: "no",
@@ -509,8 +511,9 @@ export function createOhMyPiAdapter(options: OhMyPiAdapterOptions = {}): Adapter
       const { tail } = one.file;
       const newest = tail.state === "ok" ? tail.newest : null;
       const behind = tail.state === "ok" ? tail.behind : null;
-      const exit = newest?.sort === "exit" ? newest : behind;
+      const cutOff = tail.state === "ok" ? tail.cutOff : null;
       const writtenAt = plausibleTime(Math.floor(one.writtenAt), checkedAt);
+      const exit = exitOf({ newest, behind, cutOff, writtenAt });
       // Whether `ps` could change its status: not once Oh My Pi wrote that it stopped, nor when it was last written before the computer started.
       const settled =
         (exit !== null && plausibleTime(exit.at, checkedAt) !== null) ||
@@ -523,7 +526,7 @@ export function createOhMyPiAdapter(options: OhMyPiAdapterOptions = {}): Adapter
           startFloor: clock.startFloor,
           lowAt: clock.lowAt,
         }) === "gone";
-      return { ...one, newest, behind, writtenAt, settled };
+      return { ...one, newest, behind, cutOff, writtenAt, settled };
     });
 
     const unsettled = facts.filter(({ settled }) => !settled);
@@ -538,7 +541,7 @@ export function createOhMyPiAdapter(options: OhMyPiAdapterOptions = {}): Adapter
 
     let unread = false;
     let tooFar = false;
-    const sessions = facts.map(({ ref, file, newest, behind, writtenAt }) => {
+    const sessions = facts.map(({ ref, file, newest, behind, cutOff, writtenAt }) => {
       const writer = dshWriter({
         platform,
         writtenAt,
@@ -550,7 +553,7 @@ export function createOhMyPiAdapter(options: OhMyPiAdapterOptions = {}): Adapter
         startFloor: clock.startFloor,
         lowAt: clock.lowAt,
       });
-      const status = ohMyPiStatusOf({ newest, behind, writtenAt, writer, now: checkedAt });
+      const status = ohMyPiStatusOf({ newest, behind, cutOff, writtenAt, writer, now: checkedAt });
       if (status.status === "unknown") {
         if (newest === null) tooFar = true;
         else if (newest.sort === "unreadable") unread = true;

@@ -1,12 +1,14 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  CUT_OFF_MS,
+  exitOf,
   ohMyPiStatusOf,
   QUIET_MS,
   type OhMyPiFacts,
   type OhMyPiLine,
 } from "@core/mapping/oh-my-pi/ohMyPiMapping";
-import { CLOCK_SLACK_MS } from "@core/time";
+import { CLOCK_SLACK_MS, WRITE_TIME_STEP_MS } from "@core/time";
 
 const NOW = Date.UTC(2026, 9, 1, 12, 0, 0);
 const MINUTE = 60_000;
@@ -23,6 +25,7 @@ function statusOf(facts: Partial<OhMyPiFacts>) {
   return ohMyPiStatusOf({
     newest: { sort: "prompt" },
     behind: null,
+    cutOff: null,
     writtenAt: WRITTEN,
     writer: "backed",
     now: NOW,
@@ -96,6 +99,77 @@ describe("each row", () => {
     for (const newest of [{ sort: "prompt" }, ask] as const) {
       expect(statusOf({ newest, writer: "maybe" }).status).toBe("unknown");
     }
+  });
+});
+
+describe("an exit a quit cut a turn off after", () => {
+  const at = NOW - 2 * MINUTE;
+
+  test("decides as failed or finished, since it was recorded, while the file was last written within 15 seconds after it", () => {
+    for (const fatal of [true, false]) {
+      for (const sort of ["reply", "result"] as const) {
+        for (const writtenAt of [at, at + CUT_OFF_MS, at - WRITE_TIME_STEP_MS]) {
+          expect(statusOf({ newest: { sort }, cutOff: exit(fatal, at), writtenAt })).toEqual({
+            status: fatal ? "failed" : "finished",
+            since: at,
+            showsLastWrite: false,
+          });
+        }
+      }
+    }
+    expect(CUT_OFF_MS).toBe(15_000);
+  });
+
+  test("decides nothing once the file was written later than that, or more than 2 seconds before it", () => {
+    for (const writtenAt of [at + CUT_OFF_MS + 1, at - WRITE_TIME_STEP_MS - 1, null]) {
+      expect(statusOf({ newest: { sort: "result" }, cutOff: exit(true, at), writtenAt })).toEqual(
+        writtenAt === null
+          ? { status: "unknown", since: null, showsLastWrite: false }
+          : { status: "working", since: null, showsLastWrite: true },
+      );
+      expect(
+        statusOf({ newest: { sort: "reply" }, cutOff: exit(false, at), writtenAt }).status,
+      ).toBe("unknown");
+    }
+  });
+
+  test("decides nothing when the newest line is a tool's start or an ask's, so a restored ask still needs you", () => {
+    expect(
+      statusOf({ newest: { sort: "tool" }, cutOff: exit(false, at), writtenAt: at }).status,
+    ).toBe("working");
+    expect(
+      statusOf({ newest: { sort: "ask", at }, cutOff: exit(false, at), writtenAt: at }),
+    ).toMatchObject({ status: "needs-you", since: at });
+    expect(
+      exitOf({ newest: { sort: "ask", at }, behind: null, cutOff: exit(false, at), writtenAt: at }),
+    ).toBeNull();
+  });
+
+  test("the exit newest, or the exit behind, decides whenever the file was written", () => {
+    const late = at + CUT_OFF_MS + MINUTE;
+    expect(exitOf({ newest: exit(true, at), behind: null, cutOff: null, writtenAt: late })).toEqual(
+      exit(true, at),
+    );
+    expect(
+      exitOf({
+        newest: { sort: "reply" },
+        behind: exit(false, at),
+        cutOff: exit(false, at),
+        writtenAt: late,
+      }),
+    ).toEqual(exit(false, at));
+  });
+
+  test("an exit cut off whose time cannot be right finishes nothing by itself", () => {
+    // Written within its window, at the latest time that can be right.
+    const ahead = exit(false, NOW + CLOCK_SLACK_MS + 1);
+    const writtenAt = NOW + CLOCK_SLACK_MS;
+    expect(exitOf({ newest: { sort: "result" }, behind: null, cutOff: ahead, writtenAt })).toBe(
+      ahead,
+    );
+    expect(statusOf({ newest: { sort: "result" }, cutOff: ahead, writtenAt }).status).toBe(
+      "working",
+    );
   });
 });
 
