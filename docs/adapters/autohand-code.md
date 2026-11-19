@@ -241,7 +241,7 @@ The system gives a gone process's ID to another program, which may run in a pane
 - a session whose process moved on to another session, as with `/new`, which has no heartbeat of its own: the process's Jump is the other session's;
 - a finished or failed session, which never has a fresh heartbeat.
 
-A session's process is looked for in a pane when the finder first has one to ask about, then every 30 seconds, and within about 5 seconds when a new one appears. In a tab it is looked for once, within about 5 seconds. `AGENT_LOOKOUT_TMUX=off` and `AGENT_LOOKOUT_TERMINAL_JUMP=off` turn each part off. Windows has no tmux and no Terminal, so there no Autohand Code session has Jump.
+A session's process is looked for in a pane when the finder first has one to ask about, then every 30 seconds, and within about 5 seconds when a new one appears. In a tab it is looked for within about 5 seconds. A poll at which no heartbeat written in the last 15 seconds names it, as after the computer wakes, forgets it, so once one does again it is looked for again, in a pane and in a tab, within about 5 seconds. `AGENT_LOOKOUT_TMUX=off` and `AGENT_LOOKOUT_TERMINAL_JUMP=off` turn each part off. Windows has no tmux and no Terminal, so there no Autohand Code session has Jump.
 
 ## Stop and Answer
 
