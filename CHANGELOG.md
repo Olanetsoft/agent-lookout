@@ -10,7 +10,7 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 ### Fixed
 
-- A DeepSeek Harness session now shows as unknown, not idle, while a subagent's log that a program may still write is too long or cannot be followed, keeps its place among the 200 shown by its last write when its log moves to a newer format, and is no longer finished by `ps` or the computer's start when one of its logs has a time that cannot be right. (#360)
+- A DeepSeek Harness session now shows as unknown, not idle, while a subagent's log that a program may still write is too long, cannot be followed or fails to be read, keeps its place among the 200 shown by its last write when its log moves to a newer format, and is no longer finished by `ps` or the computer's start when one of its logs has a time that cannot be right. (#360)
 
 ## 0.2.23 - 2026-11-19
 

@@ -346,7 +346,7 @@ describe("a session", () => {
     );
   });
 
-  test("a subagent whose log is too long, or cannot be followed, leaves its idle session unknown, and said so, while a program that could write that log may run", async () => {
+  test("a subagent whose log is too long, cannot be followed or fails to be read on, leaves its idle session unknown, and said so, while a program that could write that log may run", async () => {
     const header = childHeaderLine();
     const big = new Uint8Array(64 * 1024 * 1024 + 1);
     big.set(new TextEncoder().encode(header));
@@ -371,6 +371,28 @@ describe("a session", () => {
     expect(unread.sessions[0]?.status).toBe("unknown");
     expect(unread.health.detail).toContain(UNREAD_NOTE);
 
+    // One whose first line was read and whose read on then failed.
+    const failing = stuck(batch(...endedTurn(0, T)), batch(line.turnStart(0, T)));
+    let childOpens = 0;
+    const failingIo = {
+      readdir: (dir: string) => failing.io.readdir(dir),
+      stat: (target: string) => failing.io.stat(target),
+      lstat: (target: string) => failing.io.lstat(target),
+      openRegular: (file: string) => {
+        if (file.includes(CHILD_ID) && ++childOpens > 1) {
+          return Promise.reject(new Error("The read failed."));
+        }
+        return failing.io.openRegular(file);
+      },
+    };
+    const failed = await deepseekHarnessAdapterFor(failing, {
+      ps: nodeRuns(),
+      io: failingIo,
+    }).poll();
+    expect(childOpens).toBe(2);
+    expect(failed.sessions.map((one) => [one.id, one.status])).toEqual([[ID, "unknown"]]);
+    expect(failed.health.detail).toContain(UNREAD_NOTE);
+
     // Last written before every program that could write it started: it cannot change its session.
     const late = standInPs([psLine(100, NOW - 35 * MINUTE, "node")]);
     const gone = await deepseekHarnessAdapterFor(
@@ -381,11 +403,12 @@ describe("a session", () => {
     expect(gone.health.detail).not.toContain(UNREAD_NOTE);
 
     // Its session's own error comes first.
-    const failed = await deepseekHarnessAdapterFor(stuck(batch(...endedTurn(0, T, "error")), gap), {
-      ps: nodeRuns(),
-    }).poll();
-    expect(failed.sessions[0]).toMatchObject({ status: "failed", statusSince: T + 3 });
-    expect(failed.health.detail).not.toContain(UNREAD_NOTE);
+    const ownError = await deepseekHarnessAdapterFor(
+      stuck(batch(...endedTurn(0, T, "error")), gap),
+      { ps: nodeRuns() },
+    ).poll();
+    expect(ownError.sessions[0]).toMatchObject({ status: "failed", statusSince: T + 3 });
+    expect(ownError.health.detail).not.toContain(UNREAD_NOTE);
   });
 
   test("an open turn quiet for 30 minutes is unknown, and a wait too, unless the desktop app runs", async () => {

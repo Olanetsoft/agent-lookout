@@ -239,7 +239,7 @@ The desktop app's names there are worked out, not seen. procps works a process's
 - A session reopened that wrote nothing since its last turn shows as finished once no program that started before that write runs.
 - A `node` that started before a session's last write, and still runs, keeps that session from showing as finished, whatever it is.
 - A real wait in the command or the web page longer than 30 minutes, with no desktop app, turns unknown.
-- A subagent whose log is too long or cannot be followed leaves its session unknown, not idle, while a program that could write that log may run. A turn under way, of the session's own or another subagent's, still shows as working, though that subagent may wait for an approval.
+- A subagent whose log is too long, cannot be followed, or fails to be read past its first line leaves its session unknown, not idle, while a program that could write that log may run. A turn under way, of the session's own or another subagent's, still shows as working, though that subagent may wait for an approval.
 - A session whose log, or a subagent's, is stamped more than a minute ahead of the clock, or more than 2 seconds before that log's session began, is not finished by `ps` or the computer's start, and shows no last write, until that log is written again or the clock catches up.
 - A question of the timed `ask_user_question`, which DeepSeek Harness's presets do not use, waits only until its time runs out, 120 seconds by default (`packages/interaction/tool-ask-user/src/index.ts:16-26`), then answers itself.
 - An answer given in an editor over ACP, slower than one batch, can show as needing you for a moment.

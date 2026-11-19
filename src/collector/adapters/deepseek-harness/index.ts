@@ -626,9 +626,10 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
           checkedAt,
         );
         writes.push(childWrite);
-        // Only a log read past its first line counts. One too long or stuck counts as a turn not known.
+        // One not read on, as past the newest 200, counts for nothing. One too long, stuck, or whose
+        // read on failed, which leaves it read only to its first line, counts as a turn not known.
         const log = child.log;
-        if (log === null || log.mark === "unread") continue;
+        if (log === null) continue;
         children.push({
           turn: log.mark === "ok" ? log.turn : { state: "unsure" },
           writtenAt: childWrite,
