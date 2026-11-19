@@ -488,6 +488,7 @@ describe("an error shown while a tool waits or runs", () => {
   });
 
   test.each<[string, GeminiCliRecord[]]>([
+    // Its calls ended at T + 75_000, before the error: the error came once the batch had ended.
     ["an ended batch", [prompt("p1", T + 60_000), batch("g1", T + 70_000)]],
     ["a reply with text", [prompt("p1", T + 60_000), reply("g1", T + 70_000)]],
     ["a prompt", [prompt("p1", T + 60_000)]],
@@ -502,15 +503,57 @@ describe("an error shown while a tool waits or runs", () => {
     });
   });
 
-  test("then the batch written again and the tool's result are working", () => {
+  test("then the batch written again is that batch, and the tool's result is working", () => {
     const shown = [...waiting(), notice("error", "e1", T + 80_000)];
     const ended = [...shown, batch("g1", T + 70_000, false, T + 95_000)];
-    // The batch is written again where it stands, before the error, which is then the newest.
-    expect(statusOf(ended)).toEqual({ status: "idle", since: T + 80_000 });
+    // The batch is written again where it stands, before the error, with its calls' new times after it.
+    expect(statusOf(ended)).toEqual({
+      status: "unknown",
+      since: null,
+      batch: { endedAt: T + 95_000, workingSince: T + 60_000 },
+    });
     expect(statusOf([...ended, toolResult("r1", T + 96_000)])).toEqual({
       status: "working",
       since: T + 60_000,
     });
+  });
+
+  test("then the batch written again with every call cancelled is unknown, as with no error", () => {
+    const records = [
+      ...waiting(),
+      notice("error", "e1", T + 80_000),
+      batch("g1", T + 70_000, true, T + 95_000),
+    ];
+    expect(statusOf(records)).toEqual({ status: "unknown", since: null });
+  });
+
+  test("then the batch written again, and an error after its calls ended, is idle since that error", () => {
+    const records = [
+      ...waiting(),
+      notice("error", "e1", T + 80_000),
+      batch("g1", T + 70_000, false, T + 95_000),
+      notice("error", "e2", T + 100_000),
+    ];
+    expect(statusOf(records)).toEqual({ status: "idle", since: T + 100_000 });
+  });
+
+  test("an error whose time could not be read, before the batch written again, is idle, as before", () => {
+    const records = [
+      ...waiting(),
+      {
+        kind: "message",
+        message: { id: "e1", type: "error", at: null, content: SHAPE, toolCalls: null },
+      },
+      batch("g1", T + 70_000, false, T + 95_000),
+    ] satisfies GeminiCliRecord[];
+    expect(statusOf(records)).toEqual({ status: "idle", since: null });
+  });
+
+  test("an error before the reply written again with calls in a status Gemini CLI does not write is idle, as before", () => {
+    const calls = { allCancelled: false, state: "unknown", lastAt: T + 95_000 } as const;
+    const written = message("g1", "gemini", T + 70_000, { empty: true }, calls);
+    const records = [...waiting(), notice("error", "e1", T + 80_000), written];
+    expect(statusOf(records)).toEqual({ status: "idle", since: T + 80_000 });
   });
 });
 

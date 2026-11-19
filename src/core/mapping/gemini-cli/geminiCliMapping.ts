@@ -257,14 +257,25 @@ function statusMessages(messages: ReadonlyMap<string, GeminiCliMessage>): Gemini
  * The messages from a reply with a tool call that has not ended, when only
  * `error` messages that are not a failed request's come after it: Gemini CLI
  * shows such an error while a tool waits or runs, as when you ask to change a
- * call in an editor and none is found, and the turn goes on. Otherwise all of
- * them, newest first.
+ * call in an editor and none is found, and the turn goes on. The same from a
+ * reply whose calls all ended no earlier than each of those errors: Gemini CLI
+ * writes the reply again in place once the batch has ended, so the errors came
+ * while its tool waited or ran. Otherwise all of them, newest first.
  */
 function passOverErrorsDuringTool(newestFirst: GeminiCliMessage[]): GeminiCliMessage[] {
   const index = newestFirst.findIndex(
     (message) => message.type !== "error" || message.content?.failedRequest === true,
   );
-  return newestFirst[index]?.toolCalls?.state === "open" ? newestFirst.slice(index) : newestFirst;
+  const calls = newestFirst[index]?.toolCalls;
+  if (calls === null || calls === undefined) return newestFirst;
+  if (calls.state === "open") return newestFirst.slice(index);
+  // Written again in place once its calls ended, after the errors: they came while its tool waited or ran.
+  const { lastAt } = calls;
+  const endedAfter =
+    calls.state === "ended" &&
+    lastAt !== null &&
+    newestFirst.slice(0, index).every((error) => error.at !== null && error.at <= lastAt);
+  return endedAfter ? newestFirst.slice(index) : newestFirst;
 }
 
 function newestStatus(messages: ReadonlyMap<string, GeminiCliMessage>): GeminiCliMessage | null {
@@ -582,7 +593,7 @@ function workingSince(newestFirst: readonly GeminiCliMessage[]): number | null {
  * | `gemini` with tool calls in a status Gemini CLI does not write, and none that has not ended | unknown | |
  * | `gemini` with tool calls that all ended, and nothing says what came next | unknown, with `batch` unless every call was cancelled | |
  * | `error` that begins as a failed request's does | failed | the error |
- * | `error` of another kind, with only such errors after a `gemini` reply with a tool call that has not ended: shown while a tool waits or runs | as that reply | |
+ * | `error` of another kind, with only such errors after a `gemini` reply with a tool call that has not ended, or after one whose calls all ended no earlier than each of them, as it is written again in place once they end: shown while a tool waits or runs | as that reply | |
  * | any other `error` | idle | the error |
  * | a type Gemini CLI 0.64.0 does not write, a line that could not be read, or a `gemini` line too long to read | unknown | |
  *
@@ -603,9 +614,12 @@ function workingSince(newestFirst: readonly GeminiCliMessage[]): number | null {
  * Gemini CLI records every error it shows as an `error` message, so only the
  * start of its text says that a request failed (`failedRequest`). A newer
  * prompt, or a take-back of the error, moves the session on as any message's.
- * An error of another kind after a reply whose tool call has not ended is
- * passed over, as `info` and `warning` are: the tool still waits or runs, and
- * in the terminal an error that ends the turn then is a failed request's
+ * An error of another kind after a reply whose tool call has not ended, with
+ * only such errors between, is passed over, as `info` and `warning` are: the
+ * tool still waits or runs, and in the terminal an error that ends the turn
+ * then is a failed request's. Once the calls end, the reply is written again
+ * where it stands, before the errors, with the calls' new times after theirs,
+ * so they are passed over still, and the reply is read as that batch
  * (`passOverErrorsDuringTool`).
  *
  * It never returns "needs-you" or "finished".
