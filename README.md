@@ -49,7 +49,7 @@ Then open http://127.0.0.1:4777. Your sessions appear within a few seconds.
 
 ## Supported agents and systems
 
-Any other agent can show up by writing one small file per session. [Your own agents](docs/GUIDE.md#your-own-agents) shows how.
+Any other agent can show up by writing one small file per session, and Amp through a small plugin that has not yet been checked on a computer running Amp. [Your own agents](docs/GUIDE.md#your-own-agents) shows how.
 
 <!-- Checked against the adapters by tests/integration/collector/adapters/adapter.test.ts -->
 
@@ -86,7 +86,7 @@ Codex doesn't record when it waits for your approval, so a waiting session shows
 
 Mistral Vibe support was built from the source of Vibe 2.26.1 and 3.0.4 and has not yet been checked on a computer running Vibe.
 
-Gemini CLI support was built from its source at v0.64.0 and has not yet been checked on a machine running it.
+Gemini CLI support was built from its source at v0.64.0, with its tool calls checked again at v0.69.0, and has not yet been checked on a machine running it.
 
 OpenCode support was built from its source at v1.19.0 and v2.2.5 and has not yet been checked on a computer running it.
 
