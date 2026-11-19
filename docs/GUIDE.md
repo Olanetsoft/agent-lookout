@@ -1459,7 +1459,7 @@ Each call asks Agent Lookout once, and takes a few milliseconds. Starting the se
 
 ## Your own agents
 
-Agent Lookout shows any other agent, including one you wrote yourself, when the agent writes one small JSON file for each of its sessions into a folder: `~/.agent-lookout/sessions`. Nothing is installed into the agent, it needs no library, and nothing goes over the network. Agent Lookout reads the folder every 2 seconds, so a session appears, changes and goes within about 2 seconds of the file doing so.
+Agent Lookout shows any other agent, including one you wrote yourself, when the agent writes one small JSON file for each of its sessions into a folder: `~/.agent-lookout/sessions`. Agent Lookout installs nothing into the agent, the agent needs no library, and nothing goes over the network. Agent Lookout reads the folder every 2 seconds, so a session appears, changes and goes within about 2 seconds of the file doing so.
 
 Paste this into a terminal while Agent Lookout is running. It makes the folder, writes a file for a working session, changes it to waiting, then deletes it:
 
@@ -1605,6 +1605,210 @@ Each shows `docs-site` working, then in Needs you as Asked you a question, then 
 - A waiting session sends a [notification](#notifications) like any other.
 
 Agent Lookout only reads the folder. It never makes it, and never writes, renames or deletes anything in it. When a session ends, delete its file, or write `finished` or `failed` to keep it on screen for a day and delete the file after that, for example the next time the agent starts. A file that is no longer shown still takes one of the 200 places until it is deleted. Any program that can write in the folder can put a session on the dashboard. Under your home folder, that means programs you run.
+
+### Amp
+
+Amp's threads can show here through a small Amp plugin that writes a status file for each thread. Amp keeps a history of threads on your computer, but its pages say neither where nor in what form, so Agent Lookout reads none of Amp's own files. The plugin uses Amp's [Plugin API](https://ampcode.com/docs/plugin-api) instead.
+
+Save this as `~/.config/amp/plugins/agent-lookout.ts` for every project, or `$XDG_CONFIG_HOME/amp/plugins/agent-lookout.ts` when `XDG_CONFIG_HOME` is set, or in `.amp/plugins/` at the root of one repository for that repository only. Then open Amp's command palette with Ctrl+O and run `plugins: reload`, as Amp's [page on plugins](https://ampcode.com/docs/customize/plugins) says:
+
+```ts
+import { randomUUID } from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+import type { PluginAPI, Subscription, ThreadID, ThreadState } from "@ampcode/plugin";
+
+const folder =
+  process.env.AGENT_LOOKOUT_STATUS_DIR || path.join(os.homedir(), ".agent-lookout", "sessions");
+
+// Each of Amp's thread states as a status file says it.
+const STATUS: Record<ThreadState, { status: string; reason?: string }> = {
+  running: { status: "working" },
+  "awaiting-approval": { status: "waiting", reason: "permission" },
+  idle: { status: "idle" },
+  error: { status: "failed" },
+};
+
+interface Thread {
+  file: string;
+  status?: string;
+  reason?: string;
+  since?: number;
+  watch?: Subscription;
+  // What this run last put in the file, and whether its newest write failed.
+  wrote?: string;
+  unsaved?: boolean;
+}
+
+export default function (amp: PluginAPI) {
+  const root = amp.system.workspaceRoot;
+  const cwd = root ? amp.helpers.filePathFromURI(root) : undefined;
+  const threads = new Map<string, Thread>();
+  // Written in each file, so that no two runs of the plugin ever write the same bytes.
+  const run = randomUUID();
+
+  // Deletes a file while what it holds passes the check. It is moved to a name of this
+  // run's and checked again there, so a file another run writes after the first check
+  // is put back, unless a newer one has taken its place.
+  function remove(file: string, passes: (text: string) => boolean) {
+    if (!passes(fs.readFileSync(file, "utf8"))) return;
+    const taken = path.join(folder, `.${run}-gone-${path.basename(file)}`);
+    fs.renameSync(file, taken);
+    let gone = false;
+    try {
+      gone = passes(fs.readFileSync(taken, "utf8"));
+    } catch {}
+    if (!gone) {
+      try {
+        fs.linkSync(taken, file);
+      } catch (error) {
+        // EEXIST: a newer file has taken its place. Where a hard link can't be made, it is
+        // put back as a copy, which never replaces a file either. One that can't be put
+        // back is kept under its dot-name.
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+          try {
+            fs.copyFileSync(taken, file, fs.constants.COPYFILE_EXCL);
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+          }
+        }
+      }
+    }
+    fs.rmSync(taken, { force: true });
+  }
+
+  // Files left by a run of this plugin that was killed, whose process has ended.
+  const left = (text: string) => {
+    const { agent, pid } = JSON.parse(text);
+    if (agent !== "Amp" || !Number.isSafeInteger(pid) || pid <= 0) return false;
+    try {
+      process.kill(pid, 0);
+      return false;
+    } catch (error) {
+      return (error as NodeJS.ErrnoException).code === "ESRCH";
+    }
+  };
+  if (amp.system.executor.kind === "local") {
+    let names: string[] = [];
+    try {
+      names = fs.readdirSync(folder);
+    } catch {}
+    for (const name of names.filter((name) => /^amp-.+\.json$/.test(name))) {
+      try {
+        remove(path.join(folder, name), left);
+      } catch {}
+    }
+  }
+
+  function write(thread: Thread) {
+    const { status, reason, since } = thread;
+    const fields = {
+      agent: "Amp",
+      cwd,
+      status,
+      reason,
+      since,
+      app: "terminal",
+      pid: process.pid,
+      run,
+    };
+    const text = JSON.stringify(fields);
+    // Written whole under a name that starts with a dot, which is never read, then renamed.
+    const temp = path.join(folder, `.${process.pid}-${path.basename(thread.file)}`);
+    try {
+      fs.mkdirSync(folder, { recursive: true });
+      fs.writeFileSync(temp, text);
+      fs.renameSync(temp, thread.file);
+      thread.wrote = text;
+      thread.unsaved = false;
+    } catch (error) {
+      thread.unsaved = true;
+      amp.logger.log(`Could not write ${thread.file}: ${error}`);
+      try {
+        fs.rmSync(temp, { force: true });
+      } catch {}
+    }
+  }
+
+  async function follow(id: ThreadID) {
+    // Only when the plugin runs where you use Amp, and each thread once, though
+    // Amp starts a thread's session again each time it is opened.
+    if (amp.system.executor.kind !== "local" || threads.has(id)) return;
+    // One file for each thread, named for Amp and the thread.
+    const thread: Thread = { file: path.join(folder, `amp-${id.replace(/[^\w-]/g, "_")}.json`) };
+    threads.set(id, thread);
+    const show = (state: ThreadState) => {
+      const next = STATUS[state];
+      // A state not listed above is left out, and nothing is written once Amp unloads the plugin.
+      if (!next || !threads.has(id)) return;
+      // A thread you only open is shown from when it next runs: Amp does not say
+      // how long it has been idle or failed.
+      if (!thread.status && (next.status === "idle" || next.status === "failed")) return;
+      // since is when this status began, so it changes only with the status.
+      if (next.status !== thread.status) thread.since = Date.now();
+      thread.status = next.status;
+      thread.reason = next.reason;
+      write(thread);
+    };
+    const { state } = amp.threads.get(id);
+    let changed = false;
+    thread.watch = state.subscribe((value) => {
+      changed = true;
+      show(value);
+    });
+    const first = await state.get();
+    if (!changed) show(first);
+  }
+
+  amp.on("session.start", (event) => follow(event.thread.id));
+  // A thread already open when the plugin loads, as after plugins: reload, may start
+  // no session again, so it is followed now.
+  const open = amp.activeThread.current;
+  if (open) void follow(open.id);
+
+  // A working thread's file is written again every minute, so it is not shown as quiet,
+  // and so is one whose newest write failed, as when the disk was full.
+  const timer = setInterval(() => {
+    for (const thread of threads.values()) {
+      if (thread.status === "working" || thread.unsaved) write(thread);
+    }
+  }, 60_000);
+
+  amp.onDispose(() => {
+    clearInterval(timer);
+    for (const thread of threads.values()) {
+      thread.watch?.unsubscribe();
+      // Only while the file holds what this run last wrote in it: another run of the
+      // plugin, such as the one a reload starts, can write the same thread's file.
+      const { wrote } = thread;
+      if (wrote === undefined) continue;
+      try {
+        remove(thread.file, (text) => text === wrote);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+          amp.logger.log(`Could not delete ${thread.file}: ${error}`);
+        }
+      }
+    }
+    threads.clear();
+  });
+}
+```
+
+For each thread, the plugin writes `amp-<thread ID>.json`. The session shows as working while Amp works, in Needs you as Waiting for permission while a tool waits for your approval, as idle once a turn is done, and as failed when a turn stopped with an error Amp will not retry. Amp asks for no approval by default, so a thread shows there only when Amp's permissions are turned on, such as with `amp.permissions` in its settings. Its `cwd` is the folder Amp has open, and the session is named after that folder, or after its file when no folder is open. The plugin writes no `name`: Amp's pages say only that its agent chooses a thread's title, which you can rename, not what it makes the title from, so a title can hold what you typed, and a name here never does. While a thread works, its file is written again every minute, so it is not shown as quiet. A file the plugin could not write, as when the disk is full, is tried again each minute too.
+
+The plugin follows a thread from when Amp starts its session: when a new thread gets its first message, or you open or switch to a thread. When the plugin loads, it also follows the thread you have open. A thread shows from when it first works, or waits for your approval, while the plugin is loaded, and stays on the list, idle once its turn is done, until Amp unloads the plugin, since Amp has no event for leaving a thread. A thread you only open to read does not show, because Amp does not say how long it has been idle or failed. When Amp unloads the plugin, as it does on a reload and when it quits normally, the plugin deletes the files it wrote, but not one that another run of it has written since, such as the run a reload starts or one in another Amp. To tell its runs apart, each writes a random ID of its own in `run`, which Agent Lookout ignores. When it loads, it deletes any file it left whose process has ended, as one left when Amp was killed. It writes nothing when Amp runs it anywhere but where you use Amp, as in an orb.
+
+This was built from Amp's pages on plugins and has not yet been checked on a computer running Amp. These are not known yet:
+
+- Whether the plugin's process ends when Amp is killed or crashes, so that `pid` drops its working, waiting and idle threads then too. A plugin that is killed cannot delete its files, so they stay until Amp loads the plugin again, and a thread that had failed stays on the list, as failed, until then or for a day.
+- Whether builds of Amp from before its rebuild in May 2026 need anything to load plugins.
+- Whether Amp lets a plugin write outside the cache folder it gives it. If it does not, the plugin logs each file it could not write.
+- Whether Amp starts a thread's session again when it reloads the plugin, as on `plugins: reload` or a change of workspace. If it does not, a thread that runs in the background then shows only once you open it again.
+- Whether a question Amp asks with its built-in `ask_user_choice` tool shows as waiting. Amp counts a tool that is running as `running`, so it most likely shows as working, and its file is written again every minute while it asks.
+- Whether a thread the Amp app runs on this computer, through its runner, shows, and if it does, it shows as in Terminal.
 
 ## Another machine over SSH
 

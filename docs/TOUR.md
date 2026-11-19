@@ -699,7 +699,7 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 
 **Where.** `src/collector/adapters/status-files/`, with the mapping in `src/core/mapping/statusFileMapping.ts`. The file format is Agent Lookout's own, and [Your own agents](GUIDE.md#your-own-agents) in the guide is its reference.
 
-**Why.** Agent Lookout could show only tools it had an adapter for (#23). A status file lets any agent appear, including one a person wrote, with nothing installed and no network: the agent writes one small JSON file for each session. [Adding an adapter](../CONTRIBUTING.md#adding-an-adapter) says to try this first. It came in e0340e2 on 5 October. The guide's Python and Node examples came from #58.
+**Why.** Agent Lookout could show only tools it had an adapter for (#23). A status file lets any agent appear, including one a person wrote, with nothing installed and no network: the agent writes one small JSON file for each session. [Adding an adapter](../CONTRIBUTING.md#adding-an-adapter) says to try this first. It came in e0340e2 on 5 October. The guide's Python and Node examples came from #58. The guide's Amp plugin came from #44. It is a plugin you add to Amp, and Agent Lookout reads none of Amp's files.
 
 **How it reads.**
 
@@ -1970,7 +1970,7 @@ Both ship inside the npm package.
 The docs are held to the code in the same way:
 
 - `tests/integration/collector/adapters/adapter.test.ts` checks that the agent tables in `README.md` and `docs/GUIDE.md` match what each adapter declares, cell for cell.
-- `tests/integration/collector/adapters/status-files/index.test.ts` takes the Python and Node examples from the guide as published, and runs them against the status-file source.
+- `tests/integration/collector/adapters/status-files/index.test.ts` takes the Python and Node examples and the Amp plugin from the guide as published, and runs them against the status-file source, the Amp plugin with its types stripped and loaded by a stand-in for Amp.
 
 ### How to contribute now
 
