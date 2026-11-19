@@ -369,6 +369,29 @@ describe("a listed session", () => {
     expect(byId((await adapter.poll()).sessions)?.statusSince).toBe(NOW + 8 * SECOND);
   });
 
+  test("a plan's wait takes the file's time again once a clock set back puts its kept time more than a minute ahead", async () => {
+    const clock = handClock();
+    const files = oneSession(wholeTurn(T));
+    writePlan(files, planText(true), { mtimeMs: NOW - 30 * SECOND });
+    const adapter = grokBuildAdapterFor(files, { now: clock.now });
+    expect(byId((await adapter.poll()).sessions)?.statusSince).toBe(NOW - 30 * SECOND);
+    // Set back a minute: the kept time is a minute ahead at most, so it stays.
+    clock.set(NOW - 90 * SECOND);
+    writePlan(files, planText(true).replace('"reminder_count": 0', '"reminder_count": 1'), {
+      mtimeMs: NOW - 95 * SECOND,
+    });
+    expect(byId((await adapter.poll()).sessions)?.statusSince).toBe(NOW - 30 * SECOND);
+    // Set back two hours: the plan is still waiting, from the file's time as now written.
+    clock.set(NOW - 2 * HOUR);
+    writePlan(files, planText(true).replace('"reminder_count": 0', '"reminder_count": 2'), {
+      mtimeMs: NOW - 2 * HOUR - 95 * SECOND,
+    });
+    expect(byId((await adapter.poll()).sessions)).toMatchObject({
+      status: "needs-you",
+      statusSince: NOW - 2 * HOUR - 95 * SECOND,
+    });
+  });
+
   test("a plan's call starts a new wait, though the flag stayed true", async () => {
     const clock = handClock();
     const files = oneSession(turnStarted(T) + toolStarted(T + SECOND, "exit_plan_mode"));

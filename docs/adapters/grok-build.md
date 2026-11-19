@@ -140,7 +140,7 @@ Grok Build writes `summary.json` with serde's pretty printer (`SH/session/storag
 - `\n  "awaiting_plan_approval": ` followed by `true` or `false` and then `,` or a line break is looked for as bytes. Only that yes or no is kept, with the file's modified time.
 - No file is no plan waiting. A whole object without the field is no plan waiting, as Grok Build reads an older one. One that cannot be read, is too large or is not a whole object makes a listed session unknown.
 
-A plan's wait begins at the newest `exit_plan_mode` call in the turn under way, or else at the later of when the file was last written and the listing. The second is kept for as long as the plan waits, though the file is written again. A newer `exit_plan_mode` call starts a new wait.
+A plan's wait begins at the newest `exit_plan_mode` call in the turn under way, or else at the later of when the file was last written and the listing. The second is kept for as long as the plan waits, though the file is written again, unless a clock set back puts it more than a minute ahead, when the wait takes the file's time anew. A newer `exit_plan_mode` call starts a new wait.
 
 ## Status
 

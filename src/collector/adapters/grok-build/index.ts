@@ -14,6 +14,7 @@ import type {
   SourceHealth,
   SourceState,
 } from "../../../core/sessions/session.ts";
+import { plausibleTime } from "../../../core/time.ts";
 import { tildify } from "../../files/paths.ts";
 import { isMissing, nodeIo, type ReadOnlyIo } from "../../files/readOnlyIo.ts";
 import { isProcessAlive } from "../../processes/pids.ts";
@@ -403,18 +404,23 @@ export function createGrokBuildAdapter(options: GrokBuildAdapterOptions = {}): A
   /**
    * A status whose wait goes on keeps the time it began: a plan's, taken from
    * `plan_mode.json` once, stays while the plan waits, though the file is
-   * written again. A question's, and a plan's from its call, stay by
-   * themselves while the wait lasts.
+   * written again, unless a clock set back puts it more than a minute ahead.
+   * A question's, and a plan's from its call, stay by themselves while the
+   * wait lasts.
    */
   function heldWait(
     sessionId: string,
     status: GrokBuildStatus,
     next: Map<string, { wait: GrokBuildWait; since: number | null }>,
+    now: number,
   ): GrokBuildStatus {
     if (status.status !== "needs-you" || status.wait === undefined) return status;
     const before = waits.get(sessionId);
     const since =
-      status.wait === "plan-file" && before?.wait === "plan-file" && before.since !== null
+      status.wait === "plan-file" &&
+      before?.wait === "plan-file" &&
+      before.since !== null &&
+      plausibleTime(before.since, now) !== null
         ? before.since
         : status.since;
     next.set(sessionId, { wait: status.wait, since });
@@ -551,7 +557,7 @@ export function createGrokBuildAdapter(options: GrokBuildAdapterOptions = {}): A
       let session = grokBuildSession({
         entry,
         title,
-        status: heldWait(entry.sessionId, status, nextWaits),
+        status: heldWait(entry.sessionId, status, nextWaits, checkedAt),
         writtenAt,
         now: checkedAt,
       });
