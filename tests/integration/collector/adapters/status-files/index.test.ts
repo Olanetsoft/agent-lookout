@@ -599,12 +599,27 @@ const DONE = "<done>";
  * `onDispose`. It loads the plugin by calling its default export, then does
  * what each line from the test says and prints `DONE`. A thread is running
  * until the test says otherwise. The plugin's minute is no timer: it comes when
- * the test says so.
+ * the test says so. To stand for another run of the plugin writing a file just
+ * after this one reads it, `afterRead`, or `STAND_IN_AFTER_READ` for while the
+ * plugin loads, names the file and what to write in it then.
  */
 const AMP_STAND_IN = [
+  'import fs from "node:fs";',
   'import readline from "node:readline";',
   'import { fileURLToPath, pathToFileURL } from "node:url";',
   "const [kind, root, active] = process.argv.slice(2);",
+  "function afterRead({ file, text }) {",
+  "  const read = fs.readFileSync;",
+  "  fs.readFileSync = (...args) => {",
+  "    const result = read(...args);",
+  "    if (args[0] === file) {",
+  "      fs.readFileSync = read;",
+  "      fs.writeFileSync(file, text);",
+  "    }",
+  "    return result;",
+  "  };",
+  "}",
+  "if (process.env.STAND_IN_AFTER_READ) afterRead(JSON.parse(process.env.STAND_IN_AFTER_READ));",
   "let minute = () => {};",
   "globalThis.setInterval = (callback) => ((minute = callback), 1);",
   "globalThis.clearInterval = () => (minute = () => {});",
@@ -648,6 +663,7 @@ const AMP_STAND_IN = [
   "    for (const watcher of thread.watchers) watcher(command.state);",
   "  }",
   "  if (command.minute) minute();",
+  "  if (command.afterRead) afterRead(command.afterRead);",
   "  if (command.dispose) {",
   "    for (const callback of disposers) {",
   "      try {",
@@ -663,7 +679,11 @@ const AMP_STAND_IN = [
 
 /** What the stand-in for Amp is told: a thread's session starts, its state changes, a minute passes, or Amp unloads the plugin. */
 type AmpCommand =
-  { start: string } | { thread: string; state: string } | { minute: true } | { dispose: true };
+  | { start: string }
+  | { thread: string; state: string }
+  | { minute: true }
+  | { dispose: true }
+  | { afterRead: { file: string; text: string } };
 
 /**
  * Whether this Node runs a TypeScript file with its types stripped, as the Amp
@@ -952,6 +972,26 @@ describe.skipIf(!stripsTypes())(
       expect(await amp.end()).toEqual({ code: 0, signal: null });
     }, 20_000);
 
+    test("as it loads, it keeps a file another run writes after it found the file left", async () => {
+      const { folder, parent, env } = await setUp();
+      const ended = await runningProcess();
+      await ended.stop();
+      await mkdir(folder);
+      const file = path.join(folder, AMP_FILE);
+      await writeFile(file, JSON.stringify({ agent: "Amp", status: "working", pid: ended.pid }));
+      // Another Amp's run writes the thread's file just after this one reads it.
+      const theirs = JSON.stringify({ agent: "Amp", status: "working", pid: process.pid });
+      const amp = await startAmp(
+        parent,
+        { ...env, STAND_IN_AFTER_READ: JSON.stringify({ file, text: theirs }) },
+        "local",
+        "none",
+      );
+      expect(await readdir(folder)).toEqual([AMP_FILE]);
+      expect(await readFile(file, "utf8")).toBe(theirs);
+      expect(await amp.end()).toEqual({ code: 0, signal: null });
+    }, 20_000);
+
     test.skipIf(!refused(OTHERS_PID))(
       "as it loads, it keeps a file whose process runs but is not this user's to signal",
       async () => {
@@ -974,6 +1014,37 @@ describe.skipIf(!stripsTypes())(
       const amp = await startAmp(parent, env, "local", "none");
       await amp.send({ start: THREAD });
       expect(await readdir(folder)).toEqual([AMP_FILE]);
+      expect(await amp.end()).toEqual({ code: 0, signal: null });
+    }, 20_000);
+
+    test("a waiting thread whose file could not be written is written at the next minute, and not again", async () => {
+      const { folder, parent, poll, env } = await setUp();
+      const amp = await startAmp(parent, env, "local", "none");
+      await amp.send({ start: THREAD });
+      const file = path.join(folder, AMP_FILE);
+      const working = JSON.parse(await readFile(file, "utf8"));
+
+      // A file cannot be renamed over a folder, so the wait is not written.
+      await rm(file);
+      await mkdir(file);
+      await amp.send({ thread: THREAD, state: "awaiting-approval" });
+      expect((await stat(file)).isDirectory()).toBe(true);
+
+      await rm(file, { recursive: true });
+      await amp.send({ minute: true });
+      const waiting = JSON.parse(await readFile(file, "utf8"));
+      expect(waiting).toMatchObject({ status: "waiting", reason: "permission" });
+      expect(waiting.since).toBeGreaterThanOrEqual(working.since);
+      expect((await poll()).sessions).toMatchObject([
+        { status: "needs-you", waitingReason: "permission", statusSince: waiting.since },
+      ]);
+
+      // Written once it could be, a waiting thread's file is left as it is.
+      const tenMinutesAgo = new Date(Date.now() - 10 * 60_000);
+      await utimes(file, tenMinutesAgo, tenMinutesAgo);
+      const set = (await stat(file)).mtimeMs;
+      await amp.send({ minute: true });
+      expect((await stat(file)).mtimeMs).toBe(set);
       expect(await amp.end()).toEqual({ code: 0, signal: null });
     }, 20_000);
 
@@ -1017,6 +1088,34 @@ describe.skipIf(!stripsTypes())(
 
       await old.send({ dispose: true });
       expect(JSON.parse(await readFile(file, "utf8")).pid).toBe(fresh.pid);
+    }, 20_000);
+
+    test("as Amp unloads it, it keeps a file a run in the same process wrote since", async () => {
+      const { folder, parent, env } = await setUp();
+      const amp = await startAmp(parent, env, "local", "none");
+      await amp.send({ start: THREAD });
+      const file = path.join(folder, AMP_FILE);
+      // As a reload that runs the plugin again in the same process would write it.
+      const ours = JSON.parse(await readFile(file, "utf8"));
+      const again = JSON.stringify({ ...ours, since: ours.since + 1 });
+      await writeFile(file, again);
+      await amp.send({ dispose: true });
+      expect(await readFile(file, "utf8")).toBe(again);
+      expect(await amp.end()).toEqual({ code: 0, signal: null });
+    }, 20_000);
+
+    test("as Amp unloads it, it keeps a file another run writes after it read the file", async () => {
+      const { folder, parent, env } = await setUp();
+      const amp = await startAmp(parent, env, "local", "none");
+      await amp.send({ start: THREAD });
+      const file = path.join(folder, AMP_FILE);
+      // Another run writes the thread's file just after this one reads it to unload.
+      const theirs = JSON.stringify({ agent: "Amp", status: "working", pid: process.pid });
+      await amp.send({ afterRead: { file, text: theirs } });
+      await amp.send({ dispose: true });
+      expect(await readdir(folder)).toEqual([AMP_FILE]);
+      expect(await readFile(file, "utf8")).toBe(theirs);
+      expect(await amp.end()).toEqual({ code: 0, signal: null });
     }, 20_000);
 
     test("a file it cannot delete as Amp unloads it does not keep it from deleting the rest", async () => {

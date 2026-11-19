@@ -1636,6 +1636,9 @@ interface Thread {
   reason?: string;
   since?: number;
   watch?: Subscription;
+  // What this run last put in the file, and whether its newest write failed.
+  wrote?: string;
+  unsaved?: boolean;
 }
 
 export default function (amp: PluginAPI) {
@@ -1643,24 +1646,46 @@ export default function (amp: PluginAPI) {
   const cwd = root ? amp.helpers.filePathFromURI(root) : undefined;
   const threads = new Map<string, Thread>();
 
+  // Deletes a file while what it holds passes the check. It is moved to a name of this
+  // run's and checked again there, so a file another run writes after the first check
+  // is put back, unless a newer one has taken its place.
+  function remove(file: string, passes: (text: string) => boolean) {
+    if (!passes(fs.readFileSync(file, "utf8"))) return;
+    const taken = path.join(folder, `.${process.pid}-gone-${path.basename(file)}`);
+    fs.renameSync(file, taken);
+    let gone = false;
+    try {
+      gone = passes(fs.readFileSync(taken, "utf8"));
+    } catch {}
+    if (!gone) {
+      try {
+        fs.linkSync(taken, file);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") fs.renameSync(taken, file);
+      }
+    }
+    fs.rmSync(taken, { force: true });
+  }
+
   // Files left by a run of this plugin that was killed, whose process has ended.
+  const left = (text: string) => {
+    const { agent, pid } = JSON.parse(text);
+    if (agent !== "Amp" || !Number.isSafeInteger(pid) || pid <= 0) return false;
+    try {
+      process.kill(pid, 0);
+      return false;
+    } catch (error) {
+      return (error as NodeJS.ErrnoException).code === "ESRCH";
+    }
+  };
   if (amp.system.executor.kind === "local") {
     let names: string[] = [];
     try {
       names = fs.readdirSync(folder);
     } catch {}
     for (const name of names.filter((name) => /^amp-.+\.json$/.test(name))) {
-      const file = path.join(folder, name);
       try {
-        const { agent, pid } = JSON.parse(fs.readFileSync(file, "utf8"));
-        if (agent !== "Amp" || !Number.isSafeInteger(pid) || pid <= 0) continue;
-        try {
-          process.kill(pid, 0);
-          continue;
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== "ESRCH") continue;
-        }
-        fs.rmSync(file, { force: true });
+        remove(path.join(folder, name), left);
       } catch {}
     }
   }
@@ -1668,13 +1693,17 @@ export default function (amp: PluginAPI) {
   function write(thread: Thread) {
     const { status, reason, since } = thread;
     const fields = { agent: "Amp", cwd, status, reason, since, app: "terminal", pid: process.pid };
+    const text = JSON.stringify(fields);
     // Written whole under a name that starts with a dot, which is never read, then renamed.
     const temp = path.join(folder, `.${process.pid}-${path.basename(thread.file)}`);
     try {
       fs.mkdirSync(folder, { recursive: true });
-      fs.writeFileSync(temp, JSON.stringify(fields));
+      fs.writeFileSync(temp, text);
       fs.renameSync(temp, thread.file);
+      thread.wrote = text;
+      thread.unsaved = false;
     } catch (error) {
+      thread.unsaved = true;
       amp.logger.log(`Could not write ${thread.file}: ${error}`);
       try {
         fs.rmSync(temp, { force: true });
@@ -1718,22 +1747,24 @@ export default function (amp: PluginAPI) {
   const open = amp.activeThread.current;
   if (open) void follow(open.id);
 
-  // A working thread's file is written again every minute, so it is not shown as quiet.
+  // A working thread's file is written again every minute, so it is not shown as quiet,
+  // and so is one whose newest write failed, as when the disk was full.
   const timer = setInterval(() => {
-    for (const thread of threads.values()) if (thread.status === "working") write(thread);
+    for (const thread of threads.values()) {
+      if (thread.status === "working" || thread.unsaved) write(thread);
+    }
   }, 60_000);
 
   amp.onDispose(() => {
     clearInterval(timer);
     for (const thread of threads.values()) {
       thread.watch?.unsubscribe();
-      // Only a file this run wrote, and only while it names this process: another run
-      // of the plugin, such as the one a reload starts, can write the same thread's file.
-      if (!thread.status) continue;
+      // Only while the file holds what this run last wrote in it: another run of the
+      // plugin, such as the one a reload starts, can write the same thread's file.
+      const { wrote } = thread;
+      if (wrote === undefined) continue;
       try {
-        if (JSON.parse(fs.readFileSync(thread.file, "utf8")).pid === process.pid) {
-          fs.rmSync(thread.file);
-        }
+        remove(thread.file, (text) => text === wrote);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
           amp.logger.log(`Could not delete ${thread.file}: ${error}`);
@@ -1745,7 +1776,7 @@ export default function (amp: PluginAPI) {
 }
 ```
 
-For each thread, the plugin writes `amp-<thread ID>.json`. The session shows as working while Amp works, in Needs you as Waiting for permission while a tool waits for your approval, as idle once a turn is done, and as failed when a turn stopped with an error Amp will not retry. Amp asks for no approval by default, so a thread shows there only when Amp's permissions are turned on, such as with `amp.permissions` in its settings. Its `cwd` is the folder Amp has open, and the session is named after that folder, or after its file when no folder is open. The plugin writes no `name`: Amp's pages say only that its agent chooses a thread's title, which you can rename, not what it makes the title from, so a title can hold what you typed, and a name here never does. While a thread works, its file is written again every minute, so it is not shown as quiet.
+For each thread, the plugin writes `amp-<thread ID>.json`. The session shows as working while Amp works, in Needs you as Waiting for permission while a tool waits for your approval, as idle once a turn is done, and as failed when a turn stopped with an error Amp will not retry. Amp asks for no approval by default, so a thread shows there only when Amp's permissions are turned on, such as with `amp.permissions` in its settings. Its `cwd` is the folder Amp has open, and the session is named after that folder, or after its file when no folder is open. The plugin writes no `name`: Amp's pages say only that its agent chooses a thread's title, which you can rename, not what it makes the title from, so a title can hold what you typed, and a name here never does. While a thread works, its file is written again every minute, so it is not shown as quiet. A file the plugin could not write, as when the disk is full, is tried again each minute too.
 
 The plugin follows a thread from when Amp starts its session: when a new thread gets its first message, or you open or switch to a thread. When the plugin loads, it also follows the thread you have open. A thread shows from when it first works, or waits for your approval, while the plugin is loaded, and stays on the list, idle once its turn is done, until Amp unloads the plugin, since Amp has no event for leaving a thread. A thread you only open to read does not show, because Amp does not say how long it has been idle or failed. When Amp unloads the plugin, as it does on a reload and when it quits normally, the plugin deletes the files it wrote, but not one that another run of it has written since, such as the run a reload starts or one in another Amp. When it loads, it deletes any file it left whose process has ended, as one left when Amp was killed. It writes nothing when Amp runs it anywhere but where you use Amp, as in an orb.
 
