@@ -530,13 +530,17 @@ export function createGrokBuildAdapter(options: GrokBuildAdapterOptions = {}): A
         openedAt: entry.openedAt,
         now: checkedAt,
       });
-      memory.seen(entry, { listed, title, writtenAt }, checkedAt);
-      if (status.status === "finished") {
+      const over = status.status === "finished";
+      memory.seen(entry, { listed, title, writtenAt, over }, checkedAt);
+      if (over) {
         // Watched, and its turn is over: its process runs on with another
         // session, so it names none. It is still watched, for a new turn.
+        // When neither of its own times can be right, it is finished from the
+        // first poll that found it so, on every poll after.
+        const noticedAt = memory.overAt(entry.sessionId) ?? checkedAt;
         open.push(
           finishedGrokBuildSession(
-            { entry, title, writtenAt, noticedAt: checkedAt, processRunsOn: true },
+            { entry, title, writtenAt, noticedAt, processRunsOn: true },
             checkedAt,
           ),
         );

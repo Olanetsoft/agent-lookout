@@ -21,7 +21,7 @@ const entryOf = (sessionId = SESSION_ID, openedAt = OPENED_AT): RegistryEntry =>
   openedAt,
 });
 
-const seenFacts = { listed: true, title: null, writtenAt: OPENED_AT + MINUTE };
+const seenFacts = { listed: true, title: null, writtenAt: OPENED_AT + MINUTE, over: false };
 
 test("a session seen listed and then not is watched, for a day from when it was last listed", () => {
   const memory = createGrokBuildMemory();
@@ -41,6 +41,43 @@ test("a session seen listed and then not is watched, for a day from when it was 
     statusSince: NOW + DAY - 2,
   });
   expect(ended?.pid).toBeUndefined();
+});
+
+/** A watched session whose turn is over, listed ahead of the clock and with no log, so neither of its own times can be right. */
+const overFacts = { listed: false, title: null, writtenAt: null, over: true };
+const ahead = (openedAt = NOW + DAY) => entryOf(SESSION_ID, openedAt);
+
+test("a watched session keeps the first poll that found its turn over, until a new turn", () => {
+  const memory = createGrokBuildMemory();
+  memory.seen(ahead(), overFacts, NOW);
+  memory.seen(ahead(), overFacts, NOW + 2 * SECOND);
+  expect(memory.overAt(SESSION_ID)).toBe(NOW);
+  memory.seen(ahead(), { ...overFacts, over: false }, NOW + 4 * SECOND);
+  expect(memory.overAt(SESSION_ID)).toBeNull();
+  memory.seen(ahead(), overFacts, NOW + 6 * SECOND);
+  expect(memory.overAt(SESSION_ID)).toBe(NOW + 6 * SECOND);
+  expect(memory.overAt(OTHER_SESSION_ID)).toBeNull();
+});
+
+test("one that ends after it was found over is finished from then, when neither of its times can be right", () => {
+  const memory = createGrokBuildMemory();
+  memory.seen(ahead(), overFacts, NOW);
+  memory.ended(
+    { entry: ahead(), title: null, writtenAt: null, processRunsOn: false },
+    NOW + 4 * SECOND,
+  );
+  expect(memory.finished(NOW + 4 * SECOND)).toMatchObject([
+    { status: "finished", statusSince: NOW, pid: PID, alive: false },
+  ]);
+  expect(memory.finished(NOW + 6 * SECOND)).toMatchObject([{ statusSince: NOW }]);
+});
+
+test("one watched for a day after it was found over is finished from then too", () => {
+  const memory = createGrokBuildMemory();
+  memory.seen(ahead(NOW + 3 * DAY), { ...overFacts, listed: true, over: false }, NOW);
+  memory.seen(ahead(NOW + 3 * DAY), overFacts, NOW + SECOND);
+  expect(memory.unlisted(new Set(), NOW + DAY)).toEqual([]);
+  expect(memory.finished(NOW + DAY)).toMatchObject([{ statusSince: NOW + SECOND }]);
 });
 
 test("a clock set back keeps a session watched", () => {

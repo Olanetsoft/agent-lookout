@@ -22,8 +22,10 @@ import { finishedAtOf, finishedGrokBuildSession, type FinishedGrokBuild } from "
  *   crash left listed ends again on every poll, a restart among them.
  * - An ended session is shown as finished from the later of when it was
  *   listed and when its event log was last written, judged against the clock
- *   on every poll, and dropped a day after that. A session listed open again
- *   under its ID leaves the list of ended ones.
+ *   on every poll, and dropped a day after that. When neither could be right,
+ *   it is the first poll of its watch that found its turn over, or else the
+ *   first that found it ended. A session listed open again under its ID leaves
+ *   the list of ended ones.
  * - At most 200 sessions are remembered as seen, listed and watched together,
  *   and 200 as ended, the newest first. One past either limit is dropped.
  */
@@ -38,18 +40,26 @@ export interface SeenGrokBuild {
   /** What the last poll found of its title and its log's time, for when it ends. */
   title: string | null;
   writtenAt: number | null;
+  /**
+   * The first poll of its watch that found its turn over, for when neither of
+   * its own times can be right; null while it is not over.
+   */
+  overAt: number | null;
 }
 
 export interface GrokBuildMemory {
   /**
-   * A session this poll found with its process running: listed, or watched.
-   * Its title and its log's time are kept for when it ends.
+   * A session this poll found with its process running: listed, or watched,
+   * and whether its turn is over, as a watched one's can be. Its title and its
+   * log's time are kept for when it ends.
    */
   seen(
     entry: RegistryEntry,
-    facts: { listed: boolean; title: string | null; writtenAt: number | null },
+    facts: { listed: boolean; title: string | null; writtenAt: number | null; over: boolean },
     now: number,
   ): void;
+  /** When a watched session was first found with its turn over, or null. */
+  overAt(sessionId: string): number | null;
   /**
    * The sessions seen before that this poll's list does not name, to watch.
    * One watched for a day ends, and so does the oldest past the limit.
@@ -74,16 +84,18 @@ export function createGrokBuildMemory(
 
   function end(record: Omit<FinishedGrokBuild, "noticedAt">, now: number) {
     const id = record.entry.sessionId;
+    const watched = seen.get(id);
     seen.delete(id);
     const before = ended.get(id);
     // A look that finds neither its log nor its title this time leaves what
-    // an earlier one found, so its time does not move back and forth.
+    // an earlier one found, so its time does not move back and forth. One
+    // shown as finished while it was watched keeps the time it was shown from.
     ended.set(id, {
       entry: record.entry,
       processRunsOn: record.processRunsOn,
       title: record.title ?? before?.title ?? null,
       writtenAt: record.writtenAt ?? before?.writtenAt ?? null,
-      noticedAt: before?.noticedAt ?? now,
+      noticedAt: before?.noticedAt ?? watched?.overAt ?? now,
     });
     if (ended.size <= max) return;
     const oldest = [...ended.entries()].sort(
@@ -101,8 +113,12 @@ export function createGrokBuildMemory(
         listedAt: facts.listed ? now : (before?.listedAt ?? now),
         title: facts.title,
         writtenAt: facts.writtenAt,
+        overAt: facts.over ? (before?.overAt ?? now) : null,
       });
       if (facts.listed) ended.delete(id);
+    },
+    overAt(sessionId) {
+      return seen.get(sessionId)?.overAt ?? null;
     },
     unlisted(listedIds, now) {
       const watched: SeenGrokBuild[] = [];

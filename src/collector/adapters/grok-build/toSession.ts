@@ -98,7 +98,7 @@ export interface FinishedGrokBuild {
   title: string | null;
   /** Its event log's modified time, as written, or null. */
   writtenAt: number | null;
-  /** When Agent Lookout first saw it end, for when neither of its own times could be right. */
+  /** When Agent Lookout first found it finished, for when neither of its own times could be right. */
   noticedAt: number;
   /**
    * Whether its process runs on with another session, as after /new: then it

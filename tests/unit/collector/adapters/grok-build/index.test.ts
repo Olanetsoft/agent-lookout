@@ -460,6 +460,34 @@ describe("a session that ends", () => {
     expect(byId((await adapter.poll()).sessions)?.status).toBe("needs-you");
   });
 
+  test("left with /new when neither of its times can be right: finished from the first poll that found it so", async () => {
+    const clock = handClock();
+    const files = memoryFiles();
+    files.mkdir(SESSIONS_DIR);
+    // Listed ahead of the clock, and no folder, so no log's time either.
+    writeRegistry(files, [entry({ opened_at: openedAt(NOW + 5 * MINUTE) })]);
+    const processes = standInProcesses([PID]);
+    const adapter = grokBuildAdapterFor(files, { now: clock.now, isAlive: processes.isAlive });
+    expect(byId((await adapter.poll()).sessions)?.status).toBe("unknown");
+    writeRegistry(files, []);
+    clock.set(NOW + 2 * SECOND);
+    expect(byId((await adapter.poll()).sessions)).toMatchObject({
+      status: "finished",
+      statusSince: NOW + 2 * SECOND,
+    });
+    clock.advance(2 * SECOND);
+    expect(byId((await adapter.poll()).sessions)?.statusSince).toBe(NOW + 2 * SECOND);
+    // Its process ends: the same time, now with its process.
+    processes.stop(PID);
+    clock.advance(2 * SECOND);
+    expect(byId((await adapter.poll()).sessions)).toMatchObject({
+      status: "finished",
+      statusSince: NOW + 2 * SECOND,
+      pid: PID,
+      alive: false,
+    });
+  });
+
   test("left with /new with a turn left over: finished, not unknown", async () => {
     const files = oneSession(turnStarted(NOW - 10 * MINUTE), NOW - 10 * MINUTE);
     const adapter = grokBuildAdapterFor(files);
