@@ -593,7 +593,7 @@ function workingSince(newestFirst: readonly GeminiCliMessage[]): number | null {
  * | `gemini` with tool calls in a status Gemini CLI does not write, and none that has not ended | unknown | |
  * | `gemini` with tool calls that all ended, and nothing says what came next | unknown, with `batch` unless every call was cancelled | |
  * | `error` that begins as a failed request's does | failed | the error |
- * | `error` of another kind, with only such errors after a `gemini` reply with a tool call that has not ended, or after one whose calls all ended no earlier than each of them, as it is written again in place once they end: shown while a tool waits or runs | as that reply | |
+ * | `error` of another kind, with only such errors after a `gemini` reply with a tool call that has not ended, or after one whose calls all ended no earlier than each of them, as it is written again in place once they end: shown while a tool waits or runs. A tool's result after them is read as after that reply alone, so it is idle when every call was cancelled | as that reply | |
  * | any other `error` | idle | the error |
  * | a type Gemini CLI 0.64.0 does not write, a line that could not be read, or a `gemini` line too long to read | unknown | |
  *
@@ -641,7 +641,8 @@ export function mapGeminiCliStatus(replay: GeminiCliReplay): GeminiCliStatus {
     case "user": {
       if (content === null) return { status: "working", since: null };
       if (!content.functionResponse) return { status: "working", since: newest.at };
-      const before = newestFirst[1];
+      // The reply before the result, past errors shown while its tool waited or ran.
+      const before = passOverErrorsDuringTool(newestFirst.slice(1))[0];
       if (before?.type === "gemini" && before.toolCalls?.allCancelled === true) {
         return { status: "idle", since: newest.at };
       }

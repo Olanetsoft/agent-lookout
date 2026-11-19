@@ -527,6 +527,32 @@ describe("an error shown while a tool waits or runs", () => {
     expect(statusOf(records)).toEqual({ status: "unknown", since: null });
   });
 
+  test("then the tool's result after the batch written again with every call cancelled is idle, as with no error", () => {
+    // As Esc while the tool runs leaves it: the batch, the note that the request was cancelled, then the result.
+    const records = [
+      ...waiting(),
+      notice("error", "e1", T + 80_000),
+      batch("g1", T + 70_000, true, T + 95_000),
+      notice("info", "i1", T + 95_000),
+      toolResult("r1", T + 96_000),
+      updated(T + 96_000),
+    ];
+    expect(statusOf(records)).toEqual({ status: "idle", since: T + 96_000 });
+  });
+
+  test("an error at the time the calls ended, before the batch written again, is passed over", () => {
+    const records = [
+      ...waiting(),
+      notice("error", "e1", T + 95_000),
+      batch("g1", T + 70_000, false, T + 95_000),
+    ];
+    expect(statusOf(records)).toEqual({
+      status: "unknown",
+      since: null,
+      batch: { endedAt: T + 95_000, workingSince: T + 60_000 },
+    });
+  });
+
   test("then the batch written again, and an error after its calls ended, is idle since that error", () => {
     const records = [
       ...waiting(),

@@ -607,6 +607,24 @@ describe("a reply whose tool waits or runs, as Gemini CLI 0.69.0 writes it", () 
       clock.set(ended + 2 * SECOND);
       expect(await status()).toMatchObject({ status: "working", statusSince: NOW - MINUTE });
     });
+
+    test("is idle once the result comes after Esc cancels the call, as with no error", async () => {
+      const { clock, files, status } = waiting();
+      const ended = NOW + 5 * MINUTE;
+      clock.set(ended);
+      files.append(
+        FILE,
+        chatFile([
+          noticeLine("error", notice, shown),
+          updatedLine(shown),
+          geminiLine(reply, NOW, { content: "", toolCalls: [toolCall("cancelled", ended)] }),
+          noticeLine("info", messageIdOf("65"), ended),
+          toolResultLine(result, ended + SECOND),
+        ]),
+      );
+      clock.set(ended + 2 * SECOND);
+      expect(await status()).toMatchObject({ status: "idle", statusSince: ended + SECOND });
+    });
   });
 
   test("the take-back after Deny or Esc makes it idle", async () => {
