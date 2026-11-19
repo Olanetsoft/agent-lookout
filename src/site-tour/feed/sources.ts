@@ -231,17 +231,17 @@ export const GEMINI_CLI_CAPABILITIES: SourceCapabilities = {
   "working-and-idle": {
     level: "partly",
     reason:
-      "Gemini CLI writes a tool call only once it ends, so a reply with text whose tool still waits or runs shows as idle.",
+      "Before 0.69.0, a reply with text whose tool waits or runs shows as idle. Since then, one quiet for 30 minutes shows as unknown.",
   },
   "needs-you": {
     level: "no",
     reason:
-      "Gemini CLI does not write approval waits to its files, so a session waiting for you shows as working or idle.",
+      "Gemini CLI keeps an approval wait in memory alone, so a session waiting for you shows as working, idle or unknown.",
   },
   finished: {
     level: "no",
     reason:
-      "Gemini CLI writes no end mark, so a closed session keeps its last status until a day after its last update.",
+      "Gemini CLI writes no end mark, so a closed session keeps its last status a day, or, from 0.69.0, 30 minutes with a tool open.",
   },
   failed: {
     level: "partly",

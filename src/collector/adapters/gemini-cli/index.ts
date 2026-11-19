@@ -58,7 +58,7 @@ export const SUBAGENT_FILES = "chats/<session id>/*.jsonl, looked up and never o
 
 /** Said whenever Gemini CLI is watched, because it is what a person would otherwise expect to see. */
 export const NEEDS_YOU_NOTE =
-  "Gemini CLI does not write approval waits or running tools to its files, so a session waiting for you shows as working, or as idle after a reply with text.";
+  "Gemini CLI keeps an approval wait in memory alone, so a session waiting for you shows as working, or as unknown once it has written nothing for 30 minutes. Before Gemini CLI 0.69.0, it shows as idle after a reply with text.";
 
 /** Said whenever Gemini CLI is watched: the files are all there is to read. */
 export const FILES_ONLY_NOTE =
@@ -95,11 +95,15 @@ export function subagentsUnreadNote({ refused, failed }: SubagentsUnread): strin
  * What a Gemini CLI session can show, from the files this adapter reads. See
  * docs/adapters/gemini-cli.md for each.
  *
- * - Working and idle partly: Gemini CLI writes a tool call only once it ends,
- *   so a reply with text whose tool still waits or runs reads as a final answer.
- * - Needs you never: approval waits are never written to its files.
+ * - Working and idle partly: before 0.69.0, Gemini CLI writes a tool call only
+ *   once it ends, so a reply with text whose tool still waits or runs reads as
+ *   a final answer. From 0.69.0 it writes the calls as `scheduled` at once, so
+ *   a tool that waits or runs is working, but unknown once the session has
+ *   written nothing for 30 minutes (`QUIET_MS` in `toSession.ts`).
+ * - Needs you never: an approval wait is kept in memory alone.
  * - Finished never: it writes no lock and no mark when a session ends, so a
- *   closed session keeps its last status, working when it closed mid-turn.
+ *   closed session keeps its last status, working when it closed mid-turn,
+ *   and from 0.69.0 unknown 30 minutes after it closed with a tool call open.
  * - Failed partly: an `error` message says a request failed only by how its
  *   text begins, and `gemini -p` records no error at all.
  * - Its name is the title Gemini CLI saves at a later start in the same folder.
@@ -114,17 +118,17 @@ export const GEMINI_CLI_CAPABILITIES: SourceCapabilities = {
   "working-and-idle": {
     level: "partly",
     reason:
-      "Gemini CLI writes a tool call only once it ends, so a reply with text whose tool still waits or runs shows as idle.",
+      "Before 0.69.0, a reply with text whose tool waits or runs shows as idle. Since then, one quiet for 30 minutes shows as unknown.",
   },
   "needs-you": {
     level: "no",
     reason:
-      "Gemini CLI does not write approval waits to its files, so a session waiting for you shows as working or idle.",
+      "Gemini CLI keeps an approval wait in memory alone, so a session waiting for you shows as working, idle or unknown.",
   },
   finished: {
     level: "no",
     reason:
-      "Gemini CLI writes no end mark, so a closed session keeps its last status until a day after its last update.",
+      "Gemini CLI writes no end mark, so a closed session keeps its last status a day, or, from 0.69.0, 30 minutes with a tool open.",
   },
   failed: {
     level: "partly",
@@ -278,9 +282,12 @@ export interface GeminiCliAdapter extends Adapter {
  *
  * A session is listed for 24 hours after its last update. Its status is
  * working, idle, failed or unknown, never "needs-you" or "finished": Gemini
- * CLI writes nothing to a session's file while a tool waits for approval or
- * runs, and nothing when a session ends. A subagent's own file is never listed,
- * and its writes move nothing but its session's last write. Two projects can
+ * CLI keeps an approval wait in memory alone, and writes nothing when a
+ * session ends. From 0.69.0 it writes a reply's tool calls as `scheduled` as
+ * soon as the reply ends, so a tool that waits or runs shows as working, until
+ * the session has written nothing for 30 minutes. A subagent's own file is
+ * never listed, and its writes move nothing but its session's last write and
+ * how long such a tool shows as working. Two projects can
  * each hold a session of one id, which `--session-id` allows, so a session's id
  * names its project's folder too. Two files of one id in one project of one
  * folder are listed once, from the one active last, as Gemini CLI's own list
@@ -300,8 +307,8 @@ export interface GeminiCliAdapter extends Adapter {
  * sets `AGENT_LOOKOUT_GEMINI_CLI_HOME` means that folder alone: if it holds no
  * sessions, that is an answer, not a missing Gemini CLI.
  *
- * Built from Gemini CLI's source at v0.64.0, and not yet checked against a
- * machine running it.
+ * Built from Gemini CLI's source at v0.64.0, with its tool calls checked again
+ * at v0.69.0, and not yet checked against a machine running it.
  */
 export function createGeminiCliAdapter(options: GeminiCliAdapterOptions = {}): GeminiCliAdapter {
   const env = options.env ?? process.env;

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 
+import { KEEP_AWAKE_WORKING_MS } from "../../../core/keep-awake/keepAwakeRule.ts";
 import type { GeminiCliStatus } from "../../../core/mapping/gemini-cli/geminiCliMapping.ts";
 import { projectOf } from "../../../core/sessions/project.ts";
 import type { Session, SourceId } from "../../../core/sessions/session.ts";
@@ -39,9 +40,28 @@ export function geminiCliSessionId(slug: string, sessionId: string, seatbelt = f
  */
 export const BATCH_GRACE_MS = 30_000;
 
-/** The status the lines replay to, with a batch of tool calls that ended a moment ago taken as working. */
-function statusAt(status: GeminiCliStatus, now: number): GeminiCliStatus {
-  if (status.status !== "unknown" || status.batch === undefined) return status;
+/**
+ * How long a reply with a tool call that has not ended is taken to be working
+ * while the session writes nothing: 30 minutes, the time keep-awake counts a
+ * quiet working session for, and DeepSeek Harness, fx and Unreal Agent believe
+ * a turn nothing ended. Gemini CLI 0.69.0 writes nothing while a tool waits for
+ * approval or runs, and its files name no process, so a session closed or
+ * killed then leaves the same line, and is unknown after this.
+ */
+export const QUIET_MS = KEEP_AWAKE_WORKING_MS;
+
+/**
+ * The status the lines replay to, judged against the clock: a reply whose tool
+ * waits or runs is working while the session wrote in the last `QUIET_MS`, and
+ * a batch of tool calls that ended a moment ago is working too.
+ */
+function statusAt(status: GeminiCliStatus, now: number, wroteAt: number | null): GeminiCliStatus {
+  if (status.status !== "unknown") return status;
+  if (status.pending !== undefined) {
+    if (wroteAt === null || now - wroteAt >= QUIET_MS) return status;
+    return { status: "working", since: status.pending.workingSince };
+  }
+  if (status.batch === undefined) return status;
   const endedAt = plausibleTime(status.batch.endedAt, now);
   if (endedAt === null || now - endedAt >= BATCH_GRACE_MS) return status;
   return { status: "working", since: status.batch.workingSince };
@@ -74,10 +94,14 @@ function writeTime(mtimeMs: number | undefined, startedAt: number | null, now: n
  * when none could be right.
  */
 export function lastActivity(state: ChatFileState, now: number): number | null {
-  const times = [state.updatedAt, state.messageAt, state.toolAt]
-    .map((at) => plausibleTime(at, now))
-    .filter((at): at is number => at !== null);
-  return times.length === 0 ? null : Math.max(...times);
+  return newestOf(
+    [state.updatedAt, state.messageAt, state.toolAt].map((at) => plausibleTime(at, now)),
+  );
+}
+
+function newestOf(times: readonly (number | null)[]): number | null {
+  const known = times.filter((at): at is number => at !== null);
+  return known.length === 0 ? null : Math.max(...known);
 }
 
 export interface GeminiCliSessionInput {
@@ -102,9 +126,14 @@ export interface GeminiCliSessionInput {
  * One Gemini CLI session in the shared model.
  *
  * - The status is the one its lines replay to (`mapGeminiCliStatus`): working,
- *   idle, failed or unknown, never "needs-you" or "finished". A batch of tool
- *   calls that ended less than `BATCH_GRACE_MS` ago is working since the newest
- *   prompt, as its tools' results will be.
+ *   idle, failed or unknown, never "needs-you" or "finished". A reply with a
+ *   tool call that has not ended is working since the newest prompt while the
+ *   session's newest write is less than `QUIET_MS` old, and unknown after. That
+ *   write is the newest time its own lines give, not the file's modified time,
+ *   which a title a later start adds moves on, and the newest write of its
+ *   subagents' files, which they add to while a tool of theirs runs. A batch
+ *   of tool calls that ended less than `BATCH_GRACE_MS` ago is working since
+ *   the newest prompt, as its tools' results will be.
  * - The id is the project's folder in `tmp/`, the session's own id and which
  *   of Gemini CLI's folders it is in, which stay the same from poll to poll.
  * - The name is the title Gemini CLI saved, then the folder's name, then the
@@ -113,8 +142,9 @@ export interface GeminiCliSessionInput {
  *   status has none, and a time before the session began is not known.
  * - The last write is the newest modified time of the file and its subagents'
  *   files. A time that could not be right, or that is before the session
- *   began, is not known. It is all a subagent's write moves: the status and
- *   its time, the start and how long the session is listed come from the
+ *   began, is not known. Beside it, a subagent's write moves only how long a
+ *   reply whose tool call has not ended stays working: the status and its
+ *   time, the start and how long the session is listed come from the
  *   session's own lines.
  * - Its tokens are the counts of its newest reply left that has them, from
  *   the same read of the file (`newestGeminiCliTokens`).
@@ -126,9 +156,12 @@ export function geminiCliSession(input: GeminiCliSessionInput): Session | null {
   if (state.header === null) return null;
   const id = geminiCliSessionId(slug, state.header.sessionId, input.seatbelt === true);
   const project = projectOf(cwd);
-  const { status, since } = statusAt(state.status, now);
-
   const startedAt = plausibleTime(state.header.startedAt, now);
+  const fileWrite = writeTime(input.writtenAt, startedAt, now);
+  const subagentWrite = writeTime(input.subagentWrittenAt, startedAt, now);
+  const wroteAt = newestOf([lastActivity(state, now), subagentWrite]);
+  const { status, since } = statusAt(state.status, now, wroteAt);
+
   let statusSince = status === "unknown" ? null : plausibleTime(since, now);
   if (
     statusSince !== null &&
@@ -153,10 +186,8 @@ export function geminiCliSession(input: GeminiCliSessionInput): Session | null {
     links: {},
     stale: isStale({ status, statusSince }, now),
   };
-  const writes = [input.writtenAt, input.subagentWrittenAt]
-    .map((mtimeMs) => writeTime(mtimeMs, startedAt, now))
-    .filter((at) => at !== null);
-  if (writes.length > 0) session.lastWriteAt = Math.max(...writes);
+  const lastWriteAt = newestOf([fileWrite, subagentWrite]);
+  if (lastWriteAt !== null) session.lastWriteAt = lastWriteAt;
   if (state.tokens) session.tokens = { ...state.tokens };
   return session;
 }
