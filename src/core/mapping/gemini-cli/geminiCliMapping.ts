@@ -253,6 +253,20 @@ function statusMessages(messages: ReadonlyMap<string, GeminiCliMessage>): Gemini
   return kept.reverse();
 }
 
+/**
+ * The messages from a reply with a tool call that has not ended, when only
+ * `error` messages that are not a failed request's come after it: Gemini CLI
+ * shows such an error while a tool waits or runs, as when you ask to change a
+ * call in an editor and none is found, and the turn goes on. Otherwise all of
+ * them, newest first.
+ */
+function passOverErrorsDuringTool(newestFirst: GeminiCliMessage[]): GeminiCliMessage[] {
+  const index = newestFirst.findIndex(
+    (message) => message.type !== "error" || message.content?.failedRequest === true,
+  );
+  return newestFirst[index]?.toolCalls?.state === "open" ? newestFirst.slice(index) : newestFirst;
+}
+
 function newestStatus(messages: ReadonlyMap<string, GeminiCliMessage>): GeminiCliMessage | null {
   let newest: GeminiCliMessage | null = null;
   for (const message of messages.values()) {
@@ -568,6 +582,7 @@ function workingSince(newestFirst: readonly GeminiCliMessage[]): number | null {
  * | `gemini` with tool calls in a status Gemini CLI does not write, and none that has not ended | unknown | |
  * | `gemini` with tool calls that all ended, and nothing says what came next | unknown, with `batch` unless every call was cancelled | |
  * | `error` that begins as a failed request's does | failed | the error |
+ * | `error` of another kind, with only such errors after a `gemini` reply with a tool call that has not ended: shown while a tool waits or runs | as that reply | |
  * | any other `error` | idle | the error |
  * | a type Gemini CLI 0.64.0 does not write, a line that could not be read, or a `gemini` line too long to read | unknown | |
  *
@@ -588,6 +603,10 @@ function workingSince(newestFirst: readonly GeminiCliMessage[]): number | null {
  * Gemini CLI records every error it shows as an `error` message, so only the
  * start of its text says that a request failed (`failedRequest`). A newer
  * prompt, or a take-back of the error, moves the session on as any message's.
+ * An error of another kind after a reply whose tool call has not ended is
+ * passed over, as `info` and `warning` are: the tool still waits or runs, and
+ * in the terminal an error that ends the turn then is a failed request's
+ * (`passOverErrorsDuringTool`).
  *
  * It never returns "needs-you" or "finished".
  */
@@ -595,7 +614,7 @@ export function mapGeminiCliStatus(replay: GeminiCliReplay): GeminiCliStatus {
   if (replay.lastEvent === "rollback" || replay.lastEvent === "reattach") {
     return { status: "idle", since: replay.settledAt };
   }
-  const newestFirst = statusMessages(replay.messages);
+  const newestFirst = passOverErrorsDuringTool(statusMessages(replay.messages));
   const newest = newestFirst[0];
   if (newest === undefined) {
     return replay.fromStart

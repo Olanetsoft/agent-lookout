@@ -445,6 +445,75 @@ describe("an error of another kind", () => {
   });
 });
 
+describe("an error shown while a tool waits or runs", () => {
+  // As Gemini CLI 0.69.0 shows one when you ask to change a call in an editor and none is found.
+  const waiting = (content?: Partial<GeminiCliContent>) => [
+    header(),
+    prompt("p1", T + 60_000),
+    scheduled("g1", T + 70_000, content),
+    updated(T + 70_000),
+  ];
+  const pending = { status: "unknown", since: null, pending: { workingSince: T + 60_000 } };
+
+  test("is passed over after a reply with a tool call that has not ended: unknown, with pending", () => {
+    const records = [...waiting(), notice("error", "e1", T + 80_000), updated(T + 80_000)];
+    expect(statusOf(records)).toEqual(pending);
+  });
+
+  test("is passed over after such a reply with text", () => {
+    const records = [...waiting({}), notice("error", "e1", T + 80_000)];
+    expect(statusOf(records)).toEqual(pending);
+  });
+
+  test("is passed over when there are two, with a notice between", () => {
+    const records = [
+      ...waiting(),
+      notice("error", "e1", T + 80_000),
+      notice("info", "i1", T + 85_000),
+      notice("error", "e2", T + 90_000),
+    ];
+    expect(statusOf(records)).toEqual(pending);
+  });
+
+  test("a failed request after such a reply is failed", () => {
+    expect(statusOf([...waiting(), failure("e1", T + 80_000)])).toEqual({
+      status: "failed",
+      since: T + 80_000,
+    });
+  });
+
+  test("an error after a failed request after such a reply is idle, as after any failed request", () => {
+    const records = [...waiting(), failure("e1", T + 80_000), notice("error", "e2", T + 90_000)];
+    expect(statusOf(records)).toEqual({ status: "idle", since: T + 90_000 });
+  });
+
+  test.each<[string, GeminiCliRecord[]]>([
+    ["an ended batch", [prompt("p1", T + 60_000), batch("g1", T + 70_000)]],
+    ["a reply with text", [prompt("p1", T + 60_000), reply("g1", T + 70_000)]],
+    ["a prompt", [prompt("p1", T + 60_000)]],
+    [
+      "a line of a kind not known after such a reply",
+      [...waiting().slice(1), message("x1", "other", T + 75_000, null)],
+    ],
+  ])("after %s is idle, as before", (_name, records) => {
+    expect(statusOf([header(), ...records, notice("error", "e1", T + 80_000)])).toEqual({
+      status: "idle",
+      since: T + 80_000,
+    });
+  });
+
+  test("then the batch written again and the tool's result are working", () => {
+    const shown = [...waiting(), notice("error", "e1", T + 80_000)];
+    const ended = [...shown, batch("g1", T + 70_000, false, T + 95_000)];
+    // The batch is written again where it stands, before the error, which is then the newest.
+    expect(statusOf(ended)).toEqual({ status: "idle", since: T + 80_000 });
+    expect(statusOf([...ended, toolResult("r1", T + 96_000)])).toEqual({
+      status: "working",
+      since: T + 60_000,
+    });
+  });
+});
+
 describe("replaying a session file by Gemini CLI's own rules", () => {
   test("a line with an id already seen replaces that message where it stands", () => {
     const replay = replayGeminiCliRecords([
