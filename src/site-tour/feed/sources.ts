@@ -1185,22 +1185,22 @@ export const MUSE_CODE_CAPABILITIES: SourceCapabilities = {
   "working-and-idle": {
     level: "partly",
     reason:
-      "From its log while any Muse Code that started before its last write runs, on macOS and Linux, whichever session that one holds.",
+      "From its log while any Muse Code that started before its newest record runs, on macOS and Linux, whichever session that one holds.",
   },
   "needs-you": {
     level: "partly",
     reason:
-      "Its own questions, and approvals once the reviewer hands one to you or gives no answer in 2 minutes. A subagent's are not read.",
+      "On macOS and Linux: its questions, and approvals once they wait for you, not while the reviewer holds one. A subagent's are not.",
   },
   finished: {
     level: "partly",
     reason:
-      "When Muse Code writes that it let the session go, or once no Muse Code that started before its last write runs, by ps.",
+      "When Muse Code writes that it let the session go, or once no Muse Code that started before its newest record runs, by ps.",
   },
   failed: {
     level: "partly",
     reason:
-      "When Muse Code writes that the last turn failed, until a new turn starts. A turn cut off by a crash is not written so.",
+      "When Muse Code writes that the last turn failed, until a new turn starts. A turn cut off by a crash may not be written so.",
   },
   names: {
     level: "partly",

@@ -2,8 +2,10 @@ import { describe, expect, test } from "vitest";
 
 import { createSessionFinder, NotAFolderError } from "@collector/adapters/muse-code/sessionFolders";
 import {
+  DATA_DIR,
   DAY,
   dayFolder,
+  HOME,
   HOUR,
   logPath,
   MINUTE,
@@ -226,6 +228,73 @@ describe("links and other things that are not folders or files", () => {
     files.remove(sessionFolder(ID(1)));
     files.special(sessionFolder(ID(1)));
     expect(await found(finder, NOW + 2_000)).toEqual({ paths: [], ids: [], link: true });
+  });
+
+  test.each([
+    ["day", dayFolder()],
+    ["month", `${SESSIONS}/2026/11`],
+    ["year", `${SESSIONS}/2026`],
+  ])(
+    "a %s folder replaced by a link since a log was found is not gone through for a session that needed the person",
+    async (_, place) => {
+      const files = memoryFiles();
+      writeLog(files, logPath(ID(1)), opening(NOW - HOUR));
+      const finder = finderOf(files);
+      // The logs it found, as the adapter passes them on.
+      const needed = new Set((await finder.find(NOW, new Set())).refs.map((ref) => ref.path));
+      expect([...needed].map(asWritten)).toEqual([logPath(ID(1))]);
+      // A link in the middle of a path is followed by the system, so what is below it can still be looked up.
+      files.special(place);
+      files.forget();
+      expect(await found(finder, NOW + 2_000, needed)).toEqual({ paths: [], ids: [], link: true });
+      expect(files.calls.filter(({ path }) => path.startsWith(`${place}/`))).toEqual([]);
+    },
+  );
+
+  test("a day folder replaced by a link since a sweep found a log written in the last day is not gone through between sweeps", async () => {
+    const files = memoryFiles();
+    writeLog(files, logPath(ID(1)), opening(NOW - HOUR));
+    const finder = finderOf(files);
+    expect((await found(finder)).paths).toEqual([logPath(ID(1))]);
+    files.special(dayFolder());
+    files.forget();
+    expect(await found(finder, NOW + 2_000)).toEqual({ paths: [], ids: [], link: true });
+    expect(files.calls.filter(({ path }) => path.startsWith(`${dayFolder()}/`))).toEqual([]);
+  });
+
+  test("a link at an old day folder that only a log written in the last day leads to is said", async () => {
+    const files = memoryFiles();
+    // Three newer day folders, so between sweeps the old one is not listed.
+    for (const back of [0, 1, 2])
+      writeLog(files, logPath(ID(back + 1, NOW - back * DAY), NOW - back * DAY), opening(NOW));
+    const oldDay = dayFolder(NOW - 5 * DAY);
+    // A resume appends to the log in its old day folder.
+    writeLog(files, logPath(ID(9, NOW - 5 * DAY), NOW - 5 * DAY), opening(NOW - 5 * DAY), NOW);
+    const finder = finderOf(files);
+    expect((await found(finder)).paths).toContain(logPath(ID(9, NOW - 5 * DAY), NOW - 5 * DAY));
+    files.special(oldDay);
+    files.forget();
+    const result = await found(finder, NOW + 2_000);
+    expect(result.paths).toHaveLength(3);
+    expect(result.paths).not.toContain(logPath(ID(9, NOW - 5 * DAY), NOW - 5 * DAY));
+    expect(result.link).toBe(true);
+    expect(files.calls.filter(({ path }) => path.startsWith(`${oldDay}/`))).toEqual([]);
+  });
+
+  test("a log that needed the person is looked up only where Muse Code makes one", async () => {
+    const files = memoryFiles();
+    const odd = [
+      `${SESSIONS}/2026/11/${ID(1)}/session.jsonl`,
+      `${DATA_DIR}/other/demo/${ID(2)}/session.jsonl`,
+      `${HOME}/elsewhere/2026/11/19/${ID(3)}/session.jsonl`,
+    ];
+    for (const one of odd) writeLog(files, one, opening(NOW - HOUR));
+    const folders = odd.map((one) => one.slice(0, one.lastIndexOf("/")));
+    const finder = finderOf(files);
+    expect(await found(finder, NOW, new Set(odd))).toEqual({ paths: [], ids: [], link: false });
+    expect(files.calls.filter(({ path }) => folders.some((one) => path.startsWith(one)))).toEqual(
+      [],
+    );
   });
 
   test("a missing log, as one being made, is looked up again on the next poll", async () => {

@@ -171,7 +171,8 @@ function crowd(fold: MuseFold): MuseFold {
  *   queued launch that failed, is only the newest end.
  * - A `session.end` or `session.resumed` is the marker, closes the run when
  *   it is open, and clears every open question and approval, so a session
- *   resumed after a crash never shows the dead turn's wait.
+ *   resumed after a crash does not show the dead turn's wait unless that
+ *   run writes again, as below.
  * - A closed run opens again on its own record of the kinds `reopens` names,
  *   as of that record's time, and the marker is cleared.
  * - A question or an approval counts only while the run is open, and only

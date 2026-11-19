@@ -59,7 +59,8 @@ export { SOURCE_ID } from "./toSession.ts";
  * question to `ps` and its rules for the answer
  * (`../deepseek-harness/processes.ts`), with Muse Code's names, and its way
  * of keeping a wait across polls (`continuedDeepseekHarnessWait`), Pi's check
- * of a folder (`folder` in `../pi/sessionFile.ts`) and Autohand Code's
+ * of a folder (`folder` in `../pi/sessionFile.ts`), Pi's limits of 200 logs
+ * and a sweep once a minute (`../pi/sessionFiles.ts`) and Autohand Code's
  * decoder of one JSON string (`literalOf` in `../autohand-code/jsonBytes.ts`).
  */
 
@@ -118,7 +119,7 @@ export const UNCHECKED_NOT =
 
 /** Said on macOS and Linux, where `ps` is asked. */
 export const STATUS_GONE =
-  "Otherwise it shows as finished once no Muse Code that started before its last write, or a minute after, runs, by ps.";
+  "Otherwise it shows as finished once no Muse Code that started before its newest record, or a minute after, runs, by ps.";
 export const STATUS_BOOT =
   "A session last written before the computer started shows as finished as well.";
 export const STATUS_HELD =
@@ -128,9 +129,9 @@ export const STATUS_WAITS =
 export const STATUS_REVIEWER =
   "An approval the automated reviewer holds shows as working, until the reviewer hands it to you or gives no answer in 2 minutes.";
 export const STATUS_FIRST_SECONDS =
-  "An approval with no word of a reviewer shows as working for its first 6 seconds.";
+  "An approval with no phase this knows and no word of a reviewer shows as working for its first 6 seconds.";
 export const STATUS_ANY =
-  "A program named muse, muse.exe or starting muse- that started before a session's last write counts, whichever session it holds.";
+  "A program named muse, muse.exe or starting muse- that started before a session's newest record counts, whichever session it holds.";
 export const STATUS_WRONG =
   "So while another runs, a session whose own Muse Code was killed can show as idle, needing you, or working for up to 30 minutes.";
 export const STATUS_UNKNOWN = "Anything else shows as unknown.";
@@ -170,22 +171,22 @@ export const MUSE_CODE_CAPABILITIES: SourceCapabilities = {
   "working-and-idle": {
     level: "partly",
     reason:
-      "From its log while any Muse Code that started before its last write runs, on macOS and Linux, whichever session that one holds.",
+      "From its log while any Muse Code that started before its newest record runs, on macOS and Linux, whichever session that one holds.",
   },
   "needs-you": {
     level: "partly",
     reason:
-      "Its own questions, and approvals once the reviewer hands one to you or gives no answer in 2 minutes. A subagent's are not read.",
+      "On macOS and Linux: its questions, and approvals once they wait for you, not while the reviewer holds one. A subagent's are not.",
   },
   finished: {
     level: "partly",
     reason:
-      "When Muse Code writes that it let the session go, or once no Muse Code that started before its last write runs, by ps.",
+      "When Muse Code writes that it let the session go, or once no Muse Code that started before its newest record runs, by ps.",
   },
   failed: {
     level: "partly",
     reason:
-      "When Muse Code writes that the last turn failed, until a new turn starts. A turn cut off by a crash is not written so.",
+      "When Muse Code writes that the last turn failed, until a new turn starts. A turn cut off by a crash may not be written so.",
   },
   names: {
     level: "partly",

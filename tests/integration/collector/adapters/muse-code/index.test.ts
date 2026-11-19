@@ -1,4 +1,4 @@
-import { lstat, mkdir, readdir, rename, symlink, utimes, writeFile } from "node:fs/promises";
+import { cp, lstat, mkdir, readdir, rename, symlink, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { describe, expect, onTestFinished, test } from "vitest";
@@ -8,12 +8,14 @@ import { createMuseCodeAdapter, LINK } from "@collector/adapters/muse-code/index
 import { createCollector } from "@collector/collector";
 import { nodeIo, type ReadOnlyIo } from "@collector/files/readOnlyIo";
 import {
+  ACTION,
   asked,
   CWD,
   opening,
   PRIVATE_WORDS,
   PROMPT,
   replied,
+  requested,
   RUN,
   sessionEnd,
   terminal,
@@ -182,6 +184,40 @@ describe("the Muse Code adapter on real files", () => {
     },
   );
 
+  test.skipIf(process.platform === "win32").each([
+    ["day", DAY_PATH],
+    ["year", "2026"],
+  ])(
+    "never goes through a %s folder replaced by a link after a session that needed you was read",
+    async (_, place) => {
+      const id = idNow(1);
+      const home = await homeWith({
+        [id]: logNow(id, (now) =>
+          requested(RUN, ACTION, now - 60_000, "human_pending", { session: id }),
+        ),
+      });
+      const opened: string[] = [];
+      const io: ReadOnlyIo = {
+        ...nodeIo,
+        openRegular: (file) => (opened.push(asWritten(file)), nodeIo.openRegular(file)),
+      };
+      const adapter = adapterFor(home, true, io);
+      expect((await adapter.poll()).sessions[0]?.status).toBe("needs-you");
+      // The same folder, copied elsewhere, and a link to the copy in its place.
+      const folder = path.join(home, "sessions", place);
+      const away = await tempDir();
+      const copy = path.join(away, "copy");
+      await cp(folder, copy, { recursive: true });
+      await rename(folder, path.join(away, "moved"));
+      await symlink(copy, folder);
+      opened.length = 0;
+      const { sessions, health } = await adapter.poll();
+      expect(sessions).toEqual([]);
+      expect(health.detail).toContain(LINK);
+      expect(opened).toEqual([]);
+    },
+  );
+
   test("reads nothing of a log put in place of the one its lstat found", async () => {
     const id = idNow(1);
     const home = await homeWith({
@@ -272,8 +308,10 @@ describe("the Muse Code adapter on real files", () => {
     });
     const folder = path.dirname(logOf(home, id));
     await writeFile(path.join(folder, ".session.lock"), "pid=1");
-    await mkdir(path.join(folder, "subagent", idNow(2)), { recursive: true });
-    await writeFile(path.join(folder, "subagent", idNow(2), "session.jsonl"), "x");
+    // One ID, made once, as the clock moves between two calls.
+    const child = path.join(folder, "subagent", idNow(2));
+    await mkdir(child, { recursive: true });
+    await writeFile(path.join(child, "session.jsonl"), "x");
     await writeFile(path.join(home, "session-index.db"), "x");
     await mkdir(path.join(home, "sessions", ".msp-view-v1"), { recursive: true });
     const before = await tree(home);

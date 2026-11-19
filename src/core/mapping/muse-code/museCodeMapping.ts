@@ -2,14 +2,14 @@
 // today and a browser or desktop host later share one mapping.
 //
 // A session's status comes from its log's newest turn (`museCodeFold.ts`),
-// and from whether a Muse Code program that started before its last write
-// still runs, by `ps`, as the DeepSeek Harness and Oh My Pi adapters judge it
-// (`src/collector/adapters/deepseek-harness/processes.ts`). Nothing ties a
-// session to its process, and one `muse serve` holds many sessions, so any
-// such program counts. Built from Meta's documentation, its MIT-licensed Muse
-// Code SDK and protocol schema at 1.4.24, its cookbook, and open-source
-// readers of Muse Code's files, and not yet checked on a computer running
-// it. See docs/adapters/muse-code.md.
+// and from whether a Muse Code program that started no later than a minute
+// after `decidedAt` still runs, by `ps`, as the DeepSeek Harness and Oh My Pi
+// adapters judge it (`src/collector/adapters/deepseek-harness/processes.ts`).
+// Nothing ties a session to its process, and one `muse serve` holds many
+// sessions, so any such program counts. Built from Meta's documentation, its
+// MIT-licensed Muse Code SDK and protocol schema at 1.4.24, its cookbook, and
+// open-source readers of Muse Code's files, and not yet checked on a computer
+// running it. See docs/adapters/muse-code.md.
 
 import { KEEP_AWAKE_WORKING_MS } from "../../keep-awake/keepAwakeRule.ts";
 import type { SessionStatus, WaitingReason } from "../../sessions/session.ts";
@@ -151,7 +151,7 @@ function earliest(times: readonly (number | null)[]): number | null {
  * | 2   | its run is not open and the newest end is `failed`                          | failed    | that end's time    |
  * | 3   | its run is not open and Muse Code wrote `session.end`                       | finished  | that record's time |
  * | 4   | `ps` cannot say, on Windows, or no time to judge it by can be right         | unknown   | none               |
- * | 5   | no Muse Code that started before its last write runs, or the computer started since | finished | `decidedAt` |
+ * | 5   | no Muse Code that started no later than a minute after `decidedAt` runs, or the computer started since | finished | `decidedAt` |
  * | 6   | its open run asks a question, or an approval waits for the person           | needs-you | the wait's start   |
  * | 7   | its run is open and its file was written in the last 30 minutes             | working   | the run's opening  |
  * | 8   | its run is open, quiet longer                                               | unknown   | none               |

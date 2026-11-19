@@ -22,9 +22,10 @@ import { judgeHeadLine, judgeLine, LINE_MAX, type JudgedLine } from "./records.t
  *   without waiting on a pipe, only when its `lstat` size, modified time or
  *   identity changed, and only when the open file is the one that `lstat`
  *   found. Its write time is the later of the `lstat`'s and the open file's.
- * - Its first `HEAD_BYTES` are read once for each identity, and again on a
- *   change while the file is shorter and no metadata record was found, for
- *   the workspace folder and that record's time (`judgeHeadLine`).
+ * - Its first `HEAD_BYTES` are read once for each identity, again whenever
+ *   the file is read from its end again, and again on a change while the
+ *   file is shorter and no metadata record was found, for the workspace
+ *   folder and that record's time (`judgeHeadLine`).
  * - Two kinds of whole line decide where the status comes from: a `started`
  *   of a run on the session's own stream, the anchor, and a line that would
  *   decide and cannot be read. The newest of them in the file decides.
