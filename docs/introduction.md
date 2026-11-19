@@ -75,7 +75,7 @@ Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, K
 ## Next steps
 
 - [Quickstart](quickstart.md): start it with npx, see your sessions, and jump to a Claude Code session that waits for you.
-- [Jump to a session's window](guide-jump-to-window.md): set up Jump for Claude Code sessions in VS Code, tmux, and Terminal or iTerm2 on a Mac, and for Qwen Code sessions in tmux and Terminal or iTerm2, and fix it when it fails.
+- [Jump to a session's window](guide-jump-to-window.md): set up Jump for Claude Code sessions in VS Code, tmux, and Terminal or iTerm2 on a Mac, and for Qwen Code and Grok Build sessions in tmux and Terminal or iTerm2, and fix it when it fails.
 
 ## Get help
 
