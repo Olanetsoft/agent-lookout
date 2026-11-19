@@ -35,6 +35,13 @@ import type { FileInfo, ReadOnlyIo } from "../../files/readOnlyIo.ts";
  * `<id>.session.jsonl`, beside its `operations` folder and its `.session-*.tmp`
  * copies, whose names are dropped before anything is looked up
  * (`../unreal-agent/index.ts`). Pi, Kimchi and Prime Agent set none.
+ *
+ * Droid's adapter uses it too, with a test of its own for which names are
+ * project folders (`isProjectFolder`): Droid names a project's folder `-` and
+ * the project's path, with each `/` or `\` as `-`, so any name that begins
+ * with `-` counts, and keeps older sessions loose in its sessions folder
+ * (`../droid/index.ts`). Its `<id>.settings.json` beside each session is not a
+ * session file, so it is never listed here.
  */
 
 /** How often every project folder is listed and every session file looked up. */
@@ -83,6 +90,8 @@ export interface SessionFileFinderOptions {
   flat?: boolean;
   /** Which names are session files. Defaults to any name that ends in `.jsonl`. */
   fileName?: (name: string) => boolean;
+  /** Which names in the sessions folder are project folders. Defaults to Pi's, `--<folder>--`. */
+  isProjectFolder?: (name: string) => boolean;
 }
 
 export function createSessionFileFinder(options: SessionFileFinderOptions): SessionFileFinder {
@@ -90,6 +99,7 @@ export function createSessionFileFinder(options: SessionFileFinderOptions): Sess
   const sweepMs = options.sweepMs ?? SWEEP_MS;
   const flat = options.flat ?? false;
   const isFile = options.fileName ?? isSessionFileName;
+  const isProjectFolder = options.isProjectFolder ?? isProjectFolderName;
   /** What each project folder held when it was last listed, by the folder. */
   const listed = new Map<string, Listed>();
   /** What a flat sessions folder held when it was last listed, with its modified time then. */
@@ -162,7 +172,7 @@ export function createSessionFileFinder(options: SessionFileFinderOptions): Sess
 
       const folders = flat
         ? []
-        : names.filter(isProjectFolderName).map((name) => path.join(sessionsDir, name));
+        : names.filter(isProjectFolder).map((name) => path.join(sessionsDir, name));
       const files = names.filter(isFile).map((name) => path.join(sessionsDir, name));
       for (const dir of folders) files.push(...(await filesIn(dir, sweep)));
       const here = new Set(folders);

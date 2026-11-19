@@ -168,6 +168,7 @@ async function serve(settings: Record<string, string>) {
       AGENT_LOOKOUT_UNREAL_AGENT_SESSION_DIR: await tempDir(),
       AGENT_LOOKOUT_AUTOHAND_HOME: await tempDir(),
       AGENT_LOOKOUT_DEEPSEEK_HARNESS_HOME: await tempDir(),
+      AGENT_LOOKOUT_DROID_HOME: await tempDir(),
       AGENT_LOOKOUT_STATUS_DIR: path.join(await tempDir(), "no-status-files-here"),
       AGENT_LOOKOUT_TMUX: "off",
       ...settings,
@@ -204,7 +205,7 @@ const FX_STATE = process.platform === "win32" ? "unavailable" : "ok";
 const UNREAL_AGENT_STATE = process.platform === "win32" ? "unavailable" : "ok";
 
 describe("createCollector", () => {
-  test("watches Claude Code, Codex, the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx, Unreal Agent, Autohand Code and DeepSeek Harness, and lists Codex sessions beside Claude Code's", async () => {
+  test("watches Claude Code, Codex, the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx, Unreal Agent, Autohand Code, DeepSeek Harness and Droid, and lists Codex sessions beside Claude Code's", async () => {
     const snapshot = await serve({ AGENT_LOOKOUT_CODEX_HOME: CODEX_FIXTURE_HOME });
 
     expect(snapshot.sources.map((source) => [source.id, source.label, source.state])).toEqual([
@@ -231,6 +232,7 @@ describe("createCollector", () => {
       ["unreal-agent", "Unreal Agent", UNREAL_AGENT_STATE],
       ["autohand-code", "Autohand Code", "ok"],
       ["deepseek-harness", "DeepSeek Harness", "ok"],
+      ["droid", "Droid", "ok"],
       ["status-files", "Status files", "not-set-up"],
     ]);
     // The folder is written from ~ when the repository sits in the home folder.
@@ -281,6 +283,7 @@ describe("createCollector", () => {
       { id: "unreal-agent", state: UNREAL_AGENT_STATE },
       { id: "autohand-code", state: "ok" },
       { id: "deepseek-harness", state: "ok" },
+      { id: "droid", state: "ok" },
       { id: "status-files", state: "not-set-up" },
     ]);
     expect(snapshot.sources[1]).not.toHaveProperty("advice");
@@ -422,6 +425,7 @@ describe("createCollector", () => {
           AGENT_LOOKOUT_UNREAL_AGENT_SESSION_DIR: await tempDir(),
           AGENT_LOOKOUT_AUTOHAND_HOME: await tempDir(),
           AGENT_LOOKOUT_DEEPSEEK_HARNESS_HOME: await tempDir(),
+          AGENT_LOOKOUT_DROID_HOME: await tempDir(),
           AGENT_LOOKOUT_STATUS_DIR: path.join(await tempDir(), "no-status-files-here"),
           AGENT_LOOKOUT_TMUX: "off",
           AGENT_LOOKOUT_STOP: "off",
@@ -472,6 +476,7 @@ describe("createCollector", () => {
         AGENT_LOOKOUT_UNREAL_AGENT_SESSION_DIR: await tempDir(),
         AGENT_LOOKOUT_AUTOHAND_HOME: await tempDir(),
         AGENT_LOOKOUT_DEEPSEEK_HARNESS_HOME: await tempDir(),
+        AGENT_LOOKOUT_DROID_HOME: await tempDir(),
         AGENT_LOOKOUT_STATUS_DIR: folder,
         AGENT_LOOKOUT_TMUX: "off",
       },
@@ -559,6 +564,7 @@ describe("createCollector", () => {
         AGENT_LOOKOUT_UNREAL_AGENT_SESSION_DIR: await tempDir(),
         AGENT_LOOKOUT_AUTOHAND_HOME: await tempDir(),
         AGENT_LOOKOUT_DEEPSEEK_HARNESS_HOME: await tempDir(),
+        AGENT_LOOKOUT_DROID_HOME: await tempDir(),
         AGENT_LOOKOUT_STATUS_DIR: statusDir,
         AGENT_LOOKOUT_TMUX: "off",
       },
@@ -2610,6 +2616,7 @@ describe("the last messages of every agent, under one set of limits", () => {
         AGENT_LOOKOUT_UNREAL_AGENT_SESSION_DIR: await tempDir(),
         AGENT_LOOKOUT_AUTOHAND_HOME: await tempDir(),
         AGENT_LOOKOUT_DEEPSEEK_HARNESS_HOME: await tempDir(),
+        AGENT_LOOKOUT_DROID_HOME: await tempDir(),
         AGENT_LOOKOUT_STATUS_DIR: path.join(await tempDir(), "no-status-files-here"),
         AGENT_LOOKOUT_TMUX: "off",
         AGENT_LOOKOUT_TERMINAL_JUMP: "off",
@@ -2895,6 +2902,7 @@ describe.skipIf(process.platform === "win32")("another machine over SSH", () => 
         AGENT_LOOKOUT_UNREAL_AGENT_SESSION_DIR: await tempDir(),
         AGENT_LOOKOUT_AUTOHAND_HOME: await tempDir(),
         AGENT_LOOKOUT_DEEPSEEK_HARNESS_HOME: await tempDir(),
+        AGENT_LOOKOUT_DROID_HOME: await tempDir(),
         AGENT_LOOKOUT_STATUS_DIR: path.join(await tempDir(), "no-status-files-here"),
         AGENT_LOOKOUT_TMUX: "off",
         AGENT_LOOKOUT_NOTIFICATIONS: "on",
@@ -3140,6 +3148,7 @@ describe.skipIf(process.platform === "win32")("another machine over SSH", () => 
       "unreal-agent",
       "autohand-code",
       "deepseek-harness",
+      "droid",
       "status-files",
       "remote:",
     ]);

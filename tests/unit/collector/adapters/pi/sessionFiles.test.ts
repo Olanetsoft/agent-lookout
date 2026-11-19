@@ -414,3 +414,36 @@ describe("a test of its own for which names are session files, as Unreal Agent's
     expect(names).toEqual(["a.mine.jsonl", "b.jsonl"]);
   });
 });
+
+describe("a test of its own for which names are project folders, as Droid's adapter gives", () => {
+  const startsWithDash = (name: string) => name.startsWith("-");
+
+  test("goes into only the folders it passes, and lists the loose files beside them", async () => {
+    const files = memoryFiles();
+    files.write(`${SESSIONS_DIR}/-Users-example-code-demo/a.jsonl`, sessionText(SESSION_ID));
+    files.write(`${SESSIONS_DIR}/-/b.jsonl`, sessionText(sessionIdOf(2)));
+    files.write(`${SESSIONS_DIR}/c.jsonl`, sessionText(sessionIdOf(3)));
+    files.write(`${SESSIONS_DIR}/notes/d.jsonl`, sessionText(sessionIdOf(4)));
+    const finder = createSessionFileFinder({
+      sessionsDir: path.resolve(SESSIONS_DIR),
+      io: files.io,
+      isProjectFolder: startsWithDash,
+    });
+    expect((await finder.recent(NOW)).map((ref) => path.basename(ref.path)).sort()).toEqual([
+      "a.jsonl",
+      "b.jsonl",
+      "c.jsonl",
+    ]);
+    expect(files.count(undefined, (target) => target.startsWith(`${SESSIONS_DIR}/notes`))).toBe(0);
+  });
+
+  test("left out, only Pi's folders between two pairs of dashes are gone into", async () => {
+    const files = memoryFiles();
+    files.write(`${SESSIONS_DIR}/-Users-example-code-demo/a.jsonl`, sessionText(SESSION_ID));
+    files.write(
+      `${projectFolderOf("/Users/example/code/demo")}/b.jsonl`,
+      sessionText(sessionIdOf(2)),
+    );
+    expect(await found(finderOf(files))).toEqual(["b.jsonl"]);
+  });
+});

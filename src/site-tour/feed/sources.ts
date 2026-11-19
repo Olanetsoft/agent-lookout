@@ -8,9 +8,9 @@ import { MACHINE } from "@site-tour/feed/hour";
  * collector's order: Claude Code, Codex, the Antigravity CLI, Antigravity,
  * Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi,
  * Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx,
- * Unreal Agent, Autohand Code and DeepSeek Harness, none of the twenty-one
- * installed here, and status files. Then the other machine, connected over
- * SSH.
+ * Unreal Agent, Autohand Code, DeepSeek Harness and Droid, none of the
+ * twenty-two installed here, and status files. Then the other machine,
+ * connected over SSH.
  *
  * The adapters run in Node, so their declarations cannot be bundled into the
  * page. Their words are written here in their place, and a test holds each
@@ -1030,6 +1030,52 @@ export const DEEPSEEK_HARNESS_CAPABILITIES: SourceCapabilities = {
   },
 };
 
+export const DROID_CAPABILITIES: SourceCapabilities = {
+  "working-and-idle": {
+    level: "no",
+    reason:
+      "Nothing ties a Droid session to a process, and Droid writes no status, so a turn a crash cut off looks like one under way.",
+  },
+  "needs-you": {
+    level: "no",
+    reason:
+      "Nothing Droid writes to a session's files says it waits for your approval or an answer.",
+  },
+  finished: {
+    level: "partly",
+    reason:
+      "Every session at once, when ps shows no droid program, asked late enough after the last write to any, on macOS and Linux.",
+  },
+  failed: {
+    level: "no",
+    reason:
+      "Nothing on a Droid session's first line says a turn failed, and nothing after it is parsed.",
+  },
+  names: {
+    level: "partly",
+    reason:
+      "The folder's. Droid names a session from your first prompt, or you rename it, and that title is never kept.",
+  },
+  jump: { level: "no", reason: "A Droid session's file names no process or terminal." },
+  "quiet-for": {
+    level: "no",
+    reason: "It is shown for a working session, and a Droid session never shows as working.",
+  },
+  tokens: {
+    level: "no",
+    reason:
+      "Droid keeps a session's counts in its settings file, of which only whether archivedAt is set is kept.",
+  },
+  stop: {
+    level: "no",
+    reason: "A Droid session's file names no process that Agent Lookout could confirm and stop.",
+  },
+  answer: {
+    level: "no",
+    reason: "Agent Lookout makes no request to Droid, so it cannot send an answer.",
+  },
+};
+
 /**
  * What Claude Code on the other machine can report, as it is seen from here:
  * what its Agent Lookout says, with Jump, Stop and Answer as no, since each
@@ -1617,6 +1663,31 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
       checkedAt,
     },
     {
+      // The adapter's card on a Mac when Droid is not installed: its sessions folder is looked for, and nothing more.
+      id: "droid",
+      label: "Droid",
+      state: "unavailable",
+      detail:
+        "Droid was not found: there is no ~/.factory/sessions folder. Agent Lookout looks again every minute.",
+      watching: [
+        { label: "Sessions folder", value: "~/.factory/sessions" },
+        { label: "Read", value: "not found" },
+        {
+          label: "Files read",
+          value:
+            "The first line of each <id>.jsonl, and archivedAt from the <id>.settings.json beside it",
+        },
+        { label: "Process check", value: "ps -A -o comm=" },
+        {
+          label: "Process check run",
+          value:
+            "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no droid",
+        },
+      ],
+      capabilities: DROID_CAPABILITIES,
+      checkedAt,
+    },
+    {
       id: "status-files",
       label: "Status files",
       state: "ok",
@@ -1666,6 +1737,7 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "Unreal Agent there", value: "Not found" },
         { label: "Autohand Code there", value: "Not found" },
         { label: "DeepSeek Harness there", value: "Not found" },
+        { label: "Droid there", value: "Not found" },
         { label: "Status files there", value: "Not set up" },
       ],
       agents: [{ label: "Claude Code", capabilities: CLAUDE_CODE_THERE_CAPABILITIES }],

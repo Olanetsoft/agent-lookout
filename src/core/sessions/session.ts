@@ -52,6 +52,8 @@ export type RemoteSourceId = `remote:${string}`;
  * keeps for each.
  * `deepseek-harness` is DeepSeek Harness, in its command `dsh`, whose sessions
  * are read from the event log it keeps for each.
+ * `droid` is Droid, Factory's agent, in its command `droid`, whose sessions are
+ * read from the first line of the file it keeps for each.
  */
 export type SourceId =
   | "claude-code"
@@ -77,6 +79,7 @@ export type SourceId =
   | "unreal-agent"
   | "autohand-code"
   | "deepseek-harness"
+  | "droid"
   | "status-files"
   | RemoteSourceId;
 

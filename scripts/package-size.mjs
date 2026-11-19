@@ -58,11 +58,16 @@ import { gunzipSync } from "node:zlib";
  * 6.10 MB, once DeepSeek Harness took unpacked to 4.26 MB and installed to
  * 6.07 MB, from 4.17 MB and 5.98 MB. It added 92 KB, 64 KB of code in the
  * command and 28 KB of the documents the package ships.
+ *
+ * Installed was raised from 6.10 MB to 6.20 MB once Droid took it to 6.11 MB,
+ * from 6.07 MB. It added 36 KB, 18 KB of code in the command and 18 KB of the
+ * documents the package ships. Unpacked, at 4.29 MB from 4.26 MB, is still
+ * under its 4.30 MB, so it was left as it was.
  */
 const LIMITS = {
   tarball: 1_200_000,
   unpacked: 4_300_000,
-  installed: 6_100_000,
+  installed: 6_200_000,
 };
 
 /** Bytes as megabytes, as npm gives sizes. */

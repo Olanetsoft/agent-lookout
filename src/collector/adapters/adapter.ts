@@ -138,6 +138,15 @@ export interface AdapterResult {
    * - `files-without-processes`: the same while `ps` cannot say, and always on
    *   Windows, when a session is finished only if DeepSeek Harness closed it
    *   mid-turn or it was last written before the computer started.
+   *
+   * The Droid adapter has three, named as the Pi adapter's are:
+   * - `files`: Droid's session files, while `ps` shows a `droid` program
+   *   running, or showed none too soon after a session was written to tell.
+   *   The usual one.
+   * - `files-closed`: the same while `ps` shows none, when every session is
+   *   finished.
+   * - `files-without-processes`: the same while `ps` cannot say, and always on
+   *   Windows, when no session is shown as finished.
    */
   basis?: string;
 }

@@ -42,6 +42,10 @@ import {
   UNCHECKED_NOTE as DEEPSEEK_HARNESS_UNCHECKED_NOTE,
 } from "@collector/adapters/deepseek-harness/index";
 import {
+  DROID_CAPABILITIES,
+  UNCHECKED_NOTE as DROID_UNCHECKED_NOTE,
+} from "@collector/adapters/droid/index";
+import {
   KIMCHI_CAPABILITIES,
   UNCHECKED_NOTE as KIMCHI_UNCHECKED_NOTE,
 } from "@collector/adapters/kimchi/index";
@@ -106,6 +110,7 @@ const AUTOHAND_CODE_NOTES = fileURLToPath(
 const DEEPSEEK_HARNESS_NOTES = fileURLToPath(
   new URL("../../../../docs/adapters/deepseek-harness.md", import.meta.url),
 );
+const DROID_NOTES = fileURLToPath(new URL("../../../../docs/adapters/droid.md", import.meta.url));
 
 const GUIDE_HEADING = "#### What each agent can report";
 const README_HEADING = "## Supported agents and systems";
@@ -135,6 +140,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Unreal Agent", UNREAL_AGENT_CAPABILITIES],
   ["Autohand Code", AUTOHAND_CODE_CAPABILITIES],
   ["DeepSeek Harness", DEEPSEEK_HARNESS_CAPABILITIES],
+  ["Droid", DROID_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -711,6 +717,57 @@ test("PRIVACY.md and the DeepSeek Harness notes name what is read and from which
     }
   }
   for (const field of ["dsh-v0.2.2-rc.3", "38a6a5c965aa", "dsh-v0.2.0-rc.2", "session/end-seed"]) {
+    expect(notes, field).toContain(field);
+  }
+});
+
+test("PRIVACY.md and the Droid notes name what is read and from which versions", async () => {
+  const privacy = await readFile(PRIVACY, "utf8");
+  const notes = await readFile(DROID_NOTES, "utf8");
+  const line = (start: string) => privacy.split("\n").find((one) => one.startsWith(start)) ?? "";
+
+  const droid = line("For Droid, Agent Lookout reads");
+  for (const words of [
+    "built from Factory's documentation",
+    "droid-sdk 0.5.0",
+    "@factory/droid-sdk 0.11.0",
+    "`ps`",
+  ]) {
+    expect(droid, words).toContain(words);
+  }
+  expect(droid).not.toContain("DeepSeek Harness");
+  for (const version of ["droid-sdk 0.5.0", "@factory/droid-sdk 0.11.0"]) {
+    expect(DROID_UNCHECKED_NOTE).toContain(version);
+    expect(notes).toContain(version);
+  }
+  expect(notes).toContain("Apache-2.0");
+
+  const start = privacy.indexOf("### Droid's files");
+  expect(start).toBeGreaterThan(-1);
+  const section = privacy.slice(start, privacy.indexOf("\n### ", start));
+  for (const text of [section, notes]) {
+    for (const field of [
+      "~/.factory/sessions",
+      "AGENT_LOOKOUT_DROID_HOME",
+      "FACTORY_HOME_OVERRIDE",
+      ".jsonl",
+      ".settings.json",
+      "archivedAt",
+      "session_start",
+      "cwd",
+      "title",
+      "owner",
+      "4 KiB",
+      "64 KiB",
+      "16 KiB",
+      "ps -A -o comm=",
+      "droid-dev",
+      ".favorites",
+    ]) {
+      expect(text, field).toContain(field);
+    }
+  }
+  for (const field of ["e6241cd", "aa6fd94", "a4103054"]) {
     expect(notes, field).toContain(field);
   }
 });
