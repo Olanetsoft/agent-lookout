@@ -2,12 +2,14 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
-## Unreleased
+## 0.2.25 - 2026-11-19
+
+Amp threads can show through a plugin, Autohand Code sessions have Jump, and Gemini CLI 0.69.0 sessions show as working while a tool waits or runs.
 
 ### Added
 
-- Jump works for an Autohand Code session in tmux, and in a tab of Terminal or iTerm2 on a Mac, as it does for Qwen Code: it selects the session's pane, or brings its tab forward. Agent Lookout looks only for the process of a heartbeat written in the last 15 seconds whose process runs, so a run with `--no-daemon`, a session whose heartbeat is older, whose process has ended or moved on to another session, and one that has finished have no Jump. (#351)
-- Amp threads can show through a plugin in the guide, under Your own agents, that writes a status file for each thread: working, waiting for permission when Amp's permissions are on, idle or failed, with the folder Amp has open and no name. Agent Lookout reads none of Amp's own files. Built from Amp's documented Plugin API, and not yet checked on a computer running Amp. (#44)
+- Jump works for an Autohand Code session in tmux, and in a tab of Terminal or iTerm2 on a Mac, as it does for Qwen Code: it selects the session's pane, or brings its tab forward. Agent Lookout finds it with the same look at tmux and `ps` that serves Claude Code's sessions, on each poll, and Autohand Code's card in Sources lists those checks. It looks only for the process of a heartbeat written in the last 15 seconds whose process runs, so a run with `--no-daemon`, a session whose heartbeat is older, whose process has ended or moved on to another session, and one that has finished have no Jump. (#351)
+- Amp threads can show through a plugin in the guide, under Your own agents, that writes a status file for each thread: working, waiting for permission when Amp's permissions are on, idle or failed, named after the folder Amp has open, or with none open after its file. Agent Lookout reads none of Amp's own files. Built from Amp's documented Plugin API, and not yet checked on a computer running Amp. (#44)
 
 ### Fixed
 
