@@ -266,7 +266,7 @@ describe("an exit a quit cut a turn off after", () => {
   });
 });
 
-describe("an exit from before the header, as a fork, a branch or an import copies", () => {
+describe("an exit from before the header, as a fork or a branch copies", () => {
   /** When the copy was made, and the header it wrote says it began. */
   const copiedAt = NOW - MINUTE;
   const endAt = copiedAt - HOUR;
@@ -320,6 +320,22 @@ describe("an exit from before the header, as a fork, a branch or an import copie
       expect(exitFor({ newest: reply(endAt), behind: copied, startedAt })).toBe(copied);
       expect(exitFor({ newest: reply(endAt + SECOND), cutOff: copied, startedAt })).toBe(copied);
     }
+  });
+
+  test("its own exit, after the clock was set back past the header, decides until the header is within a minute of the clock", () => {
+    const headerAt = NOW + CLOCK_SLACK_MS + MINUTE;
+    const crash = exit(true, NOW - 10 * MINUTE);
+    const facts = {
+      newest: crash,
+      startedAt: headerAt,
+      writtenAt: crash.at,
+      writer: "gone" as const,
+    };
+    expect(statusOf(facts)).toMatchObject({ status: "failed", since: crash.at });
+    expect(statusOf({ ...facts, now: headerAt - CLOCK_SLACK_MS })).toMatchObject({
+      status: "finished",
+      since: crash.at,
+    });
   });
 });
 

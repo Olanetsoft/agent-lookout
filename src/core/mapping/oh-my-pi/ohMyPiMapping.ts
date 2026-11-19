@@ -133,11 +133,12 @@ export function decidedAtOf(
  * needs you.
  *
  * An exit whose time is before the header's, when that can be right, decides
- * nothing, newest, behind or cut off alike. A fork, a branch and an import
- * copy each line with the time it had under a header they stamp as they copy
- * (session-manager.ts:2546-2576, :2807-2826, :4165-4198, :4331-4351,
- * :2090-2100; foreign-session-import.ts:51), so such an exit ended the
- * session copied, not the copy. Judged against `now` on every poll, and never
+ * nothing, newest, behind or cut off alike. A fork and a branch copy each
+ * line with the time it had under a header they stamp as they copy
+ * (session-manager.ts:2546-2576, :4165-4198, :4331-4351, :2090-2100), so such
+ * an exit is taken as the session copied's, not the copy's. An import holds no
+ * exit. A clock set back past the header before the exit is written does the
+ * same to a session's own exit. Judged against `now` on every poll, and never
  * kept.
  */
 export function exitOf(
