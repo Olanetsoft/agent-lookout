@@ -149,6 +149,14 @@ test("the fingerprint of the folders sessions are read from names none of them, 
   // is not followed, and Droid's own folder named outright is the default.
   expect(sourcesFingerprint({ FACTORY_HOME_OVERRIDE: "/tmp/factory" }, HOME)).toBe(defaults);
   expect(sourcesFingerprint({ AGENT_LOOKOUT_DROID_HOME: `${HOME}/.factory` }, HOME)).toBe(defaults);
+  // Grok Build's GROK_HOME counts only as a whole path, and as it is: one that
+  // is not is passed over, as is an empty one, and its own folder named
+  // outright is the default.
+  for (const value of ["", "grok", "~/grok", " /tmp/grok"]) {
+    expect(sourcesFingerprint({ GROK_HOME: value }, HOME), value).toBe(defaults);
+  }
+  expect(sourcesFingerprint({ GROK_HOME: `${HOME}/.grok` }, HOME)).toBe(defaults);
+  expect(sourcesFingerprint({ AGENT_LOOKOUT_GROK_HOME: `${HOME}/.grok` }, HOME)).toBe(defaults);
   // Agent Lookout's names the root outright. A home folder is a whole path,
   // with a drive on Windows, as the system gives it.
   const home = path.resolve(HOME);
@@ -229,6 +237,8 @@ test("the fingerprint of the folders sessions are read from names none of them, 
     ),
     sourcesFingerprint({ DSH_HOME: path.resolve("/tmp/dsh-home") }, HOME),
     sourcesFingerprint({ AGENT_LOOKOUT_DROID_HOME: "/tmp/empty-droid" }, HOME),
+    sourcesFingerprint({ AGENT_LOOKOUT_GROK_HOME: "/tmp/empty-grok" }, HOME),
+    sourcesFingerprint({ GROK_HOME: path.resolve("/tmp/grok-home") }, HOME),
     sourcesFingerprint({}, "/Users/someone-else"),
   ];
   for (const other of others) expect(other).not.toBe(defaults);

@@ -276,6 +276,15 @@ export const EMPTY_DEEPSEEK_HARNESS_HOME = path.join(
 export const EMPTY_DROID_HOME = path.join(os.tmpdir(), "agent-lookout-test-no-droid", "factory");
 
 /**
+ * An empty folder for the Grok Build adapter to read in place of `~/.grok`, so
+ * that a collector a test builds from `process.env` finds no sessions:
+ * `nodeSetup.ts` makes it, with an empty `sessions` folder, and names it
+ * there. Nothing is ever written in it. A test that builds an environment of
+ * its own names a `tempDir` there.
+ */
+export const EMPTY_GROK_HOME = path.join(os.tmpdir(), "agent-lookout-test-no-grok", "grok");
+
+/**
  * An empty folder that stands in for the home folder of the person running the
  * tests: `nodeSetup.ts` makes it and names it in `HOME` and `USERPROFILE`, so
  * `os.homedir()` is never the real home, and no `~/.claude`, `~/.codex`,

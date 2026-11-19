@@ -304,6 +304,7 @@ test.each([
       "Autohand Code",
       "DeepSeek Harness",
       "Droid",
+      "Grok Build",
       "Status files",
       "Claude Code on devbox",
     ]);
@@ -331,6 +332,7 @@ test.each([
       "No",
       "Yes",
       "Yes",
+      "No",
       "No",
       "No",
       "No",

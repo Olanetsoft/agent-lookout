@@ -329,6 +329,7 @@ describe("the Kimi Code adapter, through the collector", () => {
         AGENT_LOOKOUT_AUTOHAND_HOME: await tempDir(),
         AGENT_LOOKOUT_DEEPSEEK_HARNESS_HOME: await tempDir(),
         AGENT_LOOKOUT_DROID_HOME: await tempDir(),
+        AGENT_LOOKOUT_GROK_HOME: await tempDir(),
         AGENT_LOOKOUT_STATUS_DIR: path.join(await tempDir(), "no-status-files-here"),
         AGENT_LOOKOUT_TMUX: "off",
         AGENT_LOOKOUT_TERMINAL_JUMP: "off",

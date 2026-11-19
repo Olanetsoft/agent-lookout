@@ -42,6 +42,7 @@ async function isolatedEnv(overrides: Record<string, string> = {}): Promise<Node
     AGENT_LOOKOUT_AUTOHAND_HOME: await tempDir(),
     AGENT_LOOKOUT_DEEPSEEK_HARNESS_HOME: await tempDir(),
     AGENT_LOOKOUT_DROID_HOME: await tempDir(),
+    AGENT_LOOKOUT_GROK_HOME: await tempDir(),
     AGENT_LOOKOUT_STATUS_DIR: await tempDir(),
     AGENT_LOOKOUT_TMUX: "off",
     AGENT_LOOKOUT_TERMINAL_JUMP: "off",

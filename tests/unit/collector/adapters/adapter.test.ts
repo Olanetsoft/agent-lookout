@@ -82,6 +82,14 @@ import {
 import { deepseekHarnessSession } from "@collector/adapters/deepseek-harness/toSession";
 import { createDroidAdapter, DROID_CAPABILITIES } from "@collector/adapters/droid/index";
 import { droidSession } from "@collector/adapters/droid/toSession";
+import {
+  createGrokBuildAdapter,
+  GROK_BUILD_CAPABILITIES,
+} from "@collector/adapters/grok-build/index";
+import {
+  grokBuildSession,
+  withJump as grokBuildJump,
+} from "@collector/adapters/grok-build/toSession";
 import { createPiAdapter, PI_CAPABILITIES } from "@collector/adapters/pi/index";
 import { piSession } from "@collector/adapters/pi/toSession";
 import {
@@ -105,6 +113,7 @@ import { mapClaudeCodeStatus } from "@core/mapping/claudeCodeMapping";
 import { mapClineStatus } from "@core/mapping/cline/clineMapping";
 import { mapCrushStatus } from "@core/mapping/crush/crushMapping";
 import { mapDroidStatus } from "@core/mapping/droid/droidMapping";
+import { emptyGrokBuildTurn, mapGrokBuildStatus } from "@core/mapping/grok-build/grokBuildMapping";
 import { mapFxStatus } from "@core/mapping/fx/fxMapping";
 import { mapGooseStatus } from "@core/mapping/goose/gooseMapping";
 import { mapKimiCodeStatus } from "@core/mapping/kimi-code/kimiCodeMapping";
@@ -178,6 +187,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Autohand Code", AUTOHAND_CODE_CAPABILITIES],
   ["DeepSeek Harness", DEEPSEEK_HARNESS_CAPABILITIES],
   ["Droid", DROID_CAPABILITIES],
+  ["Grok Build", GROK_BUILD_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -289,6 +299,9 @@ test("each adapter carries its own declaration, for the poller to pass on", () =
     expect(
       createDroidAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
     ).toBe(DROID_CAPABILITIES);
+    expect(
+      createGrokBuildAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
+    ).toBe(GROK_BUILD_CAPABILITIES);
   }
   expect(createMistralVibeAdapter({ env: {}, homeDir: home, io: files.io }).capabilities).toBe(
     MISTRAL_VIBE_CAPABILITIES,
@@ -1220,6 +1233,81 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(DROID_CAPABILITIES.jump.level).toBe("no");
     expect(DROID_CAPABILITIES.stop.level).toBe("no");
     expect(DROID_CAPABILITIES.answer.level).toBe("no");
+  });
+
+  test("Grok Build: a session can be any status, and needs you only for a question or a plan", () => {
+    const turn = (fields: Partial<ReturnType<typeof emptyGrokBuildTurn>>) => ({
+      ...emptyGrokBuildTurn(),
+      schemaOk: true,
+      outputSeen: true,
+      ...fields,
+    });
+    const facts = (log: ReturnType<typeof turn> | null, fields = {}) => ({
+      alive: true,
+      listed: true,
+      log: log === null ? { state: "unreadable" as const } : { state: "ok" as const, turn: log },
+      writtenAt: NOW - 1_000,
+      plan: false as const,
+      planWrittenAt: null,
+      openedAt: NOW - 60_000,
+      now: NOW,
+      ...fields,
+    });
+    const mapped = [
+      facts(turn({ boundary: "started", at: NOW - 5_000 })),
+      facts(turn({ boundary: "started", at: NOW - 5_000, openQuestions: 1, questionSince: NOW })),
+      facts(turn({ boundary: "ended", at: NOW - 5_000, outcome: "completed" })),
+      facts(turn({ boundary: "ended", at: NOW - 5_000, outcome: "error" })),
+      facts(turn({ boundary: "ended", at: NOW - 5_000, outcome: "completed" }), { plan: true }),
+      facts(null),
+      facts(turn({}), { alive: false }),
+    ].map((given) => mapGrokBuildStatus(given));
+    expect(statuses(mapped.map((status) => status.status))).toEqual(
+      new Set(["working", "needs-you", "idle", "failed", "unknown", "finished"]),
+    );
+    expect(new Set(mapped.flatMap((status) => status.waitingReason ?? []))).toEqual(
+      new Set(["question"]),
+    );
+    expect(GROK_BUILD_CAPABILITIES["working-and-idle"].level).toBe("partly");
+    expect(GROK_BUILD_CAPABILITIES["needs-you"].level).toBe("partly");
+    expect(GROK_BUILD_CAPABILITIES.failed.level).toBe("partly");
+    expect(GROK_BUILD_CAPABILITIES.finished.level).toBe("partly");
+  });
+
+  test("Grok Build: a session has its process, its log's last write and a Jump, and no tokens, stop or link", () => {
+    const session = grokBuildSession({
+      entry: {
+        sessionId: "019a9a00-0000-7000-8000-000000000001",
+        pid: 4242,
+        cwd: "/Users/example/code/demo",
+        openedAt: NOW - 60_000,
+      },
+      title: null,
+      status: { status: "working", since: NOW - 5_000 },
+      writtenAt: NOW - 1_000,
+      now: NOW,
+    });
+    expect(session).toMatchObject({
+      id: "grok-build:019a9a00-0000-7000-8000-000000000001",
+      source: "grok-build",
+      name: "demo",
+      pid: 4242,
+      alive: true,
+      lastWriteAt: NOW - 1_000,
+    });
+    for (const absent of ["tokens", "stop", "ask", "waitingText"]) {
+      expect(session, absent).not.toHaveProperty(absent);
+    }
+    expect(session.links).toEqual({});
+    expect(
+      grokBuildJump(session, { pid: 4242, id: "%1", place: "demo:0.1" }, undefined).jump,
+    ).toEqual({ kind: "tmux", place: "demo:0.1" });
+    expect(GROK_BUILD_CAPABILITIES.names.level).toBe("partly");
+    expect(GROK_BUILD_CAPABILITIES["quiet-for"].level).toBe("partly");
+    expect(GROK_BUILD_CAPABILITIES.tokens.level).toBe("no");
+    expect(GROK_BUILD_CAPABILITIES.jump.level).toBe("partly");
+    expect(GROK_BUILD_CAPABILITIES.stop.level).toBe("no");
+    expect(GROK_BUILD_CAPABILITIES.answer.level).toBe("no");
   });
 
   test("Prime Agent: a session is working, idle, finished or unknown, and never waiting or failed", () => {

@@ -12,6 +12,7 @@ import * as droid from "@collector/adapters/droid/index";
 import * as fx from "@collector/adapters/fx/index";
 import * as geminiCli from "@collector/adapters/gemini-cli/index";
 import * as goose from "@collector/adapters/goose/index";
+import * as grokBuild from "@collector/adapters/grok-build/index";
 import * as pi from "@collector/adapters/pi/index";
 import * as primeAgent from "@collector/adapters/prime-agent/index";
 import * as kiloCode from "@collector/adapters/kilo-code/index";
@@ -344,6 +345,7 @@ describe("readRemoteSnapshot", () => {
       crush,
       "deepseek-harness": deepseekHarness,
       droid,
+      "grok-build": grokBuild,
       fx,
       "kilo-code": kiloCode,
       "mimo-code": mimoCode,
