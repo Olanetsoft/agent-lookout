@@ -110,6 +110,8 @@ export type OmpFileRead =
       file: OmpSessionFile;
       /** Its modified time as it was opened for this, never before its `lstat`'s. */
       writtenAt: number;
+      /** The open file's identity, size and time its lines were read at, which can be later than its `lstat`'s. */
+      info: FileInfo;
     }
   /** No session yet: gone, not in a real folder, not whole, or with no line that decides. */
   | { state: "none" }
@@ -288,7 +290,12 @@ export function createOmpSessionReader(
     }
     const tail = viewOf(known.tail, known.info.size);
     if (tail.state === "none") return { state: "none" };
-    return { state: "ok", file: { ...known.header, title: known.title, tail }, writtenAt };
+    return {
+      state: "ok",
+      file: { ...known.header, title: known.title, tail },
+      writtenAt,
+      info: known.info,
+    };
   }
 
   /** The header and the start of the third line, from byte 256, or what the file is instead. */
@@ -349,9 +356,12 @@ export function createOmpSessionReader(
         if (codex === null) codex = codexImport(asBuffer(await file.read(line3At, LINE3_BYTES)));
       }
 
+      // A file shorter than when it was last read, even by a half-written line
+      // cut off again, is read from its end: a first read of it may reach further back.
       const tail =
-        (!fresh && known.tail !== null ? await readOnwards(file, info.size, known.tail) : null) ??
-        (await readFromEnd(file, info.size));
+        (!fresh && known.tail !== null && info.size >= known.info.size
+          ? await readOnwards(file, info.size, known.tail)
+          : null) ?? (await readFromEnd(file, info.size));
 
       // A title is taken only from two reads in a row that agree, of one session's file.
       const sameSession = !fresh || known?.header?.id === header.id;

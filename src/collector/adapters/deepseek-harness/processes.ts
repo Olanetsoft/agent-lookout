@@ -248,7 +248,7 @@ export function dshWriter(input: WriterInput): DeepseekHarnessWriter {
  */
 export const PROMPT_PROCESS_CHECK_MS = 2_000;
 
-/** A file as a poll's `lstat` found it: where it is, and its identity, size and time. */
+/** A file as a poll found it, by its `lstat` or as it was read: where it is, and its identity, size and time. */
 export interface StampedFile {
   path: string;
   info: Pick<FileInfo, "ino" | "size" | "mtimeMs">;

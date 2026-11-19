@@ -624,6 +624,61 @@ describe("asking ps", () => {
     expect(ps.runs).toHaveLength(2);
   });
 
+  function appendingOnOpen(files: ReturnType<typeof memoryFiles>) {
+    let next: (() => void) | null = null;
+    const io: ReadOnlyIo = {
+      ...files.io,
+      async openRegular(given) {
+        const add = next;
+        next = null;
+        add?.();
+        return files.io.openRegular(given);
+      },
+    };
+    return {
+      io,
+      beforeNextOpen: (add: () => void) => {
+        next = add;
+      },
+    };
+  }
+
+  test("allows for a rounded write time again for a file that changed between its lstat and its open since that answer", async () => {
+    // A disk that keeps a write's time in steps of 2 seconds: both writes are stamped STEP.
+    const STEP = NOW - 2 * SECOND;
+    const files = filesWith(sessionText(message("user")), STEP);
+    const clock = handClock(STEP + SECOND / 2);
+    const ps = standInPs([]);
+    const opens = appendingOnOpen(files);
+    const adapter = ohMyPiAdapterFor(files, { now: clock.now, ps, io: opens.io });
+    expect((await adapter.poll()).sessions[0]?.status).toBe("unknown");
+    clock.set(STEP + SECOND / 10);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("finished");
+    // Less than 2 seconds later, an omp started since adds a prompt after this poll's lstat and before its open.
+    opens.beforeNextOpen(() => appendSession(files, FILE, message("user"), STEP));
+    ps.set([psLine(7002, STEP + SECOND, "omp")]);
+    clock.advance(1.8 * SECOND);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("unknown");
+    expect(ps.runs).toHaveLength(2);
+  });
+
+  test("keeps allowing nothing for a file that changed between its lstat and its open on the poll that asked", async () => {
+    const STEP = NOW - 2 * SECOND;
+    const files = filesWith(sessionText(message("user")), STEP);
+    const clock = handClock(STEP + SECOND / 2);
+    const ps = standInPs([]);
+    const opens = appendingOnOpen(files);
+    const adapter = ohMyPiAdapterFor(files, { now: clock.now, ps, io: opens.io });
+    expect((await adapter.poll()).sessions[0]?.status).toBe("unknown");
+    clock.set(STEP + SECOND / 10);
+    opens.beforeNextOpen(() => appendSession(files, FILE, message("user"), STEP));
+    expect((await adapter.poll()).sessions[0]?.status).toBe("finished");
+    // Read as that poll read it, before ps was asked.
+    clock.advance(1.8 * SECOND);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("finished");
+    expect(ps.runs).toHaveLength(2);
+  });
+
   test("keeps the computer's start at its earliest while it runs", async () => {
     const at = BOOT_AT + HOUR;
     const files = filesWith(sessionText(message("user")), at - MINUTE);

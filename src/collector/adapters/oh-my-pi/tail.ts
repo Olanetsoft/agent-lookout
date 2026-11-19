@@ -64,7 +64,7 @@ import { bytesAt, timeAt, wordAt } from "../autohand-code/jsonBytes.ts";
  *   are held at once: the first `LINE_HEAD_BYTES` of the piece after it, and
  *   a copy of a line's first bytes.
  * - After that, only what was added is read, onwards, a piece at a time,
- *   when the file is no shorter than the last line read, grew by
+ *   when the file is no shorter than when it was last read, grew by
  *   `MAX_TAIL_BYTES` or less, and the byte before what was added is a line
  *   break. Otherwise it is read from its end again. Either way the same lines
  *   decide, so what is kept is what a first read of the same file gives.

@@ -30,6 +30,7 @@ import {
   usable,
   type DshNames,
   type DshProcessReader,
+  type StampedFile,
 } from "../deepseek-harness/processes.ts";
 import { isDroidProjectFolder } from "../droid/sessionFile.ts";
 import {
@@ -273,7 +274,8 @@ export interface OhMyPiAdapterOptions {
 
 /** One session this poll lists. */
 interface Found {
-  ref: SessionFileRef;
+  /** Its file as it was read: where it is, and its identity, size and time then. */
+  asRead: StampedFile;
   file: OmpSessionFile;
   writtenAt: number;
 }
@@ -509,7 +511,11 @@ export function createOhMyPiAdapter(options: OhMyPiAdapterOptions = {}): Adapter
       if (read.state === "newer") newer = true;
       if (read.state !== "ok" || ids.has(read.file.id)) continue;
       ids.add(read.file.id);
-      found.push({ ref, file: read.file, writtenAt: read.writtenAt });
+      found.push({
+        asRead: { path: ref.path, info: read.info },
+        file: read.file,
+        writtenAt: read.writtenAt,
+      });
     }
     reader.keepOnly(new Set(refs.map((ref) => ref.path)));
 
@@ -547,21 +553,21 @@ export function createOhMyPiAdapter(options: OhMyPiAdapterOptions = {}): Adapter
         ? await asker.programsFor(
             checkedAt,
             unsettled.map(({ writtenAt }) => writtenAt),
-            refs,
+            found.map(({ asRead }) => asRead),
           )
         : null;
 
     let unread = false;
     let tooFar = false;
-    const sessions = facts.map(({ ref, file, newest, behind, cutOff, writtenAt, decidedAt }) => {
+    const sessions = facts.map(({ asRead, file, newest, behind, cutOff, writtenAt, decidedAt }) => {
       const writer = dshWriter({
         platform,
         writtenAt: decidedAt,
         bootAt,
         answer,
         answerAt: asker.answerAt,
-        // A file changed since that answer was asked may have been written after it.
-        clockSetBack: asker.clockSetBack && asker.asAsked(ref),
+        // A file read at another size, time or identity than when that answer was asked may have been written after it, even when its `lstat` this poll was not.
+        clockSetBack: asker.clockSetBack && asker.asAsked(asRead),
         startFloor: clock.startFloor,
         lowAt: clock.lowAt,
       });

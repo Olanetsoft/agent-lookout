@@ -8,6 +8,7 @@ import {
   slotShape,
   slotTitle,
 } from "@collector/adapters/oh-my-pi/sessionFile";
+import { MAX_TAIL_BYTES } from "@collector/adapters/oh-my-pi/tail";
 import { INSTANT, MAX_HEAD_BYTES } from "@collector/adapters/pi/sessionFile";
 import type { FileInfo, OpenFile, ReadOnlyIo } from "@collector/files/readOnlyIo";
 import {
@@ -334,6 +335,13 @@ describe("the header", () => {
         },
       },
       writtenAt: WRITTEN,
+      // The file as its lines were read.
+      info: {
+        kind: "file",
+        size: Buffer.byteLength(sessionText()),
+        mtimeMs: WRITTEN,
+        ino: expect.any(Number),
+      },
     });
   });
 
@@ -506,5 +514,20 @@ describe("opening a file", () => {
     expect(reader.kept).toBe(1);
     reader.keepOnly(new Set());
     expect(reader.kept).toBe(0);
+  });
+
+  test("a file cut back to its last whole line, as Oh My Pi cuts a line it could not write, is read afresh", async () => {
+    const whole = sessionText(message("user") + toolStart("ask"));
+    // A half-written line of 8 MiB puts the ask too far back.
+    const half = '{"type":"model_usage","pad":"'.padEnd(MAX_TAIL_BYTES, "x");
+    const files = memoryFiles();
+    files.write(FILE, whole + half, { mtimeMs: WRITTEN });
+    const reader = readerOf(files);
+    expect(await readAt(reader, files)).toMatchObject({ file: { tail: { state: "too-far" } } });
+    files.rewrite(FILE, whole, { mtimeMs: WRITTEN + SECOND });
+    expect(await readAt(reader, files, NOW + 2 * SECOND)).toMatchObject({
+      state: "ok",
+      file: { tail: { state: "ok", newest: { sort: "ask" } } },
+    });
   });
 });
