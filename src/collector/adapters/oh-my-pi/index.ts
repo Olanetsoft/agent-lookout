@@ -114,7 +114,7 @@ export const BASIS_WITHOUT_PROCESSES = "files-without-processes";
 
 /** Said whenever Oh My Pi is watched, because it is what a person would otherwise expect to see. */
 export const STATUS_NOTE =
-  "An Oh My Pi session shows as finished or failed once Oh My Pi writes, at a time that can be right, that it stopped, and on macOS and Linux as working while a turn is open and as needing you while its ask tool waits, while an omp that could have written it runs and it was written in the last 30 minutes, and as finished once no such program could still write it, by ps or since the computer started. Nothing it writes says a turn is over, so a session never shows as idle, and an approval it waits for is not written, so that shows as working. Anything else shows as unknown. No Oh My Pi program is run.";
+  "An Oh My Pi session shows as finished or failed once Oh My Pi writes, at a time that can be right, that it stopped, unless a turn it cut off ends on a tool's start or its file is written more than 15 seconds later, and on macOS and Linux as working while a turn is open and as needing you while its ask tool waits, while an omp that could have written it runs and it was written in the last 30 minutes, and as finished once no such program could still write it, by ps or since the computer started. Nothing it writes says a turn is over, so a session never shows as idle, and an approval it waits for is not written, so that shows as working. Anything else shows as unknown. No Oh My Pi program is run.";
 
 /** Said whenever Oh My Pi is watched, until the adapter has been checked on a computer running it. */
 export const UNCHECKED_NOTE =
@@ -168,14 +168,16 @@ const OTHER_SYSTEM_NOTE =
  *   in the last 30 minutes, on macOS and Linux. Idle never shows.
  * - Needs you while its `ask` tool waits, on the same terms. An approval is
  *   not written, so a tool waiting for one shows as working.
- * - Finished when Oh My Pi writes that it stopped, or no `omp` that could
- *   have written it runs, by `ps`, or the computer started since.
- * - Failed when Oh My Pi writes that it stopped on an error of its own. A
- *   reply that failed is not read: it reads the same while Oh My Pi retries.
+ * - Finished when Oh My Pi writes that it stopped, as `exitOf` takes that
+ *   line, or no `omp` that could have written it runs, by `ps`, or the
+ *   computer started since.
+ * - Failed when Oh My Pi writes that it stopped on an error of its own, as
+ *   `exitOf` takes that line. A reply that failed is not read: it reads the
+ *   same while Oh My Pi retries.
  * - The name is the title the person or a model gave it, else the folder's.
- *   A Codex session's copy's title, which can be the first prompt typed in
- *   Codex, is never turned into text from the slot, and the header's copy is
- *   dropped with the parsed header.
+ *   A model's title in a Codex session's copy, which can be the first prompt
+ *   typed in Codex, is never turned into text from the slot, and the
+ *   header's copy is dropped with the parsed header.
  * - Quiet for is the time since its file was written, while it works.
  * - No Jump, Stop, Answer or Tokens: its file names no process or window, and
  *   a request's counts sit beside its prompt and reply and are never parsed.
@@ -199,12 +201,12 @@ export const OH_MY_PI_CAPABILITIES: SourceCapabilities = {
   failed: {
     level: "partly",
     reason:
-      "When omp writes that it stopped on an error of its own. A failed reply is not read: it reads the same while omp retries it.",
+      "When omp writes that it stopped on an error of its own, though not always after a turn it cut off. A failed reply is not read.",
   },
   names: {
     level: "partly",
     reason:
-      "The title you or a model gave it, else the folder's. A Codex import's title, which can be your first prompt there, is not shown.",
+      "Your title or a model's, else the folder's. A model's title on a Codex import, which can be your first prompt there, is not shown.",
   },
   jump: {
     level: "no",

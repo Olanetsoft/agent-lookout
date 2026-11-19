@@ -1148,12 +1148,12 @@ export const OH_MY_PI_CAPABILITIES: SourceCapabilities = {
   failed: {
     level: "partly",
     reason:
-      "When omp writes that it stopped on an error of its own. A failed reply is not read: it reads the same while omp retries it.",
+      "When omp writes that it stopped on an error of its own, though not always after a turn it cut off. A failed reply is not read.",
   },
   names: {
     level: "partly",
     reason:
-      "The title you or a model gave it, else the folder's. A Codex import's title, which can be your first prompt there, is not shown.",
+      "Your title or a model's, else the folder's. A model's title on a Codex import, which can be your first prompt there, is not shown.",
   },
   jump: {
     level: "no",

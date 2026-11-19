@@ -42,7 +42,10 @@ import { readFromEnd, readOnwards, viewOf, type Tail, type TailView } from "./ta
  *   `parseHeader`, with Oh My Pi's newest version. Everything else in it, its
  *   own copy of the title among them, is dropped with the parsed line.
  * - Of the rest, only the first `LINE3_BYTES` of the third line are compared
- *   as bytes, for the Codex check alone, and the rest is dropped.
+ *   as bytes, for the Codex check alone, and the rest is dropped. Once a
+ *   header is known, while those bytes are too few to tell, the
+ *   `LINE3_BYTES` at `line3At`, where the third line begins, are read again
+ *   alone each time the slot is read, and compared the same way.
  * - A file whose first 256 bytes are not a title slot is not a session this
  *   reads: an Oh My Pi file from before v16.5.2, which began with its
  *   header, or a Pi file in a folder both keep. Nothing of it is turned into

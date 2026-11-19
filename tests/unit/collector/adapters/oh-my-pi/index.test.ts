@@ -36,6 +36,8 @@ import {
   header,
   HOME,
   HOUR,
+  iso,
+  line,
   message,
   MINUTE,
   NOW,
@@ -295,6 +297,43 @@ describe("a session's status", () => {
       statuses.push((await adapter.poll()).sessions[0]?.status);
     }
     expect(statuses).toEqual(["working", "working", "working", "working", "unknown"]);
+  });
+
+  test("a rename more than 15 seconds after an exit its abort wrote a tool's start after reads as if no exit had been written", async () => {
+    const exitAt = NOW - 2 * HOUR;
+    /** A quit mid-turn: the aborted reply, then a tool's start and its aborted result. */
+    const text = sessionText(
+      message("user", { at: exitAt - MINUTE }) +
+        sessionExit("normal", exitAt) +
+        message("assistant", { at: exitAt }) +
+        toolStart("bash", exitAt) +
+        message("toolResult", { at: exitAt }),
+    );
+    const renameAt = NOW - MINUTE;
+    /** The line a rename from the picker, or `/rename`, adds: no prompt. */
+    const rename = line({
+      type: "title_change",
+      id: "0000000a",
+      parentId: "00000009",
+      timestamp: iso(renameAt),
+      title: "demo-project",
+      source: "user",
+    });
+    for (const platform of ["darwin", "win32"] as const) {
+      const files = filesWith(text, exitAt + 5 * SECOND);
+      // The omp whose picker renames it, which started after the exit.
+      const adapter = ohMyPiAdapterFor(files, { platform, ps: standInPs([OMP_LINE]) });
+      expect((await adapter.poll()).sessions[0]).toMatchObject({
+        status: "finished",
+        statusSince: exitAt,
+      });
+      appendSession(files, FILE, rename, renameAt);
+      expect((await adapter.poll()).sessions[0]).toMatchObject(
+        platform === "win32"
+          ? { status: "unknown", statusSince: null }
+          : { status: "working", statusSince: null, lastWriteAt: renameAt },
+      );
+    }
   });
 
   test("unknown after a reply, as idle never shows", async () => {

@@ -25,9 +25,12 @@ export const QUIET_MS = KEEP_AWAKE_WORKING_MS;
 
 /**
  * How long after an exit the file's last write may be for the exit cut off
- * to decide: 15 seconds. On a quit Oh My Pi writes its exit, aborts the turn,
- * and goes on writing the lines the abort makes through two drains of up to
- * 5 seconds each, then stops (agent-session.ts:638, :7202-7305).
+ * to decide: 15 seconds. On a quit Oh My Pi writes its exit, runs its
+ * extensions' shutdown handlers, which have no time limit, aborts the turn,
+ * and goes on writing until it stops forwarding: after a wait of up to 5
+ * seconds, one of up to 3, a teardown whose waits are up to 3 seconds each,
+ * and up to 5 seconds more (agent-session.ts:638, :6983, :7202-7305). So 15
+ * seconds covers a turn that stops at once, not the longest case.
  */
 export const CUT_OFF_MS = 15_000;
 
@@ -86,10 +89,11 @@ const UNKNOWN: OhMyPiStatus = { status: "unknown", since: null, showsLastWrite: 
  * reply or result. That one decides only while the file was last written
  * from 2 seconds before it, as a disk can round a time down, to 15 seconds
  * after it, as Oh My Pi's own aborted lines are. A turn whose aborted lines
- * take longer, or a round run later with no prompt, as `/retry` and
- * `--restore` run, reads as if no exit had been written. A newest tool's or
- * ask's start never takes it, so a restored ask still needs you. Judged from
- * `writtenAt` on every poll, and never kept.
+ * take longer, a round run later with no prompt, as `/retry` and `--restore`
+ * run, or any later write with no prompt, as a rename makes, reads as if no
+ * exit had been written. A newest tool's or ask's start never takes it, so a
+ * restored ask still needs you. Judged from `writtenAt` on every poll, and
+ * never kept.
  */
 export function exitOf(
   facts: Pick<OhMyPiFacts, "newest" | "behind" | "cutOff" | "writtenAt">,
