@@ -496,7 +496,7 @@ Grok Build's terminal app lists the sessions it has open in `active_sessions.jso
 - reads the list in `registry.ts` when it changed, at most 1 MiB and 200 entries, and keeps each entry's ID, process ID, folder and when it was listed;
 - asks signal 0 about each process, and on a Mac, through Qwen Code's check, `qwen-code/processCheck.ts`, `ps -o pid=,lstart= -p <pids>` when each started, every 30 seconds, so a process that started more than a minute after the listing counts as gone;
 - finds each session's folder in `folders.ts` with `lstat`, by its working folder's name, or by its ID in every folder of `sessions` at most once a minute when that name is a hash;
-- reads its `events.jsonl` in `eventLog.ts`, backwards from its end to the newest line that starts or ends a turn, at most 8 MiB, then only what was added, folding the same lines the same way each time. Of each line it compares the first 512 bytes, as bytes, and keeps numbers and flags;
+- reads its `events.jsonl` in `eventLog.ts`, backwards from its end to the newest line that starts or ends a turn, at most 8 MiB and the byte before it, then only what was added, from the byte before it, folding the same lines the same way each time. Of each line it compares the first 512 bytes, as bytes, and keeps numbers and flags;
 - reads its `plan_mode.json` and `summary.json` in `sessionFiles.ts` when they changed, finding `awaiting_plan_approval`, `title_is_manual` and `generated_title` as bytes with Autohand Code's `jsonBytes.ts`;
 - keeps the sessions it saw listed and the ones that ended in `finishedSessions.ts`, and watches one Grok Build lists no more whose process runs, as after `/new`.
 

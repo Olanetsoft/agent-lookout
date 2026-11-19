@@ -21,16 +21,17 @@ import { trustedFile } from "./folders.ts";
  * millisecond (`log.rs:12-17`, `:64`, `types.rs:5-7`). So:
  *
  * - The first time, the end is read backwards, 64 KiB at a time and at most
- *   8 MiB, and the line break before it, from the newest whole line to the
- *   newest that starts or ends a turn, and the lines from there on are folded.
- *   A whole log of 8 MiB or less with neither has no turn yet. One whose
- *   newest such line is not in its last 8 MiB, or that has more than 8 MiB
- *   after it, says nothing.
- * - After that, only what was added is read, at most 8 MiB at once, and folded
- *   the same way, so what is kept is what a first read of the same file gives.
- *   A log that shrank, was replaced, or does not go on from the last line
- *   read, is read from its end again. Bytes after the last line break are a
- *   line still being written, and wait until it is whole.
+ *   8 MiB, and the byte before it, from the newest whole line to the newest
+ *   that starts or ends a turn, and the lines from there on are folded. A
+ *   whole log of 8 MiB or less with neither has no turn yet. One whose newest
+ *   such line is not in its last 8 MiB, or that has more than 8 MiB after it,
+ *   says nothing.
+ * - After that, only what was added is read, in one read from the byte before
+ *   it of at most 8 MiB and one byte, and folded the same way, so what is kept
+ *   is what a first read of the same file gives. A log that shrank, was
+ *   replaced, or does not go on from the last line read, is read from its end
+ *   again. Bytes after the last line break are a line still being written,
+ *   and wait until it is whole.
  * - A line counts only when it begins `{"ts":"<time>","type":"<kind>"`, its
  *   kind of `a`-`z`, digits and `_`, ends with `}`, and has no second
  *   `{"ts":"` in it, as two lines run together by a crash would. Of a line
@@ -65,7 +66,7 @@ export const EVENTS_FILE = "events.jsonl";
 /** How much of a log's end is read at a time, going backwards. */
 export const PIECE_BYTES = 64 * 1024;
 
-/** The most of a log's end read, and of what was added read at once, each with the line break before it. */
+/** The most of a log's end read, and of what was added read at once, each with the byte before it. */
 export const MAX_LOG_BYTES = 8 * 1024 * 1024;
 
 /** The most of each line compared. */
