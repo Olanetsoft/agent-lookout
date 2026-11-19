@@ -5,7 +5,7 @@
 // and from whether a Muse Code program that started no later than a minute
 // after `decidedAt` still runs, by `ps`, as the DeepSeek Harness and Oh My Pi
 // adapters judge it (`src/collector/adapters/deepseek-harness/processes.ts`).
-// Nothing read ties a session to its process, and one `muse serve` holds
+// Nothing used ties a session to its process, and one `muse serve` holds
 // many sessions, so any such program counts. Built from Meta's documentation, its
 // MIT-licensed Muse Code SDK and protocol schema at 1.4.24, its cookbook, and
 // open-source readers of Muse Code's files, and not yet checked on a computer
@@ -60,7 +60,11 @@ export interface MuseCodeFacts {
   /** The time `ps` and the computer's start are judged against (`decidedAtOf`). */
   decidedAt: number | null;
   now: number;
-  /** The approvals that waited for the person at the last poll: they wait while they are open. */
+  /**
+   * The approvals that waited for the person at the last poll, or at one before
+   * it while no poll since could tell whether a Muse Code holds the session:
+   * they wait while they are open.
+   */
   waited: ReadonlySet<string>;
 }
 
@@ -112,8 +116,10 @@ export function settledByLog(view: MuseView): boolean {
  * request with no word; for one with no phase this knows, as for the
  * reviewer's when a review record was written, else 6 seconds after the
  * request. A timer needs a request time that can be right. One that waited
- * at the last poll waits while it is open, so a clock set back never turns a
- * wait back into work. Its time is null when none can be right.
+ * at the last poll, or at one before it while no poll since could tell
+ * whether a Muse Code holds the session, waits while it is open, so a clock
+ * set back never turns a wait back into work. Its time is null when none can
+ * be right.
  */
 function approvalWaitSince(
   approval: MuseApproval,

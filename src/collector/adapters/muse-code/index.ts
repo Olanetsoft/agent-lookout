@@ -195,7 +195,8 @@ export const MUSE_CODE_CAPABILITIES: SourceCapabilities = {
   },
   jump: {
     level: "no",
-    reason: "Agent Lookout reads nothing that names a Muse Code session's process or terminal.",
+    reason:
+      "Nothing Agent Lookout turns into text names a Muse Code session's process or terminal.",
   },
   "quiet-for": {
     level: "partly",
@@ -312,7 +313,11 @@ export function createMuseCodeAdapter(options: MuseCodeAdapterOptions = {}): Ada
   let absentAt: number | null = null;
   /** What a clock set back keeps the start rule from finishing. */
   let clock = startDshClockGuard();
-  /** Each session's wait on the last poll, so a wait that goes on keeps its time and its approvals keep waiting. */
+  /**
+   * Each session's wait on the last poll, kept through polls that cannot tell
+   * whether a Muse Code holds it, so a wait that goes on keeps its time and its
+   * approvals keep waiting.
+   */
   let waits = new Map<string, DeepseekHarnessWait>();
   /** The logs of the sessions that needed the person at the last poll that could judge them, looked up however old. */
   let needed = new Set<string>();
@@ -487,7 +492,7 @@ export function createMuseCodeAdapter(options: MuseCodeAdapterOptions = {}): Ada
         ? await asker.programsFor(
             checkedAt,
             unsettled.map(({ writtenAt }) => writtenAt),
-            found.refs,
+            facts.map(({ ref, log }) => ({ path: ref.path, info: log.info })),
           )
         : null;
 
@@ -503,8 +508,8 @@ export function createMuseCodeAdapter(options: MuseCodeAdapterOptions = {}): Ada
         bootAt,
         answer,
         answerAt: asker.answerAt,
-        // A log changed since that answer was asked may have been written after it.
-        clockSetBack: asker.clockSetBack && asker.asAsked(ref),
+        // A log read at another size, time or identity than when that answer was asked may have been written after it, even when its `lstat` this poll was not.
+        clockSetBack: asker.clockSetBack && asker.asAsked({ path: ref.path, info: log.info }),
         startFloor: clock.startFloor,
         lowAt: clock.lowAt,
       });
@@ -529,14 +534,21 @@ export function createMuseCodeAdapter(options: MuseCodeAdapterOptions = {}): Ada
         else if (log.view.why === "unreadable") unread = true;
       }
       // A poll that cannot judge whether a Muse Code holds the session, while
-      // its log does not settle it, keeps what the last poll knew of its wait.
+      // its log does not settle it, keeps what the last poll knew of its wait,
+      // for the questions and approvals its log still shows open.
       const unjudged = writer === "maybe" && !settled;
       if (status.wait !== undefined) {
         const wait = continuedDeepseekHarnessWait(before, status.wait);
         nextWaits.set(id, wait);
         status.since = wait.since;
-      } else if (unjudged && before !== undefined) {
-        nextWaits.set(id, before);
+      } else if (unjudged && before !== undefined && log.view.state === "ok") {
+        const { prompts, approvals } = log.view.fold;
+        const open = before.ids.filter((wait) =>
+          wait.startsWith("question:")
+            ? prompts.has(wait.slice("question:".length))
+            : approvals.has(wait.slice("approval:".length)),
+        );
+        if (open.length > 0) nextWaits.set(id, { since: before.since, ids: open });
       }
       // A session that needed the person is looked up however old its log, until a poll can judge it does not.
       if (status.status === "needs-you" || (unjudged && needed.has(ref.path))) {

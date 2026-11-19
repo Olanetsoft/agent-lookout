@@ -228,6 +228,20 @@ describe("a kept read is what a first read of the same file gives", () => {
       }
     }
   });
+
+  test("when a half-written last line is cut off again, back to the end last read", async () => {
+    const start = started(RUN, AT);
+    // A start exactly the reach before the end once the half line is gone, after a line or as the first.
+    for (const lead of [filler(100), ""]) {
+      const files = memoryFiles();
+      const whole = `${lead}${start}${filler(REACH_BYTES - start.length)}`;
+      const seen = await stepped(files, [
+        () => files.write(FILE, `${whole}{"payload_type":"turn.`, { mtimeMs: AT }),
+        () => files.rewrite(FILE, whole, { mtimeMs: AT + 1 }),
+      ]);
+      expect(seen.map(({ view }) => view.state)).toEqual(["too-far", "ok"]);
+    }
+  });
 });
 
 describe("a line longer than 1 MiB", () => {
@@ -309,6 +323,9 @@ describe("reading", () => {
     files.append(FILE, replied(RUN, AT + 1), { mtimeMs: AT + 5 * SECOND });
     const read = await reader.read(ref);
     expect(read.writtenAt).toBe(AT + 5 * SECOND);
+    // Its stamp is the file's as it was read, not its lstat's.
+    expect(read.info).toEqual(await files.io.lstat(FILE));
+    expect(read.info.size).toBeGreaterThan(ref.info.size);
     // An open file whose time is earlier than the lstat's never moves it back.
     const later = await refOf(files);
     later.info = { ...later.info, mtimeMs: AT + 9 * SECOND };
@@ -334,9 +351,12 @@ describe("reading", () => {
     const first = await reader.read(await refOf(files));
     files.append(FILE, asked(RUN, PROMPT, AT + 1), { mtimeMs: AT + 1 });
     files.failOpen(FILE);
-    const failed = await reader.read(await refOf(files));
+    const ref = await refOf(files);
+    const failed = await reader.read(ref);
     expect(failed.view).toEqual(first.view);
     expect(failed.writtenAt).toBe(AT + 1);
+    // Its stamp is this lstat's, not the one of what was read before.
+    expect(failed.info).toEqual(ref.info);
     files.heal(FILE);
     expect((await reader.read(await refOf(files))).view).toMatchObject({
       fold: { prompts: new Map([[PROMPT, AT + 1]]) },

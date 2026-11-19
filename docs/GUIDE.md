@@ -524,7 +524,7 @@ Why, for each No and Partly:
 - Muse Code, Finished: When Muse Code writes that it let the session go, or once no Muse Code that started before its newest status record runs, by ps.
 - Muse Code, Failed: When Muse Code writes that the last turn failed, until a new turn starts. A turn cut off by a crash may not be written so.
 - Muse Code, Names: The workspace folder's. A session's name and title are typed by you or made from your words, and are never read.
-- Muse Code, Jump: Agent Lookout reads nothing that names a Muse Code session's process or terminal.
+- Muse Code, Jump: Nothing Agent Lookout turns into text names a Muse Code session's process or terminal.
 - Muse Code, Quiet for: The time since its log was last written, while it works. A long command, or a subagent with a log of its own, may write nothing.
 - Muse Code, Tokens: Muse Code's counts are on lines Agent Lookout steps over without reading them.
 - Muse Code, Stop: A Muse Code session's log names no process that Agent Lookout could confirm and stop.

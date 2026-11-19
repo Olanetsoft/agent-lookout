@@ -34,10 +34,10 @@ import { judgeHeadLine, judgeLine, LINE_MAX, type JudgedLine } from "./records.t
  *   `REACH_BYTES` and the byte before them, to the newest of those lines.
  *   When it is an anchor, the lines from it to the last line break are read
  *   again onwards and folded (`museCodeFold.ts`).
- * - After that, while the file keeps its identity, is no shorter than the end
- *   of the last whole line read, grew by `REACH_BYTES` or less, and the byte
- *   before that end is a line break, only the whole lines added are read and
- *   folded. Otherwise it is read from its end again.
+ * - After that, while the file keeps its identity, is no shorter than when
+ *   it was last read, grew by `REACH_BYTES` or less, and the byte before the
+ *   end of the last whole line read is a line break, only the whole lines
+ *   added are read and folded. Otherwise it is read from its end again.
  *
  * So what is kept is always what a first read of the same file gives. At most
  * one piece, one line's first `LINE_MAX` bytes and the first `HEAD_BYTES` are
@@ -282,6 +282,11 @@ export interface MuseLog {
   view: LogView;
   /** Its modified time as it was opened for this, never before its `lstat`'s, or the `lstat`'s when it was not opened. */
   writtenAt: number;
+  /**
+   * The open file's identity, size and time its lines were read at, which can be later than its
+   * `lstat`'s, or this poll's `lstat` when the file could not be read again after that changed.
+   */
+  info: FileInfo;
   /** The workspace folder its metadata record names, or null. */
   cwd: string | null;
   /** Its metadata record's time, or null. */
@@ -322,10 +327,11 @@ class Replaced extends Error {}
 export function createMuseLogReader(io: ReadOnlyIo, platform: NodeJS.Platform): MuseLogReader {
   const remembered = new Map<string, Known>();
 
-  function answer(known: Known, writtenAt: number): MuseLog {
+  function answer(known: Known, writtenAt: number, info: FileInfo = known.info): MuseLog {
     return {
       view: viewOf(known.tail, known.info.size),
       writtenAt,
+      info,
       cwd: known.head.cwd,
       metadataAt: known.head.at,
     };
@@ -339,7 +345,12 @@ export function createMuseLogReader(io: ReadOnlyIo, platform: NodeJS.Platform): 
       if (info.kind !== "file" || info.ino !== ref.info.ino) throw new Replaced("Replaced.");
       const folderName = Buffer.from(ref.id);
       const same = known !== undefined && known.info.ino === info.ino;
-      const onwards = same ? await readOnwards(file, info.size, known.tail, folderName) : null;
+      // A file shorter than when it was last read, even by a half-written line
+      // cut off again, is read from its end: a first read of it may reach further back.
+      const onwards =
+        same && info.size >= known.info.size
+          ? await readOnwards(file, info.size, known.tail, folderName)
+          : null;
       const tail = onwards ?? (await readFromEnd(file, info.size, folderName));
       // The start is read again for a new file, one read from its end again, and one short of a metadata record.
       const head =
@@ -371,11 +382,13 @@ export function createMuseLogReader(io: ReadOnlyIo, platform: NodeJS.Platform): 
           return {
             view: { state: "none" },
             writtenAt: ref.info.mtimeMs,
+            info: ref.info,
             cwd: null,
             metadataAt: null,
           };
         }
-        return answer(known, ref.info.mtimeMs);
+        // This poll's `lstat` stands for what was read, so a write since an answer is never taken for one read before it.
+        return answer(known, ref.info.mtimeMs, ref.info);
       }
     },
     keepOnly(paths) {

@@ -35,6 +35,7 @@ import {
 } from "@collector/adapters/muse-code/index";
 import { REACH_BYTES } from "@collector/adapters/muse-code/logReader";
 import { SWEEP_MS } from "@collector/adapters/pi/sessionFiles";
+import type { ReadOnlyIo } from "@collector/files/readOnlyIo";
 import { REVIEW_LIMIT_MS } from "@core/mapping/muse-code/museCodeMapping";
 import { CLOCK_SLACK_MS, WRITE_TIME_STEP_MS } from "@core/time";
 import {
@@ -467,6 +468,31 @@ describe("a session's status, with a Muse Code that started before it was writte
     });
   });
 
+  test("a wait that ended while ps could not say lends its time to no later one", async () => {
+    const clock = handClock();
+    const ps = standInPs([MUSE_LINE]);
+    const files = filesWith(`${opening(OPENED)}${asked(RUN, PROMPT, NOW - 3 * MINUTE)}`);
+    const adapter = museCodeAdapterFor(files, { now: clock.now, ps });
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "needs-you",
+      statusSince: NOW - 3 * MINUTE,
+    });
+    // Resumed, on a poll where ps cannot say: the log shows the question closed.
+    appendLog(files, FILE, sessionResumed(NOW + SECOND), NOW + SECOND);
+    ps.own(false);
+    clock.advance(PROCESS_CHECK_MS);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("unknown");
+    // The same question is asked again.
+    ps.own(true);
+    appendLog(files, FILE, asked(RUN, PROMPT, NOW + 12 * SECOND), NOW + 12 * SECOND);
+    clock.advance(PROCESS_CHECK_MS);
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "needs-you",
+      statusSince: NOW + 12 * SECOND,
+    });
+    expect(ps.runs).toHaveLength(3);
+  });
+
   test("a session resumed after a crash never shows the dead turn as working or waiting", async () => {
     const text = [
       opening(OPENED),
@@ -582,6 +608,87 @@ describe("whether a Muse Code that could hold a session runs, by ps", () => {
     clock.advance(SECOND / 10);
     expect((await adapter.poll()).sessions[0]?.status).toBe("unknown");
     expect(ps.runs).toHaveLength(2);
+  });
+
+  /** The stand-in files, with a write a test queues made on the next open, after that poll's `lstat`. */
+  function appendingOnOpen(files: ReturnType<typeof memoryFiles>) {
+    let next: (() => void) | null = null;
+    const io: ReadOnlyIo = {
+      ...files.io,
+      async openRegular(given) {
+        const add = next;
+        next = null;
+        add?.();
+        return files.io.openRegular(given);
+      },
+    };
+    return {
+      io,
+      beforeNextOpen: (add: () => void) => {
+        next = add;
+      },
+    };
+  }
+
+  // A disk that keeps a write's time in steps of 2 seconds: every write is stamped STEP.
+  const STEP = NOW - 2 * SECOND;
+  const stepText = `${opening(OPENED)}${replied(RUN, STEP)}`;
+
+  test("keeps allowing nothing for a log that changed between its lstat and its open on the poll that asked", async () => {
+    const files = filesWith(stepText, STEP);
+    const clock = handClock(STEP + SECOND / 2);
+    const ps = standInPs([]);
+    const opens = appendingOnOpen(files);
+    const adapter = museCodeAdapterFor(files, { now: clock.now, ps, io: opens.io });
+    expect((await adapter.poll()).sessions[0]?.status).toBe("unknown");
+    // Set back: asked again, and the log, written since, is written again after its lstat and before its open.
+    appendLog(files, FILE, replied(RUN, STEP), STEP);
+    opens.beforeNextOpen(() => appendLog(files, FILE, replied(RUN, STEP), STEP));
+    clock.set(STEP + SECOND / 10);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("finished");
+    // Read as that poll read it, before ps was asked.
+    clock.advance(1.8 * SECOND);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("finished");
+    expect(ps.runs).toHaveLength(2);
+  });
+
+  test("allows for a rounded write time again for a log that changed between its lstat and its open since that answer", async () => {
+    const files = filesWith(stepText, STEP);
+    const clock = handClock(STEP + SECOND / 2);
+    const ps = standInPs([]);
+    const opens = appendingOnOpen(files);
+    const adapter = museCodeAdapterFor(files, { now: clock.now, ps, io: opens.io });
+    expect((await adapter.poll()).sessions[0]?.status).toBe("unknown");
+    // Set back: asked again, while the log, written since, cannot be opened.
+    appendLog(files, FILE, replied(RUN, STEP), STEP);
+    files.failOpen(FILE);
+    clock.set(STEP + SECOND / 10);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("finished");
+    files.heal(FILE);
+    // Less than 2 seconds later, a Muse Code started since adds a turn after this poll's lstat and before its open.
+    opens.beforeNextOpen(() => appendLog(files, FILE, started(RUN_2, STEP + SECOND), STEP));
+    ps.set([psLine(7002, STEP + SECOND, "muse")]);
+    clock.advance(1.8 * SECOND);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("unknown");
+    expect(ps.runs).toHaveLength(2);
+  });
+
+  test("allows for a rounded write time again for a log that changed since that answer and could not be opened", async () => {
+    const files = filesWith(stepText, STEP);
+    const clock = handClock(STEP + SECOND / 2);
+    const ps = standInPs([]);
+    const adapter = museCodeAdapterFor(files, { now: clock.now, ps });
+    expect((await adapter.poll()).sessions[0]?.status).toBe("unknown");
+    clock.set(STEP + SECOND / 10);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("finished");
+    // A Muse Code started since adds a turn, and the log cannot be opened again on this poll.
+    appendLog(files, FILE, started(RUN_2, STEP + SECOND), STEP);
+    files.failOpen(FILE);
+    ps.set([psLine(7002, STEP + SECOND, "muse")]);
+    clock.advance(1.8 * SECOND);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("unknown");
+    expect(ps.runs).toHaveLength(2);
+    files.heal(FILE);
   });
 
   test("asks again sooner, though not within 2 seconds, when a log is written after an answer that listed none", async () => {

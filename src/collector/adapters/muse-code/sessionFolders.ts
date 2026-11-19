@@ -23,14 +23,15 @@ import { MAX_SESSIONS, SWEEP_MS } from "../pi/sessionFiles.ts";
  *   time moved. So neither local time nor UTC is assumed for a folder's date.
  * - In this order, each session folder in those three day folders, each log
  *   the last sweep found written in the last day wherever it is, and each
- *   session that needed the person at the last poll, are looked up: for one
- *   this poll's walk did not reach, its year, month and day folders with
- *   `lstat`, which must be real folders, as the system follows a link in the
- *   middle of a path; then the session folder with `lstat`, which must be a
- *   real folder, then its `session.jsonl` with `lstat`, which must be an
- *   ordinary file. A log written in the last day, or one of a session that
- *   needed the person, is one to read; any other is passed over until the
- *   next sweep.
+ *   session that needed the person at the last poll, or at one before it
+ *   while no poll since could tell whether a Muse Code holds it, are looked
+ *   up: for one this poll's walk did not reach, its year, month and day
+ *   folders with `lstat`, which must be real folders, as the system follows a
+ *   link in the middle of a path; then the session folder with `lstat`, which
+ *   must be a real folder, then its `session.jsonl` with `lstat`, which must
+ *   be an ordinary file. A log written in the last day, or one of a session
+ *   that needed the person, is one to read; any other is passed over until
+ *   the next sweep.
  * - Once a minute, a sweep lists every year, month and day folder and looks
  *   up every session folder in them.
  * - The newest `MAX_SESSIONS` are read, and every one that needed the person.
@@ -77,9 +78,10 @@ export class NotAFolderError extends Error {}
 export interface SessionFinder {
   /**
    * The logs this poll, with `needed`, the logs of the sessions that needed
-   * the person at the last poll. Rejects, with the error's `code`, when
-   * `sessions/` is missing or cannot be listed, and with `NotAFolderError`
-   * when it is not a real folder.
+   * the person at the last poll, or at one before it while no poll since
+   * could tell whether a Muse Code holds them. Rejects, with the error's
+   * `code`, when `sessions/` is missing or cannot be listed, and with
+   * `NotAFolderError` when it is not a real folder.
    */
   find(now: number, needed: ReadonlySet<string>): Promise<FoundSessions>;
   /** Forgets everything, as for a sessions folder that went. */

@@ -1209,7 +1209,8 @@ export const MUSE_CODE_CAPABILITIES: SourceCapabilities = {
   },
   jump: {
     level: "no",
-    reason: "Agent Lookout reads nothing that names a Muse Code session's process or terminal.",
+    reason:
+      "Nothing Agent Lookout turns into text names a Muse Code session's process or terminal.",
   },
   "quiet-for": {
     level: "partly",
