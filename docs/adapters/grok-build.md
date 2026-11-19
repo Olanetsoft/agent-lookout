@@ -74,7 +74,7 @@ Grok Build names the folder of a working folder's sessions by URL-encoding the w
 
 - Every poll, each listed or watched session's folder is looked up with `lstat`: `sessions`, the folder named for its working folder, then its ID in that. Each must be a real folder of the user Agent Lookout runs as, never a link. A folder found before is looked up the same way, and dropped when it fails.
 - A session not found so is looked for by its ID in every folder in `sessions`: at most once a minute, a clock set back counting as time enough, for at most the 10 newest such sessions, in at most the first 2,000 names, sorted, that Grok Build could write. Each folder is looked up with `lstat`, then each such ID in it. One found is the session's. An ID in two folders is in neither, as Grok Build itself takes neither (`SH/session/storage/relocation/mod.rs:76-77`, `:114-118`), and its status is unknown. That is at most 22,000 `lstat`s a minute.
-- The names in `sessions` are only put into paths: never decoded, logged or shown, and none but a folder found is kept past the look. The `.cwd` file Grok Build writes beside a hashed folder is never read.
+- The names in `sessions` are only put into paths: never decoded, logged or shown, and none but a folder found is kept past the look. The `.cwd` file Grok Build writes in a hashed folder is never read.
 
 A session whose folder is not found shows as unknown.
 
@@ -99,7 +99,7 @@ What is compared, as bytes:
 | `first_token`, `tool_started`, `permission_requested`, `phase_changed` to text, reasoning, a tool or a permission prompt | The kind, or the phase                                                                                       | The model wrote                                   |
 | Those, `tool_completed` and `permission_resolved`                                                                        | The kind                                                                                                     | The newest time of a turn's own line              |
 
-Anything else, the MCP lines among it, is passed over. Of a log only numbers and flags are kept: where reading goes on from, the file's size, time and identity, the newest turn's start or end, its outcome and time, how many questions are open and since when, the newest plan call's time, whether the model wrote, the newest time of a turn's line, and whether a line did not count. No byte of it becomes text. A turn's reasons, `cancellation_context`, which can hold a client's own words (`SH/session/commands.rs:249`; `SH/session/acp_session_impl/cancel.rs:768-772`), MCP errors, targets, URLs and samples, tool names other than the two, model IDs, prompts and replies are never decoded.
+Anything else, the MCP lines among it, is passed over. Of a log only numbers and flags are kept: where reading goes on from, the file's size, time and identity, the newest turn's start or end, its outcome and time, how many questions are open and since when, the newest plan call's time, whether the model wrote, the newest time of a turn's line, and whether a line did not count. No byte of it becomes text. A turn's reasons, `cancellation_context`, which can hold a client's own words (`SH/session/commands.rs:249`; `SH/session/acp_session_impl/cancel.rs:768-772`), an MCP server's errors, commands, URLs and raw output, tool names other than the two, model IDs, prompts and replies are never decoded.
 
 The tool's wire name is `ask_user_question` (`ask_user_question/mod.rs:300`). `AskUserQuestion` is the name a Claude settings file or a hook gives it, not one written to the log (`xai-grok-tools/src/types/claude_alias.rs:62`), so it is not matched. A plan's tool is `exit_plan_mode` (`xai-grok-tools/src/implementations/grok_build/exit_plan_mode/mod.rs:83`).
 
@@ -111,7 +111,7 @@ A question's call, `tool_started`, is written before the call is made ready (`to
 
 Some turns start and never write their end:
 
-- a rewind aborts the turn and writes no `turn_ended` (`cancel.rs:122-128`, `:771-778`);
+- a rewind aborts the turn and writes no `turn_ended` (`cancel.rs:122-128`, `:768-778`);
 - an error before the model is asked, after the turn started, is only counted (`turn.rs:990-999`, `:140-148`);
 - a crash leaves the turn open until the session is loaded again, and Grok Build then writes `turn_ended` with `interrupted`, but only when the turn's start is in the last 256 KiB of the log and its summary still names the turn's request (`SH/session/interrupted_turn.rs:14-15`, `:92-105`).
 
@@ -157,9 +157,9 @@ A plan's wait begins at the newest `exit_plan_mode` call in the turn under way, 
 
 - `cancelled` is a turn you stopped or one at the max-turns limit (`turn.rs:1564-1572`). Esc never stops a turn in the terminal app (`UG/01-getting-started.md:107`).
 - `interrupted` is written for a turn a crash cut off, when the session is loaded again, and the terminal app paints it as a failed turn (`PG/app/turn_completion.rs:111-118`).
-- A refusal ends a turn as `completed`.
+- A refusal ends a turn as `completed` (`turn.rs:1491-1497`).
 - A wait for a tool's approval is not told apart: `phase_changed` to `permission_prompt`, `permission_requested` and `permission_resolved` surround every tool call, whatever approves it (`tool_calls.rs:1758-1880`). Such a session shows as working.
-- A session whose log shows only lines of the session's own, such as MCP servers starting (`SH/session/mcp_servers.rs:62`), has no turn yet and is idle.
+- A session whose log shows only lines of the session's own, such as an MCP server's setup (`SH/session/mcp_servers.rs:62`), has no turn yet and is idle.
 - Every time is judged against the clock on every poll, and one that cannot be right is none. A finished session's time is the same whether a live poll or a restart finds it.
 
 ## Whether its process still runs
@@ -240,6 +240,6 @@ Everything here is read from Grok Build's source at 1.0.45, so each of these is 
 | `plan_mode.json` is written compact                                     | Plans waiting show as idle or working                     |
 | Grok Build writes a start for its process                               | Nothing changes until the adapter reads it                |
 
-Grok Build reads hooks from Claude Code's settings and plugins, but has no `PermissionRequest` hook and skips a hook it does not know, as its own test of a `PermissionRequest` hook shows (`xai-grok-hooks/src/config.rs:1411-1440`). So Agent Lookout's plugin, whose hook is `PermissionRequest`, never runs for Grok Build, and Agent Lookout cannot answer Grok Build's prompts.
+Grok Build reads hooks from Claude Code's settings (`UG/10-hooks.md:60-75`), but has no `PermissionRequest` hook and skips a hook it does not know, as its own test of a `PermissionRequest` hook shows (`xai-grok-hooks/src/config.rs:1411-1440`). So Agent Lookout's plugin, whose hook is `PermissionRequest`, never runs for Grok Build, and Agent Lookout cannot answer Grok Build's prompts.
 
 To check a new Grok Build, read `xai-grok-active-sessions/src/lib.rs`, `xai-grok-session-events/src/types.rs` and `log.rs`, `encode_cwd_dirname` in `xai-grok-config/src/paths.rs`, `Summary` in `xai-grok-shell/src/session/persistence.rs`, `PlanModeSnapshot` in `xai-grok-shell/src/session/plan_mode.rs`, and where `tool_started`, `turn_started` and `turn_ended` are written in `xai-grok-shell/src/session/acp_session_impl/`. Then update `UNCHECKED_NOTE` in `src/collector/adapters/grok-build/index.ts` and the first paragraphs here.
