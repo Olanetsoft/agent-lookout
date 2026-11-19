@@ -542,6 +542,91 @@ describe("a reply whose tool waits or runs, as Gemini CLI 0.69.0 writes it", () 
     expect(await status()).toMatchObject({ status: "working", statusSince: NOW - MINUTE });
   });
 
+  describe("with an error shown while its tool waits, as when no editor is found to change the call", () => {
+    const shown = NOW + 2 * MINUTE;
+    const errorLines = `${noticeLine("error", notice, shown)}\n${updatedLine(shown)}\n`;
+
+    test("is working since the prompt, and unknown 30 quiet minutes after the error", async () => {
+      const { clock, files, adapter, status } = waiting();
+      clock.set(shown);
+      files.append(FILE, errorLines);
+      expect(await status()).toMatchObject({ status: "working", statusSince: NOW - MINUTE });
+      clock.set(shown + QUIET_MS - SECOND);
+      expect(await status()).toMatchObject({ status: "working", statusSince: NOW - MINUTE });
+      clock.set(shown + QUIET_MS);
+      const later = await adapter.poll();
+      expect(later.sessions[0]).toMatchObject({ status: "unknown", statusSince: null });
+      expect(JSON.stringify(later.sessions)).not.toContain(PRIVATE_WORDS);
+    });
+
+    test("is working after a reply with text too", async () => {
+      const { clock, files, status } = waiting("A placeholder reply that also calls a tool.");
+      clock.set(shown);
+      files.append(FILE, errorLines);
+      expect(await status()).toMatchObject({ status: "working", statusSince: NOW - MINUTE });
+    });
+
+    test("a failed request in its place is failed", async () => {
+      const { clock, files, status } = waiting();
+      clock.set(shown);
+      files.append(FILE, `${failedRequestLine(notice, shown)}\n${updatedLine(shown)}\n`);
+      expect(await status()).toMatchObject({ status: "failed", statusSince: shown });
+    });
+
+    test("once the batch is written again with no result yet, it is that batch: working until 30 seconds after its calls ended, and unknown then", async () => {
+      const { clock, files, status } = waiting();
+      const ended = NOW + 5 * MINUTE;
+      clock.set(ended);
+      files.append(
+        FILE,
+        chatFile([
+          noticeLine("error", notice, shown),
+          updatedLine(shown),
+          geminiLine(reply, NOW, { content: "", toolCalls: [toolCall("success", ended)] }),
+        ]),
+      );
+      clock.set(ended + BATCH_GRACE_MS - SECOND);
+      expect(await status()).toMatchObject({ status: "working", statusSince: NOW - MINUTE });
+      clock.set(ended + BATCH_GRACE_MS);
+      expect(await status()).toMatchObject({ status: "unknown", statusSince: null });
+    });
+
+    test("is working once the tool's result comes", async () => {
+      const { clock, files, status } = waiting();
+      const ended = NOW + 5 * MINUTE;
+      clock.set(ended);
+      files.append(
+        FILE,
+        chatFile([
+          noticeLine("error", notice, shown),
+          updatedLine(shown),
+          geminiLine(reply, NOW, { content: "", toolCalls: [toolCall("success", ended)] }),
+          toolResultLine(result, ended + SECOND),
+        ]),
+      );
+      clock.set(ended + 2 * SECOND);
+      expect(await status()).toMatchObject({ status: "working", statusSince: NOW - MINUTE });
+    });
+
+    test("is idle once the result comes after Esc cancels the call, as with no error", async () => {
+      const { clock, files, status } = waiting();
+      const ended = NOW + 5 * MINUTE;
+      clock.set(ended);
+      files.append(
+        FILE,
+        chatFile([
+          noticeLine("error", notice, shown),
+          updatedLine(shown),
+          geminiLine(reply, NOW, { content: "", toolCalls: [toolCall("cancelled", ended)] }),
+          noticeLine("info", messageIdOf("65"), ended),
+          toolResultLine(result, ended + SECOND),
+        ]),
+      );
+      clock.set(ended + 2 * SECOND);
+      expect(await status()).toMatchObject({ status: "idle", statusSince: ended + SECOND });
+    });
+  });
+
   test("the take-back after Deny or Esc makes it idle", async () => {
     const { clock, files, status } = waiting();
     const declined = NOW + 2 * MINUTE;
