@@ -40,6 +40,7 @@ import {
   writeEvents,
   type MemoryFiles,
 } from "@tests/support/adapters/grok-build/grokBuildAdapter";
+import { watchDecodingWhile } from "@tests/support/adapters/unreal-agent/decodeSpy";
 
 const T = NOW - 5 * MINUTE;
 
@@ -533,5 +534,23 @@ describe("reading", () => {
       turnStarted(T) +
       `{"ts":"${ts(T + 1)}","type":"tool_started","tool_name":"bash","x":",\\"tool_name\\":\\"ask_user_question\\"}"}\n`;
     expect(await turnOf(text)).toMatchObject({ openQuestions: 0 });
+  });
+  test("no byte of the log is turned into text, read first or onwards", async () => {
+    const files = memoryFiles();
+    const { reader } = readerOf(files);
+    writeEvents(files, turnStarted(T, { model_id: SECRET }) + toolStarted(T + 1, SECRET), {
+      mtimeMs: T,
+    });
+    const seen = await watchDecodingWhile(async () => {
+      await reader.read(SESSION_ID, sessionFolder());
+      appendEvents(
+        files,
+        toolStarted(T + 2, "ask_user_question") +
+          turnEnded(T + 3, "cancelled", { cancellation_context: { trigger: SECRET } }),
+        { mtimeMs: T + SECOND },
+      );
+      await reader.read(SESSION_ID, sessionFolder());
+    });
+    expect(seen).toEqual([]);
   });
 });

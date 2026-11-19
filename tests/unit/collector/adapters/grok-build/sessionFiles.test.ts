@@ -29,6 +29,7 @@ import {
   writeSummary,
   type MemoryFiles,
 } from "@tests/support/adapters/grok-build/grokBuildAdapter";
+import { watchDecodingWhile } from "@tests/support/adapters/unreal-agent/decodeSpy";
 
 const bytes = (text: string) => Buffer.from(text);
 
@@ -226,5 +227,22 @@ describe("reading the files", () => {
     expect(reader.kept).toBe(1);
     reader.keepOnly(new Set());
     expect(reader.kept).toBe(0);
+  });
+  test("of both files only a marked title is turned into text", async () => {
+    const files = memoryFiles();
+    const { reader } = filesOf(files);
+    writeSummary(files, summaryText({ title: "Release checklist", manual: true }));
+    writePlan(files, planText(true));
+    const seen = await watchDecodingWhile(async () => {
+      await reader.title(SESSION_ID, sessionFolder());
+      await reader.plan(SESSION_ID, sessionFolder());
+    });
+    expect(seen.length).toBeGreaterThan(0);
+    for (const text of seen) expect(["Release checklist", '"Release checklist"']).toContain(text);
+    writeSummary(files, summaryText({ title: TYPED_TITLE }));
+    const unmarked = await watchDecodingWhile(async () => {
+      await reader.title(SESSION_ID, sessionFolder());
+    });
+    expect(unmarked).toEqual([]);
   });
 });
