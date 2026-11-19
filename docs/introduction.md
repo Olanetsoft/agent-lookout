@@ -3,7 +3,7 @@ title: Introduction
 description: Agent Lookout shows the coding agent sessions on your machine on one page, with the ones waiting on you first.
 ---
 
-Agent Lookout is a local dashboard for the Claude Code, Codex, Antigravity, Antigravity CLI, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx, Unreal Agent, Autohand Code, DeepSeek Harness and Droid sessions running on your machine.
+Agent Lookout is a local dashboard for the Claude Code, Codex, Antigravity, Antigravity CLI, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx, Unreal Agent, Autohand Code, DeepSeek Harness, Droid and Grok Build sessions running on your machine.
 
 When you run several coding agents at once, one of them often stops to ask you something while you are looking at another. Agent Lookout finds their sessions with no setup, shows them on one page, and puts the ones waiting on you first, for the agents that report a wait. Any other agent can show up too, by writing a small [status file](GUIDE.md#your-own-agents).
 
@@ -24,7 +24,7 @@ Then open http://127.0.0.1:4777. You need Node.js 22.12 or newer, on macOS, Linu
 
 - **See every session on one page,** with each one's status, folder and branch.
 - **See who needs you first.** The Needs you panel lists the sessions waiting for you, longest wait first, with the reason, such as Waiting for permission. For Claude Code it also shows what the session asks, such as `Run: npm test`.
-- **Answer or jump to a Claude Code session.** With Agent Lookout's plugin, Allow and Deny answer its permission prompt from the page. Jump opens the session in VS Code, selects its tmux pane, or brings its Terminal or iTerm2 tab forward on a Mac. Jump reaches a Qwen Code session in tmux or a Terminal or iTerm2 tab too.
+- **Answer or jump to a Claude Code session.** With Agent Lookout's plugin, Allow and Deny answer its permission prompt from the page. Jump opens the session in VS Code, selects its tmux pane, or brings its Terminal or iTerm2 tab forward on a Mac. Jump reaches a Qwen Code or Grok Build session in tmux or a Terminal or iTerm2 tab too.
 - **Let your agents ask.** `agent-lookout mcp` is a read-only MCP server that an agent can ask which sessions are running and which need you. [For your agents](GUIDE.md#for-your-agents) shows how to add it.
 
 Some of this depends on your system: on Windows, Jump reaches VS Code only, and there is no Stop, Allow or Deny. [What works on each system](../README.md#supported-agents-and-systems) has the full table.
@@ -49,6 +49,7 @@ Every agent's sessions appear on the page with their status. What else each one 
 | Autohand Code                                                   | While it asks you to approve a tool or answer a question                 | No                          | No                                   |
 | DeepSeek Harness                                                | While a turn waits for your approval, an answer or a plan review         | No                          | No                                   |
 | Droid                                                           | No: a session shows as unknown while Droid runs                          | No                          | No                                   |
+| Grok Build                                                      | While it asks you a question or to approve a plan                        | No                          | In tmux, Terminal or iTerm2          |
 | Kimi Code                                                       | While it waits for your approval or an answer                            | No                          | No                                   |
 | Continue                                                        | No: a session always shows as unknown                                    | No                          | No                                   |
 | Crush                                                           | No: a session shows as unknown while Crush runs                          | No                          | No                                   |
@@ -59,9 +60,9 @@ Every agent's sessions appear on the page with their status. What else each one 
 | Codex and Gemini CLI                                            | No: a waiting session shows as working, or as idle in Gemini CLI         | No                          | No                                   |
 | Any agent that writes a [status file](GUIDE.md#your-own-agents) | When it writes that it waits                                             | No                          | No                                   |
 
-On Windows, OpenCode's, Hermes Agent's, Goose's, Crush's, Kilo Code's and MiMo Code's sessions are not read, a Pi, Kimchi or Droid session stays unknown, a Prime Agent session that a process holds shows as unknown, nothing of fx's or Unreal Agent's is read, and the Antigravity app never shows as needing you. On Linux, OpenCode, Hermes Agent, Goose, Crush, Kilo Code, MiMo Code and the Antigravity app need the `sqlite3` program, and Hermes Agent sometimes one of version 3.51.3 or newer.
+On Windows, OpenCode's, Hermes Agent's, Goose's, Crush's, Kilo Code's and MiMo Code's sessions are not read, a Pi, Kimchi or Droid session stays unknown, a Grok Build session has no Jump, a Prime Agent session that a process holds shows as unknown, nothing of fx's or Unreal Agent's is read, and the Antigravity app never shows as needing you. On Linux, OpenCode, Hermes Agent, Goose, Crush, Kilo Code, MiMo Code and the Antigravity app need the `sqlite3` program, and Hermes Agent sometimes one of version 3.51.3 or newer.
 
-Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx, Unreal Agent, Autohand Code and DeepSeek Harness support was built from their source, and Droid's from Factory's documentation and its Droid SDKs, and none has yet been checked on a machine running it. If you use one, [open an issue](https://github.com/Olanetsoft/agent-lookout/issues) to say whether it works. [What each agent can report](GUIDE.md#what-each-agent-can-report) has the details.
+Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx, Unreal Agent, Autohand Code, DeepSeek Harness and Grok Build support was built from their source, and Droid's from Factory's documentation and its Droid SDKs, and none has yet been checked on a machine running it. If you use one, [open an issue](https://github.com/Olanetsoft/agent-lookout/issues) to say whether it works. [What each agent can report](GUIDE.md#what-each-agent-can-report) has the details.
 
 ## Privacy
 
