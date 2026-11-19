@@ -74,7 +74,10 @@ import {
   AUTOHAND_CODE_CAPABILITIES,
   createAutohandCodeAdapter,
 } from "@collector/adapters/autohand-code/index";
-import { autohandCodeSession } from "@collector/adapters/autohand-code/toSession";
+import {
+  autohandCodeSession,
+  withJump as autohandCodeJump,
+} from "@collector/adapters/autohand-code/toSession";
 import {
   createDeepseekHarnessAdapter,
   DEEPSEEK_HARNESS_CAPABILITIES,
@@ -1513,7 +1516,7 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(AUTOHAND_CODE_CAPABILITIES.failed.level).toBe("partly");
   });
 
-  test("Autohand Code: a session has its folder's name and its metadata.json's last write, and no tokens, jump, stop or link", () => {
+  test("Autohand Code: a session has its folder's name and its metadata.json's last write, a Jump only for a pane or a tab, and no tokens, stop or link", () => {
     const session = autohandCodeSession({
       sessionId: "0b5d6c1e-2f3a-4b4c-8d5e-6f7a8b9c0d1e-1762772400000",
       status: "working",
@@ -1544,10 +1547,14 @@ describe("each declaration agrees with what its adapter does", () => {
       expect(session, absent).not.toHaveProperty(absent);
     }
     expect(session.links).toEqual({});
+    // Jump is added once a fresh heartbeat's process is found in a tmux pane or a tab.
+    expect(
+      autohandCodeJump(session, { pid: 7, id: "%1", place: "demo:0.1" }, undefined).jump,
+    ).toEqual({ kind: "tmux", place: "demo:0.1" });
     expect(AUTOHAND_CODE_CAPABILITIES.names.level).toBe("partly");
     expect(AUTOHAND_CODE_CAPABILITIES["quiet-for"].level).toBe("partly");
     expect(AUTOHAND_CODE_CAPABILITIES.tokens.level).toBe("no");
-    expect(AUTOHAND_CODE_CAPABILITIES.jump.level).toBe("no");
+    expect(AUTOHAND_CODE_CAPABILITIES.jump.level).toBe("partly");
     expect(AUTOHAND_CODE_CAPABILITIES.stop.level).toBe("no");
     expect(AUTOHAND_CODE_CAPABILITIES.answer.level).toBe("no");
   });

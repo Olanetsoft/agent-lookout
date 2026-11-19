@@ -2,6 +2,12 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
+## Unreleased
+
+### Added
+
+- Jump works for an Autohand Code session in tmux, and in a tab of Terminal or iTerm2 on a Mac, as it does for Qwen Code: it selects the session's pane, or brings its tab forward. Agent Lookout looks only for the process of a heartbeat written in the last 15 seconds whose process runs, so a run with `--no-daemon`, a session whose heartbeat is older, whose process has ended or moved on to another session, and one that has finished have no Jump. (#351)
+
 ## 0.2.24 - 2026-11-19
 
 Droid and Grok Build sessions show.

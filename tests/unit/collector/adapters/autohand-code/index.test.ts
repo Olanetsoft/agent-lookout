@@ -11,6 +11,10 @@ import {
   TOO_LARGE_NOTE,
   UNKNOWN_NOTE,
 } from "@collector/adapters/autohand-code/index";
+import type { TabAsker } from "@collector/terminal/tabFinder";
+import type { TerminalTab } from "@collector/terminal/terminalTabs";
+import type { PaneAsker } from "@collector/tmux/paneFinder";
+import type { TmuxPane } from "@collector/tmux/panes";
 import type { Session } from "@core/sessions/session";
 import {
   AUTOHAND_HOME,
@@ -55,6 +59,8 @@ import {
   writeMetadata,
 } from "@tests/support/adapters/autohand-code/autohandCodeAdapter";
 import { watchDecodingWhile } from "@tests/support/adapters/unreal-agent/decodeSpy";
+import { TAB_CHECK } from "@tests/support/node/terminal";
+import { PANE_CHECK, PANE_PARENT_CHECK } from "@tests/support/node/tmux";
 import { asWritten } from "@tests/support/paths";
 import { runPs } from "@collector/processes/ps";
 
@@ -1224,6 +1230,309 @@ describe("sizes", () => {
     const { sessions, health } = await pc.adapter().poll();
     expect(only(sessions).status).toBe("unknown");
     expect(health.detail).toContain(TOO_LARGE_NOTE);
+  });
+});
+
+describe("Jump", () => {
+  const MAIN = `autohand-code:${SESSION_ID}`;
+  const OTHER = `autohand-code:${OTHER_SESSION_ID}`;
+  const pane: TmuxPane = { pid: PID, id: "%3", place: "demo-project:0.1" };
+  const otherPane: TmuxPane = { pid: OTHER_PID, id: "%4", place: "demo-project:0.2" };
+  const tab: TerminalTab = { app: "iTerm2", tty: "/dev/ttys007" };
+  const otherTab: TerminalTab = { app: "Terminal", tty: "/dev/ttys008" };
+  const inPane = { kind: "tmux", place: "demo-project:0.1" };
+
+  const byId = (sessions: Session[], id = MAIN) => sessions.find((one) => one.id === id);
+  const sorted = (pids: readonly number[]) => [...pids].sort((a, b) => a - b);
+
+  /**
+   * A pane finder's asker that knows these panes whatever it was told to look
+   * for, so a session has one only when the adapter looks it up, and that
+   * writes down what it was told to look for and what it looked up.
+   */
+  function knownPanes(panes: Record<number, TmuxPane>) {
+    const looked: number[][] = [];
+    const lookedUp: number[] = [];
+    const asker: PaneAsker = {
+      look: async (pids) => {
+        looked.push(sorted(pids));
+      },
+      paneOf: (pid) => {
+        lookedUp.push(pid);
+        return panes[pid];
+      },
+      installed: () => false,
+      asked: () => false,
+      parentsAsked: () => false,
+    };
+    return { ...asker, looked, lookedUp };
+  }
+
+  /** The same for tabs of Terminal and iTerm2. */
+  function knownTabs(tabs: Record<number, TerminalTab>) {
+    const looked: number[][] = [];
+    const lookedUp: number[] = [];
+    const asker: TabAsker = {
+      look: async (pids) => {
+        looked.push(sorted(pids));
+      },
+      tabOf: (pid) => {
+        lookedUp.push(pid);
+        return tabs[pid];
+      },
+      editorOf: () => undefined,
+      asked: () => false,
+    };
+    return { ...asker, looked, lookedUp };
+  }
+
+  /** Both sessions, with their folders: the first's heartbeat fresh, the other's as a test writes it. */
+  function twoSessions(pc: Computer, other: Parameters<typeof heartbeat>[0] = {}) {
+    session(pc);
+    session(pc, metadata({ sessionId: OTHER_SESSION_ID }), { id: OTHER_SESSION_ID });
+    writeHeartbeat(pc.files, heartbeat());
+    writeHeartbeat(pc.files, heartbeat({ sessionId: OTHER_SESSION_ID, pid: OTHER_PID, ...other }), {
+      name: `${OTHER_SESSION_ID}.json`,
+    });
+  }
+
+  /** Finders that know a place for both processes, the first's a pane and the other's a pane and a tab. */
+  const bothKnown = () => ({
+    panes: knownPanes({ [PID]: pane, [OTHER_PID]: otherPane }),
+    terminals: knownTabs({ [PID]: tab, [OTHER_PID]: otherTab }),
+  });
+
+  test("a fresh heartbeat's process in a tmux pane is given the pane, and one in a tab of Terminal or iTerm2 the tab", async () => {
+    const pc = computer([PID, OTHER_PID]);
+    twoSessions(pc);
+    const panes = knownPanes({ [PID]: pane });
+    const terminals = knownTabs({ [PID]: otherTab, [OTHER_PID]: tab });
+    const { sessions } = await pc.adapter({ panes, terminals }).poll();
+    expect(byId(sessions)).toMatchObject({ status: "working", pid: PID, jump: inPane });
+    expect(byId(sessions, OTHER)).toMatchObject({
+      status: "working",
+      pid: OTHER_PID,
+      jump: { kind: "terminal", app: "iTerm2", place: "iTerm2" },
+    });
+    // Only the place's name reaches the dashboard.
+    expect(JSON.stringify(sessions)).not.toMatch(/%3|ttys/);
+    expect(panes.looked).toEqual([[PID, OTHER_PID]]);
+    expect(terminals.looked).toEqual([[PID, OTHER_PID]]);
+    // A process found in a pane is not looked up in a tab.
+    expect(panes.lookedUp).toEqual([PID, OTHER_PID]);
+    expect(terminals.lookedUp).toEqual([OTHER_PID]);
+  });
+
+  test("with a tab finder alone, a fresh heartbeat's process in a tab is given the tab", async () => {
+    const pc = computer();
+    session(pc);
+    writeHeartbeat(pc.files, heartbeat({ phase: "waiting_input" }));
+    const terminals = knownTabs({ [PID]: tab });
+    const { sessions } = await pc.adapter({ terminals }).poll();
+    expect(only(sessions)).toMatchObject({
+      status: "needs-you",
+      jump: { kind: "terminal", app: "iTerm2", place: "iTerm2" },
+    });
+    expect(terminals.looked).toEqual([[PID]]);
+  });
+
+  test("no Jump, and nothing looked for, for a heartbeat over 15 seconds old whose process runs", async () => {
+    const pc = computer([PID, OTHER_PID]);
+    twoSessions(pc, { updatedAt: NOW - 15_001 });
+    const { panes, terminals } = bothKnown();
+    const { sessions } = await pc.adapter({ panes, terminals }).poll();
+    expect(byId(sessions)?.jump).toEqual(inPane);
+    expect(byId(sessions, OTHER)).toMatchObject({ status: "unknown", pid: OTHER_PID, alive: true });
+    expect(byId(sessions, OTHER)).not.toHaveProperty("jump");
+    expect(panes.looked).toEqual([[PID]]);
+    expect(terminals.looked).toEqual([[PID]]);
+    expect(panes.lookedUp).toEqual([PID]);
+    expect(terminals.lookedUp).toEqual([]);
+  });
+
+  test("a session's process is looked for no more once its heartbeat is over 15 seconds old", async () => {
+    const pc = computer();
+    session(pc);
+    writeHeartbeat(pc.files, heartbeat());
+    const { panes, terminals } = bothKnown();
+    const adapter = pc.adapter({ panes, terminals });
+    expect(only((await adapter.poll()).sessions).jump).toEqual(inPane);
+    // Polls on time, with no heartbeat written since.
+    for (let at = 2 * SECOND; at <= 14 * SECOND; at += 2 * SECOND) {
+      pc.clock.set(NOW + at);
+      expect(only((await adapter.poll()).sessions).jump, String(at)).toEqual(inPane);
+    }
+    pc.clock.set(NOW + 15 * SECOND + 1);
+    const stale = only((await adapter.poll()).sessions);
+    expect(stale.status).toBe("unknown");
+    expect(stale).not.toHaveProperty("jump");
+    expect(panes.looked.at(-1)).toEqual([]);
+    expect(terminals.looked.at(-1)).toEqual([]);
+    expect(panes.lookedUp).toHaveLength(8);
+  });
+
+  test("no Jump, and nothing looked for, for a heartbeat whose process has gone", async () => {
+    const pc = computer([PID]);
+    twoSessions(pc, { updatedAt: NOW - 5 * SECOND });
+    const { panes, terminals } = bothKnown();
+    const { sessions } = await pc.adapter({ panes, terminals }).poll();
+    expect(byId(sessions)?.jump).toEqual(inPane);
+    expect(byId(sessions, OTHER)).toMatchObject({
+      status: "unknown",
+      pid: OTHER_PID,
+      alive: false,
+    });
+    expect(byId(sessions, OTHER)).not.toHaveProperty("jump");
+    expect(panes.looked).toEqual([[PID]]);
+    expect(terminals.looked).toEqual([[PID]]);
+    expect(panes.lookedUp).toEqual([PID]);
+    expect(terminals.lookedUp).toEqual([]);
+  });
+
+  test("no Jump, and nothing looked for, for a finished session whose heartbeat's process has gone", async () => {
+    const pc = computer([PID]);
+    twoSessions(pc, { updatedAt: NOW - 16 * SECOND });
+    const { panes, terminals } = bothKnown();
+    const { sessions } = await pc.adapter({ panes, terminals }).poll();
+    expect(byId(sessions)?.jump).toEqual(inPane);
+    expect(byId(sessions, OTHER)).toMatchObject({ status: "finished", pid: OTHER_PID });
+    expect(byId(sessions, OTHER)).not.toHaveProperty("jump");
+    expect(panes.looked).toEqual([[PID]]);
+    expect(terminals.looked).toEqual([[PID]]);
+    expect(panes.lookedUp).toEqual([PID]);
+  });
+
+  test("no Jump, and nothing looked for, for a session with no heartbeat: one closed, or a run with --no-daemon", async () => {
+    for (const [text, shown] of [
+      [
+        metadata({ status: "completed", closedAt: NOW - MINUTE, lastActiveAt: NOW - MINUTE }),
+        "finished",
+      ],
+      [metadata(), "unknown"],
+    ] as const) {
+      const pc = computer();
+      session(pc, text);
+      const { panes, terminals } = bothKnown();
+      const { sessions } = await pc.adapter({ panes, terminals }).poll();
+      expect(only(sessions).status).toBe(shown);
+      expect(only(sessions)).not.toHaveProperty("jump");
+      expect(panes.looked, shown).toEqual([[]]);
+      expect(terminals.looked, shown).toEqual([[]]);
+      expect([...panes.lookedUp, ...terminals.lookedUp], shown).toEqual([]);
+    }
+  });
+
+  test("a session whose process moved on to another has no Jump, and the other has its process's", async () => {
+    const pc = computer();
+    session(pc);
+    session(pc, metadata({ sessionId: OTHER_SESSION_ID }), { id: OTHER_SESSION_ID });
+    writeHeartbeat(pc.files, heartbeat());
+    const { panes, terminals } = bothKnown();
+    const adapter = pc.adapter({ panes, terminals });
+    expect(byId((await adapter.poll()).sessions)?.jump).toEqual(inPane);
+    // Its process closes it, which takes its heartbeat, and starts the other, as /new does.
+    removeHeartbeat(pc.files);
+    writeHeartbeat(pc.files, heartbeat({ sessionId: OTHER_SESSION_ID, updatedAt: NOW + SECOND }), {
+      name: `${OTHER_SESSION_ID}.json`,
+    });
+    pc.clock.advance(2 * SECOND);
+    const { sessions } = await adapter.poll();
+    expect(byId(sessions)?.status).toBe("finished");
+    expect(byId(sessions)).not.toHaveProperty("jump");
+    expect(byId(sessions, OTHER)).toMatchObject({ pid: PID, jump: inPane });
+    expect(panes.looked).toEqual([[PID], [PID]]);
+    // Looked up once a poll, the second time for the other session alone.
+    expect(panes.lookedUp).toEqual([PID, PID]);
+  });
+
+  test("a status held over a late poll has no Jump, and its process is not looked for", async () => {
+    const pc = computer();
+    session(pc);
+    writeHeartbeat(pc.files, heartbeat({ phase: "waiting_input" }));
+    const { panes, terminals } = bothKnown();
+    const adapter = pc.adapter({ panes, terminals });
+    expect(only((await adapter.poll()).sessions).jump).toEqual(inPane);
+    pc.clock.advance(30 * SECOND);
+    const held = only((await adapter.poll()).sessions);
+    expect(held).toMatchObject({ status: "needs-you", pid: PID, alive: true });
+    expect(held).not.toHaveProperty("jump");
+    expect(panes.looked).toEqual([[PID], []]);
+    expect(terminals.looked).toEqual([[PID], []]);
+    expect(panes.lookedUp).toEqual([PID]);
+  });
+
+  test("a poll that fails looks for nothing, so the finders forget its processes", async () => {
+    const pc = computer();
+    session(pc);
+    writeHeartbeat(pc.files, heartbeat());
+    let broken = false;
+    const isAlive = (pid: number) => {
+      if (broken) throw new Error("no answer");
+      return pc.processes.isAlive(pid);
+    };
+    const { panes, terminals } = bothKnown();
+    const adapter = pc.adapter({ panes, terminals, isAlive });
+    expect(only((await adapter.poll()).sessions).jump).toEqual(inPane);
+    broken = true;
+    pc.clock.advance(2 * SECOND);
+    const { health, sessions } = await adapter.poll();
+    expect(health.state).toBe("error");
+    expect(sessions).toEqual([]);
+    expect(panes.looked).toEqual([[PID], []]);
+    expect(terminals.looked).toEqual([[PID], []]);
+  });
+
+  test("with no finder, no session has a Jump", async () => {
+    const pc = computer();
+    session(pc);
+    writeHeartbeat(pc.files, heartbeat());
+    expect(only((await pc.adapter().poll()).sessions)).not.toHaveProperty("jump");
+  });
+});
+
+describe("Sources, with the finders the collector hands it", () => {
+  const own = [
+    { label: "Heartbeats folder", value: "~/.autohand/active-agents" },
+    { label: "Sessions folder", value: "~/.autohand/sessions" },
+    { label: "Read", value: "every 2 seconds" },
+    { label: "Process check", value: "signal 0 alone, every 2 seconds" },
+  ];
+  const panes: PaneAsker = {
+    look: async () => {},
+    paneOf: () => undefined,
+    installed: () => true,
+    asked: () => false,
+    parentsAsked: () => false,
+  };
+  const terminals: TabAsker = {
+    look: async () => {},
+    tabOf: () => undefined,
+    editorOf: () => undefined,
+    asked: () => false,
+  };
+
+  test("on a Mac with tmux, the pane and tab checks, not run until they are", async () => {
+    const { health } = await computer().adapter({ panes, terminals }).poll();
+    expect(health.watching).toEqual([
+      ...own,
+      { label: "Pane check", value: PANE_CHECK },
+      { label: "Pane check run", value: "not run" },
+      { label: "Pane parent check", value: PANE_PARENT_CHECK },
+      { label: "Pane parent check run", value: "not run" },
+      { label: "Tab check", value: TAB_CHECK },
+      { label: "Tab check run", value: "not run" },
+    ]);
+  });
+
+  test("on Linux with tmux, the pane checks alone", async () => {
+    const { health } = await computer().adapter({ platform: "linux", panes, terminals }).poll();
+    expect(health.watching).toEqual([
+      ...own,
+      { label: "Pane check", value: PANE_CHECK },
+      { label: "Pane check run", value: "not run" },
+      { label: "Pane parent check", value: PANE_PARENT_CHECK },
+      { label: "Pane parent check run", value: "not run" },
+    ]);
   });
 });
 

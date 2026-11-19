@@ -401,8 +401,15 @@ test("Unreal Agent's card is the one its adapter shows on a Mac without it", asy
   expect(sessions).toEqual([]);
 });
 
-test("Autohand Code's card is the one its adapter shows on a Mac without it", async () => {
-  const adapter = autohandAdapterFor(autohandFiles());
+test("Autohand Code's card is the one its adapter shows on a Mac with tmux and without Autohand Code", async () => {
+  const adapter = autohandAdapterFor(autohandFiles(), {
+    panes: createPaneFinder({ run: fakeTmux().run }).asker(),
+    terminals: createTabFinder({
+      env: {},
+      homeDir: HOME,
+      readProcesses: async () => new Map(),
+    }).asker(),
+  });
   const { health, sessions } = await adapter.poll();
   const { capabilities, ...card } = tour
     .sourcesAt(0, 1, "0.2.6")

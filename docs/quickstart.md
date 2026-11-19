@@ -85,7 +85,7 @@ The `pid` is that terminal's, so the session also leaves the page if you close t
 
 ## Next steps
 
-- [Jump to a session's window](guide-jump-to-window.md): how Jump reaches a Claude Code, Qwen Code or Grok Build session in each app, and what to do when it fails.
+- [Jump to a session's window](guide-jump-to-window.md): how Jump reaches a Claude Code, Qwen Code, Grok Build or Autohand Code session in each app, and what to do when it fails.
 - [Answer a permission prompt](GUIDE.md#answer-a-permission-prompt): install the Claude Code plugin to answer with Allow and Deny from the page.
 - [Introduction](introduction.md): what Agent Lookout does, and what it leaves alone.
 - [GitHub issues](https://github.com/Olanetsoft/agent-lookout/issues): ask a question or report a problem.

@@ -960,8 +960,9 @@ export const AUTOHAND_CODE_CAPABILITIES: SourceCapabilities = {
       "Your /rename or autohand --rename, else the folder's. Autohand Code's own title can be your first words and is never looked for.",
   },
   jump: {
-    level: "no",
-    reason: "Agent Lookout does not yet look for the terminal an Autohand Code session runs in.",
+    level: "partly",
+    reason:
+      "In tmux, and in a tab of Terminal or iTerm2 on a Mac, while its heartbeat is fresh, so not for a run with --no-daemon.",
   },
   "quiet-for": {
     level: "partly",
@@ -1678,7 +1679,7 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
       checkedAt,
     },
     {
-      // The adapter's card on a Mac when Autohand Code is not installed: its folders are looked for, and nothing more.
+      // The adapter's card on a Mac with tmux, when Autohand Code is not installed: its folders and tmux's program are looked for, and nothing more.
       id: "autohand-code",
       label: "Autohand Code",
       state: "unavailable",
@@ -1689,6 +1690,16 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "Sessions folder", value: "~/.autohand/sessions" },
         { label: "Read", value: "not found" },
         { label: "Process check", value: "signal 0 alone, every 2 seconds" },
+        {
+          label: "Pane check",
+          value:
+            "tmux -u list-panes -a -F '#{pane_pid} #{pane_id} #{window_index} #{pane_index} #{session_name}'",
+        },
+        { label: "Pane check run", value: "not run" },
+        { label: "Pane parent check", value: "ps -A -o pid=,ppid=" },
+        { label: "Pane parent check run", value: "not run" },
+        { label: "Tab check", value: "ps -A -o pid=,ppid=,tty=,comm=" },
+        { label: "Tab check run", value: "not run" },
       ],
       capabilities: AUTOHAND_CODE_CAPABILITIES,
       checkedAt,
