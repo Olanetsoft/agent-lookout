@@ -130,15 +130,26 @@ export function decidedAtOf(
  * prompt, reads as if no exit had been written. A later line passed over, as
  * a rename adds, changes nothing, since the file's last write is not looked
  * at. A newest tool's or ask's start never takes it, so a restored ask still
- * needs you. Judged against `now` on every poll, and never kept.
+ * needs you.
+ *
+ * An exit whose time is before the header's, when that can be right, decides
+ * nothing, newest, behind or cut off alike. A fork, a branch and an import
+ * copy each line with the time it had under a header they stamp as they copy
+ * (session-manager.ts:2546-2576, :2807-2826, :4165-4198, :4331-4351,
+ * :2090-2100; foreign-session-import.ts:51), so such an exit ended the
+ * session copied, not the copy. Judged against `now` on every poll, and never
+ * kept.
  */
 export function exitOf(
-  facts: Pick<OhMyPiFacts, "newest" | "behind" | "cutOff" | "now">,
+  facts: Pick<OhMyPiFacts, "newest" | "behind" | "cutOff" | "startedAt" | "now">,
 ): ExitLine | null {
   const { newest, behind, cutOff, now } = facts;
-  if (newest?.sort === "exit") return newest;
-  if (behind !== null) return behind;
-  if (cutOff === null) return null;
+  const header = plausibleTime(facts.startedAt, now);
+  /** Whether the exit is this session's own, not one copied from another. */
+  const own = (exit: ExitLine) => header === null || exit.at >= header;
+  if (newest?.sort === "exit") return own(newest) ? newest : null;
+  if (behind !== null) return own(behind) ? behind : null;
+  if (cutOff === null || !own(cutOff)) return null;
   if (newest?.sort !== "reply" && newest?.sort !== "result") return null;
   const at = plausibleTime(newest.at, now);
   if (at === null) return null;
@@ -160,9 +171,9 @@ export function exitOf(
  *
  * Idle never shows: a reply that ends a turn reads as one that names a tool
  * next. A wait for a tool's approval reads as the tool running. An exit whose
- * time cannot be right finishes nothing by itself. Every time is judged
- * against `now` here, on every poll: one more than a minute ahead of it is
- * none.
+ * time cannot be right, or is before the header's, finishes nothing by
+ * itself. Every time is judged against `now` here, on every poll: one more
+ * than a minute ahead of it is none.
  */
 export function ohMyPiStatusOf(facts: OhMyPiFacts): OhMyPiStatus {
   const { newest, writer, now } = facts;

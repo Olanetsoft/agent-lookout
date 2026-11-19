@@ -34,6 +34,7 @@ import { CLOCK_SLACK_MS, WRITE_TIME_STEP_MS } from "@core/time";
 import {
   codexLines,
   CWD,
+  DAY,
   header,
   HOME,
   HOUR,
@@ -309,6 +310,7 @@ describe("a session's status", () => {
         message("assistant", { at: exitAt + SECOND }) +
         toolStart("bash", exitAt + SECOND) +
         message("toolResult", { at: exitAt + 2 * SECOND }),
+      { header: { at: exitAt - 2 * MINUTE } },
     );
     const renameAt = NOW - MINUTE;
     /** The line a rename from the picker, or `/rename`, adds: no prompt. */
@@ -429,6 +431,34 @@ describe("a session's status", () => {
       status: "finished",
       statusSince: copiedAt,
     });
+  });
+
+  test("a copy of a session that ended keeps its exit, which decides nothing, so the copy is backed by the omp that made it", async () => {
+    const endAt = NOW - 3 * DAY;
+    const copiedAt = NOW - MINUTE;
+    const text = sessionText(
+      message("user", { at: endAt - 2 * MINUTE }) +
+        message("assistant", { at: endAt - MINUTE }) +
+        sessionExit("normal", endAt),
+      { header: { at: copiedAt } },
+    );
+    const clock = handClock();
+    // The omp that made the copy, which started before it.
+    const ps = standInPs([psLine(7003, copiedAt - 10 * MINUTE, "omp")]);
+    const adapter = ohMyPiAdapterFor(filesWith(text, copiedAt), { now: clock.now, ps });
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "unknown",
+      statusSince: null,
+    });
+    expect(ps.runs).toHaveLength(1);
+    ps.set([]);
+    clock.advance(PROCESS_CHECK_MS);
+    // Finished since the copy was made, not since the exit it copied.
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "finished",
+      statusSince: copiedAt,
+    });
+    expect(ps.runs).toHaveLength(2);
   });
 
   test("an aborted line after the exit, written more than 15 seconds after it, is not finished by it, whenever the file was last written", async () => {
@@ -615,6 +645,33 @@ describe("asking ps", () => {
   test("a session last written more than a minute before the computer started is finished, with no ps asked", async () => {
     const ps = standInPs([OMP_LINE]);
     const files = filesWith(sessionText(message("user")), BOOT_AT - 2 * MINUTE);
+    const result = await ohMyPiAdapterFor(files, { ps, now: () => BOOT_AT + HOUR }).poll();
+    expect(result.sessions[0]).toMatchObject({
+      status: "finished",
+      statusSince: BOOT_AT - 2 * MINUTE,
+    });
+    expect(ps.runs).toHaveLength(0);
+  });
+
+  test("a reply from more than a minute before the computer started is finished, with no ps asked, after a rename written since", async () => {
+    const ps = standInPs([OMP_LINE]);
+    const renameAt = BOOT_AT + HOUR - MINUTE;
+    /** The line a rename from the picker, or `/rename`, adds: no prompt. */
+    const rename = line({
+      type: "title_change",
+      id: "0000000a",
+      parentId: "00000009",
+      timestamp: iso(renameAt),
+      title: "demo-project",
+      source: "user",
+    });
+    const text = sessionText(
+      message("user", { at: BOOT_AT - 3 * MINUTE }) +
+        message("assistant", { at: BOOT_AT - 2 * MINUTE }) +
+        rename,
+      { header: { at: BOOT_AT - 4 * MINUTE } },
+    );
+    const files = filesWith(text, renameAt);
     const result = await ohMyPiAdapterFor(files, { ps, now: () => BOOT_AT + HOUR }).poll();
     expect(result.sessions[0]).toMatchObject({
       status: "finished",

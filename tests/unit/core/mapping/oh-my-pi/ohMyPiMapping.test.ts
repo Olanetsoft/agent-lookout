@@ -16,6 +16,8 @@ const SECOND = 1_000;
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const WRITTEN = NOW - MINUTE;
+/** When the header says the session began. */
+const STARTED = NOW - HOUR;
 
 const ask: OhMyPiLine = { sort: "ask", at: NOW - 5 * MINUTE };
 /** A reply, or a tool's result, with the time on its line, or none, as a refusal has. */
@@ -33,7 +35,7 @@ function statusOf(facts: Partial<OhMyPiFacts>) {
     behind: null,
     cutOff: null,
     writtenAt: WRITTEN,
-    startedAt: NOW - HOUR,
+    startedAt: STARTED,
     writer: "backed",
     now: NOW,
     ...facts,
@@ -152,7 +154,13 @@ describe("an exit a quit cut a turn off after", () => {
         { status: "finished", since: at, showsLastWrite: false },
       );
       expect(
-        exitOf({ newest: reply(at + SECOND), behind: null, cutOff: exit(true, at), now: NOW }),
+        exitOf({
+          newest: reply(at + SECOND),
+          behind: null,
+          cutOff: exit(true, at),
+          startedAt: STARTED,
+          now: NOW,
+        }),
       ).toEqual(exit(true, at));
     }
   });
@@ -170,9 +178,15 @@ describe("an exit a quit cut a turn off after", () => {
 
   test("a reply or a result whose time cannot be read, as a refusal's, never takes it", () => {
     for (const line of [reply, result]) {
-      expect(exitOf({ newest: line(null), behind: null, cutOff: exit(false, at), now: NOW })).toBe(
-        null,
-      );
+      expect(
+        exitOf({
+          newest: line(null),
+          behind: null,
+          cutOff: exit(false, at),
+          startedAt: STARTED,
+          now: NOW,
+        }),
+      ).toBe(null);
     }
     expect(statusOf({ newest: result(null), cutOff: exit(true, at), writtenAt: at })).toEqual({
       status: "working",
@@ -190,9 +204,13 @@ describe("an exit a quit cut a turn off after", () => {
     // The exit could be right; the result written 11 seconds after it cannot, yet.
     const soon = exit(false, NOW + 50 * SECOND);
     const ahead = result(NOW + CLOCK_SLACK_MS + 1);
-    expect(exitOf({ newest: ahead, behind: null, cutOff: soon, now: NOW })).toBeNull();
+    expect(
+      exitOf({ newest: ahead, behind: null, cutOff: soon, startedAt: STARTED, now: NOW }),
+    ).toBeNull();
     expect(statusOf({ newest: ahead, cutOff: soon }).status).toBe("working");
-    expect(exitOf({ newest: ahead, behind: null, cutOff: soon, now: NOW + 1 })).toBe(soon);
+    expect(
+      exitOf({ newest: ahead, behind: null, cutOff: soon, startedAt: STARTED, now: NOW + 1 }),
+    ).toBe(soon);
     expect(statusOf({ newest: ahead, cutOff: soon, now: NOW + 1 })).toMatchObject({
       status: "finished",
       since: NOW + 50 * SECOND,
@@ -207,24 +225,101 @@ describe("an exit a quit cut a turn off after", () => {
       statusOf({ newest: { sort: "ask", at }, cutOff: exit(false, at), writtenAt: at }),
     ).toMatchObject({ status: "needs-you", since: at });
     expect(
-      exitOf({ newest: { sort: "ask", at }, behind: null, cutOff: exit(false, at), now: NOW }),
+      exitOf({
+        newest: { sort: "ask", at },
+        behind: null,
+        cutOff: exit(false, at),
+        startedAt: STARTED,
+        now: NOW,
+      }),
     ).toBeNull();
   });
 
   test("the exit newest, or the exit behind, decides whatever the times after it", () => {
     const late = at + CUT_OFF_MS + MINUTE;
-    expect(exitOf({ newest: exit(true, at), behind: null, cutOff: null, now: NOW })).toEqual(
-      exit(true, at),
-    );
     expect(
-      exitOf({ newest: reply(late), behind: exit(false, at), cutOff: exit(false, at), now: NOW }),
+      exitOf({ newest: exit(true, at), behind: null, cutOff: null, startedAt: STARTED, now: NOW }),
+    ).toEqual(exit(true, at));
+    expect(
+      exitOf({
+        newest: reply(late),
+        behind: exit(false, at),
+        cutOff: exit(false, at),
+        startedAt: STARTED,
+        now: NOW,
+      }),
     ).toEqual(exit(false, at));
   });
 
   test("an exit cut off ahead of the clock takes nothing, as no line after it can be right either", () => {
     const ahead = exit(false, NOW + CLOCK_SLACK_MS + 1);
-    expect(exitOf({ newest: result(ahead.at), behind: null, cutOff: ahead, now: NOW })).toBeNull();
+    expect(
+      exitOf({
+        newest: result(ahead.at),
+        behind: null,
+        cutOff: ahead,
+        startedAt: STARTED,
+        now: NOW,
+      }),
+    ).toBeNull();
     expect(statusOf({ newest: result(ahead.at), cutOff: ahead }).status).toBe("working");
+  });
+});
+
+describe("an exit from before the header, as a fork, a branch or an import copies", () => {
+  /** When the copy was made, and the header it wrote says it began. */
+  const copiedAt = NOW - MINUTE;
+  const endAt = copiedAt - HOUR;
+  const exitFor = (facts: Partial<Parameters<typeof exitOf>[0]>) =>
+    exitOf({
+      newest: reply(),
+      behind: null,
+      cutOff: null,
+      startedAt: copiedAt,
+      now: NOW,
+      ...facts,
+    });
+
+  test("decides nothing, newest, behind or cut off, so ps decides", () => {
+    for (const fatal of [true, false]) {
+      const copied = exit(fatal, endAt);
+      expect(exitFor({ newest: copied })).toBeNull();
+      expect(exitFor({ newest: reply(endAt), behind: copied, cutOff: copied })).toBeNull();
+      // An aborted reply copied with it, within 15 seconds of it.
+      expect(exitFor({ newest: reply(endAt + SECOND), cutOff: copied })).toBeNull();
+      expect(statusOf({ newest: copied, startedAt: copiedAt })).toEqual({
+        status: "unknown",
+        since: null,
+        showsLastWrite: false,
+      });
+      expect(statusOf({ newest: copied, startedAt: copiedAt, writer: "gone" })).toEqual({
+        status: "finished",
+        since: WRITTEN,
+        showsLastWrite: false,
+      });
+      expect(
+        statusOf({ newest: reply(endAt), behind: copied, startedAt: copiedAt, writer: "gone" }),
+      ).toMatchObject({ status: "finished", since: copiedAt });
+    }
+  });
+
+  test("one at or after the header still decides, and every one does when the header's time cannot be right", () => {
+    for (const at of [copiedAt, copiedAt + SECOND]) {
+      const own = exit(true, at);
+      expect(exitFor({ newest: own })).toBe(own);
+      expect(exitFor({ newest: reply(at), behind: own, cutOff: own })).toBe(own);
+      expect(exitFor({ newest: reply(at + SECOND), cutOff: own })).toBe(own);
+      expect(statusOf({ newest: own, startedAt: copiedAt })).toMatchObject({
+        status: "failed",
+        since: at,
+      });
+    }
+    const copied = exit(false, endAt);
+    for (const startedAt of [null, NOW + CLOCK_SLACK_MS + 1, Date.UTC(2019, 0, 1)]) {
+      expect(exitFor({ newest: copied, startedAt })).toBe(copied);
+      expect(exitFor({ newest: reply(endAt), behind: copied, startedAt })).toBe(copied);
+      expect(exitFor({ newest: reply(endAt + SECOND), cutOff: copied, startedAt })).toBe(copied);
+    }
   });
 });
 

@@ -76,8 +76,8 @@ import { gunzipSync } from "node:zlib";
  * it was.
  *
  * Unpacked was raised from 4.40 MB to 4.50 MB once Oh My Pi took it to 4.459
- * MB, from 4.388 MB. It added 70 KB, 44 KB of code in the command and 26 KB of
- * the documents the package ships. Installed, at 6.272 MB, and the tarball, at
+ * MB, from 4.388 MB. It added 71 KB, 45 KB of code in the command and 26 KB of
+ * the documents the package ships. Installed, at 6.273 MB, and the tarball, at
  * 1.177 MB, are still under their 6.30 MB and 1.20 MB, so they were left as
  * they were.
  */

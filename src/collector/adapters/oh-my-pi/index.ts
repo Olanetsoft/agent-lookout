@@ -118,7 +118,7 @@ export const BASIS_WITHOUT_PROCESSES = "files-without-processes";
 
 /** Said whenever Oh My Pi is watched, because it is what a person would otherwise expect to see. */
 export const STATUS_NOTE =
-  "An Oh My Pi session shows as finished or failed once Oh My Pi writes, at a time that can be right, that it stopped, unless a tool's start follows the stop and the newest line is then a tool's start, or a reply or a result not written within 15 seconds of the stop, and on macOS and Linux as working while a turn is open and as needing you while its ask tool waits, while an omp that could have written it runs and it was written in the last 30 minutes, and as finished once no such program could still write it, by ps or since the computer started. Nothing it writes says a turn is over, so a session never shows as idle, and an approval it waits for is not written, so that shows as working. Anything else shows as unknown. No Oh My Pi program is run.";
+  "An Oh My Pi session shows as finished or failed once Oh My Pi writes, at a time that can be right and not before the session began, that it stopped, unless a tool's start follows the stop and the newest line is then a tool's start, or a reply or a result not written within 15 seconds of the stop, and on macOS and Linux as working while a turn is open and as needing you while its ask tool waits, while an omp that could have written it runs and it was written in the last 30 minutes, and as finished once no such program could still write it, by ps or since the computer started. Nothing it writes says a turn is over, so a session never shows as idle, and an approval it waits for is not written, so that shows as working. Anything else shows as unknown. No Oh My Pi program is run.";
 
 /** Said whenever Oh My Pi is watched, until the adapter has been checked on a computer running it. */
 export const UNCHECKED_NOTE =
@@ -142,7 +142,7 @@ export const TOO_FAR_NOTE =
 
 /** Said on a Mac, where an `omp` installed with `bun install -g` runs as `bun`. */
 export const BUN_NOTE =
-  "On a Mac an omp installed with bun install -g runs as bun, which ps cannot tell from any other bun. While a bun that started before a session's last write, or within a minute after, runs, a session no omp backs shows as unknown, not as working or needing you, and not as finished until Oh My Pi writes that it stopped.";
+  "On a Mac an omp installed with bun install -g runs as bun, which ps cannot tell from any other bun. While a bun that started before a session's last write, or within a minute after, runs, a session no omp backs shows as unknown, not as working or needing you, and not as finished until Oh My Pi writes that it stopped. A session's last write is judged by the time on its newest line when that is a reply or a result, or its header's when that is later.";
 
 /** Said when `PI_CODING_AGENT_SESSION_DIR` is set to a folder that is not absolute. */
 export const SESSION_DIR_NOTE = `${OMP_SESSIONS_ENV} is not an absolute folder, so it is passed over: Oh My Pi finds it from the folder it was started in, which Agent Lookout cannot know.`;
@@ -520,15 +520,11 @@ export function createOhMyPiAdapter(options: OhMyPiAdapterOptions = {}): Adapter
       const behind = tail.state === "ok" ? tail.behind : null;
       const cutOff = tail.state === "ok" ? tail.cutOff : null;
       const writtenAt = plausibleTime(Math.floor(one.writtenAt), checkedAt);
-      // By the same rule as its status: an exit cut off decides by the newest line's own time, never the file's last write.
-      const exit = exitOf({ newest, behind, cutOff, now: checkedAt });
+      // By the same rule as its status: an exit cut off decides by the newest line's own time, never the file's last write, and one before the header, as a copy keeps, decides nothing.
+      const { startedAt } = one.file;
+      const exit = exitOf({ newest, behind, cutOff, startedAt, now: checkedAt });
       // A newest reply's or result's own time, so a rename another omp writes later backs nothing.
-      const decidedAt = decidedAtOf({
-        newest,
-        writtenAt,
-        startedAt: one.file.startedAt,
-        now: checkedAt,
-      });
+      const decidedAt = decidedAtOf({ newest, writtenAt, startedAt, now: checkedAt });
       // Whether `ps` could change its status: not once Oh My Pi wrote that it stopped, nor when it was last written before the computer started.
       const settled =
         (exit !== null && plausibleTime(exit.at, checkedAt) !== null) ||
