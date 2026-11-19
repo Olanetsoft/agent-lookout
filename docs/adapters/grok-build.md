@@ -2,7 +2,7 @@
 
 These notes record what Agent Lookout reads from Grok Build, where each value comes from, and what breaks when Grok Build changes. When the adapter stops working, start here.
 
-Written on 2026-11-19 from Grok Build's source. Grok Build is SpaceXAI's terminal coding agent, in its command `grok`. Its source is at [xai-org/grok-build](https://github.com/xai-org/grok-build) under the Apache-2.0 licence (`LICENSE`), and these notes read it at commit `2bdd1d6` (2026-09-29), which is version 1.0.45 (`crates/codegen/xai-grok-version/Cargo.toml:4`). Released builds are at 1.0.89, whose source is not public. Grok Build was never installed or run to write these notes, its npm packages were not unpacked, and no real `~/.grok` folder was looked at. The fixtures are written by hand. **The adapter was built from Grok Build's source at 1.0.45 and has not yet been checked on a machine running Grok Build.** The Sources view says so too.
+Written on 2026-11-19 from Grok Build's source. Grok Build is SpaceXAI's terminal coding agent, in its command `grok`. Its source is at [xai-org/grok-build](https://github.com/xai-org/grok-build) under the Apache-2.0 licence (`LICENSE`), and these notes read it at commit `2bdd1d6` (2026-09-29), which is version 1.0.45 (`crates/codegen/xai-grok-version/Cargo.toml:4`). Released builds are at 1.0.89, whose source is not public. Grok Build was never installed or run to write these notes, its native program's packages, `@xai-official/grok-<platform>`, were not unpacked, and of its npm launcher, `@xai-official/grok` 1.0.89, only the text files were read. No real `~/.grok` folder was looked at. The fixtures are written by hand. **The adapter was built from Grok Build's source at 1.0.45 and has not yet been checked on a machine running Grok Build.** The Sources view says so too.
 
 Paths below are under `crates/codegen/` at `2bdd1d6`:
 
@@ -48,18 +48,18 @@ When the home holds neither `active_sessions.json` nor `sessions`, Grok Build is
 
 ## The list of open sessions
 
-`<home>/active_sessions.json` is one JSON array of `{session_id, pid, cwd, opened_at}` (`AS:15-21`). The terminal app adds an entry when a session is ready, with its own process ID and the time (`PG/app/effects/mod.rs:133-140`), for a new session and for one it resumes (`PG/app/dispatch/session/lifecycle.rs:1485-1488`, `:1623-1626`; `PG/app/dispatch/session/load.rs:1359`). It takes the entry out when it quits, closes the session, or moves on from it, as /new and leaving for the welcome screen do (`lifecycle.rs:380`, `:492-493`). Adding an entry for an ID replaces the one there, with a new `opened_at` (`AS:45-50`). The whole file is written to `active_sessions.json.tmp` and renamed over it (`AS:130-141`), so a read never catches it half written.
+`<home>/active_sessions.json` is one JSON array of `{session_id, pid, cwd, opened_at}` (`AS:15-21`). The terminal app adds an entry when a session is ready, with its own process ID and the time (`PG/app/effects/mod.rs:133-140`), for a new session and for one it resumes (`PG/app/dispatch/session/lifecycle.rs:1485-1488`, `:1623-1626`; `PG/app/dispatch/session/load.rs:1359`). It takes the entry out when it quits, closes the session, or moves on from it, as /new and leaving for the welcome screen do (`lifecycle.rs:380`, `:492-493`). It does not wait for the list's lock to take one out, and skips it when another Grok Build holds the lock at that moment (`AS:52-61`, `PG/app/effects/helpers.rs:1699-1720`). Adding an entry for an ID replaces the one there, with a new `opened_at` (`AS:45-50`). The whole file is written to `active_sessions.json.tmp` and renamed over it (`AS:130-141`), so a read never catches it half written.
 
 - It is looked at with `lstat` every poll, and opened only when its size, modified time or identity changed, without following a link, only as an ordinary file with one name of the user Agent Lookout runs as, and only when it is 1 MiB or less.
 - An entry is kept only when its ID could name a folder, letters, digits, `.`, `_` and `-`, at most 128, and not `.` or `..`; its process ID is a positive 32-bit number; its `cwd` is a whole path of at most 4,096 characters with no control character; and its `opened_at` is a time as chrono writes one. Anything else in an entry is dropped with the parsed text. Of two entries for one ID the newer is kept, and at most the 200 newest are kept.
 - An empty file is an empty list, as Grok Build reads it (`AS:111-128`). No file is an empty list too. One that cannot be read, is larger than 1 MiB, is not an ordinary file of this user's or does not parse fails the poll, so nothing is finished from it, though Grok Build would read it as empty.
-- `active_sessions.lock` and `active_sessions.json.tmp` are never opened, locked or looked up. Grok Build's own writers lock the first for at most 2 seconds (`AS:23-31`).
+- `active_sessions.lock` and `active_sessions.json.tmp` are never opened, locked or looked up. Grok Build's own writers wait at most 2 seconds to take the first when they add a session, and not at all when they take one out (`AS:27-31`, `:45-61`).
 
 A session's ID is a UUIDv7, or one a client chose with `-s` (`UG/17-sessions.md:18`). Only an ID that passes the rule above goes into a path.
 
 ## Sessions left with /new
 
-/new, Ctrl+N and leaving for the welcome screen take a session off the list, and keep its agent: a turn under way goes on (`lifecycle.rs:380`, `:492-493`). Agent Lookout watches such a session while its process runs, for up to a day from when it was last listed:
+/new, Ctrl+N and leaving for the welcome screen take a session off the list, when its lock is free, and keep its agent: a turn under way goes on (`lifecycle.rs:380`, `:492-493`). Agent Lookout watches such a session while its process runs, for up to a day from when it was last listed:
 
 - while its turn is under way, it shows as working;
 - while a question is open in that turn, or its plan file says a plan waits, it shows as needing you;
@@ -82,9 +82,9 @@ A session whose folder is not found shows as unknown.
 
 `<folder>/events.jsonl` is written by the session's own process, a line for each event, each in one write at the end, with no fsync (`EV/log.rs:34-51`, `:62-81`). Each line is `{"ts":"<time>","type":"<kind>",…}`, its time in UTC to the millisecond, and the event's own fields after (`EV/log.rs:12-17`, `:64`; `EV/types.rs:5-7`). Grok Build never rewrites a line. It is read for listed sessions whose process runs, and for watched ones.
 
-- The first time, its end is read backwards, 64 KiB at a time and at most 8 MiB in all, from the newest whole line to the newest that starts or ends a turn, and the lines from there on are folded. A whole log of 8 MiB or less with neither has no turn yet. One whose newest such line is not in its last 8 MiB says nothing, and nor does one with more than 8 MiB after it.
+- The first time, its end is read backwards, 64 KiB at a time and at most 8 MiB, and the line break before it, from the newest whole line to the newest that starts or ends a turn, and the lines from there on are folded. A whole log of 8 MiB or less with neither has no turn yet. One whose newest such line is not in its last 8 MiB says nothing, and nor does one with more than 8 MiB after it.
 - After that, only what was added is read, at most 8 MiB at once, and folded the same way, so what is kept is what a first read of the same file gives. More than 8 MiB added is read from the end again, and so is a log that shrank, was replaced, or does not go on from the last line read. Bytes after the last line break are a line still being written, and wait until it is whole.
-- A line counts only when it begins `{"ts":"YYYY-MM-DDTHH:MM:SS.mmmZ","type":"`, then a kind of `a` to `z`, digits and `_`, at most 64, and a quote, ends with `}`, and has no second `{"ts":"` in it, as two lines run together by a crash would. The whole line is looked through for its line break and that second `{"ts":"` alone. Of a line that counts only its first 512 bytes are compared, with the few words below, each at the place Grok Build writes it, right after the kind, so nothing a model, a tool, a hook or a server put in a field can match.
+- A line counts only when it begins `{"ts":"YYYY-MM-DDTHH:MM:SS.mmmZ","type":"`, then a kind of `a` to `z`, digits and `_`, at most 64, and a quote, ends with `}`, and has no second `{"ts":"` in it, as two lines run together by a crash would. The whole line is looked through for its line break and that second `{"ts":"` alone. Of a line that counts only its first 512 bytes are compared, with the few words below: an outcome, a tool's name and a phase right after the kind, where Grok Build writes them, and `,"schema_version":"1.` anywhere after it. Each begins `,"`, and JSON writes a quote inside a string as `\"`, so nothing a model, a tool, a hook or a server put in a field can match.
 - A line that does not count, at or after the newest that starts or ends a turn, makes the status unknown. Before it, it is passed over.
 
 What is compared, as bytes:
@@ -160,7 +160,7 @@ A plan's wait begins at the newest `exit_plan_mode` call in the turn under way, 
 - A refusal ends a turn as `completed` (`turn.rs:1491-1497`).
 - A wait for a tool's approval is not told apart: `phase_changed` to `permission_prompt`, `permission_requested` and `permission_resolved` surround every tool call, whatever approves it (`tool_calls.rs:1758-1880`). Such a session shows as working.
 - A session whose log shows only lines of the session's own, such as an MCP server's setup (`SH/session/mcp_servers.rs:62`), has no turn yet and is idle.
-- Every time is judged against the clock on every poll, and one that cannot be right is none. A finished session's time is the same whether a live poll or a restart finds it.
+- Every time is judged against the clock on every poll, and one that cannot be right is none. A finished session's time is the same whether a live poll or a restart finds it. When neither of its times can be right, it is finished from the first poll that found it so, and keeps that time.
 
 ## Whether its process still runs
 
@@ -208,6 +208,7 @@ The home is `%USERPROFILE%\.grok`. A session's folder is named for its working f
 - Sessions an editor runs over ACP, and `grok -p` without `GROK_TRACK_HEADLESS`, are never listed.
 - A session left with /new shows as finished while it is idle, and a new turn in it shows it again.
 - A session that left the list before Agent Lookout started is not seen.
+- Grok Build skips taking a session off its list when another Grok Build holds the list's lock at that moment (`PG/app/effects/helpers.rs:1699-1720`). A session left with /new or closed in Grok Build's dashboard then still shows as open, with its process's Jump, until that process ends. On a home whose lock a crash left held, as can happen on NFS (`AS:27-29`), no session is added to the list or taken off it.
 - A rewind, or an error before the model is asked, leaves a turn with no end. One with nothing from the model shows as working for 2 minutes, then unknown, and one after the model wrote shows as working until the next turn.
 - A crash whose turn's start is more than 256 KiB from the log's end is not closed by Grok Build, so the session shows as unknown until its next turn.
 - In leader mode the listed process is the terminal app's, not the leader's (`SH/leader/mod.rs:1-33`), so a leader that goes on after the terminal app quits shows its sessions as finished.
