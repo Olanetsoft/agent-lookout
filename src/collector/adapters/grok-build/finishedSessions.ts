@@ -1,5 +1,6 @@
 import { FINISHED_RETENTION_MS, isWithinRetention } from "../../../core/sessions/retention.ts";
 import type { Session } from "../../../core/sessions/session.ts";
+import { plausibleTime } from "../../../core/time.ts";
 import type { RegistryEntry } from "./registry.ts";
 import { finishedAtOf, finishedGrokBuildSession, type FinishedGrokBuild } from "./toSession.ts";
 
@@ -24,8 +25,9 @@ import { finishedAtOf, finishedGrokBuildSession, type FinishedGrokBuild } from "
  *   listed and when its event log was last written, judged against the clock
  *   on every poll, and dropped a day after that. When neither could be right,
  *   it is the first poll of its watch that found its turn over, or else the
- *   first that found it ended. A session listed open again under its ID leaves
- *   the list of ended ones.
+ *   first that found it ended, and keeps that time unless a clock set back
+ *   puts it more than a minute ahead, when it is the poll that found it so. A
+ *   session listed open again under its ID leaves the list of ended ones.
  * - At most 200 sessions are remembered as seen, listed and watched together,
  *   and 200 as ended, the newest first. One past either limit is dropped.
  */
@@ -42,7 +44,8 @@ export interface SeenGrokBuild {
   writtenAt: number | null;
   /**
    * The first poll of its watch that found its turn over, for when neither of
-   * its own times can be right; null while it is not over.
+   * its own times can be right, or a later one that found it more than a
+   * minute ahead; null while it is not over.
    */
   overAt: number | null;
 }
@@ -75,6 +78,9 @@ export interface GrokBuildMemory {
   readonly size: { seen: number; ended: number };
 }
 
+/** A time kept from an earlier poll, or now once a clock set back has put it more than a minute ahead. */
+const keptOrNow = (kept: number, now: number) => plausibleTime(kept, now) ?? now;
+
 export function createGrokBuildMemory(
   retentionMs: number = FINISHED_RETENTION_MS,
   max: number = MAX_REMEMBERED,
@@ -90,12 +96,13 @@ export function createGrokBuildMemory(
     // A look that finds neither its log nor its title this time leaves what
     // an earlier one found, so its time does not move back and forth. One
     // shown as finished while it was watched keeps the time it was shown from.
+    const kept = before?.noticedAt ?? watched?.overAt ?? null;
     ended.set(id, {
       entry: record.entry,
       processRunsOn: record.processRunsOn,
       title: record.title ?? before?.title ?? null,
       writtenAt: record.writtenAt ?? before?.writtenAt ?? null,
-      noticedAt: before?.noticedAt ?? watched?.overAt ?? now,
+      noticedAt: kept === null ? now : keptOrNow(kept, now),
     });
     if (ended.size <= max) return;
     const oldest = [...ended.entries()].sort(
@@ -113,7 +120,7 @@ export function createGrokBuildMemory(
         listedAt: facts.listed ? now : (before?.listedAt ?? now),
         title: facts.title,
         writtenAt: facts.writtenAt,
-        overAt: facts.over ? (before?.overAt ?? now) : null,
+        overAt: facts.over ? (before?.overAt == null ? now : keptOrNow(before.overAt, now)) : null,
       });
       if (facts.listed) ended.delete(id);
     },
@@ -141,11 +148,15 @@ export function createGrokBuildMemory(
     finished(now) {
       const shown: Session[] = [];
       for (const [id, record] of ended) {
-        if (!isWithinRetention(finishedAtOf(record, now), now, retentionMs)) {
+        // Replaced once, then kept. Setting a key already there adds none to the loop.
+        const noticedAt = keptOrNow(record.noticedAt, now);
+        const current = noticedAt === record.noticedAt ? record : { ...record, noticedAt };
+        if (current !== record) ended.set(id, current);
+        if (!isWithinRetention(finishedAtOf(current, now), now, retentionMs)) {
           ended.delete(id);
           continue;
         }
-        shown.push(finishedGrokBuildSession(record, now));
+        shown.push(finishedGrokBuildSession(current, now));
       }
       return shown;
     },

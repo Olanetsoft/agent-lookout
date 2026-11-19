@@ -506,6 +506,42 @@ describe("a session that ends", () => {
     });
   });
 
+  test("left with /new, then the clock set back past both its times: finished from that poll", async () => {
+    // The clock ran 2 hours fast while Grok Build listed the session and wrote its log.
+    const clock = handClock();
+    const files = memoryFiles();
+    writeRegistry(files, [entry({ opened_at: openedAt(NOW) })]);
+    writeEvents(files, wholeTurn(NOW), { mtimeMs: NOW + MINUTE });
+    const processes = standInProcesses([PID]);
+    const adapter = grokBuildAdapterFor(files, { now: clock.now, isAlive: processes.isAlive });
+    clock.set(NOW + 90 * SECOND);
+    expect(byId((await adapter.poll()).sessions)?.status).toBe("idle");
+    writeRegistry(files, []);
+    clock.set(NOW + 2 * MINUTE);
+    expect(byId((await adapter.poll()).sessions)).toMatchObject({
+      status: "finished",
+      statusSince: NOW + MINUTE,
+    });
+    const back = NOW - 2 * HOUR + 3 * MINUTE;
+    clock.set(back);
+    expect(byId((await adapter.poll()).sessions)).toMatchObject({
+      status: "finished",
+      statusSince: back,
+    });
+    clock.advance(2 * SECOND);
+    expect(byId((await adapter.poll()).sessions)?.statusSince).toBe(back);
+    processes.stop(PID);
+    clock.advance(2 * SECOND);
+    expect(byId((await adapter.poll()).sessions)).toMatchObject({
+      status: "finished",
+      statusSince: back,
+      pid: PID,
+      alive: false,
+    });
+    clock.advance(2 * SECOND);
+    expect(byId((await adapter.poll()).sessions)?.statusSince).toBe(back);
+  });
+
   test("left with /new with a turn left over: finished, not unknown", async () => {
     const files = oneSession(turnStarted(NOW - 10 * MINUTE), NOW - 10 * MINUTE);
     const adapter = grokBuildAdapterFor(files);

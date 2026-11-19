@@ -4,6 +4,7 @@ import { createGrokBuildMemory } from "@collector/adapters/grok-build/finishedSe
 import type { RegistryEntry } from "@collector/adapters/grok-build/registry";
 import {
   DAY,
+  HOUR,
   MINUTE,
   NOW,
   OPENED_AT,
@@ -78,6 +79,54 @@ test("one watched for a day after it was found over is finished from then too", 
   memory.seen(ahead(NOW + 3 * DAY), overFacts, NOW + SECOND);
   expect(memory.unlisted(new Set(), NOW + DAY)).toEqual([]);
   expect(memory.finished(NOW + DAY)).toMatchObject([{ statusSince: NOW + SECOND }]);
+});
+
+/** Listed and written at NOW, so neither time can be right once the clock is set back past it. */
+const atNow = entryOf(SESSION_ID, NOW);
+const overAtNow = { listed: false, title: null, writtenAt: NOW, over: true };
+const back = NOW - 2 * HOUR;
+
+test("a turn found over keeps its time until a clock set back puts it more than a minute ahead", () => {
+  const memory = createGrokBuildMemory();
+  memory.seen(atNow, overAtNow, NOW + MINUTE);
+  memory.seen(atNow, overAtNow, NOW);
+  expect(memory.overAt(SESSION_ID)).toBe(NOW + MINUTE);
+  memory.seen(atNow, overAtNow, NOW - 1);
+  expect(memory.overAt(SESSION_ID)).toBe(NOW - 1);
+  memory.seen(atNow, overAtNow, back);
+  expect(memory.overAt(SESSION_ID)).toBe(back);
+  memory.seen(atNow, overAtNow, back + 2 * SECOND);
+  expect(memory.overAt(SESSION_ID)).toBe(back);
+  memory.ended(
+    { entry: atNow, title: null, writtenAt: NOW, processRunsOn: false },
+    back + 4 * SECOND,
+  );
+  expect(memory.finished(back + 4 * SECOND)).toMatchObject([{ statusSince: back }]);
+  expect(memory.finished(back + 6 * SECOND)).toMatchObject([{ statusSince: back }]);
+});
+
+test("an end keeps the time kept before unless a clock set back puts it more than a minute ahead", () => {
+  const memory = createGrokBuildMemory();
+  const end = (now: number) =>
+    memory.ended({ entry: ahead(), title: null, writtenAt: null, processRunsOn: false }, now);
+  // Found over, then ended on the first poll after the clock was set back.
+  memory.seen(ahead(), overFacts, NOW + 2 * MINUTE);
+  end(NOW);
+  expect(memory.finished(NOW + 2 * MINUTE)).toMatchObject([{ statusSince: NOW }]);
+  // Ended again, as one a crash left listed is on every poll.
+  end(NOW + 3 * MINUTE);
+  expect(memory.finished(NOW + 3 * MINUTE)).toMatchObject([{ statusSince: NOW }]);
+  end(NOW - HOUR);
+  expect(memory.finished(NOW)).toMatchObject([{ statusSince: NOW - HOUR }]);
+});
+
+test("an ended session whose kept time a clock set back puts more than a minute ahead is finished from that poll", () => {
+  const memory = createGrokBuildMemory();
+  memory.ended({ entry: atNow, title: null, writtenAt: NOW, processRunsOn: false }, NOW);
+  expect(memory.finished(NOW - MINUTE)).toMatchObject([{ statusSince: NOW }]);
+  expect(memory.finished(back)).toMatchObject([{ statusSince: back }]);
+  expect(memory.finished(back + 2 * SECOND)).toMatchObject([{ statusSince: back }]);
+  expect(memory.finished(NOW + HOUR)).toMatchObject([{ statusSince: NOW }]);
 });
 
 test("a clock set back keeps a session watched", () => {

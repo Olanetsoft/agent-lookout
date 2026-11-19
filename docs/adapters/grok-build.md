@@ -160,7 +160,7 @@ A plan's wait begins at the newest `exit_plan_mode` call in the turn under way, 
 - A refusal ends a turn as `completed` (`turn.rs:1491-1497`).
 - A wait for a tool's approval is not told apart: `phase_changed` to `permission_prompt`, `permission_requested` and `permission_resolved` surround every tool call, whatever approves it (`tool_calls.rs:1758-1880`). Such a session shows as working.
 - A session whose log shows only lines of the session's own, such as an MCP server's setup (`SH/session/mcp_servers.rs:62`), has no turn yet and is idle.
-- Every time is judged against the clock on every poll, and one that cannot be right is none. A finished session's time is the same whether a live poll or a restart finds it. When neither of its times can be right, it is finished from the first poll that found it so, and keeps that time.
+- Every time is judged against the clock on every poll, and one that cannot be right is none. A finished session's time is the same whether a live poll or a restart finds it. When neither of its times can be right, it is finished from the first poll that found it so, and keeps that time unless a clock set back puts it more than a minute ahead, when it is finished from that poll.
 
 ## Whether its process still runs
 

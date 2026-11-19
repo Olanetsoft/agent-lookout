@@ -536,7 +536,8 @@ export function createGrokBuildAdapter(options: GrokBuildAdapterOptions = {}): A
         // Watched, and its turn is over: its process runs on with another
         // session, so it names none. It is still watched, for a new turn.
         // When neither of its own times can be right, it is finished from the
-        // first poll that found it so, on every poll after.
+        // first poll that found it so, or from this poll once a clock set back
+        // puts that more than a minute ahead.
         const noticedAt = memory.overAt(entry.sessionId) ?? checkedAt;
         open.push(
           finishedGrokBuildSession(
