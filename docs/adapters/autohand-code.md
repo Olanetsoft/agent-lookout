@@ -18,7 +18,7 @@ Autohand Code keeps each session in a folder of its own, `~/.autohand/sessions/<
 
 ## How it reads Autohand Code, and why
 
-It needs nothing installed and changes nothing. It reads the heartbeats and each session's `metadata.json`, read-only, and asks whether a heartbeat's process runs with signal 0, which sends the process nothing. It runs no Autohand Code program, opens no settings file, and never connects to the socket a heartbeat names.
+It needs nothing installed and changes nothing. It reads the heartbeats and each session's `metadata.json`, read-only, and asks whether a heartbeat's process runs with signal 0, which sends the process nothing. It runs no Autohand Code program, opens no settings file, and never connects to the socket a heartbeat names. For Jump it hands the process of each fresh heartbeat to the finders that look for Claude Code's sessions in tmux and in Terminal and iTerm2, as [Jump](#jump) says.
 
 - **It reads the folder itself.** Autohand Code's own reader of heartbeats, `listActive`, deletes every heartbeat it finds stale or cannot read (`src/session/ActiveAgentRegistry.ts:104-136`, `:154-169`), so it is never run, and neither is `autohand agents`, which calls it (`src/commands/agents.ts:95-101`).
 - **Fields are found as bytes, not parsed.** A heartbeat holds the instruction the session works on, the command it runs and the files it wrote. A `metadata.json` holds the start of your last message and a title that can be your first words. So the few fields kept are found in the file's bytes, and nothing else is turned into text: see [Finding a field](#finding-a-field).
@@ -210,7 +210,7 @@ A wait shows up to 7 seconds after its prompt opens, since `beginAwaitingInput` 
 
 ## The process
 
-A heartbeat's process is asked about with signal 0 alone, once a poll for each process, and so is the process of a session's last heartbeat after that heartbeat has gone, until it has ended, the session is found ended or another run saves it. EPERM counts as running. No `ps` is run, and no program's name, arguments, environment or start time is read.
+A heartbeat's process is asked about with signal 0 alone, once a poll for each process, and so is the process of a session's last heartbeat after that heartbeat has gone, until it has ended, the session is found ended or another run saves it. EPERM counts as running. No `ps` is run for this, and no program's name, arguments, environment or start time is read. The `ps` that [Jump](#jump) runs reads each process's parent and, on a Mac, its terminal and the name of its program, and no argument, environment or start time.
 
 A heartbeat names a process that wrote it within the last 15 seconds when it is fresh, so a process ID given to another program is not taken for Autohand Code then. A gone heartbeat's process ID can be given to another program before Agent Lookout first sees it, after Agent Lookout starts again, as on Windows, where process IDs are used again soon. Such a session shows as unknown while that program runs and the heartbeat is there, as its `metadata.json` says once the heartbeat is gone, and as finished, or failed when it crashed, once that program ends while Agent Lookout runs. A heartbeat written in a container names a process this computer cannot reliably ask about, so while such a session runs it can show as unknown or finished, or, when a process here has the same ID, as its heartbeat says.
 
@@ -229,9 +229,23 @@ Quiet for is the time since `metadata.json` was last written, never the heartbea
 
 A heartbeat and `metadata.json` hold a session's running totals. A reply's own counts are in `conversation.jsonl`, which is never opened. So no tokens are shown.
 
-## Jump, Stop and Answer
+## Jump
 
-No Jump yet: Agent Lookout does not look for the terminal an Autohand Code session runs in. No Stop: Agent Lookout stops Claude Code sessions only so far. No Answer: it never connects to Autohand Code's peer socket or its RPC client, so it cannot send one.
+A session whose heartbeat chosen on a poll is fresh, written in the last 15 seconds by a process that runs, gets a Jump button when that process runs inside a tmux pane, or else in a tab of Terminal or iTerm2 on a Mac, as a Claude Code session does. The heartbeat's `pid` is the process. The adapter asks the same pane finder and tab finder as the Claude Code, Qwen Code and Grok Build adapters, each through an asker of its own, and one look serves them all: `tmux -u list-panes -a` and `ps -A -o pid=,ppid=` for a pane, and on a Mac `ps -A -o pid=,ppid=,tty=,comm=` for a tab, as [PRIVACY.md](../../PRIVACY.md#tmux) lists. A pane comes before a tab. Only the place's name, such as `work:2.1` or `Terminal`, goes to the dashboard. No editor is looked for, so with `AGENT_LOOKOUT_TERMINAL_JUMP=off` an Autohand Code session's process is not looked for in a tab at all.
+
+The system gives a gone process's ID to another program, which may run in a pane or a tab of its own. So the finders are told of the process of a fresh heartbeat alone, and of no other. These have no Jump, and nothing is looked for for them:
+
+- a run with `--no-daemon`, or with its heartbeats moved, which writes no heartbeat here;
+- a session whose heartbeat is over 15 seconds old, as for a moment after the computer wakes, even while its status is held over a late poll;
+- a session whose heartbeat's process has gone;
+- a session whose process moved on to another session, as with `/new`, which has no heartbeat of its own: the process's Jump is the other session's;
+- a finished or failed session, which never has a fresh heartbeat.
+
+A session's process is looked for in a pane when the finder first has one to ask about, then every 30 seconds, and within about 5 seconds when a new one appears. In a tab it is looked for once, within about 5 seconds. `AGENT_LOOKOUT_TMUX=off` and `AGENT_LOOKOUT_TERMINAL_JUMP=off` turn each part off. Windows has no tmux and no Terminal, so there no Autohand Code session has Jump.
+
+## Stop and Answer
+
+No Stop: Agent Lookout stops Claude Code sessions only so far. No Answer: it never connects to Autohand Code's peer socket or its RPC client, so it cannot send one.
 
 ## Known gaps
 
@@ -247,7 +261,7 @@ No Jump yet: Agent Lookout does not look for the terminal an Autohand Code sessi
 - A crash right after a message was saved, within a second, reads as a session that went on, and a crash after an error the loop got past, with nothing saved since, reads as failed.
 - Autohand Code's other Windows folders, used when `USERPROFILE` is not set or is a system folder, are not followed, and neither is a relative `AUTOHAND_HOME`.
 - A heartbeat held up by long work that blocks Autohand Code's process, or while that process is stopped, can be over 15 seconds old while the session runs, and the session shows as unknown until the next one, so a session that waits then shows as needing you again, as a new wait.
-- A heartbeat written in a container names a process this computer cannot ask about.
+- A heartbeat written in a container names a process this computer cannot ask about. When a process here has the same ID and runs in a tmux pane or a tab, the session's Jump goes there.
 - Files of another user are not read, so Agent Lookout run as root on macOS or Linux sees no session of another user's.
 
 ## Not yet checked
@@ -263,6 +277,7 @@ Everything here is read from the source, so each of these is for a person with A
 7. Which loop errors come after a message was saved.
 8. Whether a workspace's settings can turn on peer communication.
 9. Whether `/rename` can reach a session from an RPC client.
+10. That the process a heartbeat names is the one in the terminal the session was started in, so that Jump finds its pane or tab.
 
 ## What breaks when Autohand Code changes
 
