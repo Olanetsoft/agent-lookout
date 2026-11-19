@@ -201,10 +201,32 @@ describe("a kept read is what a first read of the same file gives", () => {
 
   test("a log with no start in a file longer than the reach is too far, and none in one no longer", async () => {
     const files = memoryFiles();
-    files.write(FILE, filler(REACH_BYTES + 1));
+    files.write(FILE, filler(REACH_BYTES));
     expect((await fresh(files)).view.state).toBe("none");
-    files.write(FILE, filler(REACH_BYTES + 2));
+    files.write(FILE, filler(REACH_BYTES + 1));
     expect((await fresh(files)).view.state).toBe("too-far");
+  });
+
+  test("when a start, or a line that cannot be read, on the first line falls one byte out of reach", async () => {
+    const start = started(RUN, AT);
+    const broken = start.replace('"stream":{', '"stream":{,');
+    for (const [first, state] of [
+      [start, "ok"],
+      [broken, "unsure"],
+    ] as const) {
+      for (const [size, then] of [
+        [REACH_BYTES, state],
+        [REACH_BYTES + 1, "too-far"],
+      ] as const) {
+        const files = memoryFiles();
+        const seen = await stepped(files, [
+          () => files.write(FILE, first),
+          () => files.append(FILE, filler(size - first.length)),
+        ]);
+        expect((await files.io.lstat(FILE)).size).toBe(size);
+        expect(seen.map(({ view }) => view.state)).toEqual([state, then]);
+      }
+    }
   });
 });
 

@@ -126,8 +126,8 @@ export function copyMuseFold(fold: MuseFold): MuseFold {
  * than its end, or an approval's request or review. So a run that recovery
  * takes up again, and the fresh request recovery writes for an approval it
  * parked, open it again. A decision, `approval_wait.effect.terminal` and a
- * task's record do not, as recovery writes those for the old approval
- * whether or not the turn goes on.
+ * task's record do not, as recovery closes the old approval whether or not
+ * the turn goes on, and may write such records then.
  */
 function reopens(record: MuseRecord, run: string): boolean {
   switch (record.sort) {

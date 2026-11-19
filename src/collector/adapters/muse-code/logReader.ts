@@ -82,13 +82,14 @@ export type LogView =
 /**
  * What a kept tail says of a file of `size` bytes: too far when its newest
  * mark begins more than `REACH_BYTES` before the end, or there is none and
- * the file is longer than what a first read looks through; none when there is
- * none in a file no longer; unsure when the newest mark is a line that cannot
- * be read, or its fold holds too many questions and approvals; else its fold.
+ * the file is longer than the reach, as its first line then begins more than
+ * that before the end; none when there is none in a file no longer; unsure
+ * when the newest mark is a line that cannot be read, or its fold holds too
+ * many questions and approvals; else its fold.
  */
 export function viewOf(tail: Tail, size: number): LogView {
   const { mark, fold } = tail;
-  if (mark === null) return size > REACH_BYTES + 1 ? { state: "too-far" } : { state: "none" };
+  if (mark === null) return size > REACH_BYTES ? { state: "too-far" } : { state: "none" };
   if (mark.start < size - REACH_BYTES) return { state: "too-far" };
   if (mark.sort === "unreadable")
     return { state: "unsure", why: mark.newer ? "newer" : "unreadable" };

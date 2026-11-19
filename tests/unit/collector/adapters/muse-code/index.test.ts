@@ -34,6 +34,7 @@ import {
   XDG_RELATIVE,
 } from "@collector/adapters/muse-code/index";
 import { REACH_BYTES } from "@collector/adapters/muse-code/logReader";
+import { SWEEP_MS } from "@collector/adapters/pi/sessionFiles";
 import { REVIEW_LIMIT_MS } from "@core/mapping/muse-code/museCodeMapping";
 import { CLOCK_SLACK_MS, WRITE_TIME_STEP_MS } from "@core/time";
 import {
@@ -43,6 +44,7 @@ import {
   DATA_DIR,
   DAY,
   decided,
+  HOME,
   HOUR,
   logPath,
   MINUTE,
@@ -125,6 +127,16 @@ function filesWith(text: string, mtimeMs = NOW - MINUTE, file = FILE) {
   return files;
 }
 
+/** A session whose folder is three days old, its log written a minute before `NOW`: its opening, then `text` made for its ID. */
+function oldSession(text: (id: string) => string) {
+  const old = NOW - 3 * DAY;
+  const id = uuidAt(old, 3);
+  const file = logPath(id, old);
+  const files = memoryFiles();
+  writeLog(files, file, `${opening(old, RUN, { session: id })}${text(id)}`, NOW - MINUTE);
+  return { files, file, id };
+}
+
 async function statusOf(
   text: string,
   options: Parameters<typeof museCodeAdapterFor>[1] = {},
@@ -179,12 +191,12 @@ describe("a Muse Code that is not there", () => {
   test("named by AGENT_LOOKOUT_MUSE_CODE_HOME, its missing folder is an answer, looked for on every poll", async () => {
     const files = memoryFiles();
     const adapter = museCodeAdapterFor(files, {
-      env: { AGENT_LOOKOUT_MUSE_CODE_HOME: "/tmp/muse-home" },
+      env: { AGENT_LOOKOUT_MUSE_CODE_HOME: `${HOME}/muse-home` },
     });
     const { health, sessions, basis } = await adapter.poll();
     expect(health.state).toBe("ok");
     expect(health.detail).toBe(
-      `AGENT_LOOKOUT_MUSE_CODE_HOME is set, and there is no /tmp/muse-home/sessions folder, so no Muse Code sessions are listed. ${ALWAYS_MAC}`,
+      `AGENT_LOOKOUT_MUSE_CODE_HOME is set, and there is no ~/muse-home/sessions folder, so no Muse Code sessions are listed. ${ALWAYS_MAC}`,
     );
     expect(sessions).toEqual([]);
     expect(basis).toBe(BASIS);
@@ -353,22 +365,106 @@ describe("a session's status, with a Muse Code that started before it was writte
 
   test("a session that needs you stays listed however old its last write", async () => {
     const clock = handClock();
-    const files = memoryFiles();
-    const old = NOW - 3 * DAY;
-    const id = uuidAt(old, 3);
-    const file = logPath(id, old);
-    writeLog(
-      files,
-      file,
-      `${opening(old, RUN, { session: id })}${asked(RUN, PROMPT, NOW - 2 * MINUTE, { session: id })}`,
-      NOW - MINUTE,
-    );
+    const { files } = oldSession((id) => asked(RUN, PROMPT, NOW - 2 * MINUTE, { session: id }));
     const adapter = museCodeAdapterFor(files, { now: clock.now });
     expect((await adapter.poll()).sessions[0]?.status).toBe("needs-you");
     clock.advance(2 * DAY);
     expect((await adapter.poll()).sessions[0]?.status).toBe("needs-you");
     clock.advance(SECOND * 2);
     expect((await adapter.poll()).sessions[0]?.status).toBe("needs-you");
+  });
+
+  test("a session that needs you stays listed however old through a poll where ps cannot say, with its wait's time", async () => {
+    const clock = handClock();
+    const ps = standInPs([MUSE_LINE]);
+    const { files } = oldSession((id) => asked(RUN, PROMPT, NOW - 2 * MINUTE, { session: id }));
+    const adapter = museCodeAdapterFor(files, { now: clock.now, ps });
+    expect((await adapter.poll()).sessions[0]?.status).toBe("needs-you");
+    clock.advance(2 * DAY);
+    ps.own(false);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("unknown");
+    ps.own(true);
+    clock.advance(PROCESS_CHECK_MS + SWEEP_MS);
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "needs-you",
+      statusSince: NOW - 2 * MINUTE,
+    });
+  });
+
+  test("an approval that waited before a poll where ps cannot say still waits after it, through a clock set back", async () => {
+    const clock = handClock();
+    const ps = standInPs([MUSE_LINE]);
+    const requestedAt = NOW - 30 * SECOND;
+    const files = filesWith(
+      `${opening(OPENED)}${requested(RUN, ACTION, requestedAt, "automated_reviewing")}`,
+      requestedAt,
+    );
+    const adapter = museCodeAdapterFor(files, { now: clock.now, ps });
+    clock.set(requestedAt + REVIEW_LIMIT_MS + 5 * SECOND);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("needs-you");
+    ps.own(false);
+    clock.advance(PROCESS_CHECK_MS);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("unknown");
+    ps.own(true);
+    // Set back before the 2 minutes: the approval still waits, since the same time.
+    clock.set(requestedAt + 10 * SECOND);
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "needs-you",
+      statusSince: requestedAt + REVIEW_LIMIT_MS,
+    });
+  });
+
+  test("a session leaves the list a day after its last write once a poll finds it waits no more, or if it never waited", async () => {
+    const cases: { name: string; after: (id: string) => string; cannotSay?: boolean }[] = [
+      {
+        name: "answered, then idle",
+        after: (id) =>
+          `${settled(RUN, PROMPT, NOW + SECOND, { session: id })}${terminal(RUN, NOW + SECOND, "completed", { session: id })}`,
+      },
+      { name: "let go", after: (id) => sessionEnd(NOW + SECOND, "clean", { session: id }) },
+      { name: "never waited", after: () => "", cannotSay: true },
+    ];
+    for (const { name, after, cannotSay } of cases) {
+      const clock = handClock();
+      const ps = standInPs([MUSE_LINE]);
+      const { files, file, id } = oldSession((session) =>
+        cannotSay
+          ? replied(RUN, NOW - 2 * MINUTE, { session })
+          : asked(RUN, PROMPT, NOW - 2 * MINUTE, { session }),
+      );
+      if (cannotSay) ps.own(false);
+      const adapter = museCodeAdapterFor(files, { now: clock.now, ps });
+      expect((await adapter.poll()).sessions[0]?.status, name).toBe(
+        cannotSay ? "unknown" : "needs-you",
+      );
+      if (!cannotSay) {
+        appendLog(files, file, after(id), NOW + SECOND);
+        clock.advance(2 * SECOND);
+        expect((await adapter.poll()).sessions[0]?.status, name).not.toBe("needs-you");
+      }
+      clock.advance(2 * DAY);
+      expect((await adapter.poll()).sessions, name).toEqual([]);
+    }
+  });
+
+  test("a wait that ended lends its time to no later one", async () => {
+    const clock = handClock();
+    const files = filesWith(`${opening(OPENED)}${asked(RUN, PROMPT, NOW - 3 * MINUTE)}`);
+    const adapter = museCodeAdapterFor(files, { now: clock.now });
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "needs-you",
+      statusSince: NOW - 3 * MINUTE,
+    });
+    appendLog(files, FILE, sessionResumed(NOW + SECOND), NOW + SECOND);
+    clock.advance(2 * SECOND);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("idle");
+    // The same question is asked again.
+    appendLog(files, FILE, asked(RUN, PROMPT, NOW + 3 * SECOND), NOW + 3 * SECOND);
+    clock.advance(2 * SECOND);
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "needs-you",
+      statusSince: NOW + 3 * SECOND,
+    });
   });
 
   test("a session resumed after a crash never shows the dead turn as working or waiting", async () => {
@@ -468,6 +564,24 @@ describe("whether a Muse Code that could hold a session runs, by ps", () => {
     expect((await adapter.poll()).sessions[0]?.status).toBe("unknown");
     clock.advance(SECOND + WRITE_TIME_STEP_MS);
     expect((await adapter.poll()).sessions[0]?.status).toBe("finished");
+  });
+
+  test("an answer asked because the clock was set back allows nothing for a rounded write time, for logs unchanged since", async () => {
+    const clock = handClock();
+    const ps = standInPs([]);
+    const files = filesWith(`${opening(OPENED)}${replied(RUN, NOW - SECOND)}`, NOW - SECOND);
+    const adapter = museCodeAdapterFor(files, { now: clock.now, ps });
+    // Asked a second after the write: too soon to tell.
+    expect((await adapter.poll()).sessions[0]?.status).toBe("unknown");
+    // Set back: asked again, and the log is as that poll found it.
+    clock.set(NOW - SECOND / 2);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("finished");
+    expect(ps.runs).toHaveLength(2);
+    // Written since that answer was asked, perhaps after it: a rounded write time is allowed for again.
+    appendLog(files, FILE, replied(RUN, NOW - SECOND / 2), NOW - SECOND / 2);
+    clock.advance(SECOND / 10);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("unknown");
+    expect(ps.runs).toHaveLength(2);
   });
 
   test("asks again sooner, though not within 2 seconds, when a log is written after an answer that listed none", async () => {
@@ -638,6 +752,36 @@ describe("on Windows and other systems", () => {
       value: "not run on this system",
     });
   });
+});
+
+test("each note on the card is 130 characters or fewer, a folder's path aside", () => {
+  const notes = [
+    STATUS_ENDS,
+    STATUS_TIMES,
+    STATUS_GONE,
+    STATUS_BOOT,
+    STATUS_HELD,
+    STATUS_WAITS,
+    STATUS_REVIEWER,
+    STATUS_FIRST_SECONDS,
+    STATUS_ANY,
+    STATUS_WRONG,
+    STATUS_UNKNOWN,
+    STATUS_READONLY,
+    UNCHECKED_BUILT,
+    UNCHECKED_READERS,
+    UNCHECKED_NOT,
+    WINDOWS_PS,
+    OTHER_SYSTEM,
+    PS_FAILED,
+    TOO_FAR,
+    UNREAD,
+    NEWER_FORMAT,
+    XDG_RELATIVE,
+    LINK,
+    WINDOWS_FOLDER.replace("%USERPROFILE%\\.local\\share\\muse", ""),
+  ];
+  for (const note of notes) expect(note.length, note).toBeLessThanOrEqual(130);
 });
 
 describe("what is read, and what never is", () => {

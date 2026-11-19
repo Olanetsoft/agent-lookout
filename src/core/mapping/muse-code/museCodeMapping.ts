@@ -5,8 +5,8 @@
 // and from whether a Muse Code program that started no later than a minute
 // after `decidedAt` still runs, by `ps`, as the DeepSeek Harness and Oh My Pi
 // adapters judge it (`src/collector/adapters/deepseek-harness/processes.ts`).
-// Nothing ties a session to its process, and one `muse serve` holds many
-// sessions, so any such program counts. Built from Meta's documentation, its
+// Nothing read ties a session to its process, and one `muse serve` holds
+// many sessions, so any such program counts. Built from Meta's documentation, its
 // MIT-licensed Muse Code SDK and protocol schema at 1.4.24, its cookbook, and
 // open-source readers of Muse Code's files, and not yet checked on a computer
 // running it. See docs/adapters/muse-code.md.

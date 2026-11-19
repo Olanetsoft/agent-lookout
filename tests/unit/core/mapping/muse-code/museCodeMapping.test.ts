@@ -90,6 +90,13 @@ describe("each row of the status", () => {
     }
   });
 
+  test("2: another run's failed end, as a queued launch's, leaves the open run working and unsettled", () => {
+    const made = fold({ sort: "terminal", run: "run-2", end: "failed", at: NOW - MINUTE });
+    expect(made.lastEnd).toEqual({ end: "failed", at: NOW - MINUTE });
+    expect(status({ fold: made }).status).toBe("working");
+    expect(settledByLog({ state: "ok", fold: made })).toBe(false);
+  });
+
   test("2: a failure whose time cannot be right is unknown, as it only stops a finish", () => {
     for (const at of [null, NOW + CLOCK_SLACK_MS + 1]) {
       expect(status({ fold: fold(ended("failed", at as number)), writer: "gone" })).toMatchObject({
@@ -264,6 +271,24 @@ describe("when an approval waits for the person", () => {
       });
       expect(waits(held, requestedAt + ASK_DELAY_MS + 1).status, phase).toBe("working");
       expect(waits(held, requestedAt + REVIEW_LIMIT_MS).status, phase).toBe("needs-you");
+    }
+  });
+
+  test("no phase, or one not known, with the reviewer's word and no record that it started: as for the reviewer's", () => {
+    for (const phase of ["none", "other"] as const) {
+      const word = (clean: boolean) =>
+        fold(approval(phase, requestedAt), {
+          sort: "review-completed",
+          run: R,
+          action: "a1",
+          clean,
+          at: requestedAt + 10,
+        });
+      expect(waits(word(true), requestedAt + ASK_DELAY_MS + 1).status, phase).toBe("working");
+      expect(waits(word(false), requestedAt + ASK_DELAY_MS + 1), phase).toMatchObject({
+        status: "needs-you",
+        since: requestedAt + 10,
+      });
     }
   });
 

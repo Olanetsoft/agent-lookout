@@ -131,7 +131,7 @@ export const STATUS_REVIEWER =
 export const STATUS_FIRST_SECONDS =
   "An approval with no phase this knows and no word of a reviewer shows as working for its first 6 seconds.";
 export const STATUS_ANY =
-  "A program named muse, muse.exe or starting muse- that started before a session's newest status record counts, whichever session it holds.";
+  "A program named muse, muse.exe or starting muse- that started before a session's newest status record counts, whatever it holds.";
 export const STATUS_WRONG =
   "So while another runs, a session whose own Muse Code was killed can show as idle, needing you, or working for up to 30 minutes.";
 export const STATUS_UNKNOWN = "Anything else shows as unknown.";
@@ -314,7 +314,7 @@ export function createMuseCodeAdapter(options: MuseCodeAdapterOptions = {}): Ada
   let clock = startDshClockGuard();
   /** Each session's wait on the last poll, so a wait that goes on keeps its time and its approvals keep waiting. */
   let waits = new Map<string, DeepseekHarnessWait>();
-  /** The logs of the sessions that needed the person at the last poll, looked up however old. */
+  /** The logs of the sessions that needed the person at the last poll that could judge them, looked up however old. */
   let needed = new Set<string>();
 
   const psRuns = platform === "darwin" || platform === "linux";
@@ -496,7 +496,7 @@ export function createMuseCodeAdapter(options: MuseCodeAdapterOptions = {}): Ada
     let tooFar = false;
     let unread = false;
     let newer = false;
-    const sessions = facts.map(({ ref, log, writtenAt, decidedAt }) => {
+    const sessions = facts.map(({ ref, log, writtenAt, decidedAt, settled }) => {
       const writer = dshWriter({
         platform,
         writtenAt: decidedAt,
@@ -528,12 +528,20 @@ export function createMuseCodeAdapter(options: MuseCodeAdapterOptions = {}): Ada
         if (log.view.why === "newer") newer = true;
         else if (log.view.why === "unreadable") unread = true;
       }
+      // A poll that cannot judge whether a Muse Code holds the session, while
+      // its log does not settle it, keeps what the last poll knew of its wait.
+      const unjudged = writer === "maybe" && !settled;
       if (status.wait !== undefined) {
         const wait = continuedDeepseekHarnessWait(before, status.wait);
         nextWaits.set(id, wait);
         status.since = wait.since;
+      } else if (unjudged && before !== undefined) {
+        nextWaits.set(id, before);
       }
-      if (status.status === "needs-you") nextNeeded.add(ref.path);
+      // A session that needed the person is looked up however old its log, until a poll can judge it does not.
+      if (status.status === "needs-you" || (unjudged && needed.has(ref.path))) {
+        nextNeeded.add(ref.path);
+      }
       return museCodeSession({
         folderName: ref.id,
         cwd: log.cwd,
