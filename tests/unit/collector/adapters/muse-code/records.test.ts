@@ -45,6 +45,21 @@ const AT = NOW - 60_000;
 const judge = (text: string, folder: Buffer = FOLDER) =>
   judgeLine(Buffer.from(text.replace(/\n$/, "")), true, folder);
 
+/** The same record spaced after each colon and comma, as one reader's files hold Muse Code's lines. */
+function spaced(line: string): string {
+  const write = (value: unknown): string => {
+    if (Array.isArray(value)) return `[${value.map(write).join(", ")}]`;
+    if (value !== null && typeof value === "object") {
+      const fields = Object.entries(value).map(
+        ([name, inner]) => `${JSON.stringify(name)}: ${write(inner)}`,
+      );
+      return `{${fields.join(", ")}}`;
+    }
+    return JSON.stringify(value);
+  };
+  return write(JSON.parse(line));
+}
+
 describe("the records that decide", () => {
   test("a run's start, end and retraction, by their run's ID and time", () => {
     expect(judge(started(RUN, AT))).toEqual({
@@ -166,6 +181,31 @@ describe("the records that decide", () => {
       schema_version: 1,
     });
     expect(judge(line)).toEqual({ sort: "record", record: { sort: "started", run: RUN, at: AT } });
+  });
+
+  test("a line spaced after each colon and comma is read as the same line compact", () => {
+    const lines = [
+      started(RUN, AT),
+      terminal(RUN, AT, "failed"),
+      asked(RUN, PROMPT, AT),
+      requested(RUN, ACTION, AT, "human_pending"),
+      reviewCompleted(RUN, ACTION, AT, { status: "escalated" }),
+      reviewCompleted(RUN, ACTION, AT, { status: "approved" }),
+      decided(RUN, ACTION, AT),
+      waitEnded(ACTION, AT),
+      sessionEnd(AT, "crash_inferred"),
+      sessionResumed(AT),
+    ];
+    for (const line of lines) {
+      const compact = judge(line);
+      expect(compact, line).toMatchObject({ sort: "record" });
+      expect(spaced(line), line).toContain('": ');
+      expect(judge(spaced(line)), line).toEqual(compact);
+    }
+    expect(judgeHeadLine(Buffer.from(spaced(metadata(AT))), FOLDER, "darwin")).toEqual({
+      cwd: CWD,
+      at: AT,
+    });
   });
 });
 

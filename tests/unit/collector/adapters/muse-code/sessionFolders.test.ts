@@ -287,6 +287,12 @@ describe("links and other things that are not folders or files", () => {
       `${SESSIONS}/2026/11/${ID(1)}/session.jsonl`,
       `${DATA_DIR}/other/demo/${ID(2)}/session.jsonl`,
       `${HOME}/elsewhere/2026/11/19/${ID(3)}/session.jsonl`,
+      // Each of these fails one check alone: a folder too deep, then a year, a month, a day and a session's name.
+      `${SESSIONS}/2026/11/19/${ID(4)}/${ID(5)}/session.jsonl`,
+      `${SESSIONS}/26/11/19/${ID(6)}/session.jsonl`,
+      `${SESSIONS}/2026/13/19/${ID(7)}/session.jsonl`,
+      `${SESSIONS}/2026/11/32/${ID(8)}/session.jsonl`,
+      `${SESSIONS}/2026/11/19/not-a-session/session.jsonl`,
     ];
     for (const one of odd) writeLog(files, one, opening(NOW - HOUR));
     const folders = odd.map((one) => one.slice(0, one.lastIndexOf("/")));

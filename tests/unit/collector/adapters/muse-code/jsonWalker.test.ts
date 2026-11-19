@@ -45,6 +45,17 @@ describe("walking a line", () => {
     });
   });
 
+  test("steps over whitespace at every gap between tokens, and gives the same values as a compact line", () => {
+    const compact = walk(
+      '{"x":[1,{"a":"no"}],"e":true,"b":{"d":-1.5e3,"c":"word","a":"no"},"a":"yes"}',
+    );
+    expect(
+      walk(
+        ' {\t"x" : [ 1 , { "a" : "no" } ] , "e" : true , "b" : { "d" : -1.5e3 , "c" : "word" , "a" : "no" } , "a" : "yes" }\r',
+      ),
+    ).toEqual(compact);
+  });
+
   test("gives a string's bytes between its quotes, and says when they hold an escape", () => {
     const line = Buffer.from('{"a":"x\\"y\\u00e9"}');
     let token: Token | undefined;

@@ -1185,17 +1185,17 @@ export const MUSE_CODE_CAPABILITIES: SourceCapabilities = {
   "working-and-idle": {
     level: "partly",
     reason:
-      "From its log while any Muse Code that started before its newest record runs, on macOS and Linux, whichever session that one holds.",
+      "From its log while any Muse Code that started before its newest status record runs, on macOS and Linux, whatever session it holds.",
   },
   "needs-you": {
     level: "partly",
     reason:
-      "On macOS and Linux: its questions, and approvals once they wait for you, not while the reviewer holds one. A subagent's are not.",
+      "On macOS and Linux: its questions, and approvals that wait for you or that the reviewer holds past 2 minutes. Not a subagent's.",
   },
   finished: {
     level: "partly",
     reason:
-      "When Muse Code writes that it let the session go, or once no Muse Code that started before its newest record runs, by ps.",
+      "When Muse Code writes that it let the session go, or once no Muse Code that started before its newest status record runs, by ps.",
   },
   failed: {
     level: "partly",

@@ -4,11 +4,13 @@
  * text. Built for Muse Code's session logs, whose lines hold prompts,
  * questions, answers, commands and outputs unredacted.
  *
- * Muse Code writes each record as one compact line (Meta's export in its
- * cookbook, `04_muse_code/01_append_only_audit_log/artifacts/approval_slice.json`),
- * with the deciding field of an approval request as its last key, so the
- * Autohand Code adapter's readers, which rely on pretty-printed JSON, do not
- * fit. This one:
+ * Muse Code writes each record as one line, with its keys in the order of
+ * Meta's export in its cookbook
+ * (`04_muse_code/01_append_only_audit_log/artifacts/approval_slice.json`),
+ * compact in Meta's hand-authored transcript and spaced after each colon and
+ * comma in one reader's files, with the deciding field of an approval request
+ * as its last key, so the Autohand Code adapter's readers, which rely on
+ * pretty-printed JSON, do not fit. This one:
  *
  * - steps through objects, arrays, strings (an escape is `\` and one of
  *   `"\/bfnrt`, or `\u` and four hex digits), numbers, `true`, `false`,

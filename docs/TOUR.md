@@ -728,9 +728,9 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 - `logReader.ts` reads a log's first 64 KiB for its workspace folder, and its end back to the newest turn's start, at most 8 MiB, then only as it grows. `jsonWalker.ts` walks each line that may decide as bytes, and `records.ts` turns only the workspace folder and record IDs into text.
 - The fold follows the newest turn, its questions and its approvals, and a `session.end` or `session.resumed` closes what was open before it, so a session resumed after a crash does not show the dead turn as working unless Muse Code writes a later record of it (`museCodeFold.ts`).
 - An approval Muse Code's automated reviewer holds shows as working until the reviewer hands it to you or 2 minutes pass with no answer (`museCodeMapping.ts`).
-- DeepSeek Harness's question to `ps` says whether a Muse Code that started before the newest record runs, by a name of `muse`, `muse.exe` or one that begins `muse-` (`deepseek-harness/processes.ts`).
+- DeepSeek Harness's question to `ps` says whether a Muse Code that started before the newest status record runs, by a name of `muse`, `muse.exe` or one that begins `muse-` (`deepseek-harness/processes.ts`).
 
-**How sure it is.** Not checked against Muse Code yet. Any Muse Code that started before a session's newest record holds it, whichever session that one holds, so a session whose own Muse Code was killed can show as working or idle while another runs.
+**How sure it is.** Not checked against Muse Code yet. Any Muse Code that started before a session's newest status record holds it, whichever session that one holds, so a session whose own Muse Code was killed can show as working or idle while another runs.
 
 ### Status files: your own agents
 
@@ -788,7 +788,7 @@ In short:
 - **Droid** reports finished alone, for every session at once when `ps` shows no `droid` program 2 seconds or more after the last write to any, or at or after it when the clock was just set back, on macOS and Linux. Otherwise a session is unknown. Names are its folders', since its titles are made from the first prompt. No working and idle, needs you, failed, Jump, Quiet for, tokens, Stop or Answer.
 - **Grok Build** reports working, idle and failed from each log's newest turn, needs you while a question is open or a plan waits for approval, finished once its process ends, Grok Build lists it no more with its turn over, or a crash left it listed, names marked as set by the person, Jump in tmux and a tab of Terminal or iTerm2 on a Mac, and Quiet for. No tokens, Stop or Answer.
 - **Oh My Pi** reports finished and failed once Oh My Pi writes that it stopped, unless a prompt follows the stop, as in a resumed session, or a tool's start follows it and the newest line is then a tool's start, or a reply or a result not written within 15 seconds of the stop, and on macOS and Linux working while a turn is open, needs you while its `ask` tool waits and finished once no `omp` that could have written the file runs, names a model or the person gave it, and Quiet for. No idle, tokens, Jump, Stop or Answer.
-- **Muse Code** reports failed and finished once Muse Code writes so, and on macOS and Linux working, idle and needs you, for a question or an approval it waits on, while a Muse Code that started before the newest record runs, and finished once none does, the workspace folder's name, and Quiet for. No tokens, Jump, Stop or Answer.
+- **Muse Code** reports failed and finished once Muse Code writes so, and on macOS and Linux working, idle and needs you, for a question or an approval it waits on, while a Muse Code that started before the newest status record runs, and finished once none does, the workspace folder's name, and Quiet for. No tokens, Jump, Stop or Answer.
 - **Status files** report whatever the agent writes. No Jump, Stop, Answer or tokens.
 
 A setting can turn a cell to no as well: `AGENT_LOOKOUT_STOP=off` and `AGENT_LOOKOUT_ANSWER=off` change Claude Code's Stop and Answer.

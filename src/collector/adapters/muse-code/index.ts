@@ -119,7 +119,7 @@ export const UNCHECKED_NOT =
 
 /** Said on macOS and Linux, where `ps` is asked. */
 export const STATUS_GONE =
-  "Otherwise it shows as finished once no Muse Code that started before its newest record, or a minute after, runs, by ps.";
+  "Otherwise it shows as finished once no Muse Code that started before its newest status record, or a minute after, runs, by ps.";
 export const STATUS_BOOT =
   "A session last written before the computer started shows as finished as well.";
 export const STATUS_HELD =
@@ -131,7 +131,7 @@ export const STATUS_REVIEWER =
 export const STATUS_FIRST_SECONDS =
   "An approval with no phase this knows and no word of a reviewer shows as working for its first 6 seconds.";
 export const STATUS_ANY =
-  "A program named muse, muse.exe or starting muse- that started before a session's newest record counts, whichever session it holds.";
+  "A program named muse, muse.exe or starting muse- that started before a session's newest status record counts, whichever session it holds.";
 export const STATUS_WRONG =
   "So while another runs, a session whose own Muse Code was killed can show as idle, needing you, or working for up to 30 minutes.";
 export const STATUS_UNKNOWN = "Anything else shows as unknown.";
@@ -171,17 +171,17 @@ export const MUSE_CODE_CAPABILITIES: SourceCapabilities = {
   "working-and-idle": {
     level: "partly",
     reason:
-      "From its log while any Muse Code that started before its newest record runs, on macOS and Linux, whichever session that one holds.",
+      "From its log while any Muse Code that started before its newest status record runs, on macOS and Linux, whatever session it holds.",
   },
   "needs-you": {
     level: "partly",
     reason:
-      "On macOS and Linux: its questions, and approvals once they wait for you, not while the reviewer holds one. A subagent's are not.",
+      "On macOS and Linux: its questions, and approvals that wait for you or that the reviewer holds past 2 minutes. Not a subagent's.",
   },
   finished: {
     level: "partly",
     reason:
-      "When Muse Code writes that it let the session go, or once no Muse Code that started before its newest record runs, by ps.",
+      "When Muse Code writes that it let the session go, or once no Muse Code that started before its newest status record runs, by ps.",
   },
   failed: {
     level: "partly",
