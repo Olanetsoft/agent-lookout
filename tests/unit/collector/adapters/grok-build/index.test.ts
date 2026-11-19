@@ -106,12 +106,13 @@ describe("finding Grok Build", () => {
   test("a folder named for Agent Lookout that holds neither is an answer, looked at every poll", async () => {
     const files = memoryFiles();
     const adapter = grokBuildAdapterFor(files, {
-      env: { AGENT_LOOKOUT_GROK_HOME: "/tmp/grok-empty" },
+      // In the home folder, so it is written ~/grok-empty on every system.
+      env: { AGENT_LOOKOUT_GROK_HOME: "/Users/example/grok-empty" },
     });
     const { health } = await adapter.poll();
     expect(health.state).toBe("ok");
     expect(health.detail).toBe(
-      `AGENT_LOOKOUT_GROK_HOME is set to /tmp/grok-empty, which holds no list of open sessions and no sessions folder, so no Grok Build sessions are listed. ${NEEDS_YOU_NOTE} ${UNCHECKED_NOTE}`,
+      `AGENT_LOOKOUT_GROK_HOME is set to ~/grok-empty, which holds no list of open sessions and no sessions folder, so no Grok Build sessions are listed. ${NEEDS_YOU_NOTE} ${UNCHECKED_NOTE}`,
     );
     files.forget();
     await adapter.poll();
