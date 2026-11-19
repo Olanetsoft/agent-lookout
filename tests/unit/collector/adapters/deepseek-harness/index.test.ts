@@ -346,6 +346,71 @@ describe("a session", () => {
     );
   });
 
+  test("a subagent whose log is too long, cannot be followed or fails to be read on, leaves its idle session unknown, and said so, while a program that could write that log may run", async () => {
+    const header = childHeaderLine();
+    const big = new Uint8Array(64 * 1024 * 1024 + 1);
+    big.set(new TextEncoder().encode(header));
+    big.fill(0x0a, header.length);
+    const long = memoryFiles();
+    plain(long, headerLine() + batch(...endedTurn(0, T)));
+    plain(long, big, { id: CHILD_ID });
+    const tooLong = await deepseekHarnessAdapterFor(long, { ps: nodeRuns() }).poll();
+    expect(tooLong.sessions.map((one) => [one.id, one.status])).toEqual([[ID, "unknown"]]);
+    expect(tooLong.health.detail).toContain(TOO_LONG_NOTE);
+
+    const stuck = (parent: string, child: string, options: { childAt?: number } = {}) => {
+      const files = memoryFiles();
+      plain(files, headerLine() + parent, { mtimeMs: NOW - MINUTE });
+      plain(files, childHeaderLine() + child, { id: CHILD_ID, mtimeMs: options.childAt });
+      return files;
+    };
+    const gap = batch(line.turnStart(0, T), line.turnStart(7, T));
+    const unread = await deepseekHarnessAdapterFor(stuck(batch(...endedTurn(0, T)), gap), {
+      ps: nodeRuns(),
+    }).poll();
+    expect(unread.sessions[0]?.status).toBe("unknown");
+    expect(unread.health.detail).toContain(UNREAD_NOTE);
+
+    // One whose first line was read and whose read on then failed.
+    const failing = stuck(batch(...endedTurn(0, T)), batch(line.turnStart(0, T)));
+    let childOpens = 0;
+    const failingIo = {
+      readdir: (dir: string) => failing.io.readdir(dir),
+      stat: (target: string) => failing.io.stat(target),
+      lstat: (target: string) => failing.io.lstat(target),
+      openRegular: (file: string) => {
+        if (file.includes(CHILD_ID) && ++childOpens > 1) {
+          return Promise.reject(new Error("The read failed."));
+        }
+        return failing.io.openRegular(file);
+      },
+    };
+    const failed = await deepseekHarnessAdapterFor(failing, {
+      ps: nodeRuns(),
+      io: failingIo,
+    }).poll();
+    expect(childOpens).toBe(2);
+    expect(failed.sessions.map((one) => [one.id, one.status])).toEqual([[ID, "unknown"]]);
+    expect(failed.health.detail).toContain(UNREAD_NOTE);
+
+    // Last written before every program that could write it started: it cannot change its session.
+    const late = standInPs([psLine(100, NOW - 35 * MINUTE, "node")]);
+    const gone = await deepseekHarnessAdapterFor(
+      stuck(batch(...endedTurn(0, T)), gap, { childAt: NOW - 40 * MINUTE }),
+      { ps: late },
+    ).poll();
+    expect(gone.sessions[0]?.status).toBe("idle");
+    expect(gone.health.detail).not.toContain(UNREAD_NOTE);
+
+    // Its session's own error comes first.
+    const ownError = await deepseekHarnessAdapterFor(
+      stuck(batch(...endedTurn(0, T, "error")), gap),
+      { ps: nodeRuns() },
+    ).poll();
+    expect(ownError.sessions[0]).toMatchObject({ status: "failed", statusSince: T + 3 });
+    expect(ownError.health.detail).not.toContain(UNREAD_NOTE);
+  });
+
   test("an open turn quiet for 30 minutes is unknown, and a wait too, unless the desktop app runs", async () => {
     const files = memoryFiles();
     const quiet = NOW - QUIET_MS;
@@ -699,6 +764,46 @@ describe("its times", () => {
     expect(sessions[0]).not.toHaveProperty("lastWriteAt");
   });
 
+  test("a log of a session or a subagent written ahead of the clock gives the session no last write, so an older write of the other does not finish it", async () => {
+    const family = (own: number, child: number) => {
+      const files = memoryFiles();
+      plain(files, headerLine() + batch(line.turnStart(0, T)), { mtimeMs: own });
+      plain(files, childHeaderLine() + batch(...endedTurn(0, T)), { id: CHILD_ID, mtimeMs: child });
+      return files;
+    };
+    // ps shows no program that could write it: with the older write taken as its last, it would be finished.
+    for (const files of [family(NOW + 5 * MINUTE, T), family(T, NOW + 5 * MINUTE)]) {
+      const { sessions } = await deepseekHarnessAdapterFor(files).poll();
+      expect(sessions[0]).toMatchObject({ status: "working" });
+      expect(sessions[0]).not.toHaveProperty("lastWriteAt");
+    }
+    // With both times as they could be, it is.
+    const { sessions } = await deepseekHarnessAdapterFor(family(T, T + SECOND)).poll();
+    expect(sessions[0]).toMatchObject({ status: "finished", statusSince: T + SECOND });
+  });
+
+  test("a subagent's log written ahead of the clock leaves a recent write of its own to keep its turn working or waiting", async () => {
+    const family = (own: string) => {
+      const files = memoryFiles();
+      plain(files, headerLine() + own, { mtimeMs: NOW - SECOND });
+      plain(files, childHeaderLine() + batch(...endedTurn(0, T)), {
+        id: CHILD_ID,
+        mtimeMs: NOW + 5 * MINUTE,
+      });
+      return files;
+    };
+    const working = await deepseekHarnessAdapterFor(family(batch(line.turnStart(0, T))), {
+      ps: nodeRuns(),
+    }).poll();
+    expect(working.sessions[0]).toMatchObject({ status: "working" });
+    expect(working.sessions[0]).not.toHaveProperty("lastWriteAt");
+    const waiting = await deepseekHarnessAdapterFor(
+      family(batch(line.turnStart(0, T), line.approvalAsked(1, T + SECOND))),
+      { ps: nodeRuns() },
+    ).poll();
+    expect(waiting.sessions[0]).toMatchObject({ status: "needs-you" });
+  });
+
   test("a session that began after its log's time that cannot be right is listed, with no start", async () => {
     const files = memoryFiles();
     plain(files, headerLine({ createdAt: NOW + 5 * MINUTE }) + batch(line.turnStart(0, T)));
@@ -780,6 +885,33 @@ describe("its caps", () => {
     files.forget();
     await adapter.poll();
     expect(files.count("openRegular")).toBe(10);
+  });
+
+  test(`a session already being read whose log moved to a newer format is among the ${MAX_SESSIONS} shown by its last write`, async () => {
+    const files = memoryFiles();
+    const clock = handClock();
+    plain(files, headerLine() + batch(line.turnStart(0, T)), { mtimeMs: NOW - SECOND });
+    for (let n = 0; n < MAX_SESSIONS; n++) {
+      const id = sessionIdOf(n + 100);
+      plain(files, headerLine({ id }) + batch(...endedTurn(0, T)), {
+        id,
+        mtimeMs: NOW - MINUTE - n * 10,
+      });
+    }
+    const adapter = deepseekHarnessAdapterFor(files, { now: clock.now, ps: nodeRuns() });
+    const first = await adapter.poll();
+    expect(first.sessions).toHaveLength(MAX_SESSIONS);
+    expect(first.sessions[0]).toMatchObject({ id: ID, status: "working" });
+    // Its newest log, written after every other, is now of format 5.
+    clock.advance(60 * SECOND);
+    files.write(logPath(SESSION_ID, { compressed: false, version: 5 }), "x", {
+      mtimeMs: NOW + 30 * SECOND,
+    });
+    const { sessions, health } = await adapter.poll();
+    expect(health.detail).toContain(NEWER_FORMAT_NOTE);
+    // The same sessions as before, the oldest of the others still left out.
+    expect(sessions.map((one) => one.id)).toEqual(first.sessions.map((one) => one.id));
+    expect(sessions[0]).toMatchObject({ id: ID, status: "unknown" });
   });
 
   test(`reads at most ${MAX_CHILD_LOGS} subagents' logs past their first line`, async () => {

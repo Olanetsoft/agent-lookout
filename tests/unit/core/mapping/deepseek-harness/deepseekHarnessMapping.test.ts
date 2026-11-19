@@ -389,6 +389,37 @@ describe("the status", () => {
       ).toBe("idle");
     });
 
+    test("a subagent whose turn is not known, as its log is too long or cannot be followed, leaves an idle session unknown, unless no program could still write it", () => {
+      const unsure: DeepseekHarnessTurn = { state: "unsure" };
+      const idle = fold([start(), end("completed")]);
+      expect(family(idle, { children: [child(unsure)] })).toEqual({
+        status: "unknown",
+        since: null,
+        showsLastWrite: false,
+      });
+      // Quiet or of a time that cannot be right, it may still wait.
+      expect(family(idle, { children: [child(unsure, NOW - QUIET_MS - MINUTE)] }).status).toBe(
+        "unknown",
+      );
+      expect(
+        family(startDeepseekHarnessTurn(STARTED_AT), { children: [child(unsure, null, "backed")] })
+          .status,
+      ).toBe("unknown");
+      expect(family(idle, { children: [child(unsure, NOW - MINUTE, "gone")] }).status).toBe("idle");
+      // A turn under way, of its own or another subagent's, is working as before.
+      expect(family(fold([start()]), { children: [child(unsure)] }).status).toBe("working");
+      expect(
+        family(idle, { children: [child(unsure), child(fold([start(NOW - 4 * MINUTE)]))] }),
+      ).toMatchObject({ status: "working", since: NOW - 4 * MINUTE });
+      // Its own error, or its close by DeepSeek Harness, comes first.
+      expect(
+        family(fold([start(), end("error", NOW - 2 * MINUTE)]), { children: [child(unsure)] }),
+      ).toMatchObject({ status: "failed", since: NOW - 2 * MINUTE });
+      expect(
+        family(fold([start(), end("disposed", NOW - 2 * MINUTE)]), { children: [child(unsure)] }),
+      ).toMatchObject({ status: "finished", since: NOW - 2 * MINUTE });
+    });
+
     test("a subagent's turn does not make a session working whose end this does not know", () => {
       expect(
         family(

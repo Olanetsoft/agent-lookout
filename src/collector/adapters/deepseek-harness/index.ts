@@ -107,13 +107,13 @@ export const NEWER_FORMAT_NOTE =
 export const OLDER_FORMAT_NOTE =
   "A DeepSeek Harness from before 0.2.0 wrote a session in a format this does not read, so that session is not shown.";
 
-/** Said when a log is longer than this reads. */
+/** Said when a session's log, or a subagent's that leaves it unknown, is longer than this reads. */
 export const TOO_LONG_NOTE =
-  "A DeepSeek Harness session's log is longer than Agent Lookout reads, 16 MiB compressed or 64 MiB not, so its status is unknown.";
+  "A DeepSeek Harness session's log, or a subagent's, is longer than Agent Lookout reads, 16 MiB compressed or 64 MiB not, so its status is unknown.";
 
-/** Said when a log holds lines this cannot follow. */
+/** Said when a session's log, or a subagent's that leaves it unknown, holds lines this cannot follow. */
 export const UNREAD_NOTE =
-  "Some DeepSeek Harness sessions hold lines Agent Lookout cannot follow, perhaps from a newer DeepSeek Harness, so they show as unknown.";
+  "Some DeepSeek Harness sessions, or their subagents, hold lines Agent Lookout cannot follow, perhaps from a newer DeepSeek Harness, so they show as unknown.";
 
 /** Said when `DSH_HOME` is set to a folder that is not absolute. */
 export const RELATIVE_HOME_NOTE =
@@ -464,9 +464,10 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
       families.push(family);
       if (!byId.has(family.header.id)) byId.set(family.header.id, family);
     };
+    const candidates: Family[] = [];
     for (const { ref, header } of known) {
       if (header.subagent) continue;
-      add({
+      candidates.push({
         folderName: path.basename(ref.folder),
         ref,
         header,
@@ -480,7 +481,7 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
     for (const newer of found.newer) {
       const last = newer.current === null ? null : reader.last(newer.current);
       if (last === null || last.header.subagent) continue;
-      add({
+      candidates.push({
         folderName: path.basename(newer.folder),
         ref: null,
         header: last.header,
@@ -490,6 +491,10 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
         children: [],
       });
     }
+    // Newest first by its own log's last write, the newer log's for one of a newer format, so both kinds
+    // compete for the 200 shown. The sort is stable, so the logs keep their order.
+    candidates.sort((a, b) => b.ownWrittenAt - a.ownWrittenAt);
+    for (const family of candidates) add(family);
 
     const children = new Map<string, DeepseekHarnessHeader>();
     for (const { header } of known) {
@@ -612,7 +617,8 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
           checkedAt,
         ),
       ];
-      const children: (Omit<DeepseekHarnessChild, "writer"> & { ref: LogRef })[] = [];
+      const children: (Omit<DeepseekHarnessChild, "writer"> & { ref: LogRef; tooLong: boolean })[] =
+        [];
       for (const child of family.children) {
         const childWrite = lastWriteOf(
           Math.max(child.ref.info.mtimeMs, child.log?.writtenAt ?? 0),
@@ -620,27 +626,37 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
           checkedAt,
         );
         writes.push(childWrite);
-        if (child.log?.mark === "ok" && child.log.turn.state !== "unsure") {
-          children.push({ turn: child.log.turn, writtenAt: childWrite, ref: child.ref });
-        }
+        // One not read on, as past the newest 200, counts for nothing. One too long, stuck, or whose
+        // read on failed, which leaves it read only to its first line, counts as a turn not known.
+        const log = child.log;
+        if (log === null) continue;
+        children.push({
+          turn: log.mark === "ok" ? log.turn : { state: "unsure" },
+          writtenAt: childWrite,
+          ref: child.ref,
+          tooLong: log.mark === "too-long",
+        });
       }
       const known = writes.filter((at): at is number => at !== null);
-      const writtenAt = known.length === 0 ? null : Math.max(...known);
+      // The newest that can be right, for the quiet rule and the desktop app. One that cannot be right may be the last, so then none finishes it.
+      const newest = known.length === 0 ? null : Math.max(...known);
+      const anyUnknown = known.length < writes.length;
       // Whether `ps` could change its status: not when its own turns settle it, nor when it was last written before the computer started.
       const settled =
         own === null ||
         own.state === "unsure" ||
         (own.state === "ended" && (own.end === "error" || own.end === "disposed")) ||
-        dshWriter({
-          platform,
-          writtenAt,
-          bootAt,
-          answer: null,
-          answerAt: 0,
-          startFloor: clock.startFloor,
-          lowAt: clock.lowAt,
-        }) === "gone";
-      return { family, own, children, writtenAt, settled };
+        (!anyUnknown &&
+          dshWriter({
+            platform,
+            writtenAt: newest,
+            bootAt,
+            answer: null,
+            answerAt: 0,
+            startFloor: clock.startFloor,
+            lowAt: clock.lowAt,
+          }) === "gone");
+      return { family, own, children, writtenAt: newest, anyUnknown, settled };
     });
 
     const unsettled = facts.filter(({ settled }) => !settled);
@@ -656,7 +672,7 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
     const nextWaits = new Map<string, DeepseekHarnessWait>();
     let tooLong = false;
     let unread = false;
-    const sessions = facts.map(({ family, own, children, writtenAt }) => {
+    const sessions = facts.map(({ family, own, children, writtenAt, anyUnknown }) => {
       const writerOf = (at: number | null, asked: boolean) =>
         dshWriter({
           platform,
@@ -673,7 +689,8 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
         family.ref !== null &&
         asAsked(family.ref) &&
         family.children.every(({ ref }) => asAsked(ref));
-      const writer = writerOf(writtenAt, unchanged);
+      const seen = writerOf(writtenAt, unchanged);
+      const writer = anyUnknown && seen === "gone" ? "maybe" : seen;
       // Each subagent's by its own last write, as reopening a session reopens none of them.
       const judged = children.map(({ ref, ...child }) => ({
         ...child,
@@ -686,6 +703,14 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
         writer,
         now: checkedAt,
       });
+      // A subagent whose turn is not known, which a program may still write, is said of a session shown as unknown.
+      if (status.status === "unknown") {
+        for (const child of judged) {
+          if (child.turn.state !== "unsure" || child.writer === "gone") continue;
+          if (child.tooLong) tooLong = true;
+          else unread = true;
+        }
+      }
       const id = sessionIdOf(family.folderName);
       if (status.wait !== undefined) {
         const wait = continuedDeepseekHarnessWait(waits.get(id), status.wait);
@@ -705,7 +730,8 @@ export function createDeepseekHarnessAdapter(options: DeepseekHarnessAdapterOpti
         header: family.header,
         title: family.log?.title ?? null,
         status,
-        writtenAt,
+        // No last write is shown while one that may be the last cannot be right.
+        writtenAt: anyUnknown ? null : writtenAt,
         now: checkedAt,
       });
     });

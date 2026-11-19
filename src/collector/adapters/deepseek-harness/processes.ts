@@ -117,7 +117,7 @@ export function usable(answer: DshPrograms | null): answer is DshPrograms & { ok
 
 export interface WriterInput {
   platform: NodeJS.Platform;
-  /** When the session or a subagent's log was last written, or null when that cannot be right. */
+  /** The newest write of the session's log, or a subagent's, whose time can be right, or null when none can. */
   writtenAt: number | null;
   /** When the computer started, the earliest the adapter has worked it out to be while it runs, or null when not known. */
   bootAt: number | null;

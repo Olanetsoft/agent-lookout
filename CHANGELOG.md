@@ -8,6 +8,10 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 - Droid sessions, from Factory's command `droid`, read from the first line of the file Droid keeps for each in `~/.factory/sessions`, or `sessions` in the folder `AGENT_LOOKOUT_DROID_HOME` names. Each is named after its folder, shows as unknown while any `droid` program runs, as Factory's app and Droid's daemon run one too, and as finished once `ps`, asked 2 seconds or more after the last write to any session shown, or at or after it when the clock was just set back, shows none, on macOS and Linux. It never shows as working, needing you or failed, and on Windows stays unknown. Archived sessions are left out, by `archivedAt` in the `<id>.settings.json` beside each, and so are files with nothing after their first line. The title and `owner` on the first line are never kept, no byte after it is turned into text, and `FACTORY_HOME_OVERRIDE` is not followed. Built from Factory's documentation and its Droid SDKs, droid-sdk 0.5.0 and @factory/droid-sdk 0.11.0, not from Droid's own program, and not yet checked on a computer running Droid. (#33)
 
+### Fixed
+
+- A DeepSeek Harness session now shows as unknown, not idle, while a subagent's log that a program may still write is too long, cannot be followed or fails to be read, keeps its place among the 200 shown by its last write when its log moves to a newer format, and is no longer finished by `ps` or the computer's start when one of its logs has a time that cannot be right. (#360)
+
 ## 0.2.23 - 2026-11-19
 
 fx, Unreal Agent, Autohand Code and DeepSeek Harness sessions show.
