@@ -62,6 +62,11 @@ describe("a title", () => {
     expect(titleOf(bytes(nested))).toBeNull();
     const notTrue = summaryText({ title: TYPED_TITLE, extra: { title_is_manual: "true" } });
     expect(titleOf(bytes(notTrue))).toBeNull();
+    // Not JSON a writer makes: the mark must be followed by a comma or a line break.
+    const trailing = `{\n  "generated_title": "${TYPED_TITLE}",\n  "title_is_manual": truest\n}`;
+    expect(titleOf(bytes(trailing))).toBeNull();
+    const last = `{\n  "generated_title": "Release checklist",\n  "title_is_manual": true\n}`;
+    expect(titleOf(bytes(last))).toBe("Release checklist");
   });
 
   test("is one JSON string, its escapes undone, cleaned and cut as every name is", () => {

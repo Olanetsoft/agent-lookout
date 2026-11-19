@@ -101,10 +101,15 @@ describe("a line", () => {
     }
   });
 
-  test("two lines run together by a crash do not count", () => {
-    const joined = `{"ts":"${ts(T)}","type":"tool_sta${turnEnded(T + SECOND, "interrupted")}`;
-    const data = Buffer.from(joined.trimEnd());
-    expect(judgeLine(data, 0, data.byteLength)).toEqual({ sort: "malformed" });
+  test("two lines run together by a crash do not count, though each part has the shape", () => {
+    for (const torn of [
+      `{"ts":"${ts(T)}","type":"tool_sta`,
+      `{"ts":"${ts(T)}","type":"first_token"`,
+      `{"ts":"${ts(T)}","type":"tool_started","tool_name":"ba`,
+    ]) {
+      const data = Buffer.from(`${torn}${turnEnded(T + SECOND, "interrupted")}`.trimEnd());
+      expect(judgeLine(data, 0, data.byteLength), torn).toEqual({ sort: "malformed" });
+    }
   });
 
   test("a time is worked out from its digits", () => {
@@ -169,6 +174,12 @@ describe("a line", () => {
     ]) {
       expect(opens(tool), tool).toBe(false);
     }
+  });
+
+  test("a call with more after the tool's name is not one Grok Build 1.0.45 writes, and opens no question", () => {
+    const text = `{"ts":"${ts(T)}","type":"tool_started","tool_name":"ask_user_question","extra":1}`;
+    const data = Buffer.from(text);
+    expect(judgeLine(data, 0, data.byteLength)).toMatchObject({ sort: "turn", askOpened: false });
   });
 });
 
@@ -305,7 +316,7 @@ describe("the fold", () => {
   });
 
   test("a line cut off by a crash and joined to the next says nothing can be told", async () => {
-    const torn = turnStarted(T) + `{"ts":"${ts(T + 1)}","type":"tool_sta`;
+    const torn = turnStarted(T) + `{"ts":"${ts(T + 1)}","type":"tool_started","tool_name":"ba`;
     const turn = await turnOf(torn + turnEnded(T + MINUTE, "interrupted"));
     expect(turn).toMatchObject({ boundary: "started", malformed: true });
   });
