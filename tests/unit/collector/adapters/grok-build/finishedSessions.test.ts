@@ -154,6 +154,52 @@ test("a session listed again leaves the ended ones", () => {
   expect(memory.ids()).toEqual(new Set([SESSION_ID]));
 });
 
+test("the same process's first listing is kept while it stands and when it lists the session again after leaving the list", () => {
+  const memory = createGrokBuildMemory();
+  expect(memory.firstOpenedAt(entryOf())).toBe(OPENED_AT);
+  memory.seen(entryOf(), seenFacts, NOW);
+  memory.seen(entryOf(), seenFacts, NOW + SECOND);
+  expect(memory.firstOpenedAt(entryOf())).toBe(OPENED_AT);
+  // Off the list, as after /new, then listed again by the same process.
+  memory.seen(entryOf(), { ...seenFacts, listed: false }, NOW + 2 * SECOND);
+  const again = entryOf(SESSION_ID, OPENED_AT + 5 * MINUTE);
+  expect(memory.firstOpenedAt(again)).toBe(OPENED_AT);
+  memory.seen(again, seenFacts, NOW + 3 * SECOND);
+  expect(memory.firstOpenedAt(again)).toBe(OPENED_AT);
+});
+
+test("a listing put in place of another while the session stayed listed, or by another process, starts again", () => {
+  const memory = createGrokBuildMemory();
+  memory.seen(entryOf(), seenFacts, NOW);
+  // The same process ID, as a resume in a process given a crashed one's ID, with no poll between that found it off the list.
+  const replaced = entryOf(SESSION_ID, OPENED_AT + 5 * MINUTE);
+  expect(memory.firstOpenedAt(replaced)).toBe(OPENED_AT + 5 * MINUTE);
+  memory.seen(replaced, seenFacts, NOW + SECOND);
+  expect(memory.firstOpenedAt(replaced)).toBe(OPENED_AT + 5 * MINUTE);
+  memory.seen(replaced, { ...seenFacts, listed: false }, NOW + 2 * SECOND);
+  const other = { ...entryOf(SESSION_ID, OPENED_AT + 10 * MINUTE), pid: PID + 1 };
+  expect(memory.firstOpenedAt(other)).toBe(OPENED_AT + 10 * MINUTE);
+});
+
+test("the first listing seen is kept, not the earliest as written, as after a clock set back", () => {
+  const memory = createGrokBuildMemory();
+  const first = entryOf(SESSION_ID, OPENED_AT + 10 * MINUTE);
+  memory.seen(first, seenFacts, NOW);
+  memory.seen(first, { ...seenFacts, listed: false }, NOW + SECOND);
+  expect(memory.firstOpenedAt(entryOf(SESSION_ID, OPENED_AT))).toBe(OPENED_AT + 10 * MINUTE);
+});
+
+test("nothing of a session's first listing is kept once it has ended, for the same process ID either", () => {
+  const memory = createGrokBuildMemory();
+  memory.seen(entryOf(), seenFacts, NOW);
+  memory.seen(entryOf(), { ...seenFacts, listed: false }, NOW + SECOND);
+  memory.ended(
+    { entry: entryOf(), title: null, writtenAt: null, processRunsOn: true },
+    NOW + MINUTE,
+  );
+  expect(memory.firstOpenedAt(entryOf(SESSION_ID, OPENED_AT + HOUR))).toBe(OPENED_AT + HOUR);
+});
+
 test("a look that finds no log or title keeps what an earlier one found", () => {
   const memory = createGrokBuildMemory();
   memory.ended(

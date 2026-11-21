@@ -2,6 +2,12 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
+## Unreleased
+
+### Fixed
+
+- A Grok Build session resumed after its last turn ended shows as idle, or failed, since it was listed, not since that turn, so it's no longer marked stale as it opens. One the same Grok Build goes back to mid-turn after /new, once Agent Lookout saw it leave the list, keeps needing you or working, instead of turning unknown until its next line. (#396)
+
 ## 0.2.28 - 2026-11-21
 
 The Mac app and the MCP server built into the command take security fixes in Electron, Zod and fast-uri, and on Windows an agent's file put in place of another is told from it by its whole file ID.
