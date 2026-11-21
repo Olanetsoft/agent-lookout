@@ -353,13 +353,16 @@ describe("reading", () => {
     files.failOpen(FILE);
     const ref = await refOf(files);
     const failed = await reader.read(ref);
+    expect(first.current).toBe(true);
+    expect(failed.current).toBe(false);
     expect(failed.view).toEqual(first.view);
     expect(failed.writtenAt).toBe(AT + 1);
     // Its stamp is this lstat's, not the one of what was read before.
     expect(failed.info).toEqual(ref.info);
     files.heal(FILE);
-    expect((await reader.read(await refOf(files))).view).toMatchObject({
-      fold: { prompts: new Map([[PROMPT, AT + 1]]) },
+    expect(await reader.read(await refOf(files))).toMatchObject({
+      current: true,
+      view: { fold: { prompts: new Map([[PROMPT, AT + 1]]) } },
     });
     expect(files.openHandles()).toBe(0);
   });

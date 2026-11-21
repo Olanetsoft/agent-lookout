@@ -776,6 +776,29 @@ describe("whether a Muse Code that could hold a session runs, by ps", () => {
     });
   });
 
+  test("a log written since and not read again is judged by its last write, so the Muse Code that wrote it keeps it from finishing", async () => {
+    const clock = handClock();
+    const askedAt = NOW - 5 * MINUTE;
+    const ps = standInPs([psLine(7001, askedAt - MINUTE, "muse")]);
+    const files = filesWith(`${opening(OPENED)}${asked(RUN, PROMPT, askedAt)}`, askedAt);
+    const adapter = museCodeAdapterFor(files, { now: clock.now, ps });
+    expect((await adapter.poll()).sessions[0]?.status).toBe("needs-you");
+    // That Muse Code exits, and one started since resumes the session, whose log cannot be opened again.
+    ps.set([psLine(7002, NOW - 2 * MINUTE, "muse")]);
+    appendLog(
+      files,
+      FILE,
+      `${sessionResumed(NOW - MINUTE)}${started(RUN_2, NOW - MINUTE)}`,
+      NOW - MINUTE,
+    );
+    files.failOpen(FILE);
+    clock.advance(PROCESS_CHECK_MS);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("needs-you");
+    files.heal(FILE);
+    clock.advance(PROCESS_CHECK_MS);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("working");
+  });
+
   test("a newest record whose time cannot be right keeps ps from finishing the session", async () => {
     const ps = standInPs([]);
     const ahead = NOW + CLOCK_SLACK_MS + MINUTE;

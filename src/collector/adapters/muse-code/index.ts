@@ -470,7 +470,12 @@ export function createMuseCodeAdapter(options: MuseCodeAdapterOptions = {}): Ada
     const facts = listed.map((one) => {
       const { view } = one.log;
       const writtenAt = plausibleTime(Math.floor(one.log.writtenAt), checkedAt);
-      const decidedAt = decidedAtOf(view.state === "ok" ? view.fold : null, writtenAt, checkedAt);
+      // A log written since it was read and not read again is judged by its last write, so the Muse Code that wrote what was not read keeps it from finishing.
+      const decidedAt = decidedAtOf(
+        view.state === "ok" && one.log.current ? view.fold : null,
+        writtenAt,
+        checkedAt,
+      );
       // Whether `ps` could change its status: not once the log settles it, nor when its newest status record was written more than a minute before the computer started.
       const settled =
         settledByLog(view) ||

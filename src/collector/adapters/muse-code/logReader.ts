@@ -291,6 +291,8 @@ export interface MuseLog {
   cwd: string | null;
   /** Its metadata record's time, or null. */
   metadataAt: number | null;
+  /** False when the file changed since what it shows was read and could not be read again. */
+  current: boolean;
 }
 
 /** A log as the poll's `lstat` found it. */
@@ -327,13 +329,14 @@ class Replaced extends Error {}
 export function createMuseLogReader(io: ReadOnlyIo, platform: NodeJS.Platform): MuseLogReader {
   const remembered = new Map<string, Known>();
 
-  function answer(known: Known, writtenAt: number, info: FileInfo = known.info): MuseLog {
+  function answer(known: Known, writtenAt: number, info: FileInfo = known.info, current = true): MuseLog {
     return {
       view: viewOf(known.tail, known.info.size),
       writtenAt,
       info,
       cwd: known.head.cwd,
       metadataAt: known.head.at,
+      current,
     };
   }
 
@@ -385,10 +388,11 @@ export function createMuseLogReader(io: ReadOnlyIo, platform: NodeJS.Platform): 
             info: ref.info,
             cwd: null,
             metadataAt: null,
+            current: false,
           };
         }
         // This poll's `lstat` stands for what was read, so a write since an answer is never taken for one read before it.
-        return answer(known, ref.info.mtimeMs, ref.info);
+        return answer(known, ref.info.mtimeMs, ref.info, false);
       }
     },
     keepOnly(paths) {
