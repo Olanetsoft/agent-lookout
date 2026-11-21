@@ -2,6 +2,12 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
+## Unreleased
+
+### Fixed
+
+- The Mac app runs on Electron 44.11.3, which no longer trusts the compromised eMudhra intermediate certificates, and the MCP server built into `agent-lookout` takes Zod 4.6.7 and fast-uri 3.1.9, past their advisories. (#388)
+
 ## 0.2.27 - 2026-11-21
 
 Muse Code sessions show, and an Oh My Pi session whose file couldn't be read again no longer shows as finished while the omp that wrote it runs.
