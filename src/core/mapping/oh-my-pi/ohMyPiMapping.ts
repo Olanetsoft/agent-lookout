@@ -73,6 +73,8 @@ export interface OhMyPiFacts {
   writtenAt: number | null;
   /** The time its header says it began, in epoch milliseconds, or null when that is not a time. */
   startedAt: number | null;
+  /** False when the file was written since what these facts hold was read and could not be read again. */
+  current?: boolean;
   writer: OhMyPiWriter;
   now: number;
 }
@@ -99,15 +101,17 @@ const UNKNOWN: OhMyPiStatus = { status: "unknown", since: null, showsLastWrite: 
  * a later write that decides nothing, as a rename from another `omp`'s picker
  * adds, neither backs the session again nor moves the time it finished. For
  * a prompt, a tool's start, an ask, and a reply or a result with no time that
- * can be right, as a refusal's, it is the file's last write. Null when that
- * cannot be right.
+ * can be right, as a refusal's, it is the file's last write, and so it is for
+ * a file written since it was read and not read again, whose write may be an
+ * `omp`'s that started since. Null when that cannot be right.
  */
 export function decidedAtOf(
-  facts: Pick<OhMyPiFacts, "newest" | "writtenAt" | "startedAt" | "now">,
+  facts: Pick<OhMyPiFacts, "newest" | "writtenAt" | "startedAt" | "current" | "now">,
 ): number | null {
   const { newest, now } = facts;
   const written = facts.writtenAt === null ? null : plausibleTime(Math.floor(facts.writtenAt), now);
-  if (written === null || (newest?.sort !== "reply" && newest?.sort !== "result")) return written;
+  if (written === null || facts.current === false) return written;
+  if (newest?.sort !== "reply" && newest?.sort !== "result") return written;
   const at = plausibleTime(newest.at, now);
   if (at === null) return written;
   const header = plausibleTime(facts.startedAt, now);

@@ -8,6 +8,10 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 - Muse Code sessions, from Meta's command `muse`, read from the log Muse Code keeps for each in `~/.local/share/muse/sessions`, `muse/sessions` in `XDG_DATA_HOME`, or `sessions` in the folder `AGENT_LOOKOUT_MUSE_CODE_HOME` names, as bytes. Each shows as failed or finished once Muse Code writes so, and on macOS and Linux as working, idle, or needing you for a question or an approval that waits for you, while a Muse Code that started before its newest status record runs, by `ps`, and as finished once none does. An approval Muse Code's automated reviewer holds shows as working until it hands it to you, or for 2 minutes with no answer, and a session resumed after a crash does not show the dead turn as working unless Muse Code writes a later record of it. It is named after its workspace folder. No Muse Code program is run, and its locks, databases and sockets are left alone. Built from Meta's documentation, its MIT-licensed Muse Code SDK and protocol schema at 1.4.24 and its cookbook, and from open-source readers of Muse Code's files, and not yet checked on a computer running it. (#71)
 
+### Fixed
+
+- An Oh My Pi session whose file was written again and couldn't be read no longer shows as finished while an omp that started since runs.
+
 ## 0.2.26 - 2026-11-19
 
 Oh My Pi sessions show, a long Gemini CLI session no longer takes an older reply for its last message, and a Gemini CLI 0.69.0 session stays working through an error shown during a tool.
