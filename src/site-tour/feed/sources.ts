@@ -8,9 +8,9 @@ import { MACHINE } from "@site-tour/feed/hour";
  * collector's order: Claude Code, Codex, the Antigravity CLI, Antigravity,
  * Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi,
  * Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx,
- * Unreal Agent, Autohand Code, DeepSeek Harness, Droid, Grok Build and Oh My
- * Pi, none of the twenty-four installed here, and status files. Then the other machine,
- * connected over SSH.
+ * Unreal Agent, Autohand Code, DeepSeek Harness, Droid, Grok Build, Oh My Pi
+ * and Muse Code, none of the twenty-five installed here, and status files. Then
+ * the other machine, connected over SSH.
  *
  * The adapters run in Node, so their declarations cannot be bundled into the
  * page. Their words are written here in their place, and a test holds each
@@ -1181,6 +1181,56 @@ export const OH_MY_PI_CAPABILITIES: SourceCapabilities = {
   },
 };
 
+export const MUSE_CODE_CAPABILITIES: SourceCapabilities = {
+  "working-and-idle": {
+    level: "partly",
+    reason:
+      "From its log while any Muse Code that started before its newest status record runs, on macOS and Linux, whatever session it holds.",
+  },
+  "needs-you": {
+    level: "partly",
+    reason:
+      "On macOS and Linux: its questions, and approvals that wait for you or that the reviewer holds past 2 minutes. Not a subagent's.",
+  },
+  finished: {
+    level: "partly",
+    reason:
+      "When Muse Code writes that it let the session go, or once no Muse Code that started before its newest status record runs, by ps.",
+  },
+  failed: {
+    level: "partly",
+    reason:
+      "When Muse Code writes that the last turn failed, until a new turn starts. A turn cut off by a crash may not be written so.",
+  },
+  names: {
+    level: "partly",
+    reason:
+      "The workspace folder's. A session's name and title are typed by you or made from your words, and are never read.",
+  },
+  jump: {
+    level: "no",
+    reason:
+      "Nothing Agent Lookout turns into text names a Muse Code session's process or terminal.",
+  },
+  "quiet-for": {
+    level: "partly",
+    reason:
+      "The time since its log was last written, while it works. A long command, or a subagent with a log of its own, may write nothing.",
+  },
+  tokens: {
+    level: "no",
+    reason: "Muse Code's counts are on lines Agent Lookout steps over without reading them.",
+  },
+  stop: {
+    level: "no",
+    reason: "A Muse Code session's log names no process that Agent Lookout could confirm and stop.",
+  },
+  answer: {
+    level: "no",
+    reason: "Agent Lookout makes no request to Muse Code, so it cannot send an answer.",
+  },
+};
+
 /**
  * What Claude Code on the other machine can report, as it is seen from here:
  * what its Agent Lookout says, with Jump, Stop and Answer as no, since each
@@ -1863,6 +1913,31 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
       checkedAt,
     },
     {
+      // The adapter's card on a Mac, when Muse Code is not installed: its sessions folder is looked for, and nothing more.
+      id: "muse-code",
+      label: "Muse Code",
+      state: "unavailable",
+      detail:
+        "Muse Code was not found: there is no ~/.local/share/muse/sessions folder. Agent Lookout looks again every minute.",
+      watching: [
+        { label: "Sessions folder", value: "~/.local/share/muse/sessions" },
+        { label: "Read", value: "not found" },
+        {
+          label: "Files read",
+          value:
+            "session.jsonl of each session, as bytes: its first 64 KiB and its newest lines back to the newest turn's start, at most 8 MiB. Only its workspace folder and record IDs become text",
+        },
+        { label: "Process check", value: "ps -A -o pid=,lstart=,comm=" },
+        {
+          label: "Process check run",
+          value:
+            "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no Muse Code program",
+        },
+      ],
+      capabilities: MUSE_CODE_CAPABILITIES,
+      checkedAt,
+    },
+    {
       id: "status-files",
       label: "Status files",
       state: "ok",
@@ -1915,6 +1990,7 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "Droid there", value: "Not found" },
         { label: "Grok Build there", value: "Not found" },
         { label: "Oh My Pi there", value: "Not found" },
+        { label: "Muse Code there", value: "Not found" },
         { label: "Status files there", value: "Not set up" },
       ],
       agents: [{ label: "Claude Code", capabilities: CLAUDE_CODE_THERE_CAPABILITIES }],

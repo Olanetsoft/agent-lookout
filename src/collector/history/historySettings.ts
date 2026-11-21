@@ -22,6 +22,7 @@ import { kimchiSessionsDirFor } from "../adapters/kimchi/index.ts";
 import { kimiCodeHomeFor } from "../adapters/kimi-code/index.ts";
 import { mimoCodeDatabaseFor } from "../adapters/mimo-code/index.ts";
 import { vibeSessionDirFor } from "../adapters/mistral-vibe/index.ts";
+import { museCodeSessionsDirFor } from "../adapters/muse-code/index.ts";
 import { ompSessionsDirsFor } from "../adapters/oh-my-pi/index.ts";
 import { opencodeDatabaseFor } from "../adapters/opencode/index.ts";
 import { piSessionsDirFor } from "../adapters/pi/index.ts";
@@ -73,7 +74,7 @@ export function readHistorySetup(
 }
 
 /**
- * The folders the twenty-three other sources read, and OpenCode's, Goose's, Kilo
+ * The folders the twenty-four other sources read, and OpenCode's, Goose's, Kilo
  * Code's and MiMo Code's databases,
  * as the adapters work them out on this system, made into a short fingerprint that
  * names none of them. Two copies of Agent Lookout with the same one see the
@@ -121,6 +122,7 @@ export function sourcesFingerprint(
     droidSessionsDirFor(env, homeDir),
     grokBuildHomeFor(env, homeDir, platform),
     ...ompSessionsDirsFor(env, homeDir, platform),
+    museCodeSessionsDirFor(env, homeDir),
   ];
   return createHash("sha256").update(JSON.stringify(folders)).digest("hex").slice(0, 32);
 }

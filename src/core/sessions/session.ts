@@ -60,6 +60,8 @@ export type RemoteSourceId = `remote:${string}`;
  * `oh-my-pi` is Oh My Pi, in its command `omp`, whose sessions are read from
  * the title slot, the header and the newest lines of the file it keeps for
  * each.
+ * `muse-code` is Meta's Muse Code, in its command `muse`, whose sessions are
+ * read from the log it keeps for each.
  */
 export type SourceId =
   | "claude-code"
@@ -88,6 +90,7 @@ export type SourceId =
   | "droid"
   | "grok-build"
   | "oh-my-pi"
+  | "muse-code"
   | "status-files"
   | RemoteSourceId;
 

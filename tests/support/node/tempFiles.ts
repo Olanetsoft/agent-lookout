@@ -294,6 +294,15 @@ export const EMPTY_GROK_HOME = path.join(os.tmpdir(), "agent-lookout-test-no-gro
 export const EMPTY_OMP_HOME = path.join(os.tmpdir(), "agent-lookout-test-no-omp", "agent");
 
 /**
+ * An empty folder for the Muse Code adapter to read in place of
+ * `~/.local/share/muse`, so that a collector a test builds from `process.env`
+ * finds no sessions: `nodeSetup.ts` makes it, with an empty `sessions`
+ * folder, and names it there. Nothing is ever written in it. A test that
+ * builds an environment of its own names a `tempDir` there.
+ */
+export const EMPTY_MUSE_CODE_HOME = path.join(os.tmpdir(), "agent-lookout-test-no-muse", "muse");
+
+/**
  * An empty folder that stands in for the home folder of the person running the
  * tests: `nodeSetup.ts` makes it and names it in `HOME` and `USERPROFILE`, so
  * `os.homedir()` is never the real home, and no `~/.claude`, `~/.codex`,

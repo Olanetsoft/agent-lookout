@@ -54,6 +54,12 @@ import {
   UNCHECKED_NOTE as OH_MY_PI_UNCHECKED_NOTE,
 } from "@collector/adapters/oh-my-pi/index";
 import {
+  MUSE_CODE_CAPABILITIES,
+  UNCHECKED_BUILT as MUSE_CODE_UNCHECKED_BUILT,
+  UNCHECKED_NOT as MUSE_CODE_UNCHECKED_NOT,
+  UNCHECKED_READERS as MUSE_CODE_UNCHECKED_READERS,
+} from "@collector/adapters/muse-code/index";
+import {
   KIMCHI_CAPABILITIES,
   UNCHECKED_NOTE as KIMCHI_UNCHECKED_NOTE,
 } from "@collector/adapters/kimchi/index";
@@ -125,6 +131,9 @@ const GROK_BUILD_NOTES = fileURLToPath(
 const OH_MY_PI_NOTES = fileURLToPath(
   new URL("../../../../docs/adapters/oh-my-pi.md", import.meta.url),
 );
+const MUSE_CODE_NOTES = fileURLToPath(
+  new URL("../../../../docs/adapters/muse-code.md", import.meta.url),
+);
 
 const GUIDE_HEADING = "#### What each agent can report";
 const README_HEADING = "## Supported agents and systems";
@@ -157,6 +166,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Droid", DROID_CAPABILITIES],
   ["Grok Build", GROK_BUILD_CAPABILITIES],
   ["Oh My Pi", OH_MY_PI_CAPABILITIES],
+  ["Muse Code", MUSE_CODE_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -881,5 +891,70 @@ test("PRIVACY.md and the Oh My Pi notes name what is read and from which version
   }
   for (const field of ["57771ae", "v19.0.0", "session-title-slot.ts", "agent-session.ts"]) {
     expect(notes, field).toContain(field);
+  }
+});
+
+test("PRIVACY.md and the Muse Code notes name what is read and from which version", async () => {
+  const privacy = await readFile(PRIVACY, "utf8");
+  const notes = await readFile(MUSE_CODE_NOTES, "utf8");
+  const line = (start: string) => privacy.split("\n").find((one) => one.startsWith(start)) ?? "";
+
+  const muse = line("For Muse Code, Agent Lookout reads");
+  for (const words of [
+    "built from Meta's documentation",
+    "protocol schema at 1.4.24",
+    "open-source readers",
+    "`ps`",
+    "locks, databases and sockets",
+  ]) {
+    expect(muse, words).toContain(words);
+  }
+  expect(muse).not.toContain("Oh My Pi");
+  expect(MUSE_CODE_UNCHECKED_BUILT).toContain("1.4.24");
+  expect(MUSE_CODE_UNCHECKED_READERS).toContain("not on Muse Code's own program");
+  expect(MUSE_CODE_UNCHECKED_NOT).toContain("so a status can be wrong");
+  expect(notes).toContain("MIT");
+
+  const start = privacy.indexOf("### Muse Code's files");
+  expect(start).toBeGreaterThan(-1);
+  const section = privacy.slice(start, privacy.indexOf("\n### ", start));
+  for (const text of [section, notes]) {
+    for (const field of [
+      "~/.local/share/muse",
+      "AGENT_LOOKOUT_MUSE_CODE_HOME",
+      "XDG_DATA_HOME",
+      "MUSE_DATA_DIR",
+      "session.jsonl",
+      ".session.lock",
+      "session-index.db",
+      "subagent/",
+      "runtime.session.metadata",
+      "workspace_root",
+      "session.end",
+      "session.resumed",
+      "retained_frame",
+      "presentation_phase",
+      "64 KiB",
+      "8 MiB",
+      "1 MiB",
+      "16 KiB",
+      "4,096",
+      "ps -A -o pid=,lstart=,comm=",
+    ]) {
+      expect(text, field).toContain(field);
+    }
+  }
+  for (const field of ["5d8ba2e", "281239e", "3512269", "1.4.24", "user_input_prompt_requested"]) {
+    expect(notes, field).toContain(field);
+  }
+  // The notes name no reader that is not used.
+  for (const name of [
+    "doubleagent",
+    "system_prompts_leaks",
+    "coding_agent_session_search",
+    "ccmux",
+    "agentworks",
+  ]) {
+    expect(notes, name).not.toContain(name);
   }
 });

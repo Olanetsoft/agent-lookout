@@ -4,7 +4,7 @@ See every AI coding agent running on your computer on one page, and which one is
 
 [![npm](https://img.shields.io/npm/v/agent-lookout)](https://www.npmjs.com/package/agent-lookout) [![CI](https://img.shields.io/github/actions/workflow/status/Olanetsoft/agent-lookout/ci.yml?branch=main&label=CI)](https://github.com/Olanetsoft/agent-lookout/actions/workflows/ci.yml) [![License](https://img.shields.io/npm/l/agent-lookout)](LICENSE) ![Node.js](https://img.shields.io/node/v/agent-lookout)
 
-It finds your Claude Code, Codex, Antigravity, Antigravity CLI, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx, Unreal Agent, Autohand Code, DeepSeek Harness, Droid, Grok Build and Oh My Pi sessions on its own, with no setup. It never starts a session, and it stops one or answers a prompt only when you press the button, or by a rule you set.
+It finds your Claude Code, Codex, Antigravity, Antigravity CLI, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx, Unreal Agent, Autohand Code, DeepSeek Harness, Droid, Grok Build, Oh My Pi and Muse Code sessions on its own, with no setup. It never starts a session, and it stops one or answers a prompt only when you press the button, or by a rule you set.
 
 [Install](#install) · [Download for Mac](https://github.com/Olanetsoft/agent-lookout/releases/latest) · [Guide](docs/GUIDE.md) · [Privacy](#privacy) · [Changelog](CHANGELOG.md) · [Website](https://www.agentlookout.app)
 
@@ -81,6 +81,7 @@ Any other agent can show up by writing one small file per session, and Amp throu
 | Droid            | No        | No     | No        | No     | No     | No     |
 | Grok Build       | Partly    | Partly | Partly    | No     | No     | No     |
 | Oh My Pi         | Partly    | No     | Partly    | No     | No     | No     |
+| Muse Code        | Partly    | No     | Partly    | No     | No     | No     |
 | Status files     | Partly    | No     | Partly    | No     | No     | No     |
 
 Codex doesn't record when it waits for your approval, so a waiting session shows as working, and after 5 minutes its row says how long it has been quiet. The Antigravity CLI and the Antigravity app show as needing you while they ask you to approve a step, but not what they ask. [What each agent can report](docs/GUIDE.md#what-each-agent-can-report) explains every Partly and No.
@@ -128,6 +129,8 @@ Droid support reads the first line of its session files, in `~/.factory/sessions
 Grok Build support reads the list of open sessions its terminal app keeps, in `~/.grok/active_sessions.json`, and each session's event log, as bytes. A session shows as working, idle, failed or finished, and as needing you while Grok Build asks you a question or waits for you to approve a plan. A wait for a tool's approval shows as working. It takes a title only when Grok Build marks it as set by you, else its folder's name. Jump works in tmux and in a Terminal or iTerm2 tab on a Mac. It was built from Grok Build's source at 1.0.45, while released builds are at 1.0.89, and has not yet been checked on a computer running it.
 
 Oh My Pi support reads the title slot, the header and the newest lines of each session's file, in `~/.omp/agent/sessions`, as bytes. A session shows as finished or failed once Oh My Pi writes that it stopped, unless a prompt follows the stop, as in a resumed session, or a tool's start follows it and the newest line is then a tool's start, or a reply or a result not written within 15 seconds of the stop, and on macOS and Linux as working while a turn is open, as needing you while its `ask` tool waits, and as finished once no `omp` that could have written it runs. On a Mac, an `omp` installed with `bun install -g` runs as `bun`, which `ps` cannot tell from any other `bun`, so its sessions do not show as working or needing you, and while any `bun` runs, a session Oh My Pi did not write that it stopped can show as unknown instead of finished. Idle never shows, and a wait for a tool's approval shows as working. It takes the title you or a model gave it, else its folder's name. It was built from Oh My Pi's source at v19.0.0 and has not yet been checked on a computer running it.
+
+Muse Code support reads each session's log in `~/.local/share/muse/sessions` as bytes. A session shows as failed or finished once Muse Code writes so, and on macOS and Linux as working, idle or needing you while a Muse Code that started before its newest status record runs, whichever session that one holds, so a session whose own Muse Code was killed can show as working or idle while another runs. It is named after its workspace folder. It was built from Meta's documentation, its MIT-licensed SDK and protocol schema at 1.4.24 and its cookbook, and from open-source readers of Muse Code's files, and has not yet been checked on a computer running it.
 
 |                                                    | macOS | Linux | Windows |
 | -------------------------------------------------- | ----- | ----- | ------- |

@@ -33,6 +33,7 @@
     "grok-build",
     "oh-my-pi",
     "omp",
+    "muse-code",
     "mcp",
     "mcp-server",
     "tmux",

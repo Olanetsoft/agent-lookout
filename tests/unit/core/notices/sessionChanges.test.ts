@@ -775,6 +775,7 @@ describe("over a long run of snapshots", () => {
     droid: [],
     "grok-build": [],
     "oh-my-pi": [],
+    "muse-code": [],
     "status-files": [F],
   };
   const sourceOf = (id: string): SourceId =>

@@ -28,6 +28,7 @@ import { createKimchiAdapter } from "./adapters/kimchi/index.ts";
 import { createKimiCodeAdapter } from "./adapters/kimi-code/index.ts";
 import { createMimoCodeAdapter } from "./adapters/mimo-code/index.ts";
 import { createMistralVibeAdapter } from "./adapters/mistral-vibe/index.ts";
+import { createMuseCodeAdapter } from "./adapters/muse-code/index.ts";
 import { createOhMyPiAdapter } from "./adapters/oh-my-pi/index.ts";
 import { createOpencodeAdapter } from "./adapters/opencode/index.ts";
 import { createPiAdapter } from "./adapters/pi/index.ts";
@@ -121,7 +122,7 @@ import { readWebhookSetup, webhookProblemLine } from "./webhook/webhookSettings.
 export interface CollectorOptions {
   /** The app version reported by `/api/health`. */
   version: string;
-  /** Defaults to every adapter the app ships: Claude Code, Codex, the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx, Unreal Agent, Autohand Code, DeepSeek Harness, Droid, Grok Build, Oh My Pi and status files. */
+  /** Defaults to every adapter the app ships: Claude Code, Codex, the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx, Unreal Agent, Autohand Code, DeepSeek Harness, Droid, Grok Build, Oh My Pi, Muse Code and status files. */
   adapters?: readonly Adapter[];
   /**
    * Where the default adapters read their settings, such as
@@ -137,8 +138,8 @@ export interface CollectorOptions {
    * `AGENT_LOOKOUT_PRIME_AGENT_HOME`, `AGENT_LOOKOUT_FX_HOME`,
    * `AGENT_LOOKOUT_UNREAL_AGENT_SESSION_DIR`, `AGENT_LOOKOUT_AUTOHAND_HOME`,
    * `AGENT_LOOKOUT_DEEPSEEK_HARNESS_HOME`, `AGENT_LOOKOUT_DROID_HOME`,
-   * `AGENT_LOOKOUT_GROK_HOME`, `AGENT_LOOKOUT_OMP_HOME` and
-   * `AGENT_LOOKOUT_STATUS_DIR`, and
+   * `AGENT_LOOKOUT_GROK_HOME`, `AGENT_LOOKOUT_OMP_HOME`,
+   * `AGENT_LOOKOUT_MUSE_CODE_HOME` and `AGENT_LOOKOUT_STATUS_DIR`, and
    * where `AGENT_LOOKOUT_NOTIFICATIONS`, the
    * history settings, the email settings, the webhook settings and
    * `AGENT_LOOKOUT_SETTINGS_FILE` are read. Defaults to `process.env`.
@@ -635,6 +636,8 @@ export function createCollector(options: CollectorOptions): Collector {
     }),
     // Read from each session's title slot, header and newest lines, with no last message.
     createOhMyPiAdapter({ env: options.env, now, pollIntervalMs: intervalMs, platform }),
+    // Read from each session's log, as bytes, with no last message.
+    createMuseCodeAdapter({ env: options.env, now, pollIntervalMs: intervalMs, platform }),
     createStatusFileAdapter({ env: options.env, now, pollIntervalMs: intervalMs }),
   ];
   const poller = createPoller({

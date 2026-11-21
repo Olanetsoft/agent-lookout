@@ -27,6 +27,7 @@ import {
   EMPTY_GOOSE_HOME,
   EMPTY_GROK_HOME,
   EMPTY_OMP_HOME,
+  EMPTY_MUSE_CODE_HOME,
   EMPTY_PI_HOME,
   EMPTY_GEMINI_CLI_HOME,
   EMPTY_HERMES_HOME,
@@ -245,6 +246,13 @@ process.env.AGENT_LOOKOUT_OMP_HOME = EMPTY_OMP_HOME;
 delete process.env.OMP_PROFILE;
 delete process.env.PI_PROFILE;
 delete process.env.PI_CONFIG_DIR;
+
+// Nor Muse Code's, in `~/.local/share/muse` or `$XDG_DATA_HOME/muse`: the
+// adapter is pointed at an empty folder, which wins over both. Muse Code has
+// no variable of its own that the adapter reads, so none is dropped. A test of
+// the adapter names a folder of its own.
+mkdirSync(path.join(EMPTY_MUSE_CODE_HOME, "sessions"), { recursive: true });
+process.env.AGENT_LOOKOUT_MUSE_CODE_HOME = EMPTY_MUSE_CODE_HOME;
 
 // And `os.homedir()` is an empty folder, never the home of the person running
 // the tests, so a collector whose environment forgets to name a folder of an

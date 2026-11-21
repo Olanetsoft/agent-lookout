@@ -16,6 +16,7 @@ import {
   psLine,
   standInPs,
 } from "@tests/support/adapters/deepseek-harness/deepseekHarnessAdapter";
+import { backs } from "@collector/adapters/deepseek-harness/processes";
 import {
   createDshProcessAsker,
   DESKTOP_PROGRAMS,
@@ -310,6 +311,60 @@ describe("the names a table is read for", () => {
       names,
     }).read();
     expect(read).toMatchObject({ ok: true, programs: [{ desktop: true }] });
+  });
+});
+
+describe("a prefix of backing names, as Muse Code's adapter gives one", () => {
+  const prefixed = {
+    backing: new Set(["muse", "muse.exe"]),
+    backingPrefix: "muse-",
+    maybe: new Set<string>(),
+  };
+
+  test("backs a name that begins with it and has more after it, and not the prefix alone", () => {
+    expect(backs("muse-bin-1.4.24", prefixed)).toBe(true);
+    expect(backs("muse-aarch64-li", prefixed)).toBe(true);
+    expect(backs("muse-", prefixed)).toBe(false);
+    expect(backs("muse", prefixed)).toBe(true);
+    expect(backs("muse.exe", prefixed)).toBe(true);
+    expect(backs("Muse", prefixed)).toBe(false);
+    expect(backs("xmuse-bin", prefixed)).toBe(false);
+    expect(backs("tbh-linux-sandbox", prefixed)).toBe(false);
+  });
+
+  test("is read from a table's lines, by the last part of a program's path", () => {
+    const lines = [
+      psLine(OWN_PID, NOW, "node"),
+      psLine(11, NOW - MINUTE, "/opt/homebrew/bin/muse-aarch64-darwin"),
+      psLine(12, NOW - 2 * MINUTE, "muse-"),
+      psLine(13, NOW - 3 * MINUTE, "muse"),
+      psLine(14, NOW - 4 * MINUTE, "musescore"),
+    ];
+    expect(dshInTable(lines.join("\n"), OWN_PID, prefixed)).toEqual({
+      ok: true,
+      ownListed: true,
+      programs: [
+        { start: NOW - MINUTE, desktop: true },
+        { start: NOW - 3 * MINUTE, desktop: true },
+      ],
+    });
+  });
+
+  test("with none set, as DeepSeek Harness's and Oh My Pi's names have, nothing changes", () => {
+    const lines = [
+      psLine(OWN_PID, NOW, "node"),
+      psLine(11, NOW - MINUTE, "omp-x"),
+      psLine(12, NOW - 2 * MINUTE, "DeepSeek Harness-x"),
+      psLine(13, NOW - 3 * MINUTE, "omp"),
+    ].join("\n");
+    const omp = { backing: new Set(["omp"]), maybe: new Set(["bun"]) };
+    expect(dshInTable(lines, OWN_PID, omp)).toEqual(
+      dshInTable(lines, OWN_PID, { ...omp, backingPrefix: undefined }),
+    );
+    expect(dshInTable(lines, OWN_PID, omp).ok && dshInTable(lines, OWN_PID, omp)).toMatchObject({
+      programs: [{ start: NOW - 3 * MINUTE, desktop: true }],
+    });
+    expect(dshInTable(lines, OWN_PID)).toMatchObject({ programs: [] });
   });
 });
 
