@@ -2,7 +2,9 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
-## Unreleased
+## 0.2.28 - 2026-11-21
+
+The Mac app and the MCP server built into the command take security fixes in Electron, Zod and fast-uri, and on Windows an agent's file put in place of another is always told from it.
 
 ### Fixed
 
