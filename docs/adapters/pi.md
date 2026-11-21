@@ -39,8 +39,10 @@ Pi works the folder out in `src/config.ts:630-636` and `:674-676`, and takes the
 | ----------------------------- | --------------------------------------------------- |
 | `AGENT_LOOKOUT_PI_HOME`       | `<folder>/sessions`, for Agent Lookout alone        |
 | `PI_CODING_AGENT_SESSION_DIR` | That folder, with the files directly in it          |
-| `PI_CODING_AGENT_DIR`         | `<folder>/sessions`                                 |
+| `PI_CODING_AGENT_DIR`         | `<folder>/sessions`, unless it is Kimchi's          |
 | None                          | `~/.pi/agent/sessions`, on macOS, Linux and Windows |
+
+Kimchi writes its own agent folder into both `KIMCHI_CODING_AGENT_DIR` and `PI_CODING_AGENT_DIR` as it starts (see [Kimchi](kimchi.md)), so a program it starts, as Agent Lookout run from inside Kimchi, inherits both. A `PI_CODING_AGENT_DIR` that names the same folder as `KIMCHI_CODING_AGENT_DIR` is that one, and the adapter goes past it, so it reads Pi's own folder and never turns a `session_info` line Kimchi wrote into text.
 
 `~` is the home folder, `os.homedir()` in Pi and in Agent Lookout, which on Windows is `C:\Users\<name>`. Pi expands a leading `~` in its two variables, and so does the adapter. A relative value means a folder relative to where Pi was started, which cannot be known here, so the adapter goes past it.
 

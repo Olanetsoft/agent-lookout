@@ -107,6 +107,30 @@ describe("where it looks", () => {
     );
   });
 
+  test("past a PI_CODING_AGENT_DIR that names KIMCHI_CODING_AGENT_DIR's folder, as Kimchi sets both for the programs it starts", () => {
+    const harness = path.resolve("/kimchi-harness");
+    expect(
+      asWritten(
+        piSessionsDirFor(
+          { PI_CODING_AGENT_DIR: harness, KIMCHI_CODING_AGENT_DIR: `${harness}/` },
+          HOME,
+        ),
+      ),
+    ).toBe(SESSIONS_DIR);
+    // A folder of the person's own, beside Kimchi's, is still followed.
+    const agent = path.resolve("/pi-agent");
+    expect(
+      asWritten(
+        piSessionsDirFor({ PI_CODING_AGENT_DIR: agent, KIMCHI_CODING_AGENT_DIR: harness }, HOME),
+      ),
+    ).toBe(asWritten(path.join(agent, "sessions")));
+    expect(
+      asWritten(
+        piSessionsDirFor({ PI_CODING_AGENT_DIR: "~/k", KIMCHI_CODING_AGENT_DIR: "~/k" }, HOME),
+      ),
+    ).toBe(SESSIONS_DIR);
+  });
+
   test("in PI_CODING_AGENT_SESSION_DIR itself, which comes before PI_CODING_AGENT_DIR", () => {
     const sessions = path.resolve("/pi-sessions");
     const env = {

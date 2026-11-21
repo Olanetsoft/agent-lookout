@@ -118,6 +118,13 @@ describe("the order of the rules", () => {
     );
   });
 
+  test("a PI_CODING_AGENT_DIR that is KIMCHI_CODING_AGENT_DIR's folder is Kimchi's, set for the programs it starts, and not followed", () => {
+    const env = { PI_CODING_AGENT_DIR: "/tmp/kimchi", KIMCHI_CODING_AGENT_DIR: "/tmp/kimchi/" };
+    expect(folderFor(env)).toMatchObject({ passedOver: [] });
+    expect(dirOf(env)).toBe(SESSIONS);
+    expect(dirOf({ ...env, KIMCHI_CODING_AGENT_DIR: "/tmp/other" })).toBe("/tmp/kimchi/sessions");
+  });
+
   test("a PI_CODING_AGENT_DIR that is ~/.omp/agent counts as the default, so XDG_DATA_HOME can move it", () => {
     const env = { PI_CODING_AGENT_DIR: `${HOME}/.omp/agent/`, XDG_DATA_HOME: XDG };
     expect(folderFor(env, { there: true })).toMatchObject({

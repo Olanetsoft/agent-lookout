@@ -38,6 +38,13 @@ export interface PiProfile {
    * move the folder, as Kimchi does.
    */
   agentDirEnv?: string;
+  /**
+   * Other agents' variables for their own agent folders, which those agents
+   * also write into `agentDirEnv` as they start, as Kimchi does. When one of
+   * them names the same folder, Agent Lookout was started from inside that
+   * agent, and `agentDirEnv` is not followed.
+   */
+  agentDirSetBy?: readonly string[];
   /** Its agent folder, in the home folder, when nothing names another. */
   agentDir: readonly string[];
   /**
@@ -76,10 +83,13 @@ export interface PiProfile {
 /** The parts of a profile that say where its files are. */
 export type ProfilePaths = Pick<
   PiProfile,
-  "homeEnv" | "sessionsEnv" | "legacySessionsEnv" | "agentDirEnv" | "agentDir"
+  "homeEnv" | "sessionsEnv" | "legacySessionsEnv" | "agentDirEnv" | "agentDirSetBy" | "agentDir"
 >;
 
 /** One of the agent's own settings as a folder: `~` is the home folder, and a relative one cannot be followed. */
+/** Kimchi's own variable for its agent folder, which it writes into `PI_CODING_AGENT_DIR` too as it starts. */
+export const KIMCHI_AGENT_DIR_ENV = "KIMCHI_CODING_AGENT_DIR";
+
 function ownFolder(value: string | undefined, homeDir: string): string | undefined {
   const folder = value?.trim();
   if (!folder) return undefined;
@@ -114,9 +124,27 @@ export function sessionsDirFor(
       ? undefined
       : ownFolder(env[profile.legacySessionsEnv], homeDir);
   if (legacy !== undefined) return path.resolve(legacy);
-  const named =
-    profile.agentDirEnv === undefined ? undefined : ownFolder(env[profile.agentDirEnv], homeDir);
+  const named = namedAgentDir(profile, env, homeDir);
   return path.resolve(named ?? path.join(homeDir, ...profile.agentDir), "sessions");
+}
+
+/**
+ * The folder a profile's `agentDirEnv` names, unless one of its `agentDirSetBy`
+ * names the same folder, as another agent sets for the programs it starts.
+ */
+function namedAgentDir(
+  profile: ProfilePaths,
+  env: NodeJS.ProcessEnv,
+  homeDir: string,
+): string | undefined {
+  if (profile.agentDirEnv === undefined) return undefined;
+  const named = ownFolder(env[profile.agentDirEnv], homeDir);
+  if (named === undefined) return undefined;
+  const setByAnother = (profile.agentDirSetBy ?? []).some((name) => {
+    const other = ownFolder(env[name], homeDir);
+    return other !== undefined && path.resolve(other) === path.resolve(named);
+  });
+  return setByAnother ? undefined : named;
 }
 
 /**
@@ -133,7 +161,6 @@ export function agentDirFor(
 ): string {
   const own = env[profile.homeEnv]?.trim();
   if (own) return path.resolve(own);
-  const named =
-    profile.agentDirEnv === undefined ? undefined : ownFolder(env[profile.agentDirEnv], homeDir);
+  const named = namedAgentDir(profile, env, homeDir);
   return path.resolve(named ?? path.join(homeDir, ...profile.agentDir));
 }
