@@ -21,7 +21,7 @@ import {
   PI_TABLE_ARGS,
   type PiProcessReader,
 } from "./processes.ts";
-import { sessionsDirFor, type PiProfile } from "./profile.ts";
+import { KIMCHI_AGENT_DIR_ENV, sessionsDirFor, type PiProfile } from "./profile.ts";
 import { createSessionFileReader, type PiSessionFile } from "./sessionFile.ts";
 import { createSessionFileFinder, type SessionFileRef } from "./sessionFiles.ts";
 import { piSession, SOURCE_ID, type PiEvidence } from "./toSession.ts";
@@ -145,6 +145,8 @@ export const PI_PROFILE: PiProfile = {
   homeEnv: PI_HOME_ENV,
   sessionsEnv: PI_OWN_SESSIONS_ENV,
   agentDirEnv: PI_OWN_HOME_ENV,
+  // Kimchi writes its own folder into PI_CODING_AGENT_DIR for the programs it starts.
+  agentDirSetBy: [KIMCHI_AGENT_DIR_ENV],
   agentDir: [".pi", "agent"],
   readsNames: true,
   hiddenMarkers: [],
@@ -156,7 +158,8 @@ export const PI_PROFILE: PiProfile = {
  * The folder this adapter reads. `AGENT_LOOKOUT_PI_HOME` names Pi's agent folder,
  * for Agent Lookout alone. Otherwise it is worked out as Pi does (`config.ts`,
  * and `main.ts` for the order): `PI_CODING_AGENT_SESSION_DIR`, else `sessions` in
- * `PI_CODING_AGENT_DIR` or `~/.pi/agent`, on every system. `--session-dir` and the
+ * `PI_CODING_AGENT_DIR`, unless `KIMCHI_CODING_AGENT_DIR` names the same folder, as
+ * Kimchi sets both for the programs it starts, or `~/.pi/agent`, on every system. `--session-dir` and the
  * `sessionDir` setting are not followed: the settings file is never read, and a
  * process's arguments are not either.
  */

@@ -1,5 +1,7 @@
 import path from "node:path";
 
+import { KIMCHI_AGENT_DIR_ENV } from "../pi/profile.ts";
+
 /**
  * Where Oh My Pi keeps its sessions. Built from Oh My Pi's source at v19.0.0
  * and not yet checked on a computer running it.
@@ -158,7 +160,14 @@ function plan(env: NodeJS.ProcessEnv, homeDir: string, platform: NodeJS.Platform
     // One a parent's profile set is that profile's, and not followed (dirs.ts:470-486).
     const profiles =
       piProfile !== null && agentDir === path.join(root, "profiles", piProfile, "agent");
-    if (!profiles) {
+    // Kimchi writes its own folder into both as it starts, for the programs it starts.
+    const kimchi = env[KIMCHI_AGENT_DIR_ENV];
+    const setByKimchi =
+      kimchi !== undefined &&
+      path.isAbsolute(kimchi) &&
+      path.isAbsolute(agentDir) &&
+      path.resolve(kimchi) === path.resolve(agentDir);
+    if (!profiles && !setByKimchi) {
       if (!path.isAbsolute(agentDir)) passedOver.push("agent-dir");
       else if (path.resolve(agentDir) !== path.resolve(defaultAgent)) {
         return {
@@ -183,7 +192,9 @@ function plan(env: NodeJS.ProcessEnv, homeDir: string, platform: NodeJS.Platform
  * 3. A named profile: `$XDG_DATA_HOME/omp/profiles/<name>/sessions` when that
  *    profile's folder is there, else `~/.omp/profiles/<name>/agent/sessions`.
  * 4. `PI_CODING_AGENT_DIR`, when it is a whole path, is not the agent folder
- *    of the profile `PI_PROFILE` names and is not `~/.omp/agent`: `sessions` in it.
+ *    of the profile `PI_PROFILE` names, is not the folder `KIMCHI_CODING_AGENT_DIR`
+ *    names, as Kimchi sets both for the programs it starts, and is not
+ *    `~/.omp/agent`: `sessions` in it.
  * 5. `$XDG_DATA_HOME/omp/sessions` when `$XDG_DATA_HOME/omp` is there, else
  *    `~/.omp/agent/sessions`.
  *
