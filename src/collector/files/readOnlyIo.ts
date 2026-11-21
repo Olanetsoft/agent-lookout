@@ -1,4 +1,4 @@
-import { constants, type Stats } from "node:fs";
+import { constants, type BigIntStats } from "node:fs";
 import { lstat, readdir, realpath, stat } from "node:fs/promises";
 
 import { openWithoutFollowing } from "./noFollow.ts";
@@ -9,7 +9,7 @@ export interface FileInfo {
   kind: "file" | "directory" | "other";
   size: number;
   mtimeMs: number;
-  /** The file's identity on its disk, so a file replaced under the same name is noticed. */
+  /** The file's identity on its disk, so a file replaced under the same name is noticed: `inoOf`. */
   ino: number;
   /**
    * The user who owns it, its permission bits and how many names it has, as
@@ -57,15 +57,39 @@ export interface ReadOnlyIo {
   realpath?(target: string): Promise<string>;
 }
 
-function infoOf(stats: Stats): FileInfo {
+/**
+ * A file's ID on its disk as a number. Node's ordinary stats give it as a
+ * number, which keeps only 53 bits, and an NTFS file ID often has more, so two
+ * files could get the same one (nodejs/node#12115). It is read whole, as a
+ * bigint, and the bits above the 53 are folded into the rest. An ID below
+ * 2^53, as on macOS and Linux, is left as it is.
+ */
+export function inoOf(ino: bigint): number {
+  return Number(BigInt.asUintN(53, ino ^ (ino >> 53n)));
+}
+
+const NS_PER_SECOND = 1_000_000_000n;
+
+/** A time in nanoseconds as milliseconds, worked out as Node's ordinary stats work out `mtimeMs`. */
+export function msOf(ns: bigint): number {
+  let seconds = ns / NS_PER_SECOND;
+  let nanoseconds = ns % NS_PER_SECOND;
+  if (nanoseconds < 0n) {
+    seconds -= 1n;
+    nanoseconds += NS_PER_SECOND;
+  }
+  return Number(seconds) * 1e3 + Number(nanoseconds) / 1e6;
+}
+
+function infoOf(stats: BigIntStats): FileInfo {
   return {
     kind: stats.isFile() ? "file" : stats.isDirectory() ? "directory" : "other",
-    size: stats.size,
-    mtimeMs: stats.mtimeMs,
-    ino: stats.ino,
-    uid: stats.uid,
-    mode: stats.mode,
-    nlink: stats.nlink,
+    size: Number(stats.size),
+    mtimeMs: msOf(stats.mtimeNs),
+    ino: inoOf(stats.ino),
+    uid: Number(stats.uid),
+    mode: Number(stats.mode),
+    nlink: Number(stats.nlink),
   };
 }
 
@@ -82,7 +106,7 @@ export async function openRegularFile(file: string): Promise<OpenFile> {
   const handle = await openWithoutFollowing(file, constants.O_RDONLY);
   let info: FileInfo;
   try {
-    info = infoOf(await handle.stat());
+    info = infoOf(await handle.stat({ bigint: true }));
     if (info.kind !== "file") throw new Error("Not an ordinary file.");
   } catch (error) {
     await handle.close();
@@ -111,8 +135,8 @@ export async function openRegularFile(file: string): Promise<OpenFile> {
 
 export const nodeIo: ReadOnlyIo = {
   readdir: (dir) => readdir(dir),
-  stat: async (target) => infoOf(await stat(target)),
-  lstat: async (target) => infoOf(await lstat(target)),
+  stat: async (target) => infoOf(await stat(target, { bigint: true })),
+  lstat: async (target) => infoOf(await lstat(target, { bigint: true })),
   openRegular: openRegularFile,
   realpath: (target) => realpath(target),
 };
