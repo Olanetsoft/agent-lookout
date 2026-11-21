@@ -115,6 +115,8 @@ export type OmpFileRead =
        * `lstat`'s, or this poll's `lstat` when the file could not be read again after that changed.
        */
       info: FileInfo;
+      /** False when the file changed since what it shows was read and could not be read again. */
+      current: boolean;
     }
   /** No session yet: gone, not in a real folder, not whole, or with no line that decides. */
   | { state: "none" }
@@ -287,7 +289,12 @@ export function createOmpSessionReader(
 ): OmpSessionReader {
   const remembered = new Map<string, Known>();
 
-  function answer(known: Known, writtenAt: number, info: FileInfo = known.info): OmpFileRead {
+  function answer(
+    known: Known,
+    writtenAt: number,
+    info: FileInfo = known.info,
+    current = true,
+  ): OmpFileRead {
     if (known.verdict !== "ok" || known.header === null || known.tail === null) {
       return { state: known.verdict === "ok" ? "none" : known.verdict };
     }
@@ -298,6 +305,7 @@ export function createOmpSessionReader(
       file: { ...known.header, title: known.title, tail },
       writtenAt,
       info,
+      current,
     };
   }
 
@@ -431,7 +439,9 @@ export function createOmpSessionReader(
         // nothing here took note of it.
         // This poll's `lstat` stands for what was read, so a write since an answer is never taken
         // for one read before it.
-        return known === undefined ? { state: "none" } : answer(known, ref.info.mtimeMs, ref.info);
+        return known === undefined
+          ? { state: "none" }
+          : answer(known, ref.info.mtimeMs, ref.info, false);
       }
     },
     keepOnly(paths) {

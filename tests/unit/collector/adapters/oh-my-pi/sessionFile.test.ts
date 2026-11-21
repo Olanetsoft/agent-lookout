@@ -343,6 +343,7 @@ describe("the header", () => {
         mtimeMs: WRITTEN,
         ino: expect.any(Number),
       },
+      current: true,
     });
   });
 
@@ -445,6 +446,28 @@ describe("opening a file", () => {
       writtenAt: WRITTEN + MINUTE,
       file: { tail: { newest: { sort: "prompt" } } },
     });
+  });
+
+  test("keeps what it read when a changed file cannot be read again, and says so", async () => {
+    const files = memoryFiles();
+    files.write(FILE, sessionText(), { mtimeMs: WRITTEN });
+    const reader = readerOf(files);
+    expect(await readAt(reader, files)).toMatchObject({ state: "ok", current: true });
+    files.append(FILE, message("user"), { mtimeMs: WRITTEN + MINUTE });
+    files.failOpen(FILE);
+    expect(await readAt(reader, files)).toMatchObject({
+      state: "ok",
+      current: false,
+      writtenAt: WRITTEN + MINUTE,
+      file: { tail: { newest: { sort: "reply" } } },
+    });
+    files.heal(FILE);
+    expect(await readAt(reader, files)).toMatchObject({
+      state: "ok",
+      current: true,
+      file: { tail: { newest: { sort: "prompt" } } },
+    });
+    expect(files.openHandles()).toBe(0);
   });
 
   test("judges whether the slot is settled by the open file's time when it is later than the lstat's", async () => {

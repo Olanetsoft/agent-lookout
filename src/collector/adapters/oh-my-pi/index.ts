@@ -278,6 +278,8 @@ interface Found {
   asRead: StampedFile;
   file: OmpSessionFile;
   writtenAt: number;
+  /** False when the file changed since what it shows was read and could not be read again. */
+  current: boolean;
 }
 
 /** The folder read, with the finder and reader of its files. */
@@ -515,6 +517,7 @@ export function createOhMyPiAdapter(options: OhMyPiAdapterOptions = {}): Adapter
         asRead: { path: ref.path, info: read.info },
         file: read.file,
         writtenAt: read.writtenAt,
+        current: read.current,
       });
     }
     reader.keepOnly(new Set(refs.map((ref) => ref.path)));
@@ -528,9 +531,10 @@ export function createOhMyPiAdapter(options: OhMyPiAdapterOptions = {}): Adapter
       const writtenAt = plausibleTime(Math.floor(one.writtenAt), checkedAt);
       // By the same rule as its status: an exit cut off decides by the newest line's own time, never the file's last write, and one before the header, as a copy keeps, decides nothing.
       const { startedAt } = one.file;
+      const { current } = one;
       const exit = exitOf({ newest, behind, cutOff, startedAt, now: checkedAt });
       // A newest reply's or result's own time, so a rename another omp writes later backs nothing.
-      const decidedAt = decidedAtOf({ newest, writtenAt, startedAt, now: checkedAt });
+      const decidedAt = decidedAtOf({ newest, writtenAt, startedAt, current, now: checkedAt });
       // Whether `ps` could change its status: not once Oh My Pi wrote that it stopped, nor when it was last written before the computer started.
       const settled =
         (exit !== null && plausibleTime(exit.at, checkedAt) !== null) ||
@@ -559,7 +563,8 @@ export function createOhMyPiAdapter(options: OhMyPiAdapterOptions = {}): Adapter
 
     let unread = false;
     let tooFar = false;
-    const sessions = facts.map(({ asRead, file, newest, behind, cutOff, writtenAt, decidedAt }) => {
+    const sessions = facts.map((fact) => {
+      const { asRead, file, newest, behind, cutOff, writtenAt, decidedAt, current } = fact;
       const writer = dshWriter({
         platform,
         writtenAt: decidedAt,
@@ -578,6 +583,7 @@ export function createOhMyPiAdapter(options: OhMyPiAdapterOptions = {}): Adapter
         cutOff,
         writtenAt,
         startedAt,
+        current,
         writer,
         now: checkedAt,
       });

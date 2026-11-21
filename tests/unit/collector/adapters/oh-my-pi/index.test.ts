@@ -662,6 +662,31 @@ describe("asking ps", () => {
     expect(ps.runs).toHaveLength(2);
   });
 
+  test("a file written since and not read again is judged by its last write, so the omp that wrote it keeps it from finishing", async () => {
+    const clock = handClock();
+    const resultAt = NOW - 5 * MINUTE;
+    const ps = standInPs([psLine(7001, resultAt - MINUTE, "omp")]);
+    const files = filesWith(
+      sessionText(
+        message("user", { at: resultAt - 2 * SECOND }) +
+          message("assistant", { at: resultAt - SECOND }) +
+          message("toolResult", { at: resultAt }),
+      ),
+      resultAt,
+    );
+    const adapter = ohMyPiAdapterFor(files, { now: clock.now, ps });
+    expect((await adapter.poll()).sessions[0]?.status).toBe("working");
+    // That omp exits, and one started since reopens the session, whose file cannot be opened again.
+    ps.set([psLine(7002, NOW - 2 * MINUTE, "omp")]);
+    appendSession(files, FILE, message("user", { at: NOW - MINUTE }), NOW - MINUTE);
+    files.failOpen(FILE);
+    clock.advance(PROCESS_CHECK_MS);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("working");
+    files.heal(FILE);
+    clock.advance(PROCESS_CHECK_MS);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("working");
+  });
+
   test("allows for a rounded write time again for a file that changed since that answer and could not be opened", async () => {
     const STEP = NOW - 2 * SECOND;
     const files = filesWith(sessionText(message("user")), STEP);

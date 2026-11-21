@@ -375,6 +375,14 @@ describe("the last write ps is judged against", () => {
     for (const newest of others) expect(judged({ newest, writtenAt: WRITTEN + 0.5 })).toBe(WRITTEN);
   });
 
+  test("is the file's last write when it was written since it was read and not read again", () => {
+    for (const line of [reply, result]) {
+      expect(judged({ newest: line(at), current: false })).toBe(WRITTEN);
+      expect(judged({ newest: line(at), current: true })).toBe(at);
+    }
+    expect(judged({ current: false, writtenAt: null })).toBeNull();
+  });
+
   test("is none when the file's last write cannot be right", () => {
     expect(judged({ writtenAt: null })).toBeNull();
     expect(judged({ writtenAt: NOW + CLOCK_SLACK_MS + 1 })).toBeNull();
