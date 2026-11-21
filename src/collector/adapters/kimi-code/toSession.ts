@@ -32,9 +32,15 @@ export interface KimiCodeSessionInput {
   stateWrittenAt: number;
   /** The event file's modified time, when a lock is held and it was looked up. */
   wireWrittenAt?: number;
-  /** The last poll that saw its lock held, while it is shown: a status after it is never since before it. */
-  lastHeldAt?: number | null;
+  /** The last poll that saw its lock held, and when that lock was taken, kept while it is shown. */
+  lastHeld?: KimiCodeHeld | null;
   now: number;
+}
+
+/** The last poll that saw a session's lock held, and when that lock was taken. */
+export interface KimiCodeHeld {
+  at: number;
+  lockStartedAt: number;
 }
 
 /**
@@ -49,7 +55,10 @@ export interface KimiCodeSessionInput {
  *   (`sessionState.ts`).
  * - The status time is when the lock was taken while it works, when the wait
  *   began while it needs you, and otherwise `updatedAt`, which Kimi Code moves
- *   at each prompt and each turn's end, else `state.json`'s modified time.
+ *   at each prompt and each turn's end, else `state.json`'s modified time. A
+ *   lock taken by the turn's end and held past it, as a background task or a
+ *   compaction holds it, makes that no earlier than the last poll that saw it
+ *   held. One taken after the turn's end, as to write a new title, does not.
  * - The last write is the event file's modified time, looked up only while a
  *   lock is held.
  * - It has the process's id while one runs that holds it or last held it. There
@@ -81,10 +90,17 @@ export function kimiCodeSession(input: KimiCodeSessionInput): Session {
     const ended =
       notBeforeStart(plausibleTime(state.updatedAt, now)) ??
       notBeforeStart(plausibleTime(Math.floor(input.stateWrittenAt), now));
-    // A lock held past the turn's end, as by a background task, ended no earlier than it was last seen held.
-    const lastHeld = plausibleTime(input.lastHeldAt ?? null, now);
+    const held = input.lastHeld ?? null;
+    const pastTheTurn =
+      held !== null &&
+      state.updatedAt !== null &&
+      held.lockStartedAt <= state.updatedAt + WRITE_ORDER_SLACK_MS
+        ? plausibleTime(held.at, now)
+        : null;
     statusSince =
-      ended === null || lastHeld === null ? (ended ?? lastHeld) : Math.max(ended, lastHeld);
+      ended === null || pastTheTurn === null
+        ? (ended ?? pastTheTurn)
+        : Math.max(ended, pastTheTurn);
   }
 
   const result: Session = {

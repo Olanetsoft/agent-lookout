@@ -97,26 +97,33 @@ describe("kimiCodeSession", () => {
     expect(kimiCodeSession(input({ lastHolder: LOCK, now: after })).stale).toBe(true);
   });
 
-  test("is idle, failed or finished no earlier than the last poll that saw its lock held", () => {
+  test("is idle, failed or finished no earlier than the last poll that saw held a lock taken by the turn's end", () => {
     const heldUntil = NOW - MINUTE;
+    // Taken before the turn ended, and held past it, as a background task holds it.
+    const pastTheTurn = { at: heldUntil, lockStartedAt: UPDATED_AT - MINUTE };
     for (const changes of [
       { lastHolder: LOCK },
       { lastHolder: LOCK, state: { ...input().state, lastTurnFailed: true } },
       {},
     ]) {
-      expect(kimiCodeSession(input({ ...changes, lastHeldAt: heldUntil })).statusSince).toBe(
+      expect(kimiCodeSession(input({ ...changes, lastHeld: pastTheTurn })).statusSince).toBe(
         heldUntil,
       );
-      // Seen held before the turn ended: the turn's end.
-      expect(
-        kimiCodeSession(input({ ...changes, lastHeldAt: UPDATED_AT - MINUTE })).statusSince,
-      ).toBe(UPDATED_AT);
-      expect(kimiCodeSession(input({ ...changes, lastHeldAt: null })).statusSince).toBe(UPDATED_AT);
+      // Seen held only before the turn ended: the turn's end.
+      const before = { ...pastTheTurn, at: UPDATED_AT - SECOND };
+      expect(kimiCodeSession(input({ ...changes, lastHeld: before })).statusSince).toBe(UPDATED_AT);
+      expect(kimiCodeSession(input({ ...changes, lastHeld: null })).statusSince).toBe(UPDATED_AT);
     }
+    // Taken after the turn ended, as to write a new title: the turn's end.
+    const renamed = { at: heldUntil, lockStartedAt: UPDATED_AT + MINUTE };
+    expect(kimiCodeSession(input({ lastHolder: LOCK, lastHeld: renamed })).statusSince).toBe(
+      UPDATED_AT,
+    );
     // One that cannot be right is passed over.
-    expect(
-      kimiCodeSession(input({ lastHolder: LOCK, lastHeldAt: NOW + 5 * MINUTE })).statusSince,
-    ).toBe(UPDATED_AT);
+    const ahead = { ...pastTheTurn, at: NOW + 5 * MINUTE };
+    expect(kimiCodeSession(input({ lastHolder: LOCK, lastHeld: ahead })).statusSince).toBe(
+      UPDATED_AT,
+    );
   });
 
   test("a failed last turn is failed", () => {
