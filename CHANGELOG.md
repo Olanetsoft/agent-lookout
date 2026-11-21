@@ -2,12 +2,14 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
-## Unreleased
+## 0.2.28 - 2026-11-21
+
+The Mac app and the MCP server built into the command take security fixes in Electron, Zod and fast-uri, and on Windows an agent's file put in place of another is told from it by its whole file ID.
 
 ### Fixed
 
 - The Mac app runs on Electron 44.11.3, which no longer trusts the compromised eMudhra intermediate certificates, and the MCP server built into `agent-lookout` takes Zod 4.6.7 and fast-uri 3.1.9, past their advisories. (#388)
-- On Windows, an agent's file put in place of another under the same name is always told from it, so it is read whole instead of on from where the old file ended. NTFS file IDs past 2^53 could look the same. (#391)
+- On Windows, an agent's file put in place of another under the same name is now told from it by its whole file ID, so it is read anew instead of on from where the old file ended. Node's ordinary file stats could give two NTFS file IDs past 2^53 the same number. (#391)
 
 ## 0.2.27 - 2026-11-21
 
