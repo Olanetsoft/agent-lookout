@@ -730,7 +730,7 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 - An approval Muse Code's automated reviewer holds shows as working until the reviewer hands it to you or 2 minutes pass with no answer (`museCodeMapping.ts`).
 - DeepSeek Harness's question to `ps` says whether a Muse Code that started before the newest status record runs, by a name of `muse`, `muse.exe` or one that begins `muse-` (`deepseek-harness/processes.ts`).
 
-**How sure it is.** Not checked against Muse Code yet. Any Muse Code that started before a session's newest status record holds it, whichever session that one holds, so a session whose own Muse Code was killed can show as working or idle while another runs.
+**How sure it is.** Not checked against Muse Code yet. Any Muse Code that started no later than a minute after a session's newest status record holds it, whichever session that one holds, so a session whose own Muse Code was killed can show as working or idle while another runs.
 
 ### Status files: your own agents
 
