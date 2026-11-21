@@ -169,6 +169,8 @@ A session is never `unknown`. It shows as `working` while any of its agents is b
 | `needs-you` | When the wait began                                 |
 | Any other   | `updatedAt`, else the modified time of `state.json` |
 
+A background task or a compaction holds the lock past the turn's end, which is the last `updatedAt` gives, so once the lock is let go the status time is never before the last poll that saw it held. Agent Lookout keeps that while the session is shown, so after it starts again a session whose lock it never saw held takes `updatedAt`.
+
 ### Idle and finished
 
 Kimi Code writes nothing that says a session is open but idle. So Agent Lookout keeps the process it last saw hold a session's lock, in memory, for as long as that process runs, and the session is `idle` until it ends. That is written nowhere, and a restart of Agent Lookout forgets it. It names a process, not a client, so a session left in a server or a window that serves many stays idle for as long as that runs.

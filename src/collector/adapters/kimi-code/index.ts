@@ -312,6 +312,8 @@ export function createKimiCodeAdapter(options: KimiCodeAdapterOptions = {}): Ada
   let settled = new Set<string>();
   /** The process Agent Lookout last saw hold each session's lock, while that runs. */
   let holders = new Map<string, SessionLock>();
+  /** The last poll that saw each shown session's lock held, kept while it is shown. */
+  let heldAt = new Map<string, number>();
   /** Each session's wait as the last poll showed it. */
   let waits = new Map<string, KimiCodeWait>();
   /**
@@ -394,6 +396,7 @@ export function createKimiCodeAdapter(options: KimiCodeAdapterOptions = {}): Ada
     shown = new Set();
     settled = new Set();
     holders = new Map();
+    heldAt = new Map();
     waits = new Map();
     ruledOut = new Set();
     sweptAt = null;
@@ -513,6 +516,7 @@ export function createKimiCodeAdapter(options: KimiCodeAdapterOptions = {}): Ada
     const sessions: Session[] = [];
     const stillShown = new Set<string>();
     const stillHeld = new Map<string, SessionLock>();
+    const stillHeldAt = new Map<string, number>();
     const shownWaits = new Map<string, KimiCodeWait>();
     for (const { session, state, lock, lastHolder, stateWrittenAt } of listed) {
       const { id } = session;
@@ -535,6 +539,9 @@ export function createKimiCodeAdapter(options: KimiCodeAdapterOptions = {}): Ada
 
       if (held || open || isWithinRetention(Math.floor(stateWrittenAt), checkedAt)) {
         stillShown.add(id);
+        // A background task or a compaction holds the lock past the turn's end, which `updatedAt` gives.
+        const lastHeldAt = held ? checkedAt : (heldAt.get(id) ?? null);
+        if (lastHeldAt !== null) stillHeldAt.set(id, lastHeldAt);
         sessions.push(
           kimiCodeSession({
             session,
@@ -544,6 +551,7 @@ export function createKimiCodeAdapter(options: KimiCodeAdapterOptions = {}): Ada
             wait,
             stateWrittenAt,
             ...(wireWrittenAt === undefined ? {} : { wireWrittenAt }),
+            lastHeldAt,
             now: checkedAt,
           }),
         );
@@ -555,6 +563,7 @@ export function createKimiCodeAdapter(options: KimiCodeAdapterOptions = {}): Ada
     settled = stillSettled;
     shown = stillShown;
     holders = stillHeld;
+    heldAt = stillHeldAt;
     waits = shownWaits;
     states.keepOnly(read);
     wires.keepOnly(stillShown);

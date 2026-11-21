@@ -97,6 +97,28 @@ describe("kimiCodeSession", () => {
     expect(kimiCodeSession(input({ lastHolder: LOCK, now: after })).stale).toBe(true);
   });
 
+  test("is idle, failed or finished no earlier than the last poll that saw its lock held", () => {
+    const heldUntil = NOW - MINUTE;
+    for (const changes of [
+      { lastHolder: LOCK },
+      { lastHolder: LOCK, state: { ...input().state, lastTurnFailed: true } },
+      {},
+    ]) {
+      expect(kimiCodeSession(input({ ...changes, lastHeldAt: heldUntil })).statusSince).toBe(
+        heldUntil,
+      );
+      // Seen held before the turn ended: the turn's end.
+      expect(
+        kimiCodeSession(input({ ...changes, lastHeldAt: UPDATED_AT - MINUTE })).statusSince,
+      ).toBe(UPDATED_AT);
+      expect(kimiCodeSession(input({ ...changes, lastHeldAt: null })).statusSince).toBe(UPDATED_AT);
+    }
+    // One that cannot be right is passed over.
+    expect(
+      kimiCodeSession(input({ lastHolder: LOCK, lastHeldAt: NOW + 5 * MINUTE })).statusSince,
+    ).toBe(UPDATED_AT);
+  });
+
   test("a failed last turn is failed", () => {
     const failed = input();
     failed.state.lastTurnFailed = true;

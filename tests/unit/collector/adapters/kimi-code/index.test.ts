@@ -312,16 +312,33 @@ describe("each status", () => {
     const adapter = kimiCodeAdapterFor(files, { isAlive: processes.isAlive });
     expect((await adapter.poll()).sessions[0]?.status).toBe("working");
 
+    // Taken after state.json's last write, as a background task or a compaction holds it: idle since the poll that last saw it held.
     files.remove(lockFile(ID));
     const idle = (await adapter.poll()).sessions[0];
-    expect(idle).toMatchObject({ status: "idle", statusSince: UPDATED_AT, pid: PID, alive: true });
+    expect(idle).toMatchObject({ status: "idle", statusSince: NOW, pid: PID, alive: true });
     expect(idle).not.toHaveProperty("lastWriteAt");
 
     processes.stop(PID);
     const finished = (await adapter.poll()).sessions[0];
-    expect(finished).toMatchObject({ status: "finished", statusSince: UPDATED_AT });
+    expect(finished).toMatchObject({ status: "finished", statusSince: NOW });
     expect(finished).not.toHaveProperty("pid");
     expect(finished).not.toHaveProperty("alive");
+  });
+
+  test("a lock a background task holds for a day past the turn's end leaves the session idle since it was let go, not stale", async () => {
+    const clock = handClock();
+    const files = setUpLocked();
+    const adapter = kimiCodeAdapterFor(files, { now: clock.now });
+    expect((await adapter.poll()).sessions[0]?.status).toBe("working");
+    clock.advance(25 * HOUR);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("working");
+    files.remove(lockFile(ID));
+    clock.advance(2_000);
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "idle",
+      statusSince: NOW + 25 * HOUR,
+      stale: false,
+    });
   });
 
   test("an idle session stays idle poll after poll, for as long as its process runs", async () => {

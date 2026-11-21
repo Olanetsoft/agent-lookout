@@ -32,6 +32,8 @@ export interface KimiCodeSessionInput {
   stateWrittenAt: number;
   /** The event file's modified time, when a lock is held and it was looked up. */
   wireWrittenAt?: number;
+  /** The last poll that saw its lock held, while it is shown: a status after it is never since before it. */
+  lastHeldAt?: number | null;
   now: number;
 }
 
@@ -76,9 +78,13 @@ export function kimiCodeSession(input: KimiCodeSessionInput): Session {
   } else if (status === "working") {
     statusSince = notBeforeStart(plausibleTime(lock?.startedAt ?? null, now));
   } else {
-    statusSince =
+    const ended =
       notBeforeStart(plausibleTime(state.updatedAt, now)) ??
       notBeforeStart(plausibleTime(Math.floor(input.stateWrittenAt), now));
+    // A lock held past the turn's end, as by a background task, ended no earlier than it was last seen held.
+    const lastHeld = plausibleTime(input.lastHeldAt ?? null, now);
+    statusSince =
+      ended === null || lastHeld === null ? (ended ?? lastHeld) : Math.max(ended, lastHeld);
   }
 
   const result: Session = {
