@@ -80,7 +80,7 @@ export const UNCHECKED_NOTE =
 
 /** Said when a session's status is unknown, with every cause of it. */
 export const UNKNOWN_NOTE =
-  "A Grok Build session shows as unknown while its folder cannot be found, its event log or plan file cannot be read, its event log ends in a way Grok Build 1.0.45 does not write, or its event log is longer than 8 MiB with no turn's start or end in its last 8 MiB. So does one whose turn has had nothing from the model for 2 minutes, or started more than a minute before Grok Build listed it with nothing from the turn since.";
+  "A Grok Build session shows as unknown while its folder cannot be found, its event log or plan file cannot be read, its event log ends in a way Grok Build 1.0.45 does not write, or its event log is longer than 8 MiB with no turn's start or end in its last 8 MiB. So does one whose turn has had nothing from the model for 2 minutes, or started more than a minute before Grok Build first listed it with nothing from the turn since.";
 
 /** Said when `GROK_HOME` names a folder that is not a whole path. */
 export const PASSED_OVER_NOTE = `${GROK_HOME_ENV} is set to a folder that is not a whole path, which Grok Build reads from the folder it was started in, so Agent Lookout reads the default folder instead.`;

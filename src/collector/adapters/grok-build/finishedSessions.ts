@@ -37,8 +37,10 @@ export const MAX_REMEMBERED = 200;
 
 export interface SeenGrokBuild {
   entry: RegistryEntry;
-  /** The earliest `opened_at` of its entries with this one's process ID, for one listed again by the same process. */
+  /** The `opened_at` of the first listing of it by this entry's process that was seen, kept by `firstOpenedAtOf`. */
   firstOpenedAt: number;
+  /** Whether the last poll that found it found it listed. */
+  listed: boolean;
   /** The last poll that found it listed, with its process running. */
   listedAt: number;
   /** What the last poll found of its title and its log's time, for when it ends. */
@@ -67,8 +69,8 @@ export interface GrokBuildMemory {
   overAt(sessionId: string): number | null;
   /**
    * When the process of this entry first listed its session, as far as this
-   * memory saw: the earliest `opened_at` of a seen entry with the same
-   * process ID, or this entry's own.
+   * memory saw, as `firstOpenedAtOf` keeps it: an earlier `opened_at` of the
+   * same process, or this entry's own.
    */
   firstOpenedAt(entry: RegistryEntry): number;
   /**
@@ -86,10 +88,20 @@ export interface GrokBuildMemory {
   readonly size: { seen: number; ended: number };
 }
 
-/** The earliest listing of an entry's session by its process, of this entry and what was seen of it. */
+/**
+ * The first listing of an entry's session by its process that was seen. It
+ * is kept while the same listing stands, and when the same process ID lists
+ * the session again after a poll found it off the list, as when Grok Build
+ * goes back to it after /new. A listing put in place of another while the
+ * session stayed listed, as a resume in a process given a crashed one's ID,
+ * starts again. The first is kept, not the earliest as written, so a clock
+ * set back between two listings does not move it.
+ */
 const firstOpenedAtOf = (entry: RegistryEntry, before: SeenGrokBuild | undefined) =>
-  before !== undefined && before.entry.pid === entry.pid
-    ? Math.min(before.firstOpenedAt, entry.openedAt)
+  before !== undefined &&
+  before.entry.pid === entry.pid &&
+  (before.entry.openedAt === entry.openedAt || !before.listed)
+    ? before.firstOpenedAt
     : entry.openedAt;
 
 /** A time kept from an earlier poll, or now once a clock set back has put it more than a minute ahead. */
@@ -132,6 +144,7 @@ export function createGrokBuildMemory(
       seen.set(id, {
         entry,
         firstOpenedAt: firstOpenedAtOf(entry, before),
+        listed: facts.listed,
         listedAt: facts.listed ? now : (before?.listedAt ?? now),
         title: facts.title,
         writtenAt: facts.writtenAt,

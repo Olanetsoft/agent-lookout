@@ -332,6 +332,28 @@ describe("a turn left over", () => {
     ).toBe("unknown");
   });
 
+  test("rule 2 holds each of its two times to the first listing", () => {
+    const again = NOW - MINUTE;
+    const relisted = (turn: GrokBuildTurn) =>
+      mapGrokBuildStatus(facts(turn, { openedAt: again, firstOpenedAt: OPENED_AT })).status;
+    // Started before the first listing, as a prompt's turn can, with its lines after it.
+    expect(relisted(started({ at: OPENED_AT - 2 * MINUTE, turnLineAt: OPENED_AT + MINUTE }))).toBe(
+      "working",
+    );
+    // Started after the first listing, and no line of the turn's own yet.
+    expect(relisted(started({ at: OPENED_AT + MINUTE, turnLineAt: null }))).toBe("working");
+  });
+
+  test("rule 2 goes by the listing when the first one cannot be right or is after it", () => {
+    const again = NOW - MINUTE;
+    const turn = started({ at: OPENED_AT + MINUTE, turnLineAt: OPENED_AT + MINUTE });
+    for (const firstOpenedAt of [Date.UTC(1970, 0, 1), NOW + 5 * MINUTE, again + SECOND]) {
+      expect(mapGrokBuildStatus(facts(turn, { openedAt: again, firstOpenedAt })).status).toBe(
+        "unknown",
+      );
+    }
+  });
+
   test("rule 2 takes no part when a time cannot be right", () => {
     const future = facts(started({ at: OPENED_AT - 5 * MINUTE }), { openedAt: NOW + 5 * MINUTE });
     expect(turnIsLeftOver(future.log.state === "ok" ? future.log.turn : started(), future)).toBe(

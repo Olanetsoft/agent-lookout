@@ -97,7 +97,7 @@ export interface GrokBuildFacts {
    * When the process that lists it first listed it, as far as Agent Lookout
    * saw: an earlier `openedAt` of the same process, which lists a session
    * again when it goes back to it after /new or the welcome screen. Left out,
-   * it is `openedAt`.
+   * or when it cannot be right or is after `openedAt`, it is `openedAt`.
    */
   firstOpenedAt?: number;
   now: number;
@@ -159,7 +159,11 @@ export function turnIsLeftOver(turn: GrokBuildTurn, facts: GrokBuildFacts): bool
   if (!turn.outputSeen && written !== null && now - written >= NO_OUTPUT_MS + WRITE_TIME_STEP_MS) {
     return true;
   }
-  const listedAt = facts.firstOpenedAt ?? facts.openedAt;
+  const first = facts.firstOpenedAt;
+  const listedAt =
+    first !== undefined && first <= facts.openedAt && plausibleTime(first, now) !== null
+      ? first
+      : facts.openedAt;
   const startedAt = plausibleTime(turn.at, now);
   const openedAt = plausibleTime(listedAt, now);
   if (startedAt === null || openedAt === null) return false;

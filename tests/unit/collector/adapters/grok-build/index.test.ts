@@ -307,7 +307,7 @@ describe("a listed session", () => {
       "ends in a way Grok Build 1.0.45 does not write",
       "longer than 8 MiB with no turn's start or end in its last 8 MiB",
       "nothing from the model for 2 minutes",
-      "more than a minute before Grok Build listed it with nothing from the turn since",
+      "more than a minute before Grok Build first listed it with nothing from the turn since",
     ]) {
       expect(UNKNOWN_NOTE).toContain(cause);
     }
@@ -508,6 +508,35 @@ describe("a session that ends", () => {
     expect(byId((await adapter.poll()).sessions)).toMatchObject({
       status: "needs-you",
       statusSince: asked,
+    });
+    // Left again: still waiting, watched.
+    writeRegistry(files, []);
+    expect(byId((await adapter.poll()).sessions)?.status).toBe("needs-you");
+  });
+
+  test("listed in place of the listing before mid-turn, with no poll that found it off the list: unknown until its next turn line", async () => {
+    const asked = OPENED_AT + MINUTE;
+    const log =
+      turnStarted(asked - 10 * SECOND) +
+      firstToken(asked - 5 * SECOND) +
+      toolStarted(asked, "ask_user_question");
+    for (const pid of [PID, OTHER_PID]) {
+      const files = oneSession(log, asked);
+      const adapter = grokBuildAdapterFor(files);
+      expect(byId((await adapter.poll()).sessions)?.status).toBe("needs-you");
+      // A resume in another process, or in one given the same ID, that wrote nothing yet.
+      writeRegistry(files, [entry({ pid, opened_at: openedAt(NOW - 30 * SECOND) })]);
+      expect(byId((await adapter.poll()).sessions)?.status).toBe("unknown");
+    }
+  });
+
+  test("resumed two days after its last turn ended: idle since the listing, not stale", async () => {
+    const files = oneSession(wholeTurn(NOW - 2 * DAY), NOW - 2 * DAY + 2 * SECOND);
+    writeRegistry(files, [entry({ opened_at: openedAt(NOW - 30 * SECOND) })]);
+    expect(byId((await grokBuildAdapterFor(files).poll()).sessions)).toMatchObject({
+      status: "idle",
+      statusSince: NOW - 30 * SECOND,
+      stale: false,
     });
   });
 
