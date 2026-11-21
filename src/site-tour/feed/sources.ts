@@ -1185,7 +1185,7 @@ export const MUSE_CODE_CAPABILITIES: SourceCapabilities = {
   "working-and-idle": {
     level: "partly",
     reason:
-      "From its log while any Muse Code that started before its newest status record runs, on macOS and Linux, whatever session it holds.",
+      "From its log while a Muse Code that could hold it runs, on macOS and Linux, whatever session that one holds.",
   },
   "needs-you": {
     level: "partly",
@@ -1195,7 +1195,7 @@ export const MUSE_CODE_CAPABILITIES: SourceCapabilities = {
   finished: {
     level: "partly",
     reason:
-      "When Muse Code writes that it let the session go, or once no Muse Code that started before its newest status record runs, by ps.",
+      "When Muse Code writes that it let the session go, or once no Muse Code that could hold it runs, by ps.",
   },
   failed: {
     level: "partly",

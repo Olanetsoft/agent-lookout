@@ -120,7 +120,7 @@ export const UNCHECKED_NOT =
 
 /** Said on macOS and Linux, where `ps` is asked. */
 export const STATUS_GONE =
-  "Otherwise it shows as finished once no Muse Code that started before its newest status record, or a minute after, runs, by ps.";
+  "Otherwise it shows as finished once no Muse Code that started no later than a minute after its newest status record runs, by ps.";
 export const STATUS_BOOT =
   "A session whose newest status record was written more than a minute before the computer started shows as finished as well.";
 export const STATUS_HELD =
@@ -132,7 +132,7 @@ export const STATUS_REVIEWER =
 export const STATUS_FIRST_SECONDS =
   "An approval with no phase this knows and no word of a reviewer shows as working for its first 6 seconds.";
 export const STATUS_ANY =
-  "A program named muse, muse.exe or starting muse- that started before a session's newest status record counts, whatever it holds.";
+  "A program named muse, muse.exe or starting muse- that started no later than a minute after a session's newest status record counts, whatever it holds.";
 export const STATUS_WRONG =
   "So while another runs, a session whose own Muse Code was killed can show as idle, needing you, or working for up to 30 minutes.";
 export const STATUS_UNKNOWN = "Anything else shows as unknown.";
@@ -172,7 +172,7 @@ export const MUSE_CODE_CAPABILITIES: SourceCapabilities = {
   "working-and-idle": {
     level: "partly",
     reason:
-      "From its log while any Muse Code that started before its newest status record runs, on macOS and Linux, whatever session it holds.",
+      "From its log while a Muse Code that could hold it runs, on macOS and Linux, whatever session that one holds.",
   },
   "needs-you": {
     level: "partly",
@@ -182,7 +182,7 @@ export const MUSE_CODE_CAPABILITIES: SourceCapabilities = {
   finished: {
     level: "partly",
     reason:
-      "When Muse Code writes that it let the session go, or once no Muse Code that started before its newest status record runs, by ps.",
+      "When Muse Code writes that it let the session go, or once no Muse Code that could hold it runs, by ps.",
   },
   failed: {
     level: "partly",
