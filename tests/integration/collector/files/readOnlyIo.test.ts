@@ -1,10 +1,11 @@
 import { execFileSync } from "node:child_process";
-import { chmod, link, mkdir, realpath, symlink, writeFile } from "node:fs/promises";
+import { lstatSync, statSync } from "node:fs";
+import { chmod, link, mkdir, realpath, rename, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { describe, expect, test } from "vitest";
 
-import { nodeIo, openRegularFile } from "@collector/files/readOnlyIo";
+import { inoOf, nodeIo, openRegularFile } from "@collector/files/readOnlyIo";
 import { tempDir } from "@tests/support/node/tempFiles";
 
 const text = (data: Uint8Array) => Buffer.from(data).toString("utf8");
@@ -154,5 +155,40 @@ describe("what is at a path", () => {
     } finally {
       await open.close();
     }
+  });
+});
+
+describe("a file's size, time and ID", () => {
+  test("come out as Node's ordinary stats give the size and time, with the ID read whole", async () => {
+    const dir = await tempDir();
+    const file = path.join(dir, "session.jsonl");
+    await writeFile(file, "{}\n");
+    for (const [target, looked] of [
+      [file, await nodeIo.lstat(file)],
+      [file, await nodeIo.stat(file)],
+      [dir, await nodeIo.lstat(dir)],
+    ] as const) {
+      const plain = lstatSync(target);
+      expect(looked.size).toBe(plain.size);
+      expect(looked.mtimeMs).toBe(plain.mtimeMs);
+      expect(looked.ino).toBe(inoOf(lstatSync(target, { bigint: true }).ino));
+    }
+    const open = await openRegularFile(file);
+    try {
+      expect(open.info.mtimeMs).toBe(statSync(file).mtimeMs);
+      expect(open.info.ino).toBe((await nodeIo.lstat(file)).ino);
+    } finally {
+      await open.close();
+    }
+  });
+
+  test("a file put in place of another under its name has another ID", async () => {
+    const dir = await tempDir();
+    const file = path.join(dir, "session.jsonl");
+    await writeFile(file, "{}\n");
+    const before = await nodeIo.lstat(file);
+    await writeFile(`${file}.new`, "{}\n{}\n");
+    await rename(`${file}.new`, file);
+    expect((await nodeIo.lstat(file)).ino).not.toBe(before.ino);
   });
 });
