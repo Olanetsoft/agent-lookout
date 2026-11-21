@@ -112,7 +112,7 @@ function factsFor(
 
 export function createPrimeAgentStatus(options: PrimeAgentStatusOptions): PiStatusSource {
   const { agentDir, homeDir, io, platform, uptimeMs } = options;
-  const bootClock = createBootClock(uptimeMs);
+  const bootClock = createBootClock(uptimeMs, options.now);
   const readsJournals = platform === "darwin" || platform === "linux";
   const leasesDir = path.join(agentDir, "session-leases");
   const workersDir = path.join(agentDir, "daemon-workers");
@@ -176,12 +176,12 @@ export function createPrimeAgentStatus(options: PrimeAgentStatusOptions): PiStat
         return { basis: BASIS_WITHOUT_LEASES, detail: detailOf([notes.noLeases]), byId };
       }
 
-      const bootAt = bootClock(now);
+      const bootAt = bootClock();
       // A lease taken before the computer started cannot be any session's now.
       const stray = leases.stray.some(({ folderMtimeMs }) => folderMtimeMs >= bootAt);
       const own = (fileName: string) => leases.byFile.get(fileName) ?? [];
       const asked: Lease[] = sessions.flatMap(({ fileName }) => own(fileName));
-      const { processes, psFailed } = await holders.check(asked, now);
+      const { processes, psFailed } = await holders.check(asked);
 
       let folders: readonly string[] | null = null;
       const read = new Set<string>();

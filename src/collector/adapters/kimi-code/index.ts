@@ -278,10 +278,10 @@ export function createKimiCodeAdapter(options: KimiCodeAdapterOptions = {}): Ada
   const env = options.env ?? process.env;
   const homeDir = options.homeDir ?? os.homedir();
   const now = options.now ?? Date.now;
+  const bootClock = createBootClock(options.uptimeMs ?? (() => os.uptime() * 1000), now);
   const io = options.io ?? nodeIo;
   const isAlive = options.isAlive ?? isProcessAlive;
   const platform = options.platform ?? process.platform;
-  const bootClock = createBootClock(options.uptimeMs ?? (() => os.uptime() * 1000));
   const pollIntervalMs = options.pollIntervalMs ?? POLL_INTERVAL_MS;
   const recheckMs = options.recheckMs ?? RECHECK_MS;
   const sweepMs = options.sweepMs ?? SWEEP_MS;
@@ -497,7 +497,7 @@ export function createKimiCodeAdapter(options: KimiCodeAdapterOptions = {}): Ada
     // started more than a minute after the lock was taken was given the pid of
     // a Kimi Code that ended. The computer's start is the earliest seen, so a
     // clock set forward does not put it after locks taken before then.
-    const bootedAt = bootClock(checkedAt);
+    const bootedAt = bootClock();
     const running = listed
       .flatMap(({ lock, lastHolder }) => lock ?? lastHolder ?? [])
       .filter((one) => one.startedAt >= bootedAt && isAlive(one.pid));

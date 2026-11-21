@@ -607,6 +607,23 @@ describe("a process that is not the lock's", () => {
     expect((await adapter.poll()).sessions[0]?.status).toBe(before);
   });
 
+  test("an idle session whose last holder runs stays idle after the clock is set forward", async () => {
+    const clock = handClock();
+    let uptime = 2 * MINUTE;
+    const files = setUpLocked();
+    const adapter = kimiCodeAdapterFor(files, {
+      platform: "linux",
+      now: clock.now,
+      uptimeMs: () => uptime,
+    });
+    await adapter.poll();
+    files.remove(lockFile(ID));
+    expect((await adapter.poll()).sessions[0]?.status).toBe("idle");
+    clock.advance(10 * MINUTE);
+    uptime += 2_000;
+    expect((await adapter.poll()).sessions[0]?.status).toBe("idle");
+  });
+
   test("a lock from before the computer started is left behind, whatever has its pid", async () => {
     const { sessions } = await kimiCodeAdapterFor(setUpLocked(), {
       platform: "linux",

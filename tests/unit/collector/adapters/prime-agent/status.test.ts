@@ -92,6 +92,32 @@ test("a lease it cannot read names the poll apart before a ps that failed does",
   expect(JSON.stringify([...answer.byId])).not.toContain(LEASE_TOKEN);
 });
 
+test("a lease it cannot read, from since the boot, still counts after the clock is set forward", async () => {
+  let clock = NOW;
+  let uptime = 2 * MINUTE;
+  const files = primeAgentFiles(() => clock);
+  files.write(ownerOf(2), `{"token":"${LEASE_TOKEN}`);
+  const source = createPrimeAgentStatus({
+    agentDir: AGENT_DIR,
+    homeDir: HOME,
+    io: files.io,
+    platform: "darwin",
+    now: () => clock,
+    isAlive: standInAlive([]).isAlive,
+    uptimeMs: () => uptime,
+    runPs: standInPs(new Map()).run,
+  });
+  expect((await source.read({ now: clock, sessions })).byId.get(SESSION_ID)?.status).toBe(
+    "unknown",
+  );
+  // Set forward by 10 minutes while the uptime moves on by 2 seconds.
+  clock += 10 * MINUTE;
+  uptime += 2 * SECOND;
+  expect((await source.read({ now: clock, sessions })).byId.get(SESSION_ID)?.status).toBe(
+    "unknown",
+  );
+});
+
 test("on Windows every poll says why a held lease is unknown", async () => {
   const files = primeAgentFiles();
   files.mkdir(AGENT_DIR);

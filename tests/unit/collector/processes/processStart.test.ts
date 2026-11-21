@@ -248,22 +248,45 @@ describe("createProcessStartCheck", () => {
 });
 
 describe("the computer's start", () => {
-  test("is the clock less the uptime, kept at the earliest seen, so a clock set forward does not move it", () => {
+  test("is the clock less the uptime, read together, kept at the earliest seen, so a clock set forward does not move it", () => {
     let uptime = 60_000;
-    const bootAt = createBootClock(() => uptime);
-    expect(bootAt(1_000_000)).toBe(940_000);
+    let clock = 1_000_000;
+    const bootAt = createBootClock(
+      () => uptime,
+      () => clock,
+    );
+    expect(bootAt()).toBe(940_000);
     // Two seconds later the clock is set forward by an hour, and the uptime moves on by the two.
+    clock += 2_000 + 3_600_000;
     uptime += 2_000;
-    expect(bootAt(1_002_000 + 3_600_000)).toBe(940_000);
+    expect(bootAt()).toBe(940_000);
     // Set back, it is earlier, and that is taken.
-    expect(bootAt(1_004_000 - 3_600_000)).toBe(1_004_000 - 3_600_000 - 62_000);
+    clock -= 2 * 3_600_000;
+    expect(bootAt()).toBe(clock - uptime);
+  });
+
+  test("reads the clock when it reads the uptime, so a sleep during a poll does not move it", () => {
+    let uptime = 60_000;
+    let clock = 1_000_000;
+    const bootAt = createBootClock(
+      () => uptime,
+      () => clock,
+    );
+    expect(bootAt()).toBe(940_000);
+    // Asleep for 8 hours, which both count.
+    clock += 8 * 3_600_000;
+    uptime += 8 * 3_600_000;
+    expect(bootAt()).toBe(940_000);
   });
 
   test("passes over an uptime that is not a number", () => {
     let uptime = Number.NaN;
-    const bootAt = createBootClock(() => uptime);
-    expect(bootAt(1_000_000)).toBeNaN();
+    const bootAt = createBootClock(
+      () => uptime,
+      () => 1_000_000,
+    );
+    expect(bootAt()).toBeNaN();
     uptime = 60_000;
-    expect(bootAt(1_000_000)).toBe(940_000);
+    expect(bootAt()).toBe(940_000);
   });
 });
