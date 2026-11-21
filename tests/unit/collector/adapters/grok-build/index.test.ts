@@ -492,6 +492,25 @@ describe("a session that ends", () => {
     });
   });
 
+  test("gone back to mid-question by the process that left it, which lists it again: still needs you", async () => {
+    const asked = OPENED_AT + MINUTE;
+    const files = oneSession(
+      turnStarted(asked - 10 * SECOND) +
+        firstToken(asked - 5 * SECOND) +
+        toolStarted(asked, "ask_user_question"),
+      asked,
+    );
+    const adapter = grokBuildAdapterFor(files);
+    expect(byId((await adapter.poll()).sessions)?.status).toBe("needs-you");
+    writeRegistry(files, []);
+    expect(byId((await adapter.poll()).sessions)?.status).toBe("needs-you");
+    writeRegistry(files, [entry({ opened_at: openedAt(NOW - 30 * SECOND) })]);
+    expect(byId((await adapter.poll()).sessions)).toMatchObject({
+      status: "needs-you",
+      statusSince: asked,
+    });
+  });
+
   test("left with /new while a plan waits: still needs you", async () => {
     const files = oneSession(wholeTurn(T), T + 2 * SECOND);
     writePlan(files, planText(true), { mtimeMs: T + 5 * SECOND });

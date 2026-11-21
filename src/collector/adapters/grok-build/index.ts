@@ -534,6 +534,7 @@ export function createGrokBuildAdapter(options: GrokBuildAdapterOptions = {}): A
         writtenAt,
         ...plan,
         openedAt: entry.openedAt,
+        firstOpenedAt: memory.firstOpenedAt(entry),
         now: checkedAt,
       });
       const over = status.status === "finished";

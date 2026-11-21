@@ -93,6 +93,13 @@ export interface GrokBuildFacts {
   planWrittenAt: number | null;
   /** When Grok Build listed the session, as its list says, in epoch milliseconds. */
   openedAt: number;
+  /**
+   * When the process that lists it first listed it, as far as Agent Lookout
+   * saw: an earlier `openedAt` of the same process, which lists a session
+   * again when it goes back to it after /new or the welcome screen. Left out,
+   * it is `openedAt`.
+   */
+  firstOpenedAt?: number;
   now: number;
 }
 
@@ -139,9 +146,11 @@ export function grokBuildFinishedAt(
  * 1. Nothing from the model since the turn started, and the log written
  *    nothing for 2 minutes, plus 2 seconds for a disk that keeps a write's time
  *    rounded down.
- * 2. The turn started more than a minute before the session was listed, and
- *    no line of a turn's own was written at or after the listing: a turn an
- *    earlier process left open, which Grok Build did not close on loading.
+ * 2. The turn started more than a minute before the process that lists the
+ *    session first listed it, and no line of a turn's own was written at or
+ *    after that listing: a turn an earlier process left open, which Grok
+ *    Build did not close on loading. The same process going back to the
+ *    session mid-turn lists it again, and that does not make its turn left over.
  */
 export function turnIsLeftOver(turn: GrokBuildTurn, facts: GrokBuildFacts): boolean {
   if (turn.boundary !== "started") return false;
@@ -150,12 +159,13 @@ export function turnIsLeftOver(turn: GrokBuildTurn, facts: GrokBuildFacts): bool
   if (!turn.outputSeen && written !== null && now - written >= NO_OUTPUT_MS + WRITE_TIME_STEP_MS) {
     return true;
   }
+  const listedAt = facts.firstOpenedAt ?? facts.openedAt;
   const startedAt = plausibleTime(turn.at, now);
-  const openedAt = plausibleTime(facts.openedAt, now);
+  const openedAt = plausibleTime(listedAt, now);
   if (startedAt === null || openedAt === null) return false;
   return (
     startedAt < openedAt - CLOCK_SLACK_MS &&
-    (turn.turnLineAt === null || turn.turnLineAt < facts.openedAt)
+    (turn.turnLineAt === null || turn.turnLineAt < listedAt)
   );
 }
 
@@ -181,8 +191,8 @@ const FINISHED = (facts: GrokBuildFacts): GrokBuildStatus => ({
  * | 2   | listed, and its log or plan file cannot say, or its turn is left over | unknown   | none                          |
  * | 3   | a question open in its open turn, or a plan waiting for approval      | needs-you | the question's, or the plan's |
  * | 4   | its newest turn started                                               | working   | the turn's start              |
- * | 5   | its newest turn ended on an error, or a crash cut it off              | failed    | the turn's end                |
- * | 6   | its newest turn ended, or none has started                            | idle      | the turn's end, or the listing |
+ * | 5   | its newest turn ended on an error, or a crash cut it off              | failed    | the turn's end, or the listing when later |
+ * | 6   | its newest turn ended, or none has started                            | idle      | the turn's end, or the listing when later |
  *
  * A watched session, one Grok Build lists no more whose process runs, as after
  * /new, is shown only while its log shows a turn under way or a question, or
@@ -238,7 +248,9 @@ export function mapGrokBuildStatus(facts: GrokBuildFacts): GrokBuildStatus {
   if (openTurn) return { status: "working", since: plausibleTime(turn.at, now) };
   if (turn.boundary === "ended") {
     const failed = turn.outcome === "error" || turn.outcome === "interrupted";
-    return { status: failed ? "failed" : "idle", since: plausibleTime(turn.at, now) };
+    // A session resumed after its last turn ended has been so since it was listed.
+    const since = later(plausibleTime(turn.at, now), plausibleTime(facts.openedAt, now));
+    return { status: failed ? "failed" : "idle", since };
   }
   return { status: "idle", since: plausibleTime(facts.openedAt, now) };
 }

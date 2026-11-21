@@ -245,6 +245,24 @@ describe("the rows, in order", () => {
     });
   });
 
+  test("5 and 6. a turn that ended before the listing, as in a session resumed later, is so since the listing", () => {
+    const before = OPENED_AT - 2 * 24 * 60 * MINUTE;
+    for (const [outcome, status] of [
+      ["completed", "idle"],
+      ["cancelled", "idle"],
+      ["error", "failed"],
+    ] as const) {
+      expect(mapGrokBuildStatus(facts(ended(outcome, before)))).toEqual({
+        status,
+        since: OPENED_AT,
+      });
+    }
+    // A listing whose time cannot be right leaves the turn's end.
+    expect(
+      mapGrokBuildStatus(facts(ended("completed", before), { openedAt: NOW + 5 * MINUTE })),
+    ).toEqual({ status: "idle", since: before });
+  });
+
   test("6. a log with no turn yet is idle since the listing", () => {
     expect(mapGrokBuildStatus(facts(emptyGrokBuildTurn()))).toEqual({
       status: "idle",
@@ -288,6 +306,30 @@ describe("a turn left over", () => {
     expect(at(CLOCK_SLACK_MS + SECOND, null)).toBe("unknown");
     expect(at(CLOCK_SLACK_MS + SECOND, OPENED_AT)).toBe("working");
     expect(at(CLOCK_SLACK_MS + SECOND, OPENED_AT + SECOND)).toBe("working");
+  });
+
+  test("rule 2 is judged against the first listing by the process that lists the session again", () => {
+    // Listed at OPENED_AT, a question asked, then gone back to after /new by the same process.
+    const turn = started({
+      at: OPENED_AT + MINUTE,
+      turnLineAt: OPENED_AT + MINUTE + 10 * SECOND,
+      openQuestions: 1,
+      questionSince: OPENED_AT + MINUTE + 10 * SECOND,
+    });
+    const again = NOW - MINUTE;
+    expect(mapGrokBuildStatus(facts(turn, { openedAt: again })).status).toBe("unknown");
+    expect(
+      mapGrokBuildStatus(facts(turn, { openedAt: again, firstOpenedAt: OPENED_AT })),
+    ).toMatchObject({ status: "needs-you", since: OPENED_AT + MINUTE + 10 * SECOND });
+    const running = { ...turn, openQuestions: 0, questionSince: null };
+    expect(
+      mapGrokBuildStatus(facts(running, { openedAt: again, firstOpenedAt: OPENED_AT })).status,
+    ).toBe("working");
+    // A turn that started before that first listing is still left over.
+    const older = started({ at: OPENED_AT - 5 * MINUTE, turnLineAt: OPENED_AT - 4 * MINUTE });
+    expect(
+      mapGrokBuildStatus(facts(older, { openedAt: again, firstOpenedAt: OPENED_AT })).status,
+    ).toBe("unknown");
   });
 
   test("rule 2 takes no part when a time cannot be right", () => {

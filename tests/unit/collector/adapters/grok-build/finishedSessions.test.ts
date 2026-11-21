@@ -154,6 +154,27 @@ test("a session listed again leaves the ended ones", () => {
   expect(memory.ids()).toEqual(new Set([SESSION_ID]));
 });
 
+test("a session listed again by the same process keeps its first listing, and by another process does not", () => {
+  const memory = createGrokBuildMemory();
+  expect(memory.firstOpenedAt(entryOf())).toBe(OPENED_AT);
+  memory.seen(entryOf(), seenFacts, NOW);
+  const again = entryOf(SESSION_ID, OPENED_AT + 5 * MINUTE);
+  expect(memory.firstOpenedAt(again)).toBe(OPENED_AT);
+  memory.seen(again, seenFacts, NOW + SECOND);
+  expect(memory.firstOpenedAt(again)).toBe(OPENED_AT);
+  // A resume in another process is a listing of its own.
+  const resumed = { ...entryOf(SESSION_ID, OPENED_AT + 10 * MINUTE), pid: PID + 1 };
+  expect(memory.firstOpenedAt(resumed)).toBe(OPENED_AT + 10 * MINUTE);
+  memory.seen(resumed, seenFacts, NOW + 2 * SECOND);
+  expect(memory.firstOpenedAt(resumed)).toBe(OPENED_AT + 10 * MINUTE);
+  // Once it has ended, nothing of it is kept for the next listing.
+  memory.ended(
+    { entry: resumed, title: null, writtenAt: null, processRunsOn: false },
+    NOW + MINUTE,
+  );
+  expect(memory.firstOpenedAt(entryOf(SESSION_ID, OPENED_AT + HOUR))).toBe(OPENED_AT + HOUR);
+});
+
 test("a look that finds no log or title keeps what an earlier one found", () => {
   const memory = createGrokBuildMemory();
   memory.ended(
