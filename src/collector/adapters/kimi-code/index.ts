@@ -18,7 +18,11 @@ import { tildify } from "../../files/paths.ts";
 import { isMissing, nodeIo, type FileInfo, type ReadOnlyIo } from "../../files/readOnlyIo.ts";
 import { POLL_INTERVAL_MS } from "../../poller.ts";
 import { isProcessAlive } from "../../processes/pids.ts";
-import { START_CHECK_TTL_MS, type ReadProcessStarts } from "../../processes/processStart.ts";
+import {
+  createBootClock,
+  START_CHECK_TTL_MS,
+  type ReadProcessStarts,
+} from "../../processes/processStart.ts";
 import type { Adapter, AdapterResult } from "../adapter.ts";
 import { createRecordProcessCheck } from "../qwen-code/processCheck.ts";
 import { every } from "../words.ts";
@@ -277,7 +281,7 @@ export function createKimiCodeAdapter(options: KimiCodeAdapterOptions = {}): Ada
   const io = options.io ?? nodeIo;
   const isAlive = options.isAlive ?? isProcessAlive;
   const platform = options.platform ?? process.platform;
-  const uptimeMs = options.uptimeMs ?? (() => os.uptime() * 1000);
+  const bootClock = createBootClock(options.uptimeMs ?? (() => os.uptime() * 1000));
   const pollIntervalMs = options.pollIntervalMs ?? POLL_INTERVAL_MS;
   const recheckMs = options.recheckMs ?? RECHECK_MS;
   const sweepMs = options.sweepMs ?? SWEEP_MS;
@@ -491,8 +495,9 @@ export function createKimiCodeAdapter(options: KimiCodeAdapterOptions = {}): Ada
     // A lock counts only as Kimi Code's own rule counts one: its process runs,
     // and it was taken since the computer started. On a Mac, a process that
     // started more than a minute after the lock was taken was given the pid of
-    // a Kimi Code that ended.
-    const bootedAt = checkedAt - uptimeMs();
+    // a Kimi Code that ended. The computer's start is the earliest seen, so a
+    // clock set forward does not put it after locks taken before then.
+    const bootedAt = bootClock(checkedAt);
     const running = listed
       .flatMap(({ lock, lastHolder }) => lock ?? lastHolder ?? [])
       .filter((one) => one.startedAt >= bootedAt && isAlive(one.pid));

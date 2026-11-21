@@ -241,7 +241,7 @@ The session files and the leases are read as on any system, from `%USERPROFILE%\
 - A worker writes its lease and journal under the agent folder of the daemon that started it (`descriptor.rs:96-98`). A terminal and a daemon started with different `PRIME_AGENT_CODING_AGENT_DIR` split the files, and a session in the other folder shows as unknown.
 - On macOS, and on Linux for a lease with a `ps:` start, a pid given to any program within a minute of the start the lease records is taken for the lease's own process.
 - A lease whose start cannot be compared, taken since the boot, is taken as held by any `prime-agent` given its pid since, on macOS and Linux.
-- A clock set back past the boot, outside Linux's `/proc` check, can make a held lease look older than the boot.
+- The boot is the clock less `os.uptime()`, kept at the earliest seen while Agent Lookout runs, so a clock set forward does not move it past a lease taken before then. When Agent Lookout starts after the clock was set forward by more than the time between the boot and a lease, as an NTP step or WSL 2 catching up after sleep can do, that lease looks older than the boot outside Linux's `/proc` check, and its session shows as finished until a new lease is taken.
 - `~\`, values with spaces at their ends, an empty `PRIME_AGENT_SESSION_DIR`, a relative folder, `--session-dir` and the `sessionDir` setting, as [Where it looks](#where-it-looks) says.
 - A session shows as unknown from its opening, or a reopening, until its first prompt.
 - Print mode, `-p`, and `--mode rpc` run in one process with no worker, so their sessions show as unknown while they run.

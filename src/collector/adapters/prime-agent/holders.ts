@@ -8,7 +8,11 @@ import {
   statFileOf,
   type ReadProcFile,
 } from "../../processes/linuxProcesses.ts";
-import { compareProcessStart, START_CHECK_TTL_MS } from "../../processes/processStart.ts";
+import {
+  compareProcessStart,
+  createBootClock,
+  START_CHECK_TTL_MS,
+} from "../../processes/processStart.ts";
 import type { PsAnswer } from "../../processes/ps.ts";
 import { rememberingCheck, type RecordProcess } from "../qwen-code/processCheck.ts";
 import type { Lease } from "./leases.ts";
@@ -127,6 +131,7 @@ export function createHolderCheck(options: HolderOptions): HolderCheck {
   const readFile = options.readProcFile ?? readProcFile;
   const asksPs = platform === "darwin" || platform === "linux";
   const readsProc = platform === "linux";
+  const bootClock = createBootClock(uptimeMs);
   let bootAt = 0;
   let psFailed = false;
 
@@ -199,7 +204,7 @@ export function createHolderCheck(options: HolderOptions): HolderCheck {
 
   return {
     async check(leases, at) {
-      bootAt = at - uptimeMs();
+      bootAt = bootClock(at);
       const processes = new Map<Lease, LeaseProcess>();
       const alive = leases.filter((lease) => isAlive(lease.pid));
       for (const lease of leases) if (!alive.includes(lease)) processes.set(lease, "gone");

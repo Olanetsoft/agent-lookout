@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   compareProcessStart,
+  createBootClock,
   createProcessStartCheck,
   parseProcessStarts,
   psStartArgs,
@@ -243,5 +244,26 @@ describe("createProcessStartCheck", () => {
     await check.reused([]);
     await check.reused([{ pid: 4242, procStart: recorded }]);
     expect(asked).toHaveLength(2);
+  });
+});
+
+describe("the computer's start", () => {
+  test("is the clock less the uptime, kept at the earliest seen, so a clock set forward does not move it", () => {
+    let uptime = 60_000;
+    const bootAt = createBootClock(() => uptime);
+    expect(bootAt(1_000_000)).toBe(940_000);
+    // Two seconds later the clock is set forward by an hour, and the uptime moves on by the two.
+    uptime += 2_000;
+    expect(bootAt(1_002_000 + 3_600_000)).toBe(940_000);
+    // Set back, it is earlier, and that is taken.
+    expect(bootAt(1_004_000 - 3_600_000)).toBe(1_004_000 - 3_600_000 - 62_000);
+  });
+
+  test("passes over an uptime that is not a number", () => {
+    let uptime = Number.NaN;
+    const bootAt = createBootClock(() => uptime);
+    expect(bootAt(1_000_000)).toBeNaN();
+    uptime = 60_000;
+    expect(bootAt(1_000_000)).toBe(940_000);
   });
 });

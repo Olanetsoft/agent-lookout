@@ -21,6 +21,23 @@ export type ReadProcessStarts = (pids: readonly number[]) => Promise<Map<number,
 
 export type StartMatch = "same" | "different" | "unknown";
 
+/**
+ * When the computer started, as the clock less `uptimeMs()`, kept at the
+ * earliest seen. Setting the clock forward, as an NTP step or WSL 2 catching
+ * up after sleep does, moves the clock less the uptime forward by as much,
+ * which would put the start after locks and leases taken before then, so a
+ * later start than one seen is not taken. Setting it back moves it back,
+ * which is taken, as an earlier start only lets more count.
+ */
+export function createBootClock(uptimeMs: () => number): (now: number) => number {
+  let earliest: number | null = null;
+  return (now) => {
+    const seen = now - uptimeMs();
+    if (Number.isFinite(seen) && (earliest === null || seen < earliest)) earliest = seen;
+    return earliest ?? seen;
+  };
+}
+
 /** How long an answer for one pid is trusted before `ps` is asked again. */
 export const START_CHECK_TTL_MS = 30_000;
 

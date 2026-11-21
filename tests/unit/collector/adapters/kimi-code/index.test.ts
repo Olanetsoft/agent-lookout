@@ -591,6 +591,22 @@ describe("a process that is not the lock's", () => {
     expect((await adapter.poll()).sessions[0]?.status).toBe("idle");
   });
 
+  test("a lock taken since the computer started still counts after the clock is set forward", async () => {
+    const clock = handClock();
+    let uptime = 2 * MINUTE;
+    const adapter = kimiCodeAdapterFor(setUpLocked(), {
+      platform: "linux",
+      now: clock.now,
+      uptimeMs: () => uptime,
+    });
+    const before = (await adapter.poll()).sessions[0]?.status;
+    expect(before).not.toBe("finished");
+    // Set forward by 10 minutes, as WSL 2 catching up after sleep does, while the uptime moves on by 2 seconds.
+    clock.advance(10 * MINUTE);
+    uptime += 2_000;
+    expect((await adapter.poll()).sessions[0]?.status).toBe(before);
+  });
+
   test("a lock from before the computer started is left behind, whatever has its pid", async () => {
     const { sessions } = await kimiCodeAdapterFor(setUpLocked(), {
       platform: "linux",

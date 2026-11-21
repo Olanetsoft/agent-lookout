@@ -179,6 +179,21 @@ describe("on Windows", () => {
     expect(ps.runs).toEqual([]);
     expect(proc.read).toEqual([]);
   });
+
+  test("a lease taken since the boot is still held after the clock is set forward", async () => {
+    let uptime = 120 * SECOND;
+    const check = createHolderCheck({
+      platform: "win32",
+      isAlive: standInAlive([PID]).isAlive,
+      uptimeMs: () => uptime,
+      runPs: standInPs(new Map()).run,
+      now: handClock(NOW).now,
+    });
+    const one = lease({ processStartId: "win:133000000000000000" });
+    expect((await check.check([one], NOW)).processes.get(one)).toBe("unknown");
+    uptime += 2 * SECOND;
+    expect((await check.check([one], NOW + 600 * SECOND)).processes.get(one)).toBe("unknown");
+  });
 });
 
 test("ps's lines give each pid's start and program, whatever the padding, and a program with spaces", () => {

@@ -9,7 +9,7 @@ import type { SourceFact } from "../../../core/sessions/session.ts";
 import { tildify } from "../../files/paths.ts";
 import type { FileInfo, ReadOnlyIo } from "../../files/readOnlyIo.ts";
 import type { ReadProcFile } from "../../processes/linuxProcesses.ts";
-import { START_CHECK_TTL_MS } from "../../processes/processStart.ts";
+import { createBootClock, START_CHECK_TTL_MS } from "../../processes/processStart.ts";
 import type { PiStatusAnswer, PiStatusSource } from "../pi/index.ts";
 import type { PiEvidence } from "../pi/toSession.ts";
 import { every } from "../words.ts";
@@ -112,6 +112,7 @@ function factsFor(
 
 export function createPrimeAgentStatus(options: PrimeAgentStatusOptions): PiStatusSource {
   const { agentDir, homeDir, io, platform, uptimeMs } = options;
+  const bootClock = createBootClock(uptimeMs);
   const readsJournals = platform === "darwin" || platform === "linux";
   const leasesDir = path.join(agentDir, "session-leases");
   const workersDir = path.join(agentDir, "daemon-workers");
@@ -175,7 +176,7 @@ export function createPrimeAgentStatus(options: PrimeAgentStatusOptions): PiStat
         return { basis: BASIS_WITHOUT_LEASES, detail: detailOf([notes.noLeases]), byId };
       }
 
-      const bootAt = now - uptimeMs();
+      const bootAt = bootClock(now);
       // A lease taken before the computer started cannot be any session's now.
       const stray = leases.stray.some(({ folderMtimeMs }) => folderMtimeMs >= bootAt);
       const own = (fileName: string) => leases.byFile.get(fileName) ?? [];
