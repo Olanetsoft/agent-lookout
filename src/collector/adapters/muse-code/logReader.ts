@@ -329,7 +329,12 @@ class Replaced extends Error {}
 export function createMuseLogReader(io: ReadOnlyIo, platform: NodeJS.Platform): MuseLogReader {
   const remembered = new Map<string, Known>();
 
-  function answer(known: Known, writtenAt: number, info: FileInfo = known.info, current = true): MuseLog {
+  function answer(
+    known: Known,
+    writtenAt: number,
+    info: FileInfo = known.info,
+    current = true,
+  ): MuseLog {
     return {
       view: viewOf(known.tail, known.info.size),
       writtenAt,
