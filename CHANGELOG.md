@@ -2,13 +2,18 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
+## Unreleased
+
+### Fixed
+
+- A Grok Build session resumed after its last turn ended shows as idle, or failed, since it was listed, not since that turn, so it's no longer marked stale as it opens. One the same Grok Build goes back to mid-turn after /new, once Agent Lookout saw it leave the list, keeps needing you or working, instead of turning unknown until its next line. (#396)
+
 ## 0.2.28 - 2026-11-21
 
 The Mac app and the MCP server built into the command take security fixes in Electron, Zod and fast-uri, and on Windows an agent's file put in place of another is told from it by its whole file ID.
 
 ### Fixed
 
-- A Grok Build session resumed after its last turn ended shows as idle, or failed, since it was listed, not since that turn, so it's no longer marked stale as it opens. One the same Grok Build goes back to mid-turn after /new, once Agent Lookout saw it leave the list, keeps needing you or working, instead of turning unknown until its next line. (#396)
 - The Mac app runs on Electron 44.11.3, which no longer trusts the compromised eMudhra intermediate certificates, and the MCP server built into `agent-lookout` takes Zod 4.6.7 and fast-uri 3.1.9, past their advisories. (#388)
 - On Windows, an agent's file put in place of another under the same name is now told from it by its whole file ID, so it is read anew instead of on from where the old file ended. Node's ordinary file stats could give two NTFS file IDs past 2^53 the same number. (#391)
 
