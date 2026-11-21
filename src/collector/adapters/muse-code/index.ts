@@ -132,7 +132,7 @@ export const STATUS_REVIEWER =
 export const STATUS_FIRST_SECONDS =
   "An approval with no phase this knows and no word of a reviewer shows as working for its first 6 seconds.";
 export const STATUS_ANY =
-  "A program named muse, muse.exe or starting muse- that started no later than a minute after a session's newest status record counts, whatever it holds.";
+  "Any program named muse, muse.exe or starting muse- counts as such a Muse Code, whatever session it holds.";
 export const STATUS_WRONG =
   "So while another runs, a session whose own Muse Code was killed can show as idle, needing you, or working for up to 30 minutes.";
 export const STATUS_UNKNOWN = "Anything else shows as unknown.";
