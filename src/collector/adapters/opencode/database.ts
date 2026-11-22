@@ -65,7 +65,7 @@ import {
  *
  * This was built from OpenCode's source at v1.19.0, and has not yet been
  * checked on a computer running OpenCode. OpenCode 2 keeps the same file in
- * WAL mode too (`packages/core/src/database/database.ts` at v2.2.5).
+ * WAL mode too (`packages/core/src/database/database.ts` at v2.3.2).
  */
 
 /** How long after a read that did not work the database is read again, changed or not. */

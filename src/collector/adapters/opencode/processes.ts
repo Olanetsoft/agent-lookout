@@ -25,7 +25,7 @@ import { runPs, type PsAnswer } from "../../processes/ps.ts";
  * the window that started it closes, until something stops it, such as
  * `opencode service stop` or a restart of the computer. Each client starts it
  * from its own file, and it sets no `process.title` (`selfCommand` in
- * `packages/cli/src/util/process.ts` at v2.2.5, `ensure` in
+ * `packages/cli/src/util/process.ts` at v2.3.2, `ensure` in
  * `packages/client/src/effect/service.ts`). So it shows under that file's name,
  * which for npm's package is not the `opencode` on `PATH`.
  *

@@ -39,8 +39,8 @@ import { readArguments } from "../antigravity/app/summaries.ts";
  * whose id is not one OpenCode makes is dropped.
  *
  * This was built from OpenCode's source at v1.19.0, with the waits checked at
- * v1.19.5 and `session_v2` read at v2.2.5, and has not yet been checked on a
- * computer running OpenCode.
+ * v1.19.5 and `session_v2` read at v2.2.5, and checked again against v1.19.6
+ * and v2.3.2. It has not yet been checked on a computer running OpenCode.
  *
  * Kilo Code's `kilo.db` is laid out as OpenCode 1.x's, so the Kilo Code
  * adapter asks the same probe and `v1SessionsQuery` with its own tools, and
