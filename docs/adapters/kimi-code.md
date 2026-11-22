@@ -193,7 +193,7 @@ A wait keeps the time of its oldest line while any line it hung on stands, so an
 A lock counts while all of these hold, the first two being Kimi Code's own rule in `alive`:
 
 - Signal 0 finds its process.
-- Its `startedAt` is not before the computer started, by `os.uptime()`. A power cut leaves a lock behind, and after a restart low pids go to other programs.
+- Its `startedAt` is not before the computer started, by `os.uptime()`. A power cut leaves a lock behind, and after a restart low pids go to other programs. The start is the clock less the uptime, read together and kept at the earliest seen while Agent Lookout runs, so a clock set forward does not put it after locks taken before then.
 - On a Mac, `ps -o pid=,lstart= -p <pids>` does not say that process started more than a minute after `startedAt`. If it did, it was given the pid of a Kimi Code that ended. That answer stands while the pid runs, and a later `ps` that cannot answer does not bring the session back. `ps` that says nothing leaves the session as signal 0 says. It is asked every 30 seconds while a session's process runs, and sooner when another appears, in one run for them all. This is the same check as for Cline and Mistral Vibe (`createRecordProcessCheck`). It reads a start time, and never a process's arguments.
 
 Kimi Code also compares `hostname`, which this adapter does not read, as [Known gaps](#known-gaps) says. Only on a Mac is `ps` asked, as a comparison acts only when it is sure: Linux's `ps` works a start out again from the clock each time, a lock holds no start token to read from `/proc`, and Windows has no `ps`.
@@ -239,6 +239,8 @@ Everything is read as elsewhere, from `%USERPROFILE%\.kimi-code`, and signal 0 w
 - Kimi Code before 2.3.0 keeps no lock, and neither does one with `KIMI_CODE_SESSION_LOCK=0`, or on a file system where a hard link fails, where it carries on without one. Its sessions never show as working, idle or needing you, only as finished or failed.
 - On Linux and Windows, after a crash, another program can take the lock's pid. The session then shows as working until that program ends, unless the computer has restarted since.
 - On a Mac, a session shows as finished while it runs if the clock was set back by more than a minute between its process's start and the lock's `startedAt`.
+- When Agent Lookout starts after the clock was set forward by more than the time between the computer's start and a lock, as an NTP step or WSL 2 catching up after sleep can do, the computer looks started after that lock, and its session shows as finished until its next turn takes a new one.
+- A clock that was behind when Agent Lookout started, or set back while it ran, and is then set right keeps the computer's start that much early until Agent Lookout stops. A lock left from that long before the restart, whose pid another program now has, then shows its session as working until that program ends, on Linux and Windows.
 - Kimi Code treats a lock with another `hostname` as held. This adapter does not read `hostname`, so with a folder shared between computers, another computer's lock is checked as a process here.
 - A wait further back than the event file's last 1 MiB, or a line longer than that, as for an approval of a very large write, shows as working.
 - Of an index over 8 MiB, only the newest lines are read, some 25,000 sessions, and older sessions are not listed.

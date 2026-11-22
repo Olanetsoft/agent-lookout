@@ -21,6 +21,26 @@ export type ReadProcessStarts = (pids: readonly number[]) => Promise<Map<number,
 
 export type StartMatch = "same" | "different" | "unknown";
 
+/**
+ * When the computer started, as the clock less `uptimeMs()`, both read
+ * together, kept at the earliest seen while Agent Lookout runs. Both count
+ * sleep, so it moves only when the clock is set, by as much. Setting the clock
+ * forward, as an NTP step or WSL 2 catching up after sleep does, would put the
+ * start after locks and leases taken before then, so a later start than one
+ * seen is not taken. An earlier one is: a clock that was behind when Agent
+ * Lookout started, or set back while it runs, then set right, leaves the start
+ * that much early until it stops, so a lock or a lease left from that long
+ * before the boot counts as taken since it.
+ */
+export function createBootClock(uptimeMs: () => number, now: () => number): () => number {
+  let earliest: number | null = null;
+  return () => {
+    const seen = now() - uptimeMs();
+    if (Number.isFinite(seen) && (earliest === null || seen < earliest)) earliest = seen;
+    return earliest ?? seen;
+  };
+}
+
 /** How long an answer for one pid is trusted before `ps` is asked again. */
 export const START_CHECK_TTL_MS = 30_000;
 

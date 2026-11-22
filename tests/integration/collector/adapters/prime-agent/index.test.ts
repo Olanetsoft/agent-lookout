@@ -285,7 +285,7 @@ describe.skipIf(process.platform !== "darwin" && process.platform !== "linux")(
       const started = processStartTime(match?.[1] ?? "");
       expect(started).not.toBeNull();
       const lease: Lease = { pid, createdAt: Date.now() - 1_000 };
-      const answer = await holderCheck(process.platform).check([lease], Date.now());
+      const answer = await holderCheck(process.platform).check([lease]);
       expect(answer.processes.get(lease)).toBe("runs");
     }, 10_000);
   },
@@ -305,7 +305,7 @@ describe.skipIf(process.platform !== "darwin")("the real ps on a Mac", () => {
       processStartId: `ps:${lstartOf(started)}`,
     };
     const other: Lease = { ...same, processStartId: `ps:${lstartOf(started - 5 * 60_000)}` };
-    const answer = await holderCheck("darwin").check([same, other], Date.now());
+    const answer = await holderCheck("darwin").check([same, other]);
     expect(answer.processes.get(same)).toBe("runs");
     expect(answer.processes.get(other)).toBe("gone");
   }, 10_000);
@@ -318,7 +318,7 @@ describe.skipIf(process.platform !== "linux")("the real /proc on Linux", () => {
     expect(ticks).toMatch(/^\d+$/);
     const same: Lease = { pid, createdAt: Date.now() - 1_000, processStartId: `proc:${ticks}` };
     const other: Lease = { ...same, processStartId: `proc:${Number(ticks) + 1}` };
-    const answer = await holderCheck("linux").check([same, other], Date.now());
+    const answer = await holderCheck("linux").check([same, other]);
     expect(answer.processes.get(same)).toBe("runs");
     expect(answer.processes.get(other)).toBe("gone");
   }, 10_000);
