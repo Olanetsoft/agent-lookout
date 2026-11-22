@@ -183,7 +183,7 @@ Left out:
 - subagents: an id that begins with `child-` (`harness/…/vibe/_subagents/_operations.py`), or a store whose `identity.kind` is `subagent`, as Vibe's own list leaves them out;
 - a session being deleted, `lifecycle.type` `deleting_tree`;
 - a lease with no store yet: Vibe takes a new session's lease before it saves anything, and drops the folder if the session closes unused. It appears once Vibe saves it;
-- sessions Vibe ran on its older engine, `<prefix>_<YYYYmmdd>_<HHMMSS>_<id[:8]>/` with `meta.json` and `messages.jsonl` (`vibe/core/session/session_logger.py`). Vibe 2.26.0 made the unified engine the default (`CHANGELOG.md`), and `--legacy-harness` still selects the older one. When it saved one in the last day, the card says those sessions are not shown. Nothing in their folders is opened.
+- sessions Vibe ran on its older engine, `<prefix>_<YYYYmmdd>_<HHMMSS>_<id[:8]>/` with `meta.json` and `messages.jsonl` (`vibe/core/session/session_logger.py`). Vibe 2.26.0 made the unified engine the default, and Vibe 3.0.0 removed the older one and `--legacy-harness` with it (`CHANGELOG.md`, 3.0.0, Removed), so only a Vibe 2.x can still save such a session. When it saved one in the last day, the card says those sessions are not shown. Nothing in their folders is opened.
 
 Forks are listed: their `parentSessionId` is set, as a subagent's is, so the kind decides, not the parent.
 
@@ -377,7 +377,6 @@ All of this comes from Vibe's source. A computer running Vibe has yet to show:
 - that, however Vibe is started, the process a lease names started before its `acquired_at`, as the check on a Mac takes it to;
 - what a crash leaves behind, and whether reopening the session rewrites its status;
 - how large real stores and journal segments grow, against the limits above;
-- whether the older engine's sessions are still common on real machines;
 - on Windows, whether Agent Lookout's read of `CURRENT` can make Vibe's replacing it fail.
 
 ## What breaks when Vibe changes
