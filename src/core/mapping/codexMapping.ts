@@ -162,15 +162,17 @@ const NOT_A_SESSION_THREAD = new Set(["subagent", "guardian_review", "memory_con
  * Whether a Codex thread is a session a person would look for.
  *
  * Subagents, internal threads and threads run for another program are left out,
- * as is any thread that names a parent: each belongs to a session that is
- * already listed. A thread whose source is missing or unfamiliar is kept,
- * because nothing says it is a helper.
+ * as is any thread that names a parent, and any thread Codex keeps attached to
+ * the one it was forked from, such as a side chat, which Codex's own lists
+ * leave out too: each belongs to a session that is already listed. A thread
+ * whose source is missing or unfamiliar is kept, because nothing says it is a helper.
  */
 export function isCodexSessionSource(
   source: unknown,
-  meta: { parentThreadId?: unknown; threadSource?: unknown } = {},
+  meta: { parentThreadId?: unknown; threadSource?: unknown; attachedThread?: unknown } = {},
 ): boolean {
   if (typeof meta.parentThreadId === "string" && meta.parentThreadId !== "") return false;
+  if (meta.attachedThread === true) return false;
   if (typeof meta.threadSource === "string" && NOT_A_SESSION_THREAD.has(meta.threadSource)) {
     return false;
   }

@@ -717,6 +717,39 @@ describe("when Codex is read", () => {
     }
   });
 
+  test("a side chat Codex saves beside a session is left out, and its writes are not the session's", async () => {
+    const files = emptyCodex();
+    addSession(files, {
+      thread: ids.working,
+      lines: linesFor("demo", ids.working, [[NOW - 30 * MINUTE, "task_complete"]]),
+      lock: true,
+      mtimeMs: NOW - 20 * MINUTE,
+    });
+    // A saved side chat is a fork of the session, with a lock and a file of its own.
+    const sideChat = threadId("e8");
+    addSession(files, {
+      thread: sideChat,
+      created: "2026-10-01T10-00-00",
+      lines: [
+        metaLine(NOW - 25 * MINUTE, {
+          id: sideChat,
+          source: "cli",
+          thread_source: "tui_side_chat",
+          forked_from_id: ids.working,
+          attached_thread: true,
+        }),
+        turnLine(NOW - 25 * MINUTE, "task_started"),
+      ],
+      lock: true,
+      mtimeMs: NOW - 10_000,
+    });
+
+    const { sessions } = await codexAdapterFor(files).poll();
+    expect(sessions.map((session) => [session.id, session.status, session.lastWriteAt])).toEqual([
+      [`codex:${ids.working}`, "idle", NOW - 20 * MINUTE],
+    ]);
+  });
+
   test("a session has its own newest reply's counts, and never a subagent's", async () => {
     const files = emptyCodex();
     addSession(files, {

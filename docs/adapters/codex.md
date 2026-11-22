@@ -63,7 +63,7 @@ Each line is `{"timestamp":"YYYY-MM-DDTHH:MM:SS.mmmZ","ordinal"?:n,"type":"<item
 
 On a poll, the adapter uses three kinds of line and parses no other.
 
-The first `session_meta` line. Kept: `id`, `timestamp` (when the session was created), `cwd`, `source`, `thread_source`, `parent_thread_id`, `originator` (the program that created the session: `codex_cli_rs` for the Codex CLI, `Codex Desktop` for the desktop app) and `cli_version` (the Codex version that created it). `originator` and `cli_version` are kept only when they are at most 64 characters. Dropped: everything else, including `base_instructions`, `dynamic_tools`, `git`, `creator_user_id`, `creator_account_id`, `model_provider` and `session_id`. The session's id in Agent Lookout is `codex:<thread id>`, with the thread id taken from the file name, which is also how Codex names the lock file and the names file.
+The first `session_meta` line. Kept: `id`, `timestamp` (when the session was created), `cwd`, `source`, `thread_source`, `parent_thread_id`, `attached_thread` (only when it is `true`), `originator` (the program that created the session: `codex_cli_rs` for the Codex CLI, `Codex Desktop` for the desktop app) and `cli_version` (the Codex version that created it). `originator` and `cli_version` are kept only when they are at most 64 characters. Dropped: everything else, including `base_instructions`, `dynamic_tools`, `git`, `creator_user_id`, `creator_account_id`, `model_provider` and `session_id`. The session's id in Agent Lookout is `codex:<thread id>`, with the thread id taken from the file name, which is also how Codex names the lock file and the names file.
 
 Turn lines: `"type":"event_msg"` with `payload.type` of
 
@@ -124,7 +124,7 @@ While the folder is missing or cannot be listed, no session is shown as finished
 
 A session is listed while its lock exists, and otherwise for 24 hours after the last line in its file.
 
-`source` says where a session was started. Listed: `cli` and `vscode`, the sources Codex itself treats as interactive; `exec`, for `codex exec` runs; `{"custom":"chatgpt"}`, the ChatGPT desktop app; and any other or missing source. Left out: `{"subagent":...}`, `{"internal":...}` and `mcp` (threads run for another program through `codex mcp-server` or the app-server), any thread with a `parent_thread_id`, and any thread whose `thread_source` is `subagent`, `guardian_review` or `memory_consolidation`. Each of those belongs to a session that is already listed, or is Codex's own work.
+`source` says where a session was started. Listed: `cli` and `vscode`, the sources Codex itself treats as interactive; `exec`, for `codex exec` runs; `{"custom":"chatgpt"}`, the ChatGPT desktop app; and any other or missing source. Left out: `{"subagent":...}`, `{"internal":...}` and `mcp` (threads run for another program through `codex mcp-server` or the app-server), any thread with a `parent_thread_id`, any thread whose `thread_source` is `subagent`, `guardian_review` or `memory_consolidation`, and any thread whose first `session_meta` has `attached_thread` `true`, such as a side chat Codex's terminal app saves beside the session it came from, which Codex's own lists leave out too (`codex-rs/protocol/src/protocol.rs:3535-3537`, `codex-rs/rollout/src/list.rs:965-968` and `:1031-1034`). Each of those belongs to a session that is already listed, or is Codex's own work.
 
 Also left out: a session whose last turn line was imported from another agent. It is listed from the first turn Codex runs in it.
 

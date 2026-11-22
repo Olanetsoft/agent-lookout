@@ -128,6 +128,21 @@ describe("readMetaLine", () => {
     );
   });
 
+  test("attached_thread is kept only when it is true, as Codex writes it for a side chat it saves", () => {
+    const sideChat = { forked_from_id: ids.idle, thread_source: "tui_side_chat" };
+    const meta = readMetaLine(metaLine(START, { ...sideChat, attached_thread: true }));
+    expect(meta).toMatchObject({ threadSource: "tui_side_chat", attachedThread: true });
+    // The thread it was forked from is not kept.
+    expect(JSON.stringify(meta)).not.toContain(ids.idle);
+    for (const value of [false, "true", 1, null, {}]) {
+      expect(
+        readMetaLine(metaLine(START, { ...sideChat, attached_thread: value })),
+        JSON.stringify(value),
+      ).not.toHaveProperty("attachedThread");
+    }
+    expect(readMetaLine(metaLine(START))).not.toHaveProperty("attachedThread");
+  });
+
   test.each([
     ["a turn line", turnLine(START, "task_started")],
     ["a message that quotes the word", messageLine(START, 'the "session_meta" line')],

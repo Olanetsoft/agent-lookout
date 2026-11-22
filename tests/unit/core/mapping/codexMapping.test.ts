@@ -233,6 +233,15 @@ describe("isCodexSessionSource", () => {
     expect(isCodexSessionSource("cli", { parentThreadId: 7 })).toBe(true);
   });
 
+  test("a thread Codex keeps attached to the one it was forked from is left out, whatever its source", () => {
+    expect(isCodexSessionSource("cli", { attachedThread: true })).toBe(false);
+    expect(isCodexSessionSource(undefined, { attachedThread: true })).toBe(false);
+    // Only true says so.
+    for (const attachedThread of [false, "true", 1, undefined]) {
+      expect(isCodexSessionSource("cli", { attachedThread }), String(attachedThread)).toBe(true);
+    }
+  });
+
   test.each(["subagent", "guardian_review", "memory_consolidation"])(
     "a thread whose thread_source is %s is left out",
     (threadSource) => {
