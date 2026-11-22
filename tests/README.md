@@ -190,7 +190,7 @@ Use values that could belong to nobody: `demo-project` for a name, `/Users/examp
 
 `fixtures/muse-code/museCode.ts` builds the lines of a Muse Code session's log, written by hand in the shape Meta's MIT-licensed protocol schema gives a raw record at 1.4.24, with the record names `docs/adapters/muse-code.md` describes, and the folder of a session in its day folder, with placeholder words where a prompt, a question, an answer, a command, a reply, a review, a name and a frame's rule go, so a test can check that none of them leaves the log. Muse Code was not run to make them, and nothing in them is copied from another program's files.
 
-`fixtures/kimi-code/kimiCode.ts` builds the lines of `session_index.jsonl`, a `state.json`, a lock and the lines of an event file in the shapes Kimi Code's source writes at 2.4.1, as `docs/adapters/kimi-code.md` describes, with placeholder words where a prompt, a question and an answer go, so a test can check that none of them leaves the file. Kimi Code was not run to make them.
+`fixtures/kimi-code/kimiCode.ts` builds the lines of `session_index.jsonl`, a `state.json`, a lock and the lines of an event file in the shapes Kimi Code's source writes at 2.7.2, as `docs/adapters/kimi-code.md` describes, with placeholder words where a prompt, a question and an answer go, so a test can check that none of them leaves the file. Kimi Code was not run to make them.
 
 `fixtures/continue/continue.ts` builds a `sessions.json` and a session's file in the shapes Continue's source writes at v1.5.45, as `docs/adapters/continue.md` describes, with placeholder words where a title, a prompt, a reply and a tool's arguments go, so a test can check that none of them leaves the file. Continue was not run to make them.
 

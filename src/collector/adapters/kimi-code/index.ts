@@ -64,11 +64,11 @@ export const NEEDS_YOU_NOTE =
 
 /** Said whenever Kimi Code is watched: why an open session can show as finished. */
 export const OPEN_NOTE =
-  "Kimi Code keeps a lock on a session only while it is busy, so a session shows as idle only once Agent Lookout has seen it busy, for as long as that process runs. Any other session with no lock shows as finished.";
+  "Kimi Code keeps a lock on a session only while it is busy and, from 2.6.0, for a few seconds after a process opens it, so a session shows as idle only once Agent Lookout has seen its lock, for as long as that process runs. Any other session with no lock shows as finished.";
 
 /** Said whenever Kimi Code is watched, until Agent Lookout has been checked against it. */
 export const UNCHECKED_NOTE =
-  "This was built from Kimi Code's source at 2.4.1 and has not yet been checked on a computer running it, so a status can be wrong.";
+  "This was built from Kimi Code's source at 2.7.2 and has not yet been checked on a computer running it, so a status can be wrong.";
 
 /** Said when a `state.json` is over the most this reads. */
 export const TOO_LARGE_NOTE =
@@ -76,7 +76,7 @@ export const TOO_LARGE_NOTE =
 
 /**
  * What a Kimi Code session can show, from the files this adapter reads. See
- * docs/adapters/kimi-code.md for each. Built from Kimi Code's source at 2.4.1 and
+ * docs/adapters/kimi-code.md for each. Built from Kimi Code's source at 2.7.2 and
  * not yet checked on a computer running it.
  *
  * - Working is a lock a process that runs holds, which Kimi Code takes for as
@@ -227,7 +227,7 @@ function processCheckFacts(asksPs: boolean, pollIntervalMs: number): SourceFact[
 /**
  * Finds Kimi Code sessions on this machine from the files Kimi Code keeps, with
  * nothing installed, no setting changed and no Kimi Code program run. Built from
- * Kimi Code's source at 2.4.1 and not yet checked on a computer running it.
+ * Kimi Code's source at 2.7.2 and not yet checked on a computer running it.
  *
  * Kimi Code's command, its web page and its editor extension keep their sessions
  * in one folder, `~/.kimi-code`. Its own lists are its `kimi` command, which

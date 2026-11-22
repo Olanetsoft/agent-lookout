@@ -1,5 +1,5 @@
 // Test fixtures only. Every id, name, path and word here is invented and
-// generic. Each file follows the shape Kimi Code's source writes at 2.4.1, as
+// generic. Each file follows the shape Kimi Code's source writes at 2.7.2, as
 // written up in docs/adapters/kimi-code.md, and nothing in it is copied from a
 // real machine: Kimi Code was not run to make it. Product code never imports this
 // file.
@@ -107,7 +107,7 @@ export function lockText(changes: Record<string, unknown> = {}): string {
 
 /** An event file's first line. */
 export const wireStart = (at = CREATED_AT) =>
-  `${JSON.stringify({ type: "metadata", protocol_version: "1.5", created_at: at })}\n`;
+  `${JSON.stringify({ type: "metadata", protocol_version: "1.5", created_at: at, min_protocol_version: "1.5" })}\n`;
 
 /** A line of what was said, as Kimi Code writes every other record. */
 export const wirePrompt = (at = LOCKED_AT) =>

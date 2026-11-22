@@ -8,14 +8,16 @@ import { isRecord } from "./sessionIndex.ts";
 /**
  * The folder where Kimi Code keeps a lock for each session it is using:
  * `locks/sessions/` in its folder, one `<session id>.lock` for each
- * (`persistence/backends/node-fs/sessionLockService.ts` at 2.4.1).
+ * (`persistence/backends/node-fs/sessionLockService.ts` at 2.7.2).
  *
  * To take a lock, Kimi Code writes a temporary file and links it to that name,
  * so a lock is never half written, and it writes
  * `{"version":1,"token":…,"pid":…,"hostname":…,"startedAt":…,"clientIdentity":…}`.
- * It takes the lock when a session's turn begins and each time it writes to the
- * session, and lets it go 3 seconds after the session stops being busy, so a
- * session idle between turns has none (`session/sessionActivity/sessionRunGateService.ts`).
+ * It takes the lock when a session's turn begins, each time it writes to the
+ * session and, from 2.6.0, when a process opens the session
+ * (`initializeLoop` in `agent/loop/loopService.ts`), and lets it go 3 seconds
+ * after the session stops being busy, so a session idle between turns has none
+ * (`session/sessionActivity/sessionRunGateService.ts`).
  * A process that crashes leaves its lock behind, which the next Kimi Code to want
  * that session clears once it finds the process gone.
  *

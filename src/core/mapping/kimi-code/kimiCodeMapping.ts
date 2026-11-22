@@ -5,7 +5,7 @@
 // the process that holds it, and writes each approval and question it asks, and
 // each answer, into the session's event file. It writes how a turn ended into
 // the session's `state.json`. This mapping reads only what those say, and was
-// worked out from Kimi Code's source at 2.4.1, not checked on a computer
+// worked out from Kimi Code's source at 2.7.2, not checked on a computer
 // running it. See docs/adapters/kimi-code.md.
 
 import type { SessionStatus, WaitingReason } from "../../sessions/session.ts";

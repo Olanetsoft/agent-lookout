@@ -347,7 +347,7 @@ describe("each status", () => {
     });
   });
 
-  test("a lock taken after the turn ended, as to write a new title, does not move the idle time", async () => {
+  test("a lock taken after the turn ended, as to write a new title or open the session, does not move the idle time", async () => {
     const files = setUpLocked();
     const adapter = kimiCodeAdapterFor(files);
     await adapter.poll();

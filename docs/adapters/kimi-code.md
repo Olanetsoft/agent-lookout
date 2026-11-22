@@ -2,11 +2,11 @@
 
 These notes record what Agent Lookout reads from Kimi Code, where each value comes from, and what breaks when Kimi Code changes. When the adapter stops working, start here.
 
-Written on 2026-11-04 from Kimi Code's source at `@moonshot-ai/kimi-code@2.4.1`, released 2026-10-30 (commit `2c73f3f` of [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code)), the newest full release then. Kimi Code is under the MIT licence at that tag. Kimi Code was not installed or run to write them, and no real session was looked at, so nothing here has been checked on a computer running Kimi Code. The fixtures are written by hand from the source.
+Written on 2026-11-04 from Kimi Code's source at `@moonshot-ai/kimi-code@2.4.1`, released 2026-10-30 (commit `2c73f3f` of [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code)), and checked again on 2026-11-22 against `@moonshot-ai/kimi-code@2.7.2`, released 2026-11-20 (commit `56145f8`), the newest full release then. Kimi Code is under the MIT licence at both tags. Kimi Code was not installed or run to write them, and no real session was looked at, so nothing here has been checked on a computer running Kimi Code. The fixtures are written by hand from the source.
 
 This is the TypeScript Kimi Code, whose `kimi` command writes `~/.kimi-code`. It is not the older Python Kimi CLI of [MoonshotAI/kimi-cli](https://github.com/MoonshotAI/kimi-cli), Apache-2.0, which that repository calls legacy and no longer maintained, and which kept its files in `~/.kimi`. This adapter never reads `~/.kimi`. Kimi Code can bring sessions over from it, and those are in `~/.kimi-code` as [Which sessions are listed](#which-sessions-are-listed) says.
 
-Each citation is a path at that tag, where `core/` is `packages/agent-core-v2/src/`.
+Each citation is a path at 2.7.2, where `core/` is `packages/agent-core-v2/src/`.
 
 The code is in `src/collector/adapters/kimi-code/`, and the status mapping is in `src/core/mapping/kimi-code/kimiCodeMapping.ts`.
 
@@ -89,7 +89,7 @@ It rewrites the file whole now and then, to drop lines for folders that have gon
 | `workDir`    | Its folder, when `state.json` gives none                  | An absolute path by the system's own rules, of 4096 characters or fewer, with no control character                                                                                                |
 | `deleted`    | Removes an earlier line for the id                        | Only when it is `true`                                                                                                                                                                            |
 
-A later line for an id replaces an earlier one. A session line with a bad `sessionId` or `sessionDir`, or a line that is not JSON, is skipped. A bad `workDir` only leaves the session with no folder from the index. A bucket is `wd_<slug>_<first 12 of a sha-256>` (`encodeWorkDirKey` in `core/_base/utils/workdir-slug.ts`), and is held to the same rule as an id.
+A later line for an id replaces an earlier one. A session line with a bad `sessionId` or `sessionDir`, or a line that is not JSON, is skipped. A bad `workDir` only leaves the session with no folder from the index. A bucket is `wd_<slug>_<first 12 of a sha-256>` for a folder (`encodeWorkDirKey` in `core/_base/utils/workdir-slug.ts`), or, from 2.5.0, `wm_<uuid>` for a workspace added in `kimi web` or the desktop app (`core/app/workspace/workspaceService.ts`), and is held to the same rule as an id.
 
 ## `state.json`
 
@@ -115,17 +115,18 @@ Kimi Code takes a lock so two processes do not write one session at once (`core/
 
 Only `pid` and `startedAt` are kept. Kimi Code reads a lock with no time as dead, and a lock with no good `pid` or no whole `startedAt` is treated here as naming nothing. `token`, `hostname` and the client's names are dropped with the parsed file. A `.lock.tmp-…` or `.lock.reclaim` file is not read.
 
-When it holds one (`core/session/sessionActivity/sessionRunGateService.ts`, `core/wire/wireService.ts`):
+When it holds one (`core/session/sessionActivity/sessionRunGateService.ts`, `core/wire/wireService.ts`, `initializeLoop` in `core/agent/loop/loopService.ts`):
 
 - it takes the lock when a turn begins, and whenever it writes to the session's metadata or event file;
+- from 2.6.0, it also takes it while a process opens the session and loads its agent, as `kimi --session` does. From 2.7.0, a process opens a session another holds without taking the lock (`tryAcquire`);
 - it holds it while the session is busy, which means a turn, a background task or a compaction in any of its agents, and a wait for you is inside a turn;
-- it lets it go 3 seconds after the session stops being busy, and when the process exits.
+- it lets it go 3 seconds after the session stops being busy, and when the process exits. A lock taken to open a session is let go the same way, so it lasts some 3 seconds, longer than a poll.
 
-So a lock is a session in use, and no lock is a session idle or closed. A crash leaves a lock behind, which the next Kimi Code to want that session clears once it finds the process gone.
+So a lock is a session in use or just opened, and no lock is a session idle or closed. A crash leaves a lock behind, which the next Kimi Code to want that session clears once it finds the process gone.
 
 ## The event file
 
-`agents/main/wire.jsonl` is JSON Lines, opened by `{"type":"metadata","protocol_version":"1.5","created_at":…}`. Each record is `{"type":"<type>",<its fields>,"time":<Unix ms>}`, with `type` first and `time` last (`serialize` in `core/app/event/event2.ts`). Each line reaches the disk within moments, and is not buffered for a turn.
+`agents/main/wire.jsonl` is JSON Lines, opened by `{"type":"metadata","protocol_version":"1.5","created_at":…}`, which from 2.6.0 ends with `"min_protocol_version":"1.5"` (`core/wire/record.ts`). Each record is `{"type":"<type>",<its fields>,"time":<Unix ms>}`, with `type` first and `time` last (`serialize` in `core/app/event/event2.ts`). Each line reaches the disk within moments, and is not buffered for a turn.
 
 Two types matter here (`core/agent/interaction/interactionOps.ts`):
 
@@ -169,7 +170,7 @@ A session is never `unknown`. It shows as `working` while any of its agents is b
 | `needs-you` | When the wait began                                 |
 | Any other   | `updatedAt`, else the modified time of `state.json` |
 
-`updatedAt` is when the last turn ended, but a background task or a compaction holds the lock past that. So when a lock taken no later than the turn's end is let go, the status time is no earlier than the last poll that saw it held, and a session held for a day stays listed for a day after that poll. A lock taken after the turn's end, as Kimi Code takes one to write a new title, does not move it. Agent Lookout keeps that poll only while the session is listed, no later than the clock, so a session it never saw held, as after Agent Lookout starts again, takes `updatedAt`.
+`updatedAt` is when the last turn ended, but a background task or a compaction holds the lock past that. So when a lock taken no later than the turn's end is let go, the status time is no earlier than the last poll that saw it held, and a session held for a day stays listed for a day after that poll. A lock taken after the turn's end, as Kimi Code takes one to write a new title or to open the session, does not move it. Agent Lookout keeps that poll only while the session is listed, no later than the clock, so a session it never saw held, as after Agent Lookout starts again, takes `updatedAt`.
 
 ### Idle and finished
 
@@ -181,7 +182,7 @@ A session whose lock Agent Lookout never saw held is `finished`. A session left 
 
 A session is `needs-you` while the main agent's event file holds an `interaction.request` of kind `approval` or `question` with no `interaction.resolved` of the same id, and both of these hold, as in `kimiCodeWaitOf`:
 
-- A process that runs holds the lock. A wait is kept in that process's memory (`core/human/interaction/facade.ts`), and a crash writes nothing. An agent that closes with a wait open writes no answer either, since `detachInteractionAgent` takes its dispatcher away first.
+- A process that runs holds the lock. A wait is kept in that process's memory (`core/human/interaction/facade.ts`), and a crash writes nothing. An agent that closes with a wait open writes no answer either, since `detachInteractionAgent` (`core/agent/interaction/interactionWiring.ts`) takes its dispatcher away first.
 - It was asked at or after the lock's `startedAt`. Kimi Code holds the lock through a turn, so an earlier process's line, left in the file, does not count once another process takes the lock.
 
 The reason is `permission` for an approval and `question` for a question, and with both open it is `permission`, as `resolvePendingInteraction` in `core/session/sessionActivity/sessionActivityService.ts` puts it first. There is never a `waitingText`.
@@ -233,7 +234,8 @@ Everything is read as elsewhere, from `%USERPROFILE%\.kimi-code`, and signal 0 w
 
 ## Known gaps
 
-- A session left idle in a Kimi Code opened before Agent Lookout saw it busy shows as finished until its next turn. So does a session resumed with `kimi --session` until Kimi Code next writes to it, and every idle session after Agent Lookout restarts. After a restart the Events log also records each session last seen idle as changing to finished, though its Kimi Code may still be open.
+- A session left idle in a Kimi Code opened before Agent Lookout saw it busy shows as finished until its next turn. Before 2.6.0, so does a session resumed with `kimi --session` until Kimi Code next writes to it. From 2.6.0, Kimi Code takes the lock for some 3 seconds as it opens a session, unless another process holds it then, so a session opened while Agent Lookout runs shows as working for a poll or two, then as idle. Every idle session shows as finished after Agent Lookout restarts, and the Events log then records each session last seen idle as changing to finished, though its Kimi Code may still be open.
+- A session can be open in two processes at once, from 2.7.0 even while one of them holds its lock. A lock names only the process that holds it, and Agent Lookout keeps the last one it saw. Once that process ends, the session shows as finished until the other next writes to it, as at its next turn.
 - A session left with `/new` or `/sessions` in one process stays idle until that process ends, since a process that moves on writes nothing.
 - A session in `kimi web`, the desktop app or an editor stays idle for as long as that process runs, though Kimi Code unloads one in the first two from memory after 30 minutes idle.
 - A subagent's wait is in the subagent's own file, which is not read, so a session whose subagent waits for you shows as working.
@@ -259,7 +261,7 @@ Everything is read as elsewhere, from `%USERPROFILE%\.kimi-code`, and signal 0 w
 Everything here is read from the source, so each of these is for a person with Kimi Code installed to check:
 
 1. That `session_index.jsonl`, `state.json` and `wire.jsonl` appear as above, and that a line of `wire.jsonl` has `type` first in practice.
-2. That a lock appears within a poll of a turn starting and goes 3 seconds after it ends, in the terminal, in `kimi web`, in `kimi acp` and in the VS Code extension.
+2. That a lock appears within a poll of a turn starting and goes 3 seconds after it ends, and that one appears for about 3 seconds when a session is opened, in the terminal, in `kimi web`, in `kimi acp` and in the VS Code extension.
 3. That a tool's approval and a question each write one `interaction.request` and one `interaction.resolved` to the main agent's file, and that a subagent's go to its own.
 4. That a killed process leaves its lock behind, with the pid that held it.
 5. That `titleKind` moves from `replaceable` to `generated` after a first turn, and stays `replaceable` with another provider.

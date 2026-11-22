@@ -475,7 +475,7 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 
 **Where.** `src/collector/adapters/kimi-code/`, with the mapping in `src/core/mapping/kimi-code/kimiCodeMapping.ts`. [adapters/kimi-code.md](adapters/kimi-code.md) is the full reference.
 
-**Where it came from.** Issue #32 asked for Kimi Code. It reads the files of the TypeScript Kimi Code in `~/.kimi-code`, not the older Python Kimi CLI's in `~/.kimi`. It was built from Kimi Code's source at 2.4.1 and has not yet been checked on a computer running Kimi Code. The card says so (`UNCHECKED_NOTE`).
+**Where it came from.** Issue #32 asked for Kimi Code. It reads the files of the TypeScript Kimi Code in `~/.kimi-code`, not the older Python Kimi CLI's in `~/.kimi`. It was built from Kimi Code's source at 2.7.2 and has not yet been checked on a computer running Kimi Code. The card says so (`UNCHECKED_NOTE`).
 
 **Why the lock.** The issue said nothing marks a terminal session as running. Since 2.3.0 something does, while a session is busy: `locks/sessions/<id>.lock` names the process using it, so that two processes do not write one session at once. Nothing marks a session idle between turns, as Kimi Code lets the lock go 3 seconds after it stops being busy. So the adapter keeps, in memory, the process it last saw hold a lock, and a session is idle while that runs. The notes say what that leaves out.
 

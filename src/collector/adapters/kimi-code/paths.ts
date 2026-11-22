@@ -4,8 +4,8 @@ import type { ReadOnlyIo } from "../../files/readOnlyIo.ts";
 
 /**
  * Where Kimi Code keeps a session, under its folder (`~/.kimi-code`):
- * `sessions/<workDirKey>/<sessionId>/`, with `state.json` and
- * `agents/main/wire.jsonl` in it. Built from Kimi Code's source at 2.4.1 and not
+ * `sessions/<bucket>/<sessionId>/`, with `state.json` and
+ * `agents/main/wire.jsonl` in it. Built from Kimi Code's source at 2.7.2 and not
  * yet checked on a computer running it.
  */
 

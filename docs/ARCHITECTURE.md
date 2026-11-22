@@ -330,7 +330,7 @@ What tells Pi from an agent kept the same way is `PI_PROFILE`, a `PiProfile` of 
 
 ## The Kimi Code adapter
 
-The adapter lives in `src/collector/adapters/kimi-code/`. [adapters/kimi-code.md](adapters/kimi-code.md) is its reference: what it reads, the fields and their values, the Kimi Code version it was written from, what is not yet checked and what breaks when Kimi Code changes. It was built from Kimi Code's source at 2.4.1 and has not yet been checked on a computer running it.
+The adapter lives in `src/collector/adapters/kimi-code/`. [adapters/kimi-code.md](adapters/kimi-code.md) is its reference: what it reads, the fields and their values, the Kimi Code version it was written from, what is not yet checked and what breaks when Kimi Code changes. It was built from Kimi Code's source at 2.7.2 and has not yet been checked on a computer running it.
 
 Kimi Code keeps its files in one folder, `~/.kimi-code`, on every system, unless `KIMI_CODE_HOME` or `AGENT_LOOKOUT_KIMI_CODE_HOME` names another (`kimiCodeHomeFor` in `index.ts`). The folder is the TypeScript Kimi Code's. The older Python Kimi CLI's `~/.kimi` is never read.
 
