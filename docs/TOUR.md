@@ -1214,7 +1214,7 @@ The fix (cd9dfef) sets `-webkit-app-region: none` on those fields of light in `s
   - `answerOffer.ts` decides what a notification or the menu can offer. Deny is always offered. Allow is offered only when the whole request fits as written: for a notification, one shell command on one line of at most 40 characters, with no other input.
   - `desktopAnswers.ts` takes every press and hands it to the collector's own answer path, the same one the route uses. So a press here goes through every check a press on the page does.
   - It refuses a press within the first second of a request being shown, and while the Mac is locked.
-  - #81 stays open until it is checked by hand on a packaged build.
+  - #194 tracks checking it by hand on a packaged build.
 
 #### The Claude Code plugin, installed once (#120)
 
@@ -1444,7 +1444,7 @@ Each channel also reads its own `_EVENTS`, `_AFTER` (in seconds, 60 by default) 
 
 **What the dashboard sees.** `GET /api/email`, `/api/webhook`, `/api/ntfy` and `/api/pushover` each say whether the channel is on, which events it sends, the delay, whether it includes what a session is asking, and how the last message went. They never include a server, a password, a full address, a topic, a token or a key. The page reads them through `src/dashboard/hooks/notifications/useOutboundStatus.ts`, and all four cards are `SendingCard` in `SettingsView.tsx`.
 
-**Still open.** #82 stays open until one real push through ntfy.sh and one through Pushover are checked on a phone. WhatsApp (#27) is on hold.
+**Still open.** #195 tracks checking one real push through ntfy.sh and one through Pushover on a phone. WhatsApp (#27) is on hold.
 
 ### Time rules: reminders, quiet hours and the idle time
 
