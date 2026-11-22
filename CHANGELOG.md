@@ -2,7 +2,9 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
-## Unreleased
+## 0.2.29 - 2026-11-22
+
+Grok Build, Kimi Code and Prime Agent sessions keep the right status after a resume, a clock set forward or a background task, and Pi and Oh My Pi read their own folders when Agent Lookout runs inside Kimchi.
 
 ### Fixed
 
