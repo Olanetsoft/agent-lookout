@@ -169,6 +169,8 @@ A session is never `unknown`. It shows as `working` while any of its agents is b
 | `needs-you` | When the wait began                                 |
 | Any other   | `updatedAt`, else the modified time of `state.json` |
 
+`updatedAt` is when the last turn ended, but a background task or a compaction holds the lock past that. So when a lock taken no later than the turn's end is let go, the status time is no earlier than the last poll that saw it held, and a session held for a day stays listed for a day after that poll. A lock taken after the turn's end, as Kimi Code takes one to write a new title, does not move it. Agent Lookout keeps that poll only while the session is listed, no later than the clock, so a session it never saw held, as after Agent Lookout starts again, takes `updatedAt`.
+
 ### Idle and finished
 
 Kimi Code writes nothing that says a session is open but idle. So Agent Lookout keeps the process it last saw hold a session's lock, in memory, for as long as that process runs, and the session is `idle` until it ends. That is written nowhere, and a restart of Agent Lookout forgets it. It names a process, not a client, so a session left in a server or a window that serves many stays idle for as long as that runs.
@@ -237,7 +239,7 @@ Everything is read as elsewhere, from `%USERPROFILE%\.kimi-code`, and signal 0 w
 - A subagent's wait is in the subagent's own file, which is not read, so a session whose subagent waits for you shows as working.
 - A crash mid-turn shows as finished: Kimi Code clears `lastTurnReason` when a turn starts (`sessionOutcomeMirrorService.ts`), and writes nothing when it dies. A session that crashed before its first model request can show as failed once Kimi Code reopens it, if the turn before failed, as Kimi Code restores that outcome from the event file.
 - Kimi Code before 2.3.0 keeps no lock, and neither does one with `KIMI_CODE_SESSION_LOCK=0`, or on a file system where a hard link fails, where it carries on without one. Its sessions never show as working, idle or needing you, only as finished or failed.
-- On Linux and Windows, after a crash, another program can take the lock's pid. The session then shows as working until that program ends, unless the computer has restarted since.
+- On Linux and Windows, after a crash, another program can take the lock's pid. The session then shows as working until that program ends, unless the computer has restarted since, and then as finished since about when that program ended.
 - On a Mac, a session shows as finished while it runs if the clock was set back by more than a minute between its process's start and the lock's `startedAt`.
 - When Agent Lookout starts after the clock was set forward by more than the time between the computer's start and a lock, as an NTP step or WSL 2 catching up after sleep can do, the computer looks started after that lock, and its session shows as finished until its next turn takes a new one.
 - A clock that was behind when Agent Lookout started, or set back while it ran, and is then set right keeps the computer's start that much early until Agent Lookout stops. A lock left from that long before the restart, whose pid another program now has, then shows its session as working until that program ends, on Linux and Windows.

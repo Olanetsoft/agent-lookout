@@ -30,7 +30,7 @@ import { createLockReader, LOCK_FOLDERS, type SessionLock } from "./locks.ts";
 import { SESSIONS_DIR, stateFilePath, wireFilePath } from "./paths.ts";
 import { createIndexReader, SESSION_INDEX_FILE, type IndexedSession } from "./sessionIndex.ts";
 import { createStateReader, type SessionState } from "./sessionState.ts";
-import { kimiCodeSession, SOURCE_ID } from "./toSession.ts";
+import { kimiCodeSession, SOURCE_ID, type KimiCodeHeld } from "./toSession.ts";
 import { createWireReader } from "./wireFile.ts";
 
 /** The variable that names Kimi Code's folder, for Agent Lookout alone. */
@@ -312,6 +312,8 @@ export function createKimiCodeAdapter(options: KimiCodeAdapterOptions = {}): Ada
   let settled = new Set<string>();
   /** The process Agent Lookout last saw hold each session's lock, while that runs. */
   let holders = new Map<string, SessionLock>();
+  /** The last poll that saw each shown session's lock held, and when that lock was taken, kept while it is shown. */
+  let heldAt = new Map<string, KimiCodeHeld>();
   /** Each session's wait as the last poll showed it. */
   let waits = new Map<string, KimiCodeWait>();
   /**
@@ -394,6 +396,7 @@ export function createKimiCodeAdapter(options: KimiCodeAdapterOptions = {}): Ada
     shown = new Set();
     settled = new Set();
     holders = new Map();
+    heldAt = new Map();
     waits = new Map();
     ruledOut = new Set();
     sweptAt = null;
@@ -513,6 +516,7 @@ export function createKimiCodeAdapter(options: KimiCodeAdapterOptions = {}): Ada
     const sessions: Session[] = [];
     const stillShown = new Set<string>();
     const stillHeld = new Map<string, SessionLock>();
+    const stillHeldAt = new Map<string, KimiCodeHeld>();
     const shownWaits = new Map<string, KimiCodeWait>();
     for (const { session, state, lock, lastHolder, stateWrittenAt } of listed) {
       const { id } = session;
@@ -533,8 +537,20 @@ export function createKimiCodeAdapter(options: KimiCodeAdapterOptions = {}): Ada
       }
       if (wait !== null) shownWaits.set(id, wait);
 
-      if (held || open || isWithinRetention(Math.floor(stateWrittenAt), checkedAt)) {
+      // Kept no later than this poll, so a clock set back does not put it ahead.
+      const kept = heldAt.get(id);
+      const lastHeld: KimiCodeHeld | null = held
+        ? { at: checkedAt, lockStartedAt: lock.startedAt }
+        : kept === undefined
+          ? null
+          : { ...kept, at: Math.min(kept.at, checkedAt) };
+      // Listed for a day after its last write, or after it was last seen held, as a long background task's.
+      const recent =
+        isWithinRetention(Math.floor(stateWrittenAt), checkedAt) ||
+        (lastHeld !== null && isWithinRetention(lastHeld.at, checkedAt));
+      if (held || open || recent) {
         stillShown.add(id);
+        if (lastHeld !== null) stillHeldAt.set(id, lastHeld);
         sessions.push(
           kimiCodeSession({
             session,
@@ -544,6 +560,7 @@ export function createKimiCodeAdapter(options: KimiCodeAdapterOptions = {}): Ada
             wait,
             stateWrittenAt,
             ...(wireWrittenAt === undefined ? {} : { wireWrittenAt }),
+            lastHeld,
             now: checkedAt,
           }),
         );
@@ -555,6 +572,7 @@ export function createKimiCodeAdapter(options: KimiCodeAdapterOptions = {}): Ada
     settled = stillSettled;
     shown = stillShown;
     holders = stillHeld;
+    heldAt = stillHeldAt;
     waits = shownWaits;
     states.keepOnly(read);
     wires.keepOnly(stillShown);

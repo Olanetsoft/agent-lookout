@@ -324,6 +324,78 @@ describe("each status", () => {
     expect(finished).not.toHaveProperty("alive");
   });
 
+  /** A lock taken before the turn ended, held past it by a background task for a day, then let go. */
+  async function heldPastTheTurn(clock: ReturnType<typeof handClock>) {
+    const files = setUpLocked({ startedAt: UPDATED_AT - MINUTE });
+    const processes = standInProcesses([PID]);
+    const adapter = kimiCodeAdapterFor(files, { now: clock.now, isAlive: processes.isAlive });
+    expect((await adapter.poll()).sessions[0]?.status).toBe("working");
+    clock.advance(25 * HOUR);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("working");
+    files.remove(lockFile(ID));
+    clock.advance(2_000);
+    return { files, processes, adapter };
+  }
+
+  test("a lock a background task holds for a day past the turn's end leaves the session idle since it was let go, not stale", async () => {
+    const clock = handClock();
+    const { adapter } = await heldPastTheTurn(clock);
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "idle",
+      statusSince: NOW + 25 * HOUR,
+      stale: false,
+    });
+  });
+
+  test("a lock taken after the turn ended, as to write a new title, does not move the idle time", async () => {
+    const files = setUpLocked();
+    const adapter = kimiCodeAdapterFor(files);
+    await adapter.poll();
+    files.remove(lockFile(ID));
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "idle",
+      statusSince: UPDATED_AT,
+    });
+  });
+
+  test("after a day held past the turn, it is listed as finished when its process ends", async () => {
+    const clock = handClock();
+    const { processes, adapter } = await heldPastTheTurn(clock);
+    await adapter.poll();
+    processes.stop(PID);
+    clock.advance(10 * MINUTE);
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "finished",
+      statusSince: NOW + 25 * HOUR,
+    });
+  });
+
+  test("a clock set back keeps the time it was let go, at the clock's time", async () => {
+    const clock = handClock();
+    const { adapter } = await heldPastTheTurn(clock);
+    await adapter.poll();
+    clock.advance(-5 * MINUTE);
+    const back = (await adapter.poll()).sessions[0];
+    expect(back).toMatchObject({ status: "idle", stale: false });
+    expect(back?.statusSince).toBe(clock.now());
+    clock.advance(MINUTE);
+    expect((await adapter.poll()).sessions[0]?.statusSince).toBe(back?.statusSince);
+  });
+
+  test("the time it was let go is kept only while the session is listed", async () => {
+    const clock = handClock();
+    const { files, processes, adapter } = await heldPastTheTurn(clock);
+    await adapter.poll();
+    processes.stop(PID);
+    // A day after it was let go, and with no write since, it leaves the list.
+    clock.advance(DAY + MINUTE);
+    expect((await adapter.poll()).sessions).toEqual([]);
+    // Written again with the same updatedAt, it comes back since then.
+    files.write(stateFile(ID), stateText(ID), { mtimeMs: clock.now() });
+    clock.advance(SWEEP_MS);
+    expect((await adapter.poll()).sessions[0]?.statusSince).toBe(UPDATED_AT);
+  });
+
   test("an idle session stays idle poll after poll, for as long as its process runs", async () => {
     const files = setUpLocked();
     const processes = standInProcesses([PID]);
@@ -835,15 +907,21 @@ describe("which sessions are listed", () => {
     expect(sessions).toEqual([]);
   });
 
-  test("the index going away forgets the process that held a session", async () => {
-    const files = setUpLocked();
-    const adapter = kimiCodeAdapterFor(files);
+  test("the index going away forgets the process that held a session, and when it last saw the lock held", async () => {
+    const files = setUpLocked({ startedAt: UPDATED_AT - MINUTE });
+    const clock = handClock();
+    const adapter = kimiCodeAdapterFor(files, { now: clock.now });
     await adapter.poll();
     files.remove(lockFile(ID));
     files.remove(indexFile());
+    clock.advance(2_000);
     await adapter.poll();
     files.write(indexFile(), indexLine(ID), { mtimeMs: NOW + 1 });
-    expect((await adapter.poll()).sessions[0]?.status).toBe("finished");
+    clock.advance(2_000);
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "finished",
+      statusSince: UPDATED_AT,
+    });
   });
 
   test("a clock set back counts as time enough for a sweep", async () => {

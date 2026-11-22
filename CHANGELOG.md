@@ -7,6 +7,7 @@ Changes that a user of Agent Lookout would notice, newest first.
 ### Fixed
 
 - A Kimi Code or Prime Agent session that's still open no longer shows as finished after the clock is set forward, as when WSL 2 wakes from sleep. Its lock or lease is judged against the earliest the computer was seen to start. (#401)
+- A Kimi Code session whose background task or compaction held its lock past the turn's end is idle, failed or finished since the lock was let go, not since the turn ended, so one held for a day isn't marked stale the moment it stops, and is still listed once it ends. A rename doesn't move that time. (#402)
 - A Grok Build session resumed after its last turn ended shows as idle, or failed, since it was listed, not since that turn, so it's no longer marked stale as it opens. One the same Grok Build goes back to mid-turn after /new, once Agent Lookout saw it leave the list, keeps needing you or working, instead of turning unknown until its next line. (#396)
 - Agent Lookout started from inside Kimchi, as when you ask Kimchi to run it, no longer follows the `PI_CODING_AGENT_DIR` Kimchi sets for the programs it starts. Pi's card read Kimchi's folder, listing each Kimchi session again under a name Kimchi made from your first messages, and Oh My Pi's missed your own sessions. Both now read their own folders. (#399)
 
