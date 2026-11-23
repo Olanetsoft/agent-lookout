@@ -37,6 +37,8 @@ function wait(callbacks: VibeCallback[], fields: Partial<VibeWaitFields> = {}) {
     held: true,
     leaseTakenAt: LEASE_TAKEN,
     turnStartedAt: TURN_BEGAN,
+    turnId: "turn-1",
+    resumed: null,
     ...fields,
   });
 }
@@ -126,6 +128,91 @@ describe("what a Vibe session waits for", () => {
       reason: "permission",
       since: TURN_BEGAN + 5,
       ids: ["approval-call-1"],
+    });
+  });
+});
+
+describe("a wait Vibe 3.1.4 asks again as it takes up a turn after a restart", () => {
+  // The turn began, a Vibe asked, it stopped, and a later one took the lease and marked the turn.
+  const ASKED = TURN_BEGAN + 5;
+  const RETAKEN = TURN_BEGAN + 60;
+  const MARKED = RETAKEN + 2;
+  const taken = { leaseTakenAt: RETAKEN, resumed: { turnId: "turn-1", at: MARKED } };
+
+  test("an approval left pending counts, from when the turn was taken up", () => {
+    expect(wait([approval(ASKED)], taken)).toEqual({
+      reason: "permission",
+      since: MARKED,
+      ids: ["approval-call-1"],
+    });
+  });
+
+  test("a question left pending counts the same way", () => {
+    expect(wait([question(ASKED)], taken)).toEqual({
+      reason: "question",
+      since: MARKED,
+      ids: ["user-input-call-1"],
+    });
+  });
+
+  test("with no mark, as up to 3.1.3, what the stopped Vibe opened is left behind", () => {
+    expect(wait([approval(ASKED)], { leaseTakenAt: RETAKEN })).toBeNull();
+    expect(wait([question(ASKED)], { leaseTakenAt: RETAKEN })).toBeNull();
+  });
+
+  test("a mark an earlier lease made does not count once a later program has the session", () => {
+    const again = { ...taken, leaseTakenAt: MARKED + 60 };
+    expect(wait([question(ASKED)], again)).toBeNull();
+    expect(
+      wait([question(ASKED)], { ...again, resumed: { turnId: "turn-1", at: MARKED + 61 } }),
+    ).toMatchObject({ reason: "question", since: MARKED + 61 });
+  });
+
+  test("a mark made before the lease's time, by a clock set back, does not count", () => {
+    expect(
+      wait([approval(ASKED)], { ...taken, resumed: { turnId: "turn-1", at: RETAKEN - 1 } }),
+    ).toBeNull();
+    expect(
+      wait([approval(ASKED)], { ...taken, resumed: { turnId: "turn-1", at: RETAKEN } }),
+    ).not.toBeNull();
+  });
+
+  test("a mark of another turn, or with no turn's id or start to tie it to, does not count", () => {
+    expect(wait([approval(ASKED)], { ...taken, turnId: "turn-2" })).toBeNull();
+    expect(wait([approval(ASKED)], { ...taken, turnId: null })).toBeNull();
+    expect(wait([approval(ASKED)], { ...taken, turnStartedAt: null })).toBeNull();
+  });
+
+  test("a turn that began after the mark is a later turn, and what the taken-up turn opened is left behind", () => {
+    const later = { ...taken, turnId: "turn-1", turnStartedAt: MARKED + 30 };
+    expect(wait([approval(ASKED)], later)).toBeNull();
+    expect(wait([approval(MARKED + 40)], later)).toMatchObject({ since: MARKED + 40 });
+  });
+
+  test("what the turn opened in the millisecond it began is asked again too", () => {
+    expect(wait([approval(TURN_BEGAN)], taken)).toEqual({
+      reason: "permission",
+      since: MARKED,
+      ids: ["approval-call-1"],
+    });
+  });
+
+  test("what an earlier turn opened is not asked again", () => {
+    expect(wait([question(TURN_BEGAN - 5)], taken)).toBeNull();
+  });
+
+  test("it still needs a program that holds the session and a turn in flight", () => {
+    expect(wait([approval(ASKED)], { ...taken, held: false })).toBeNull();
+    expect(wait([approval(ASKED)], { ...taken, held: "unknown" })).toBeNull();
+    expect(wait([approval(ASKED)], { ...taken, leaseTakenAt: null })).toBeNull();
+    expect(wait([approval(ASKED)], { ...taken, statusType: "idle" })).toBeNull();
+  });
+
+  test("beside a new ask, the reason is the newest's and the time the mark's", () => {
+    expect(wait([approval(ASKED), question(MARKED + 9)], taken)).toEqual({
+      reason: "question",
+      since: MARKED,
+      ids: ["approval-call-1", "user-input-call-1"],
     });
   });
 });

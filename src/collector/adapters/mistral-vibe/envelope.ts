@@ -16,7 +16,8 @@ import { tokenCountsOf } from "../../../core/tokens/tokenCounts.ts";
  * - `session.title`, cleaned and cut as every session's name is;
  * - `session.status.type`;
  * - `session.createdAt` and `session.updatedAt`;
- * - `latestTurn.status`, `latestTurn.startedAt` and `latestTurn.completedAt`;
+ * - `latestTurn.id`, `latestTurn.status`, `latestTurn.startedAt` and
+ *   `latestTurn.completedAt`;
  * - the token counts of the newest reply, from `session.contextUsage`.
  *
  * Every other key, and any key a newer Vibe adds, is left where it is. So is
@@ -31,6 +32,8 @@ export interface Envelope {
   /** Unix milliseconds, as Vibe writes them. Whether each could be right is decided where the clock is known. */
   createdAt: number | null;
   updatedAt: number | null;
+  /** `latestTurn.id`, Vibe's id for the newest turn. Null with no turn. */
+  turnId: string | null;
   /** `latestTurn.status`: `in_progress`, `completed`, `failed` or `interrupted`. Null with no turn. */
   turnStatus: string | null;
   turnStartedAt: number | null;
@@ -49,6 +52,11 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 /** A short word, such as a status. Anything longer is not one. */
 function word(value: unknown): string | null {
   return typeof value === "string" && value !== "" && value.length <= 64 ? value : null;
+}
+
+/** An id, such as a turn's. The longest is as long as the longest callback id read. */
+function id(value: unknown): string | null {
+  return typeof value === "string" && value !== "" && value.length <= 256 ? value : null;
 }
 
 /** A whole number of milliseconds. */
@@ -114,6 +122,7 @@ export function envelopeOf(state: unknown): Envelope | null {
     statusType: word(status?.type),
     createdAt: milliseconds(session.createdAt),
     updatedAt: milliseconds(session.updatedAt),
+    turnId: id(turn?.id),
     turnStatus: word(turn?.status),
     turnStartedAt: milliseconds(turn?.startedAt),
     turnCompletedAt: milliseconds(turn?.completedAt),

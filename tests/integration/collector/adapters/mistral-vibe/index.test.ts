@@ -40,6 +40,7 @@ import {
   PRIVATE_WORDS,
   publicState,
   replyEntry,
+  resumedRecord,
   sessionApiFacts,
   sessionId,
   storeFiles,
@@ -394,6 +395,7 @@ describe("a Mistral Vibe session waiting for you, on a real folder", () => {
   const ASKING = sessionId("e1");
   const KILLED = sessionId("e2");
   const CALLBACK = "approval-call-1";
+  const QUESTION = "user-input-call-2";
 
   /** A session this process holds and one a process that has ended held, each asked for an approval. */
   async function waitingDir() {
@@ -436,6 +438,62 @@ describe("a Mistral Vibe session waiting for you, on a real folder", () => {
     const answered = after.find((each) => each.id === `mistral-vibe:${ASKING}`);
     expect(answered?.status).toBe("working");
     expect(answered).not.toHaveProperty("waitingReason");
+  });
+
+  test("needs you once Vibe 3.1.4 takes up a turn a stopped Vibe left and asks again, with nothing new journaled", async () => {
+    const dir = await tempDir();
+    const marked = Date.now() - 10_000;
+    const journal = [
+      delta(5, running(ASKING, "demo-project wait")),
+      callbackRegistered(6, {
+        id: QUESTION,
+        kind: "user_input",
+        createdAt: Date.now() - 2 * MINUTE,
+      }),
+      resumedRecord(7, running(ASKING, "demo-project wait"), marked),
+      otherRecord("core_input", 8),
+    ];
+    await writeAll(dir, {
+      ...storeFiles({ id: ASKING, minor: 10, journal }),
+      [`active/${ASKING}.lock`]: "",
+      [`active/${ASKING}.lock.json`]: leaseFile(ASKING, process.pid, Date.now() - MINUTE),
+    });
+    const adapter = adapterFor(dir);
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "needs-you",
+      waitingReason: "question",
+      statusSince: marked,
+    });
+
+    await appendFile(
+      path.join(dir, ...journalPath(ASKING).split("/")),
+      callbackResolved(9, QUESTION),
+    );
+    const { sessions } = await adapter.poll();
+    expect(sessions[0]?.status).toBe("working");
+    expect(sessions[0]).not.toHaveProperty("waitingReason");
+  });
+
+  test("leaves what a stopped Vibe asked behind when the journal holds no mark, as up to 3.1.3", async () => {
+    const dir = await tempDir();
+    await writeAll(dir, {
+      ...storeFiles({
+        id: ASKING,
+        minor: 10,
+        journal: [
+          delta(5, running(ASKING, "demo-project wait")),
+          callbackRegistered(6, {
+            id: QUESTION,
+            kind: "user_input",
+            createdAt: Date.now() - 2 * MINUTE,
+          }),
+          otherRecord("action_result", 7),
+        ],
+      }),
+      [`active/${ASKING}.lock`]: "",
+      [`active/${ASKING}.lock.json`]: leaseFile(ASKING, process.pid, Date.now() - MINUTE),
+    });
+    expect((await adapterFor(dir).poll()).sessions[0]?.status).toBe("working");
   });
 
   // Told it is on a Mac, so that a Linux computer with a `ps` runs this too.

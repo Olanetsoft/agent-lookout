@@ -7,6 +7,7 @@ import {
   vibeLeaseHeld,
   vibeWaitOf,
   type VibeCallback,
+  type VibeResume,
   type VibeWait,
 } from "../../../core/mapping/mistral-vibe/mistralVibeMapping.ts";
 import { FINISHED_RETENTION_MS, isWithinRetention } from "../../../core/sessions/retention.ts";
@@ -159,8 +160,10 @@ export const WITHOUT_LEASES_NOTE =
  *   journal or the generation (`mistralVibeMapping.ts`).
  * - Needs you is a callback Vibe journals as it asks for an approval or an
  *   answer, while a program that runs holds the session and the turn is in
- *   flight (`vibeWaitOf`). A subagent's wait is in the subagent's own store,
- *   which is not read, so its session shows as working.
+ *   flight (`vibeWaitOf`), or one Vibe 3.1.4 asks again, with nothing new
+ *   journaled, once it marks the turn as taken up after a restart. A
+ *   subagent's wait is in the subagent's own store, which is not read, so its
+ *   session shows as working.
  * - Finished is a session no Vibe program holds the lease of, or whose lease
  *   was taken less than 30 seconds ago with nothing written to it since
  *   (`writtenSince`). The desktop app lets go of a session's lease after each
@@ -331,8 +334,8 @@ function processCheckFacts(asksPs: boolean, pollIntervalMs: number): SourceFact[
  *   the manifest, public state and runtime state of the generation it names,
  *   once each while it follows the session (`stores.ts`).
  * - The journal segment that generation names, read from its end and then as
- *   it grows, for the newest public state and the callbacks Vibe opens and
- *   settles (`journal.ts`).
+ *   it grows, for the newest public state, the callbacks Vibe opens and
+ *   settles, and the mark of a turn it takes up after a restart (`journal.ts`).
  *
  * A session is listed for 24 hours after Vibe last wrote to its `CURRENT` or
  * its journal, and while a Vibe program holds it. One older than that is
@@ -727,6 +730,7 @@ export function createMistralVibeAdapter(
       let journalInfo: FileInfo | null = null;
       let newest: Newest = { kind: "beyond" };
       let callbacks: VibeCallback[] = [];
+      let resumed: VibeResume | null = null;
       if (store.journal !== null) {
         const file = path.join(storesDir, id, ...store.journal.split("/"));
         try {
@@ -741,7 +745,9 @@ export function createMistralVibeAdapter(
           newest = lastNewest.get(id) ?? { kind: "beyond" };
           journalFiles.add(file);
         }
-        callbacks = openCallbacks(store.pending, journals.callbacks(file));
+        const fold = journals.callbacks(file);
+        callbacks = openCallbacks(store.pending, fold);
+        resumed = fold.resumed;
       }
       // When this poll had looked up the session's files: any write they show came before it.
       const readAt = now();
@@ -786,6 +792,8 @@ export function createMistralVibeAdapter(
             held: shownHeld,
             leaseTakenAt: lease?.pid === null ? null : acquiredAt,
             turnStartedAt: envelope?.turnStartedAt ?? null,
+            turnId: envelope?.turnId ?? null,
+            resumed,
           });
       // A wait is looked at whatever was said before. The clock only decides
       // when a lease is looked at here, never what the answer is.

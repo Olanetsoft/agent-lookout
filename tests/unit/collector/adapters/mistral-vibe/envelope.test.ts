@@ -27,6 +27,7 @@ test("keeps the title, the status, the session's times and the newest turn's, an
     statusType: "failed",
     createdAt: NOW - 30 * MINUTE,
     updatedAt: NOW - MINUTE,
+    turnId: "turn-1",
     turnStatus: "failed",
     turnStartedAt: NOW - 2 * MINUTE,
     turnCompletedAt: NOW - MINUTE,
@@ -46,6 +47,7 @@ test("a title is cleaned and cut as every session's name is, and no title is non
 
 test("a session with no turn yet has no turn's times", () => {
   expect(envelopeOf(publicState({ id: ID, turn: null }))).toMatchObject({
+    turnId: null,
     turnStatus: null,
     turnStartedAt: null,
     turnCompletedAt: null,
