@@ -229,6 +229,26 @@ describe("hermesAgentSession", () => {
     ).toBe("working");
   });
 
+  test("a turn Hermes Agent took back after a safety refusal is failed from the tip's refused turn, while no turn runs", () => {
+    const refused = { refused_at: seconds(NOW - 30_000) };
+    expect(session(rows(refused))).toMatchObject({ status: "failed", statusSince: NOW - 30_000 });
+    // Of a compressed conversation, the tip's refusal counts, and a root's does not.
+    expect(session(compressed({}, refused))).toMatchObject({
+      status: "failed",
+      statusSince: NOW - 30_000,
+    });
+    expect(session(compressed(refused, {}))?.status).toBe("idle");
+    // A turn running after it is working.
+    expect(
+      hermesAgentSession({
+        profile: "default",
+        chain: rows({ ...refused, ...liveLease() }),
+        holderAlive: () => true,
+        now: NOW,
+      })?.status,
+    ).toBe("working");
+  });
+
   test("asks whether the lease's process exists, with the lease, only when there is one, and believes it", () => {
     const asked: LeaseRow[] = [];
     const ask = (alive: boolean | null) => (lease: LeaseRow) => (asked.push(lease), alive);

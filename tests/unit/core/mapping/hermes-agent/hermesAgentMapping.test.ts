@@ -34,6 +34,7 @@ function input(fields: Partial<HermesAgentStatusInput> = {}): HermesAgentStatusI
     endedAt: null,
     endReason: null,
     newest: reply(),
+    refusedAt: null,
     openQuestions: 0,
     openCalls: 0,
     callsAt: null,
@@ -76,6 +77,10 @@ describe("mapHermesAgentStatus", () => {
     expect(mapHermesAgentStatus(input({ lease: LIVE, holderAlive: true }))).toEqual({
       status: "working",
       since: LIVE.at,
+    });
+    expect(mapHermesAgentStatus(input({ refusedAt: NOW - 30_000 }))).toEqual({
+      status: "failed",
+      since: NOW - 30_000,
     });
     expect(
       mapHermesAgentStatus(input({ newest: reply({ kind: FAILED_TURN_KIND, error: 1 }) })),
@@ -280,6 +285,43 @@ describe("mapHermesAgentStatus", () => {
     }
   });
 
+  test("a turn refused for safety is failed from its newest row, once no turn runs, whatever the newest row it left behind", () => {
+    // Hermes Agent took the refused turn out of the conversation: the newest
+    // row is the reply before it, and the refused turn's rows are newer.
+    const refused = { refusedAt: NOW - 30_000 };
+    expect(mapHermesAgentStatus(input(refused))).toEqual({ status: "failed", since: NOW - 30_000 });
+    // The first turn of a session refused, with no row of the conversation left.
+    expect(mapHermesAgentStatus(input({ ...refused, newest: null }))).toEqual({
+      status: "failed",
+      since: NOW - 30_000,
+    });
+    // A refusal after a turn that failed gives the refusal's time.
+    expect(
+      mapHermesAgentStatus(
+        input({ ...refused, newest: reply({ kind: FAILED_TURN_KIND, error: 1 }) }),
+      ),
+    ).toEqual({ status: "failed", since: NOW - 30_000 });
+    // It stays failed once the session is ended.
+    expect(
+      mapHermesAgentStatus(input({ ...refused, endedAt: NOW - 10_000, endReason: "cli_close" })),
+    ).toEqual({ status: "failed", since: NOW - 30_000 });
+    // A live lease is a turn running after it, and comes first.
+    expect(mapHermesAgentStatus(input({ ...refused, lease: LIVE, holderAlive: true }))).toEqual({
+      status: "working",
+      since: LIVE.at,
+    });
+    expect(
+      mapHermesAgentStatus(
+        input({ ...refused, lease: LIVE, holderAlive: true, callsAt: CALLS_AT, openQuestions: 1 }),
+      ).waitingReason,
+    ).toBe("question");
+    // With none newer than the newest row, the newest row decides.
+    expect(mapHermesAgentStatus(input({ refusedAt: null }))).toEqual({
+      status: "idle",
+      since: NOW - MINUTE,
+    });
+  });
+
   test("a failed session stays failed once it is ended", () => {
     const ended = { endedAt: NOW - 30_000, endReason: "cli_close" };
     expect(
@@ -337,6 +379,8 @@ describe("mapHermesAgentStatus", () => {
       ["a newest row's time as text", { newest: reply({ at: String(NOW) }) }],
       ["an end of the wrong type", { endedAt: "yesterday" }],
       ["an end reason that is not text", { endReason: 7 }],
+      ["a refused turn's time that is not a number", { refusedAt: "earlier" }],
+      ["a refused turn's time with a fraction", { refusedAt: NOW - 0.5 }],
       ["a count of questions below none", { ...live, openQuestions: -1 }],
       ["a count of questions with a fraction", { ...live, openQuestions: 0.5 }],
       ["a count of questions that is not a number", { ...live, openQuestions: "1" }],

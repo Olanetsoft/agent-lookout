@@ -8,6 +8,8 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 - A side chat Codex's terminal app saves, from Codex 0.169.0, is no longer listed as a session of its own. Codex keeps it attached to the session it came from and leaves it out of its own lists, and Agent Lookout now does the same. (#409)
 - A Qwen Code session no longer shows as working after `/restore`, with its Quiet for growing, until your next prompt. From Qwen Code 0.26.2, `/restore` writes a rewind and then a tool's result, and asks the model nothing, so the session now stays idle. (#411)
+- A Hermes Agent session whose turn the model's provider refused for safety shows as failed, since the refusal, after any tools that turn ran, not as idle on the reply before it. From v0.23.1 Hermes Agent takes such a turn out of the conversation and writes no failure row for it. (#412)
+- A Hermes Agent session waiting for a one-time code in a chat, or for an approval a plugin asks for, needs you, as one waiting for your approval does, instead of showing as working. (#412)
 
 ## 0.2.29 - 2026-11-22
 

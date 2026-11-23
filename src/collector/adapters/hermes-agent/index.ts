@@ -71,11 +71,11 @@ const LABEL = "Hermes Agent";
 
 /** Said whenever Hermes Agent is watched, because it is what a person would otherwise expect to see. */
 export const LATE_NOTE =
-  "Hermes Agent saves an approval wait at most once a minute, so it shows 10 to 70 seconds late, and a session whose Hermes Agent or gateway was killed stays idle.";
+  "Hermes Agent saves an approval wait at most once a minute, so it shows 10 to 70 seconds late, and a session whose gateway was killed stays idle.";
 
 /** Said whenever Hermes Agent is watched, until the adapter has been checked on a computer running it. */
 export const UNCHECKED_NOTE =
-  "This was built from Hermes Agent v0.22.5's source and not yet checked on a computer running Hermes Agent, so a status can be wrong.";
+  "This was built from Hermes Agent v0.23.3's source and not yet checked on a computer running Hermes Agent, so a status can be wrong.";
 
 /** Said when a conversation's newest row is one this adapter does not know. */
 export const UNKNOWN_ROW_NOTE =
@@ -106,11 +106,12 @@ export const WINDOWS_DETAIL =
  * - Working is a turn lease that has not run out and whose process exists,
  *   on macOS and Linux only.
  * - Needs you is a `clarify` question with no answer yet, or the label Hermes
- *   Agent saves at most once a minute while an approval waits.
- * - Finished is Hermes Agent's own end stamp: a session whose process was
- *   killed is never stamped.
- * - Failed is a turn Hermes Agent closed on an error. One that overflows the
- *   context writes no such row.
+ *   Agent saves at most once a minute while an approval or a one-time code
+ *   waits.
+ * - Finished is Hermes Agent's own end stamp: a session whose gateway was
+ *   killed or stopped is not stamped.
+ * - Failed is a turn Hermes Agent closed on an error, or took back after a
+ *   safety refusal. One that overflows the context writes no such row.
  * - The name is a title from a model or a person, else the folder's name,
  *   else the id. A title Hermes Agent marks `derived` is left out.
  * - No Jump, Stop or Answer: turns run in a gateway shared by every session,
@@ -132,7 +133,7 @@ export const HERMES_AGENT_CAPABILITIES: SourceCapabilities = {
   finished: {
     level: "partly",
     reason:
-      "When Hermes Agent ends a session. One whose process was killed, or whose gateway stopped, shows as idle.",
+      "When Hermes Agent ends a session. One whose gateway was killed or stopped shows as idle.",
   },
   failed: {
     level: "partly",
@@ -314,7 +315,7 @@ function notReadSentence(failures: readonly NotRead[]): string {
  * `state.db-journal` an unfinished change left, which `sqlite3` opens as part
  * of the database.
  *
- * This was built from Hermes Agent's source at v0.22.5, and has not yet been
+ * This was built from Hermes Agent's source at v0.23.3, and has not yet been
  * checked on a computer running Hermes Agent.
  */
 export function createHermesAgentAdapter(options: HermesAgentAdapterOptions = {}): Adapter {

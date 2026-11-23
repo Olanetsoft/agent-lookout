@@ -7,10 +7,11 @@ import { DATABASE_FILE } from "./sessionRows.ts";
  * Where Hermes Agent keeps its databases: its root folder, and in it the
  * default profile's `state.db` and each named profile's
  * `profiles/<name>/state.db` (`hermes_cli/profiles.py`,
- * `hermes_state_sessions.py`). Agent Lookout reads every profile, so it never
- * needs `active_profile`, the file that names the one Hermes Agent starts in.
+ * `persistence/sqlite/conversation/_store/sessions.py`). Agent Lookout reads
+ * every profile, so it never needs `active_profile`, the file that names the
+ * one Hermes Agent starts in.
  *
- * Built from Hermes Agent's source at v0.22.5, and not yet checked on a
+ * Built from Hermes Agent's source at v0.23.3, and not yet checked on a
  * computer running Hermes Agent.
  */
 
@@ -30,8 +31,8 @@ export const PROFILES_FOLDER = "profiles";
 export const DEFAULT_PROFILE = "default";
 
 /**
- * A named profile, as Hermes Agent allows one (`hermes_state_sessions.py`). Its
- * tombstones, in `profiles/.deleted`, never match.
+ * A named profile, as Hermes Agent allows one (`PROFILE_ID_RE` in
+ * `hermes_constants.py`). Its tombstones, in `profiles/.deleted`, never match.
  */
 export const PROFILE_NAME = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 

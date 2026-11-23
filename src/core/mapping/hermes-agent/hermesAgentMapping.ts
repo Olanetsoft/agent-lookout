@@ -5,10 +5,11 @@
 // `state.db`. A turn holds a lease on its conversation while it runs, a
 // pending `clarify` question is a tool call of that turn with no result yet,
 // and the gateway labels a session that waits for an approval. Hermes stamps a
-// session it ends, and closes a failed turn with a row of its own. This was built from Hermes
-// Agent's source at v0.22.5 and has not yet been checked on a computer running
-// Hermes Agent. See docs/adapters/hermes-agent.md for where each value comes
-// from.
+// session it ends, and closes a failed turn with a row of its own. A turn
+// refused for safety is instead taken out of the conversation and kept on
+// screen as `content_refused`. This was built from Hermes Agent's source at
+// v0.23.3 and has not yet been checked on a computer running Hermes Agent. See
+// docs/adapters/hermes-agent.md for where each value comes from.
 
 import type { SessionStatus, WaitingReason } from "../../sessions/session.ts";
 import { plausibleTime } from "../../time.ts";
@@ -16,7 +17,7 @@ import { plausibleTime } from "../../time.ts";
 /** `display_kind` of the row Hermes Agent closes a failed turn with (`agent/turn_failure_copy.py`). */
 export const FAILED_TURN_KIND = "failed_turn";
 
-/** The `finish_reason` values Hermes Agent counts as errors (`hermes_state_sessions.py`). */
+/** The `finish_reason` values Hermes Agent counts as errors (`persistence/sqlite/conversation/_store/sessions.py`). */
 export const FAILED_FINISH_REASONS: readonly string[] = ["error", "agent_error", "content_filter"];
 
 /**
@@ -55,15 +56,23 @@ export interface HermesAgentStatusInput {
   endReason: unknown;
   /** The tip's newest conversation row, or null when it has none. */
   newest: HermesAgentNewestRow | null;
+  /**
+   * When the newest row of the tip's newest turn that Hermes Agent took back
+   * after a safety refusal was written, or null when no such turn is newer
+   * than the newest row. Hermes Agent writes no failure row for a refused
+   * turn: it sets the whole turn, tool rounds and all, to `active = 0` and
+   * keeps its message on screen as `content_refused`.
+   */
+  refusedAt: unknown;
   /** How many `clarify` calls of the newest assistant row with tool calls have no result yet. */
   openQuestions: unknown;
   /** How many calls of that row, of any tool, have no result yet. */
   openCalls: unknown;
   /** When the newest assistant row with tool calls was written. */
   callsAt: unknown;
-  /** 1 when the tip's activity label says it waits for an approval, else 0, or null for no label. */
+  /** 1 when the tip's activity label says it waits for an approval, through the gateway or a plugin, else 0, or null for no label. */
   approvalLabel: unknown;
-  /** 1 when the tip's activity label says it waits for an answer to a question, else 0, or null for no label. */
+  /** 1 when the tip's activity label says it waits for an answer to a question or a one-time code, else 0, or null for no label. */
   questionLabel: unknown;
   /**
    * When the activity label was saved: the tip's `last_activity_at`, which
@@ -101,6 +110,7 @@ const isCountOrNone = (value: unknown) =>
 function readable(input: HermesAgentStatusInput): boolean {
   const { newest, lease } = input;
   if (!isTimeOrNone(input.endedAt) || !isWordOrNone(input.endReason)) return false;
+  if (!isTimeOrNone(input.refusedAt)) return false;
   if (!isTimeOrNone(input.callsAt) || !isFlag(input.approvalLabel)) return false;
   if (!isFlag(input.questionLabel) || !isTimeOrNone(input.labelAt)) return false;
   if (!isCountOrNone(input.openQuestions) || !isCountOrNone(input.openCalls)) return false;
@@ -133,6 +143,7 @@ function failedRow(newest: HermesAgentNewestRow | null): boolean {
  * | Live lease, and the approval label on a call of the turn          | needs-you (permission) | the tool call's row       |
  * | Live lease, and the question label on a call of the turn          | needs-you (question)   | the tool call's row       |
  * | Live lease                                                        | working                | the lease's `acquired_at` |
+ * | A turn refused for safety is newer than the newest row            | failed                 | the turn's newest row     |
  * | Newest row is `failed_turn` with an `error`, or an error finish   | failed                 | the newest row            |
  * | `ended_at` is set                                                 | finished               | `ended_at`                |
  * | Anything else                                                     | idle                   | the newest row, else the newest time |
@@ -151,8 +162,9 @@ function failedRow(newest: HermesAgentNewestRow | null): boolean {
  * time is the call's row, which stays the same while the wait lasts, so one
  * wait is never announced twice.
  *
- * A failed session stays failed once it is ended. It never gives what a
- * session is asking: Hermes Agent keeps that in memory.
+ * A failed session stays failed once it is ended, and a refused turn keeps it
+ * failed until a newer row is written. It never gives what a session is
+ * asking: Hermes Agent keeps that in memory.
  */
 export function mapHermesAgentStatus(input: HermesAgentStatusInput): HermesAgentStatus {
   const { newest, lease, now } = input;
@@ -183,6 +195,8 @@ export function mapHermesAgentStatus(input: HermesAgentStatusInput): HermesAgent
     return { status: "working", since: plausibleTime(lease.at, now) };
   }
 
+  if (input.refusedAt !== null)
+    return { status: "failed", since: plausibleTime(input.refusedAt, now) };
   if (failedRow(newest)) return { status: "failed", since: plausibleTime(newest?.at, now) };
   if (input.endedAt !== null)
     return { status: "finished", since: plausibleTime(input.endedAt, now) };

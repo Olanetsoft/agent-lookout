@@ -12,7 +12,7 @@ import { isProcessAlive, validPid } from "../../processes/pids.ts";
  * SQLite (`sessionRows.ts`). The pid is checked with signal 0, which asks the
  * system whether the process exists and sends it nothing
  * (`../../processes/pids.ts`), by Hermes Agent's own strict rule for leases
- * (`holder_pid_checkable` in `hermes_state_pidns.py`):
+ * (`holder_pid_checkable` in `process_identity.py`):
  *
  * - where there are no pid namespaces, as on macOS, the pid is checked;
  * - on Linux, only when the holder names the pid namespace Agent Lookout runs
@@ -21,7 +21,7 @@ import { isProcessAlive, validPid } from "../../processes/pids.ts";
  *   checked, and its lease's expiry is trusted. So is every holder while
  *   Agent Lookout's own namespace could not be read.
  *
- * Built from Hermes Agent's source at v0.22.5, and not yet checked on a
+ * Built from Hermes Agent's source at v0.23.3, and not yet checked on a
  * computer running Hermes Agent.
  */
 

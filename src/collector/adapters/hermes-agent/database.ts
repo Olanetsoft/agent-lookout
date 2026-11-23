@@ -24,14 +24,15 @@ import {
  * `sqlite3` (`sqlite.ts`), never on Windows.
  *
  * Hermes Agent keeps a database in WAL mode, or in rollback-journal mode when
- * its own SQLite has the WAL-reset bug, when it is set to, or on a disk that
- * cannot hold WAL mode (`hermes_state_wal.py`), so which one cannot be known in
- * advance. So on each poll the database and the two files SQLite keeps beside
- * it are looked at with `lstat`, and when `state.db` changed, its first 20
+ * its own SQLite has the WAL-reset bug, when it is set to, on a disk that
+ * cannot hold WAL mode, or when it is new on a network filesystem
+ * (`sqlite_support.py`), so which one cannot be known in advance. So on each
+ * poll the database and the two files SQLite keeps beside it are looked at
+ * with `lstat`, and when `state.db` changed, its first 20
  * bytes are read, in Agent Lookout's own process, to tell the mode as Hermes
  * Agent's own `hermes sessions` command tells it: bytes 18 and 19 are 1 and 1
  * in rollback-journal mode, 2 and 2 in WAL mode
- * (`hermes_cli/sessions_cmd_journal_mode.py`). Agent Lookout holds no SQLite
+ * (`persistence/sqlite/admin/_doctor.py`). Agent Lookout holds no SQLite
  * connection of its own, so that open and close cannot let go of a lock
  * Hermes Agent holds. Then:
  *
@@ -78,7 +79,7 @@ import {
  * its whole 5 seconds and the query still does not fit, every poll would cut
  * the read short the same way: it is taken as a read that did not work.
  *
- * Built from Hermes Agent's source at v0.22.5, and not yet checked on a
+ * Built from Hermes Agent's source at v0.23.3, and not yet checked on a
  * computer running Hermes Agent.
  */
 

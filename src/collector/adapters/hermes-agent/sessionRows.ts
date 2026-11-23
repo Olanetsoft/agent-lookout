@@ -17,18 +17,19 @@ import { readArguments } from "../antigravity/app/summaries.ts";
  *
  * The second asks, for each conversation written in the last 48 hours, for
  * the ids, folders, titles, times, end and source of its rows, for a few short
- * fields of the newest row of its conversation, and for the times and process
- * of its turn lease. Its JSON columns, the activity label and a tool call's
- * name are only tested inside SQLite, as 0, 1 or a count: nothing of their
- * text is printed. `title_source` is only tested too, and a title it does not
- * let through is never printed. Never a message's text, a tool's input or
- * output, a system prompt, a chat's or user's name or id, `SELECT *` or any
- * other table.
+ * fields of the newest row of its conversation, for the time of a turn
+ * Hermes Agent took back after a safety refusal, and for the times and
+ * process of its turn lease. Its JSON columns, the activity label and a tool
+ * call's name are only tested inside SQLite, as 0, 1 or a count: nothing of
+ * their text is printed. `title_source` is only tested too, and a title it
+ * does not let through is never printed. Never a message's text, a tool's
+ * input or output, a system prompt, a chat's or user's name or id, `SELECT *`
+ * or any other table.
  *
  * Each answer is checked field by field as it is read, and a row whose id is
  * not one Hermes Agent makes is dropped.
  *
- * Built from Hermes Agent's source at v0.22.5, and not yet checked on a
+ * Built from Hermes Agent's source at v0.23.3, and not yet checked on a
  * computer running Hermes Agent.
  */
 
@@ -82,14 +83,26 @@ function unlessDerived(table: string): string {
  * - `recent`: the rows whose own times, or whose messages, fall in the window.
  * - `up` and `heads`: each such row's conversation, followed back through the
  *   rows Hermes Agent started when it compressed a conversation, as its own
- *   `_CHAIN_STEP_SQL` follows them (`hermes_state_compression.py`).
+ *   `_CHAIN_STEP_SQL` follows them
+ *   (`persistence/sqlite/conversation/_store/compression.py`).
  * - The root is listed when it is a conversation of its own, by Hermes
  *   Agent's own rules: no parent, or a branch, or a reset child
- *   (`hermes_state_common.py`). A subagent's run, an archived or hidden row,
- *   and the sources Hermes Agent hides from people, `kanban`, `tool` and
- *   `oneshot`, are not (`hermes_state_sessions.py`).
+ *   (`persistence/sqlite/_schema_ddl.py`). A subagent's run, an archived or
+ *   hidden row, and the sources Hermes Agent hides from people, `kanban`,
+ *   `tool` and `oneshot`, are not
+ *   (`persistence/sqlite/conversation/_store/sessions.py`).
  * - `n`, the newest row of the conversation that is not `session_meta` or
  *   `system`, as Hermes Agent's `latest_conversation_role` takes it.
+ * - `refused_at`, when the newest row of the newest turn Hermes Agent took
+ *   out of the conversation after a safety refusal was written, when that
+ *   turn's message is newer than `n`. Hermes Agent sets every row of such a
+ *   turn, its message and any tool rounds, to `active = 0`, and keeps its
+ *   message on screen as `content_refused`, so the turn is that message and
+ *   every row after it that is not `active`.
+ * - The activity label, tested for the words Hermes Agent saves while a
+ *   person is asked: an approval, from the gateway or a plugin's approval
+ *   transport, as `approval_label`, and a `clarify` question or a one-time
+ *   code, as `question_label`.
  * - `a`, the newest assistant row with tool calls: its `clarify` calls with
  *   no result yet are counted, and so are its calls of any tool with no
  *   result yet, which say whether a waiting label can still be its.
@@ -129,10 +142,15 @@ export const SESSIONS_QUERY = [
   "c.started_at, c.ended_at, c.end_reason, c.last_activity_at,",
   "(SELECT max(m.timestamp) FROM messages m WHERE m.session_id = c.id) AS last_message_at,",
   `${unlessDerived("c")}substr(c.title, 1, 1000) AS title, substr(c.cwd, 1, 4097) AS cwd,`,
-  "c.last_activity_description LIKE 'waiting for user approval%' AS approval_label,",
-  "c.last_activity_description LIKE 'waiting for user clarify response%' AS question_label,",
+  "(c.last_activity_description LIKE 'waiting for user approval%'",
+  "OR c.last_activity_description LIKE 'waiting for plugin approval transport%') AS approval_label,",
+  "(c.last_activity_description LIKE 'waiting for user clarify response%'",
+  "OR c.last_activity_description LIKE 'waiting for a one-time code%') AS question_label,",
   "n.role AS n_role, n.timestamp AS n_at, n.display_kind AS n_kind, n.finish_reason AS n_finish,",
   "CASE WHEN json_valid(n.display_metadata) THEN json_type(n.display_metadata, '$.error') IS NOT NULL END AS n_error,",
+  "(SELECT max(m.timestamp) FROM messages m WHERE m.session_id = c.id AND m.active = 0",
+  "AND m.id >= (SELECT x.id FROM messages x WHERE x.session_id = c.id AND x.active = 0",
+  "AND x.display_kind = 'content_refused' AND x.id > coalesce(n.id, 0) ORDER BY x.id DESC LIMIT 1)) AS refused_at,",
   "a.timestamp AS calls_at,",
   "(SELECT count(*) FROM json_each(CASE WHEN json_valid(a.tool_calls) THEN a.tool_calls ELSE '[]' END) q",
   "WHERE json_extract(q.value, '$.function.name') = 'clarify'",
@@ -286,8 +304,8 @@ export function readSchema(stdout: string): Schema | null {
 
 /**
  * An id as Hermes Agent makes one for a session, of every shape it mints
- * (`hermes_state_ids.py`): letters, digits, `.`, `_` and `-`, starting with a
- * letter or a digit.
+ * (`session_rules/session_ids.py`): letters, digits, `.`, `_` and `-`,
+ * starting with a letter or a digit.
  */
 export const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
@@ -412,6 +430,12 @@ export interface HermesRow {
   questionLabel: 0 | 1 | null | undefined;
   /** The newest conversation row, or null when it has none. */
   newest: NewestRow | null;
+  /**
+   * When the newest row of the newest turn Hermes Agent took back after a
+   * safety refusal was written, or null when no such turn is newer than
+   * `newest`.
+   */
+  refusedAt: number | null | undefined;
   /** When the newest assistant row with tool calls was written. */
   callsAt: number | null | undefined;
   /** How many `clarify` calls of that row have no result yet. */
@@ -468,6 +492,7 @@ export function readSessionRows(stdout: string): HermesRow[] | null {
             error: flagOf(row.n_error),
           }
         : null,
+      refusedAt: timeOf(row.refused_at),
       callsAt: timeOf(row.calls_at),
       openQuestions: countOf(row.open_questions),
       openCalls: countOf(row.open_calls),
