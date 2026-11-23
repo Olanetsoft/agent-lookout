@@ -99,6 +99,8 @@ import {
   withJump as grokBuildJump,
 } from "@collector/adapters/grok-build/toSession";
 import { createMuseCodeAdapter, MUSE_CODE_CAPABILITIES } from "@collector/adapters/muse-code/index";
+import { createKiroCliAdapter, KIRO_CLI_CAPABILITIES } from "@collector/adapters/kiro-cli/index";
+import { kiroCliSession } from "@collector/adapters/kiro-cli/toSession";
 import { museCodeSession } from "@collector/adapters/muse-code/toSession";
 import { createOhMyPiAdapter, OH_MY_PI_CAPABILITIES } from "@collector/adapters/oh-my-pi/index";
 import { ohMyPiSession } from "@collector/adapters/oh-my-pi/toSession";
@@ -137,6 +139,14 @@ import { mapGooseStatus } from "@core/mapping/goose/gooseMapping";
 import { mapKimiCodeStatus } from "@core/mapping/kimi-code/kimiCodeMapping";
 import { startMuseFold, type MuseFold } from "@core/mapping/muse-code/museCodeFold";
 import { museCodeStatusOf, type MuseCodeFacts } from "@core/mapping/muse-code/museCodeMapping";
+import {
+  foldV3Row,
+  mapKiroV2Status,
+  mapKiroV3Status,
+  startV2Scan,
+  startV3Scan,
+  type KiroLiveness,
+} from "@core/mapping/kiro-cli/kiroCliMapping";
 import { ohMyPiStatusOf, type OhMyPiFacts } from "@core/mapping/oh-my-pi/ohMyPiMapping";
 import { mapCodexStatus } from "@core/mapping/codexMapping";
 import {
@@ -212,6 +222,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Oh My Pi", OH_MY_PI_CAPABILITIES],
   ["Muse Code", MUSE_CODE_CAPABILITIES],
   ["Copilot CLI", COPILOT_CLI_CAPABILITIES],
+  ["Kiro CLI", KIRO_CLI_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -335,6 +346,9 @@ test("each adapter carries its own declaration, for the poller to pass on", () =
     expect(
       createCopilotCliAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
     ).toBe(COPILOT_CLI_CAPABILITIES);
+    expect(
+      createKiroCliAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
+    ).toBe(KIRO_CLI_CAPABILITIES);
   }
   expect(createMistralVibeAdapter({ env: {}, homeDir: home, io: files.io }).capabilities).toBe(
     MISTRAL_VIBE_CAPABILITIES,
@@ -1560,6 +1574,93 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(COPILOT_CLI_CAPABILITIES.jump.level).toBe("no");
     expect(COPILOT_CLI_CAPABILITIES.stop.level).toBe("no");
     expect(COPILOT_CLI_CAPABILITIES.answer.level).toBe("no");
+  });
+
+  test("Kiro CLI: a V3 session is working, idle, needs you, finished or unknown, a V2 one never needs you, and neither fails", () => {
+    const lives: KiroLiveness[] = ["open", "unknown", "closed"];
+    const v3Scans = [
+      null,
+      startV3Scan(true),
+      startV3Scan(false),
+      foldV3Row(startV3Scan(false), { kind: "turn-start", at: NOW }),
+      foldV3Row(foldV3Row(startV3Scan(false), { kind: "turn-start", at: NOW }), {
+        kind: "pending",
+        toolCallId: "call-1",
+        approval: true,
+        at: NOW,
+      }),
+      foldV3Row(foldV3Row(startV3Scan(false), { kind: "turn-start", at: NOW }), {
+        kind: "pending",
+        toolCallId: "call-1",
+        approval: false,
+        at: NOW,
+      }),
+    ];
+    const v3 = lives.flatMap((live) => v3Scans.map((scan) => mapKiroV3Status(live, scan)));
+    expect(statuses(v3.map((one) => one.status))).toEqual(
+      new Set(["working", "idle", "needs-you", "finished", "unknown"]),
+    );
+    expect(new Set(v3.flatMap((one) => one.waitingReason ?? []))).toEqual(
+      new Set(["permission", "other"]),
+    );
+    const v2Scans = [
+      null,
+      startV2Scan(true),
+      startV2Scan(false),
+      { last: "tool-use" as const, promptAt: NOW },
+      { last: "reply" as const, promptAt: NOW },
+    ];
+    const v2 = lives.flatMap((live) => v2Scans.map((scan) => mapKiroV2Status(live, scan).status));
+    expect(statuses(v2)).toEqual(new Set(["working", "idle", "finished", "unknown"]));
+    expect(KIRO_CLI_CAPABILITIES["working-and-idle"].level).toBe("partly");
+    expect(KIRO_CLI_CAPABILITIES["needs-you"].level).toBe("partly");
+    expect(KIRO_CLI_CAPABILITIES.finished.level).toBe("partly");
+    expect(KIRO_CLI_CAPABILITIES.failed.level).toBe("no");
+  });
+
+  test("Kiro CLI: a session has its title or folder's name and its log's last write, and no tokens, jump, stop or link", () => {
+    const header = {
+      title: null,
+      folder: "/Users/example/code/demo",
+      createdAt: NOW - 60_000,
+      subagent: false,
+    };
+    const session = kiroCliSession({
+      sessionId: "sess_00000000-0000-4000-8000-000000000001",
+      header,
+      live: "open",
+      pid: 52001,
+      v3: foldV3Row(startV3Scan(false), { kind: "turn-start", at: NOW - 30_000 }),
+      headerWrittenAt: NOW - 60_000,
+      logWrittenAt: NOW - 1_000,
+      now: NOW,
+    });
+    expect(session).toMatchObject({
+      id: "kiro-cli:sess_00000000-0000-4000-8000-000000000001",
+      source: "kiro-cli",
+      name: "demo",
+      status: "working",
+      lastWriteAt: NOW - 1_000,
+    });
+    for (const absent of ["tokens", "stop", "ask", "waitingText", "jump"]) {
+      expect(session, absent).not.toHaveProperty(absent);
+    }
+    expect(session.links).toEqual({});
+    expect(
+      kiroCliSession({
+        ...{ sessionId: "one", header: { ...header, title: "Demo title" } },
+        live: "closed",
+        v2: null,
+        headerWrittenAt: NOW,
+        now: NOW,
+      }).name,
+    ).toBe("Demo title");
+    expect(KIRO_CLI_CAPABILITIES.names.level).toBe("partly");
+    expect(KIRO_CLI_CAPABILITIES["quiet-for"].level).toBe("partly");
+    expect(KIRO_CLI_CAPABILITIES.tokens.level).toBe("no");
+    expect(KIRO_CLI_CAPABILITIES.jump.level).toBe("no");
+    expect(KIRO_CLI_CAPABILITIES.stop.level).toBe("no");
+    expect(KIRO_CLI_CAPABILITIES.answer.level).toBe("no");
   });
 
   test("Prime Agent: a session is working, idle, finished or unknown, and never waiting or failed", () => {

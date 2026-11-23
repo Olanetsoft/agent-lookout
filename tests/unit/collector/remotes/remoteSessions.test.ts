@@ -22,6 +22,7 @@ import * as kiloCode from "@collector/adapters/kilo-code/index";
 import * as kimchi from "@collector/adapters/kimchi/index";
 import * as mimoCode from "@collector/adapters/mimo-code/index";
 import * as kimiCode from "@collector/adapters/kimi-code/index";
+import * as kiroCli from "@collector/adapters/kiro-cli/index";
 import * as cline from "@collector/adapters/cline/index";
 import * as hermesAgent from "@collector/adapters/hermes-agent/index";
 import * as mistralVibe from "@collector/adapters/mistral-vibe/index";
@@ -352,6 +353,7 @@ describe("readRemoteSnapshot", () => {
       "oh-my-pi": ohMyPi,
       "muse-code": museCode,
       "copilot-cli": copilotCli,
+      "kiro-cli": kiroCli,
       fx,
       "kilo-code": kiloCode,
       "mimo-code": mimoCode,

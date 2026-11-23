@@ -35,6 +35,8 @@
     "omp",
     "muse-code",
     "copilot-cli",
+    "kiro-cli",
+    "kiro",
     "mcp",
     "mcp-server",
     "tmux",
