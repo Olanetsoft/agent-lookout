@@ -302,7 +302,7 @@ The pid can be the hub's, a background process that hosts the sessions of the CL
 
 ## The Goose adapter
 
-The adapter lives in `src/collector/adapters/goose/`. [adapters/goose.md](adapters/goose.md) is its reference: what it reads, the columns and their values, the Goose version it was written from, what is not yet checked and what breaks when Goose changes. It was built from Goose's source at v1.57.0 and has not yet been checked on a computer running it.
+The adapter lives in `src/collector/adapters/goose/`. [adapters/goose.md](adapters/goose.md) is its reference: what it reads, the columns and their values, the Goose version it was written from, what is not yet checked and what breaks when Goose changes. It was built from Goose's source at v1.60.2 and has not yet been checked on a computer running it.
 
 Goose keeps every session of its command and its desktop app in one SQLite database, `sessions/sessions.db` in its data folder, in WAL mode. `gooseDataDirFor` in `index.ts` works the folder out as Goose does, from `GOOSE_PATH_ROOT` and `XDG_DATA_HOME`, else `~/.local/share/goose`, unless `AGENT_LOOKOUT_GOOSE_HOME` names it. Nothing is read on Windows.
 

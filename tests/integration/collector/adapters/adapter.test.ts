@@ -313,10 +313,10 @@ test("PRIVACY.md and the Goose notes name what is read and from which version", 
   const line = (start: string) => privacy.split("\n").find((one) => one.startsWith(start)) ?? "";
 
   const goose = line("For Goose, Agent Lookout runs");
-  expect(goose).toContain("built from Goose's source at v1.57.0");
+  expect(goose).toContain("built from Goose's source at v1.60.2");
   expect(goose).not.toContain("Cline");
   expect(goose).toContain("`ps`");
-  expect(notes).toContain("v1.57.0");
+  expect(notes).toContain("v1.60.2");
 
   const start = privacy.indexOf("### Goose's files");
   const section = privacy.slice(start, privacy.indexOf("\n### ", start));

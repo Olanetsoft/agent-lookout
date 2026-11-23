@@ -166,7 +166,7 @@ Use values that could belong to nobody: `demo-project` for a name, `/Users/examp
 
 `fixtures/cline/cline.ts` builds manifests in the shape Cline's source writes at cli-v3.0.74, with every field its schema has but `ended_at`, which `ended` adds, as `docs/adapters/cline.md` describes, with placeholder words where a prompt and a system prompt go, so a test can check that none of them leaves the manifest. Cline was not run to make them.
 
-`fixtures/goose/goose.ts` holds the tables Goose's source gives `sessions` and `messages` at v1.57.0, with every column, builds a session's rows with placeholder words in every column that can hold what was said, and what `sqlite3` prints for the adapter's two questions, as `docs/adapters/goose.md` describes. Goose was not run to make them.
+`fixtures/goose/goose.ts` holds the tables Goose's source gives `sessions` and `messages` at v1.57.0, with every column, and at v1.60.2 with `session_tags` too, builds a session's rows with placeholder words in every column that can hold what was said, and what `sqlite3` prints for the adapter's two questions, as `docs/adapters/goose.md` describes. Goose was not run to make them.
 
 `fixtures/pi/pi.ts` builds session files in the shape Pi's source writes at v1.6.0, with placeholder words wherever a prompt, a reply, a tool's arguments or a system prompt goes, as `docs/adapters/pi.md` describes. Pi was not run to make them.
 

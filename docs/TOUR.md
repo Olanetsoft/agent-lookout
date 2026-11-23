@@ -429,7 +429,7 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 
 **Where.** `src/collector/adapters/goose/`, with the mapping in `src/core/mapping/goose/gooseMapping.ts`. [adapters/goose.md](adapters/goose.md) is the full reference.
 
-**Where it came from.** Issue #38 asked for Goose. It reads the one SQLite database Goose keeps for its command and its desktop app. It was built from Goose's source at v1.57.0 and has not yet been checked on a computer running Goose. The card says so (`UNCHECKED_NOTE`).
+**Where it came from.** Issue #38 asked for Goose. It reads the one SQLite database Goose keeps for its command and its desktop app. It was built from Goose's source at v1.60.2 and has not yet been checked on a computer running Goose. The card says so (`UNCHECKED_NOTE`).
 
 **Why the database, and why so little of it.** Goose's own listing is its `goose` command, which opens that database for writing and migrates it, and its server takes commands. So the adapter asks `sqlite3` one fixed question, read-only, and takes five named things: an id, a folder, two times and a name only where the person set it.
 

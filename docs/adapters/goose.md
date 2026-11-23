@@ -2,9 +2,9 @@
 
 These notes record what Agent Lookout reads from Goose, where each value comes from, and what breaks when Goose changes. When the adapter stops working, start here.
 
-Written on 2026-11-04 from Goose's source at `v1.57.0`, released 2026-10-28 (commit `30bba95` of [block/goose](https://github.com/block/goose), which now answers as `aaif-goose/goose`), the newest release then. Goose is under the Apache-2.0 licence. Goose was not installed or run to write them, and no real session was looked at, so nothing here has been checked on a computer running Goose. The fixtures are written by hand from the source.
+Written on 2026-11-04 from Goose's source at `v1.57.0`, released 2026-10-28 (commit `30bba95` of [block/goose](https://github.com/block/goose), which now answers as `aaif-goose/goose`), and checked again on 2026-11-22 against `v1.60.2`, released 2026-11-20 (commit `fb55b5a`), the newest release then. Goose is under the Apache-2.0 licence. Goose was not installed or run to write them, and no real session was looked at, so nothing here has been checked on a computer running Goose. The fixtures are written by hand from the source.
 
-Each citation is `path:line` at `v1.57.0`, where `session_manager.rs` is `crates/goose/src/session/session_manager.rs`.
+Each citation is `path:line` at `v1.60.2`, where `session_manager.rs` is `crates/goose/src/session/session_manager.rs`.
 
 The code is in `src/collector/adapters/goose/`, and the status mapping is in `src/core/mapping/goose/gooseMapping.ts`.
 
@@ -27,14 +27,14 @@ Goose has other ways in, and none of them can be used that way:
 
 | Interface                          | Why it is not used                                                                                                            |
 | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `goose session list`               | It starts Goose, which opens the database for writing and migrates it to its own schema (`pool` in `session_manager.rs:1107`) |
+| `goose session list`               | It starts Goose, which opens the database for writing and migrates it to its own schema (`pool` in `session_manager.rs:1113`) |
 | `goose serve`, Goose's ACP server  | It takes commands, and asks for a secret the desktop app makes for itself                                                     |
 | Goose's hooks                      | They would mean installing something in Goose                                                                                 |
 | The logs in `~/.local/state/goose` | They hold what was said, and are not written for another program to read                                                      |
 
 ## Where it looks
 
-`Paths::data_dir` works the folder out (`crates/goose/src/config/paths.rs:8-38`), and the database is `sessions/sessions.db` in it (`session_manager.rs:33-34`, `:1097`). The first of these that applies is used:
+`Paths::data_dir` works the folder out (`crates/goose/src/config/paths.rs:8-38`), and the database is `sessions/sessions.db` in it (`session_manager.rs:34-35`, `:1105`, `:1116`). The first of these that applies is used:
 
 | Value                      | Data folder                                |
 | -------------------------- | ------------------------------------------ |
@@ -43,7 +43,7 @@ Goose has other ways in, and none of them can be used that way:
 | `XDG_DATA_HOME`            | `goose` in it, when it is an absolute path |
 | None                       | `~/.local/share/goose`                     |
 
-Goose takes the last two from `etcetera` 0.11's `choose_app_strategy`, which is its XDG strategy on macOS as on Linux. A comment in `paths.rs` names `~/Library/Application Support/Block/goose/`, but that crate does not put Goose there at this version, and Goose's own [logs guide](https://github.com/block/goose/blob/v1.57.0/documentation/docs/guides/logs.md) gives `~/.local/share/goose/sessions/sessions.db`.
+Goose takes the last two from `etcetera` 0.11's `choose_app_strategy`, which is its XDG strategy on macOS as on Linux. A comment in `paths.rs` names `~/Library/Application Support/Block/goose/`, but that crate does not put Goose there at this version, and Goose's own [logs guide](https://github.com/block/goose/blob/v1.60.2/documentation/docs/guides/logs.md) gives `~/.local/share/goose/sessions/sessions.db`.
 
 On Windows, `etcetera`'s Windows strategy gives `%APPDATA%\Block\goose\data`. Nothing is read there, as [On Windows](#on-windows) says.
 
@@ -63,7 +63,7 @@ A look that fails for any reason but that nothing is there, as when Agent Lookou
 
 ### How sqlite3 opens the database
 
-Goose keeps the database in WAL mode (`session_manager.rs:1091`), so what it has just saved can lie in `sessions.db-wal`, and a new session can be there alone. Which way it is opened follows the files beside it, as for OpenCode's database:
+Goose keeps the database in WAL mode (`session_manager.rs:1099`), so what it has just saved can lie in `sessions.db-wal`, and a new session can be there alone. Which way it is opened follows the files beside it, as for OpenCode's database:
 
 | What is beside it                                                                                         | Address                              | What that does                                                                                                                        |
 | --------------------------------------------------------------------------------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
@@ -103,22 +103,22 @@ The probe, `PROBE_QUERY`, is asked only when the question fails, and prints only
 
 ## Columns and values
 
-The schema is version 17 at this tag (`session_manager.rs:32`). `sessions` is made at `:1164` and `messages` at `:1205`. Older databases are moved up as Goose opens them. The question needs `archived_at`, which came with schema version 12, in Goose v1.34.0, so an older database is reported as laid out as another version.
+The schema is version 18 at this tag (`session_manager.rs:33`). `sessions` is made at `:1173` and `messages` at `:1214`. Version 18, from Goose v1.59.0, adds only a `session_tags` table (`:1797`), which holds the tags an ACP client sends and is not read. Older databases are moved up as Goose opens them. The question needs `archived_at`, which came with schema version 12, in Goose v1.34.0, so an older database is reported as laid out as another version.
 
 | Column          | Values                                                                                                      | Written                                                                                                                                                                                                                                                                                       |
 | --------------- | ----------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`            | `YYYYMMDD_<count>`, or 1 to 128 of `A-Za-z0-9_-` when a client gives its own (`:1781`)                      | When the session is made                                                                                                                                                                                                                                                                      |
+| `id`            | `YYYYMMDD_<count>`, or 1 to 128 of `A-Za-z0-9_-` when a client gives its own (`:1832`)                      | When the session is made                                                                                                                                                                                                                                                                      |
 | `working_dir`   | The folder the session runs in. A session can move: `working_dir` is one of the columns `apply_update` sets | At the start, and when it moves                                                                                                                                                                                                                                                               |
-| `session_type`  | `user`, `scheduled`, `sub_agent`, `hidden`, `terminal`, `gateway` or `acp` (`:62`)                          | When the session is made. `user` is `goose session`, `goose run` and the desktop app, `acp` an editor through `goose acp`, `scheduled` a scheduled job, `sub_agent` a subagent, `hidden` Goose's own, such as `goose run --no-session`, `terminal` `goose term`, and `gateway` a chat gateway |
+| `session_type`  | `user`, `scheduled`, `sub_agent`, `hidden`, `terminal`, `gateway` or `acp` (`:63`)                          | When the session is made. `user` is `goose session`, `goose run` and the desktop app, `acp` an editor through `goose acp`, `scheduled` a scheduled job, `sub_agent` a subagent, `hidden` Goose's own, such as `goose run --no-session`, `terminal` `goose term`, and `gateway` a chat gateway |
 | `name`          | What the session is called, as [Names](#names) says                                                         | At the start, by Goose after a person's first prompts, and when the person renames it                                                                                                                                                                                                         |
-| `user_set_name` | 1 when the person gave the name, or an ACP client sent it (`user_provided_name`, `:241`), 0 when Goose did  | With `name`                                                                                                                                                                                                                                                                                   |
+| `user_set_name` | 1 when the person gave the name, or an ACP client sent it (`user_provided_name`, `:242`), 0 when Goose did  | With `name`                                                                                                                                                                                                                                                                                   |
 | `created_at`    | `CURRENT_TIMESTAMP`, in UTC                                                                                 | When the session is made                                                                                                                                                                                                                                                                      |
-| `updated_at`    | `datetime('now')`, in UTC                                                                                   | With each message Goose saves (`:2192`) and each change to the row, such as a rename or an extension's state (`:1963`, `:2080`)                                                                                                                                                               |
+| `updated_at`    | `datetime('now')`, in UTC                                                                                   | With each message Goose saves (`:2265`) and each change to the row, such as a rename or an extension's state (`:2025`, `:2142`)                                                                                                                                                               |
 | `archived_at`   | A time, or null                                                                                             | When the person archives the session                                                                                                                                                                                                                                                          |
 
 A session has no column that says it is open, running or over, none that says it failed, and none that names a process, a terminal or a window. Goose writes nothing when it quits.
 
-Goose's own lists are the reason for the three kinds asked for. `goose session list` shows `user` and `scheduled` (`:2524`), with or without a message (`:2348`), and the desktop app and other ACP clients those and `acp` (`crates/goose/src/acp/server.rs:133`), only with a message (`crates/goose/src/acp/server/list_sessions.rs:206`).
+Goose's own lists are the reason for the three kinds asked for. `goose session list` shows `user` and `scheduled` (`:2664`), with or without a message (`:2485`), and the desktop app and other ACP clients those and `acp` (`crates/goose/src/acp/server.rs:134`), only with a message (`crates/goose/src/acp/server/list_sessions.rs:217`).
 
 ## Which sessions are listed
 
@@ -151,8 +151,8 @@ A session whose process has gone never shows as running, since no session does. 
 
 The issue says nothing marks a session as waiting. The `sessions` table does not, and the `messages` table does, in part:
 
-- A tool's approval is written as an `assistant` row whose `content_json` holds `{"type":"actionRequired","data":{"actionType":"toolConfirmation",…}}`, before Goose asks the person (`crates/goose/src/agents/state_machine/ops_tool_approval.rs:120`, `state_machine/session.rs`). The person's answer is a `user` row with `toolConfirmationResponse`. Goose works out what is still unanswered from those rows when it reloads a session (`pending_tool_confirmations`, `state_machine/tool_confirmation.rs:27`). That row also holds the tool's name and arguments.
-- A question from an extension, an elicitation, is kept in memory (`crates/goose/src/action_required_manager.rs`).
+- A tool's approval is written as an `assistant` row whose `content_json` holds `{"type":"actionRequired","data":{"actionType":"toolConfirmation",…}}`, before Goose asks the person (`crates/goose-agent/src/tool_approval.rs:140`, `crates/goose/src/agents/state_machine/session.rs`). The person's answer is a `user` row with `toolConfirmationResponse`. Goose works out what is still unanswered from those rows when it reloads a session (`pending_tool_confirmations`, `state_machine/tool_confirmation.rs:100`). That row also holds the tool's name and arguments.
+- A question from an extension, an elicitation, is kept in memory (`crates/goose-agent/src/action_required_manager.rs`).
 - The newest row's `role` hints at whether a turn is under way.
 
 None of this is read, for three reasons. A crash leaves an approval's row unanswered, and with nothing to tie the session to a process, a session could show as needing you with nobody asking, which Agent Lookout must not do, while another Goose runs. The same goes for `working` from the newest row. And it would mean opening `content_json`, which holds what was said, for half an answer: only a tool's approval is there, and in Goose's `auto` mode, its default, a tool's permission seldom asks for one.
@@ -163,16 +163,16 @@ So a session waiting for an approval shows as unknown. A later version could rea
 
 Goose's own title cannot be told from a person's first words, so it is never asked for. Only a name `user_set_name` marks is.
 
-- A session starts with a fixed name: `CLI Session` from the command (`crates/goose-cli/src/cli.rs:453`), `New Chat` over ACP (`crates/goose/src/acp/server/new_session.rs:58`), `Scheduled job: <id>` for a scheduled one, or a recipe's title.
-- After a person's first prompts, up to three, Goose writes a title beside the turn (`maybe_update_name`, `session_manager.rs:650`), with `user_set_name` 0. It leaves alone a name the person gave and a scheduled session's, and a session with a recipe keeps the recipe's title. `GOOSE_DISABLE_SESSION_NAMING` turns this off.
+- A session starts with a fixed name: `CLI Session` from the command (`crates/goose-cli/src/cli.rs:453`), `New Chat` over ACP (`crates/goose/src/acp/server/new_session.rs:60`), `Scheduled job: <id>` for a scheduled one, or a recipe's title.
+- After a person's first prompts, up to three, Goose writes a title beside the turn (`maybe_update_name`, `session_manager.rs:659`), with `user_set_name` 0. It leaves alone a name the person gave and a scheduled session's, and a session with a recipe keeps the recipe's title. `GOOSE_DISABLE_SESSION_NAMING` turns this off.
 - By default a model writes that title, from the prompt in `crates/goose/src/prompts/session_name.md`.
-- With a provider that uses local naming, no model is asked, and the title is **the first four words of the first prompt, word for word** (`generate_simple_session_description`, `crates/goose/src/providers/cli_common.rs:42`). `uses_local_session_naming` is on for `codex` and `cursor-agent`, and by default for every provider that manages its own context (`crates/goose-provider-types/src/base.rs:703`): `claude-code`, `gemini-cli` and every provider run through ACP, `AcpProvider`, such as `claude-acp`, `codex-acp`, `copilot-acp`, `amp-acp` and `pi-acp`.
+- With a provider that uses local naming, no model is asked, and the title is **the first four words of the first prompt, word for word** (`generate_simple_session_description`, `crates/goose/src/providers/cli_common.rs:37`). `uses_local_session_naming` is on for `codex` and `cursor-agent`, and by default for every provider that manages its own context (`crates/goose-provider-types/src/base.rs:703`): `claude-code`, `gemini-cli` and every provider run through ACP, `AcpProvider`, such as `claude-acp`, `codex-acp`, `copilot-acp`, `amp-acp` and `pi-acp`.
 
 Nothing on the row tells these apart. `provider_name` is the provider a session has now, which the person can change after it was named, and a new provider of this kind would pass a list of the known ones. A title is only compared with the first prompt by reading the prompt. So the question leaves the title inside SQLite, and a session takes its folder's name, else its id, as a Cline session does.
 
 A name the person gave is kept. It is `user_set_name` 1: from `goose session --name`, `goose session rename`, `goose term` with a name, or the desktop app's rename. An imported session keeps the mark it had. A fork or a copy does not take it: it has `user_set_name` 0, and its folder's name.
 
-An ACP client can set the same mark. Goose records `sessionTitle` from `_meta` on `session/new` as user-set, so that its own naming leaves the title alone (`crates/goose/src/acp/server/new_session.rs:212`). So such a name is whatever that client sends, and no person need have chosen it.
+An ACP client can set the same mark. Goose records `sessionTitle` from `_meta` on `session/new` as user-set, so that its own naming leaves the title alone (`crates/goose/src/acp/server/new_session.rs:211`). So such a name is whatever that client sends, and no person need have chosen it.
 
 [What a session's name can hold](../../PRIVACY.md#what-a-sessions-name-can-hold) in PRIVACY.md says this for people.
 
@@ -199,7 +199,7 @@ Nothing is read, and `sqlite3` and `ps` are not run, as for OpenCode and Hermes 
 - A Goose started under another name, or built into another program through its SDK, is not seen by `ps`, so its sessions show as finished as they run. Something else called `goose` counts as Goose, and keeps sessions from showing as finished.
 - A session waiting for a tool's approval does not show as waiting, as [What a message could say](#what-a-message-could-say) says.
 - A session Goose named takes its folder's name, so two sessions in one folder share a name. Goose's title is not shown, even where a model wrote it.
-- `user_set_name` 1 also covers `sessionTitle`, which an ACP client sends, and a rename an ACP client asks for later (`on_rename_session`, `crates/goose/src/acp/server/manage_sessions.rs:216`), and nothing on the row tells either from a person's name. So a session started through such a client shows the title that client sent. No client in Goose's own source sends one at this tag.
+- `user_set_name` 1 also covers `sessionTitle`, which an ACP client sends, and a rename an ACP client asks for later (`on_rename_session`, `crates/goose/src/acp/server/manage_sessions.rs:229`), and nothing on the row tells either from a person's name. So a session started through such a client shows the title that client sent. No client in Goose's own source sends one at this tag.
 - `goose term` and gateway sessions are not listed, as Goose's own lists leave them out. Nor is a session with no message.
 - A session left quiet for a day leaves the list until it is next written.
 - A rename or an extension's change moves `updated_at`, so a session closed long ago can come back for a day.
