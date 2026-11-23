@@ -1,6 +1,9 @@
 import type { SourceCapabilities, SourceId } from "../../../core/sessions/session.ts";
-import type { Adapter } from "../adapter.ts";
-import { createOpencodeFamilyAdapter, type OpencodeAdapterOptions } from "../opencode/index.ts";
+import {
+  createOpencodeFamilyAdapter,
+  type OpencodeAdapter,
+  type OpencodeAdapterOptions,
+} from "../opencode/index.ts";
 import { databaseFor, dataFolderFor, type OpencodeProfile } from "../opencode/profile.ts";
 import { v1SessionsQuery, type V1Tools } from "../opencode/sessionRows.ts";
 
@@ -20,9 +23,12 @@ export {
  * Code's own: its folder, its file, its variable, its programs, its tools and
  * its words. A change to those modules changes this adapter too.
  *
- * It reads no `session_v2`, which Kilo Code has none of, and no last message.
- * See docs/adapters/kilo-code.md. Built from Kilo Code's source at v7.8.27
- * (commit `03a6f07`, MIT), and not yet checked on a computer running it.
+ * It reads no `session_v2`, which Kilo Code has none of. What a session last
+ * said is asked with OpenCode's own question, unchanged, while its details
+ * are open (`../opencode/lastMessages.ts`). See docs/adapters/kilo-code.md.
+ * Built from Kilo Code's source at v7.8.27 (commit `03a6f07`, MIT), with the
+ * last message checked at v7.8.32, and not yet checked on a computer running
+ * it.
  */
 
 export const SOURCE_ID: SourceId = "kilo-code";
@@ -73,6 +79,10 @@ export const UNCHECKED_NOTE =
 /** Said when a session's newest message is one this adapter does not know. */
 export const UNKNOWN_MESSAGE_NOTE =
   "Some sessions end in a way Agent Lookout does not know, perhaps from a newer Kilo Code, so they show as unknown.";
+
+/** What Sources says of the last-message read while it is on. */
+export const LAST_MESSAGE_READ =
+  "a Kilo Code session's newest reply, with sqlite3, while its details are open";
 
 /** Said on Windows, where nothing of Kilo Code's is read. */
 export const WINDOWS_DETAIL =
@@ -163,7 +173,7 @@ export const KILO_CODE_PROFILE: OpencodeProfile = {
     windows: WINDOWS_DETAIL,
     noDatabase: NO_DATABASE_NOTE,
   },
-  lastMessageRead: null,
+  lastMessageRead: LAST_MESSAGE_READ,
 };
 
 /**
@@ -189,8 +199,8 @@ export function kiloDatabaseFor(env: NodeJS.ProcessEnv, homeDir: string): string
   return databaseFor(KILO_CODE_PROFILE, env, homeDir);
 }
 
-/** Everything the adapter touches outside itself. Tests replace these. It reads no last message, so it has no limits for one. */
-export type KiloCodeAdapterOptions = Omit<OpencodeAdapterOptions, "lastMessageLimits">;
+/** Everything the adapter touches outside itself. Tests replace these. */
+export type KiloCodeAdapterOptions = OpencodeAdapterOptions;
 
 /**
  * Finds Kilo Code's sessions on this machine from the database Kilo Code
@@ -198,11 +208,17 @@ export type KiloCodeAdapterOptions = Omit<OpencodeAdapterOptions, "lastMessageLi
  * setting changed, no program of Kilo Code's run and no request made to its
  * server: the status comes from the rows of `message` and `part`.
  *
+ * What a session last said is asked of the database with one more fixed
+ * question, OpenCode's, only while a page has the session's details open,
+ * and never by a poll. `AGENT_LOOKOUT_LAST_MESSAGE=off` or
+ * `AGENT_LOOKOUT_WAITING_TEXT=off` stops it.
+ *
  * Kilo Code not being installed costs nothing: when its data folder is
  * missing, the adapter says so and looks again only once a minute, with a
  * single `stat`, and runs neither `sqlite3` nor `ps`. Nothing is read on
  * Windows.
  */
-export function createKiloCodeAdapter(options: KiloCodeAdapterOptions = {}): Adapter {
-  return createOpencodeFamilyAdapter(KILO_CODE_PROFILE, options);
+export function createKiloCodeAdapter(options: KiloCodeAdapterOptions = {}): OpencodeAdapter {
+  // Kilo Code's profile reads last messages, so the adapter has its `lastMessage`.
+  return createOpencodeFamilyAdapter(KILO_CODE_PROFILE, options) as OpencodeAdapter;
 }

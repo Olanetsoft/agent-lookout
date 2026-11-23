@@ -69,6 +69,12 @@ import {
   sessionId as opencodeSessionId,
   sessionRow as opencodeSessionRow,
 } from "@tests/fixtures/opencode/opencode";
+import { SCHEMA as KILO_SCHEMA } from "@tests/fixtures/kilo-code/kiloCode";
+import {
+  messageRow as mimoMessageRow,
+  SCHEMA as MIMO_SCHEMA,
+  sessionRow as mimoSessionRow,
+} from "@tests/fixtures/mimo-code/mimoCode";
 import {
   assistantLine as qwenReplyLine,
   chatPath as qwenChatPath,
@@ -2489,15 +2495,29 @@ describe("the last messages of every agent, under one set of limits", () => {
   /**
    * OpenCode's database, laid out as OpenCode 1.19.0's is, with a session for
    * each id whose newest reply says `OpenCode reply <n>.`, written now, since
-   * the sessions query counts its 48 hours by SQLite's own clock.
+   * the sessions query counts its 48 hours by SQLite's own clock. Kilo Code's
+   * and MiMo Code's are laid out as theirs are, in their own files, and say
+   * `Kilo Code reply <n>.` and `MiMo Code reply <n>.`.
    */
-  function putOpencodeDatabase(sqlite: string, home: string, ids: readonly string[]) {
+  function putOpencodeDatabase(
+    sqlite: string,
+    home: string,
+    ids: readonly string[],
+    agent: "OpenCode" | "Kilo Code" | "MiMo Code" = "OpenCode",
+  ) {
     const written = Date.now();
+    const [file, schema] = {
+      OpenCode: ["opencode.db", OPENCODE_SCHEMA],
+      "Kilo Code": ["kilo.db", KILO_SCHEMA],
+      "MiMo Code": ["mimocode.db", MIMO_SCHEMA],
+    }[agent];
     const rows = ids.flatMap((id, index) => {
       const reply = opencodeMessageId(`r${index}`);
       return [
-        opencodeSessionRow({ id, updatedAt: written }),
-        opencodeMessageRow({
+        agent === "MiMo Code"
+          ? mimoSessionRow({ id, updatedAt: written })
+          : opencodeSessionRow({ id, updatedAt: written }),
+        (agent === "MiMo Code" ? mimoMessageRow : opencodeMessageRow)({
           id: reply,
           sessionId: id,
           createdAt: written,
@@ -2508,14 +2528,14 @@ describe("the last messages of every agent, under one set of limits", () => {
           messageId: reply,
           sessionId: id,
           createdAt: written,
-          data: { type: "text", text: `OpenCode reply ${index + 1}.` },
+          data: { type: "text", text: `${agent} reply ${index + 1}.` },
         }),
       ];
     });
-    execFileSync(sqlite, [path.join(home, "opencode.db"), [OPENCODE_SCHEMA, ...rows].join("\n")]);
+    execFileSync(sqlite, [path.join(home, file), [schema, ...rows].join("\n")]);
   }
 
-  test("Claude Code, Codex, the Antigravity CLI, Antigravity, Gemini CLI, OpenCode and Qwen Code read at most four transcripts a second between them, and keep at most eight sessions", async () => {
+  test("Claude Code, Codex, the Antigravity CLI, Antigravity, Gemini CLI, OpenCode, Qwen Code, Kilo Code and MiMo Code read at most four transcripts a second between them, and keep at most eight sessions", async () => {
     // Two live Claude Code sessions, in this test's own process and the one that started it.
     const claude = ["00000000-0000-4000-8000-0000000000c1", "00000000-0000-4000-8000-0000000000c2"];
     const claudeHome = await makeClaudeHome({
@@ -2603,6 +2623,13 @@ describe("the last messages of every agent, under one set of limits", () => {
     const opencode = sqlite === null ? [] : [opencodeSessionId("a1"), opencodeSessionId("a2")];
     const opencodeHome = await tempDir();
     if (sqlite !== null) putOpencodeDatabase(sqlite, opencodeHome, opencode);
+    // One Kilo Code session and one MiMo Code session, each in its own database.
+    const kilo = sqlite === null ? [] : [opencodeSessionId("b1")];
+    const kiloHome = await tempDir();
+    if (sqlite !== null) putOpencodeDatabase(sqlite, kiloHome, kilo, "Kilo Code");
+    const mimo = sqlite === null ? [] : [opencodeSessionId("c1")];
+    const mimoHome = await tempDir();
+    if (sqlite !== null) putOpencodeDatabase(sqlite, mimoHome, mimo, "MiMo Code");
 
     let at = NOW;
     const made = readersMade.length;
@@ -2626,8 +2653,8 @@ describe("the last messages of every agent, under one set of limits", () => {
         AGENT_LOOKOUT_KIMI_CODE_HOME: await tempDir(),
         AGENT_LOOKOUT_CONTINUE_HOME: await tempDir(),
         AGENT_LOOKOUT_CRUSH_HOME: await tempDir(),
-        AGENT_LOOKOUT_KILO_HOME: await tempDir(),
-        AGENT_LOOKOUT_MIMO_CODE_HOME: await tempDir(),
+        AGENT_LOOKOUT_KILO_HOME: kiloHome,
+        AGENT_LOOKOUT_MIMO_CODE_HOME: mimoHome,
         AGENT_LOOKOUT_KIMCHI_HOME: await tempDir(),
         AGENT_LOOKOUT_PRIME_AGENT_HOME: await tempDir(),
         AGENT_LOOKOUT_FX_HOME: await tempDir(),
@@ -2664,6 +2691,8 @@ describe("the last messages of every agent, under one set of limits", () => {
       gemini: gemini.map((id) => geminiCliSessionId("demo-project", id)),
       qwen: qwen.map((id) => `qwen-code:${id}`),
       opencode: opencode.map((id) => `opencode:${id}`),
+      kilo: kilo.map((id) => `kilo-code:${id}`),
+      mimo: mimo.map((id) => `mimo-code:${id}`),
     };
     const listed = collector.poller.getSnapshot().sessions.map((session) => session.id);
     expect(listed).toEqual(expect.arrayContaining(Object.values(sessions).flat()));
@@ -2698,7 +2727,7 @@ describe("the last messages of every agent, under one set of limits", () => {
     const busy = [
       sessions.qwen[0],
       sessions.gemini[0],
-      ...withOpencode(sessions.opencode[0]),
+      ...withOpencode(sessions.opencode[0], sessions.kilo[0], sessions.mimo[0]),
       sessions.claude[1],
       sessions.codex[1],
       sessions.cli[1],
@@ -2729,6 +2758,8 @@ describe("the last messages of every agent, under one set of limits", () => {
       [sessions.gemini[1], "Gemini CLI reply 2."],
       [sessions.codex[2], "Codex reply 3."],
       ...withOpencode([sessions.opencode[1], "OpenCode reply 2."] as const),
+      ...withOpencode([sessions.kilo[0], "Kilo Code reply 1."] as const),
+      ...withOpencode([sessions.mimo[0], "MiMo Code reply 1."] as const),
     ] as const;
     for (let start = 0; start < more.length; start += 4) {
       at += 1_000;

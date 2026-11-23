@@ -1,8 +1,9 @@
 // The MiMo Code adapter, cut off from this machine, for the tests that share
 // it: the OpenCode adapter's stand-ins, the files held in memory, a `sqlite3`
-// that answers MiMo Code's own probe and sessions query, and a `ps` that says
-// a MiMo Code program runs, with a clock the test moves by hand. Nothing here
-// touches a real file or runs a program.
+// that answers MiMo Code's own probe, sessions query and question of a
+// session's last text, and a `ps` that says a MiMo Code program runs, with a
+// clock the test moves by hand. Nothing here touches a real file or runs a
+// program.
 
 import {
   createMimoCodeAdapter,
@@ -29,9 +30,13 @@ export { handClock, memoryFiles, standInProcesses, type MemoryFiles, type StandI
 /** The probe MiMo Code's database is asked. */
 export const MIMO_PROBE_QUERY = probeQueryFor(MIMO_EXTRAS);
 
-/** A stand-in for `sqlite3` that answers MiMo Code's sessions query with these rows, and its probe with MiMo Code's tables. */
+/**
+ * A stand-in for `sqlite3` that answers MiMo Code's sessions query with these
+ * rows, its probe with MiMo Code's tables, and MiMo Code's question of a
+ * session's last text with what the test gives it.
+ */
 export function standInMimoSqlite(initial: Record<string, unknown>[] = []): StandInSqlite {
-  const sqlite = standInSqlite(initial, [MIMO_SESSIONS_QUERY], MIMO_PROBE_QUERY);
+  const sqlite = standInSqlite(initial, [MIMO_SESSIONS_QUERY], MIMO_PROBE_QUERY, MIMO_EXTRAS);
   sqlite.probe(probeJson());
   return sqlite;
 }

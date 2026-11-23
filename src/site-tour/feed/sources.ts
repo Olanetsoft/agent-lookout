@@ -1671,6 +1671,10 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
           value:
             "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no Kilo Code",
         },
+        {
+          label: "Last message read",
+          value: "a Kilo Code session's newest reply, with sqlite3, while its details are open",
+        },
       ],
       capabilities: KILO_CODE_CAPABILITIES,
       checkedAt,
@@ -1697,6 +1701,10 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
           label: "Process check run",
           value:
             "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no MiMo Code",
+        },
+        {
+          label: "Last message read",
+          value: "a MiMo Code session's newest reply, with sqlite3, while its details are open",
         },
       ],
       capabilities: MIMO_CODE_CAPABILITIES,

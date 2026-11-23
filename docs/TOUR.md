@@ -552,7 +552,7 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 - Only `question` asks. Kilo Code's `plan_exit` asks nothing, and the plan's approval comes after it, from memory.
 - Kilo Code's `suggest` waits inside its call while Kilo Code shows the session as idle, so a step whose one call not yet over is its `suggest` is idle here too. Only Kilo Code's question asks for it, `m_idle_call`, so OpenCode's questions are as they were.
 - `session_v2` is never read. A database with one is a version Agent Lookout does not read.
-- No last message is read, so the adapter has no `lastMessage`. Its token counts come from the poll, as for OpenCode 1.x.
+- Its last message is read with OpenCode 1.x's question, unchanged (issue #328). Its token counts come from the poll, as for OpenCode 1.x.
 
 **How sure it is.** Not checked against Kilo Code yet. A pre-release writes `kilo-rc.db` and a build from source `kilo-<branch>.db` or `kilo-local.db`, which are read only when `KILO_DB` names one. An editor's `kilo serve`, or `kilo daemon`, keeps every session from showing as finished while it runs.
 
@@ -571,7 +571,7 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 - `question` and `plan_exit` ask, as in OpenCode.
 - A session with a subagent `pending` or `running` is working where the main agent's step says idle, unless the subagent's row was last written before `ps` last showed no `mimo`.
 - Eleven error names fail a reply, four of them MiMo Code's own (`MIMO_FAILED_ERRORS`).
-- `session_v2` is never read, and no last message is read.
+- `session_v2` is never read. Its last message is the main agent's newest reply, read with OpenCode 1.x's question (issue #328).
 
 **How sure it is.** Not checked against MiMo Code yet. A question a subagent asks shows as working, as a wait for a tool's approval does. MiMo Desktop's program is not known, so its sessions can show as finished while it runs.
 
@@ -951,7 +951,7 @@ Each tool is marked read-only (`READ_ONLY`). None can jump to, stop or answer a 
 
 **Why.** #10: a name and a status do not say what a session was doing. Its last words let you decide whether it needs you without switching to it.
 
-**When.** Three commits on 8 October (ab327a2, 91bbf4e, 8abd37d), released in 0.2.9, for Claude Code. Codex sessions came next, read from the session file the adapter already reads. Antigravity CLI and Antigravity sessions followed (#141), read from the transcript each adapter already reads, then Qwen Code sessions (#187), read from the chat file its adapter already finds, and Gemini CLI sessions (#180), read from the session file each poll lists them from, and then OpenCode sessions (#192), asked of the database its adapter already reads, with one fixed question. Every other agent's session answers `not-read`, and so does a session read from OpenCode 2's `session_v2`.
+**When.** Three commits on 8 October (ab327a2, 91bbf4e, 8abd37d), released in 0.2.9, for Claude Code. Codex sessions came next, read from the session file the adapter already reads. Antigravity CLI and Antigravity sessions followed (#141), read from the transcript each adapter already reads, then Qwen Code sessions (#187), read from the chat file its adapter already finds, and Gemini CLI sessions (#180), read from the session file each poll lists them from, and then OpenCode sessions (#192), asked of the database its adapter already reads, with one fixed question. Kilo Code and MiMo Code sessions followed (#328), asked the same question of each one's own database, for MiMo Code looking through the main agent's messages alone. Every other agent's session answers `not-read`, and so does a session read from OpenCode 2's `session_v2`.
 
 **Where it is.**
 

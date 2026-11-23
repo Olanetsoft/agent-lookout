@@ -29,6 +29,7 @@ export {
   FOLDER,
   HOME,
   HOUR,
+  lastTextJson,
   messageId,
   MINUTE,
   NOW,
@@ -39,6 +40,7 @@ export {
   SECRET_WORDS,
   sessionId,
   sqliteJson,
+  text,
   textData,
   toolData,
   userData,
@@ -126,6 +128,12 @@ export interface MimoSessionFields {
   updatedAt?: number;
   parentId?: string;
   archivedAt?: number;
+  /**
+   * The id of the message `/undo` went back to, for the `revert` MiMo Code
+   * writes then, with words that stand for the files it changed back. Left
+   * out, `revert` names words that are no message's id, so it takes nothing back.
+   */
+  undoneFrom?: string;
 }
 
 /** A session's row, with words that stand for what was written in every column the adapter must not read. */
@@ -142,7 +150,11 @@ export function sessionRow(fields: MimoSessionFields): string {
     title_revision: fields.titleRevision ?? 1,
     version: "0.1.17",
     summary_diffs: JSON.stringify([{ file: PRIVATE_WORDS }]),
-    revert: JSON.stringify({ messageID: PRIVATE_WORDS }),
+    revert: JSON.stringify(
+      fields.undoneFrom === undefined
+        ? { messageID: PRIVATE_WORDS }
+        : { messageID: fields.undoneFrom, snapshot: "demo-snapshot", diff: PRIVATE_WORDS },
+    ),
     permission: JSON.stringify([{ pattern: PRIVATE_WORDS }]),
     prompt: JSON.stringify({ text: PRIVATE_WORDS }),
     time_created: createdAt,

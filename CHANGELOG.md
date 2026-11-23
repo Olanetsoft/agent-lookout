@@ -4,6 +4,10 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 ## Unreleased
 
+### Added
+
+- Kilo Code and MiMo Code sessions' details show what they last said, the text of the newest reply, as an OpenCode 1.x session's do. It is asked of each one's database with OpenCode's one fixed question, only while the session's details are open, never by a poll, and for MiMo Code only the main agent's messages are looked through, so what a subagent wrote into the session is never taken. After `/undo`, the details show the reply before the ones it took back. `AGENT_LOOKOUT_LAST_MESSAGE=off` and `AGENT_LOOKOUT_WAITING_TEXT=off` stop it, and Sources says Last message read on both cards. This was checked in Kilo Code's source at v7.8.32 and MiMo Code's at v0.1.17, and not yet on a computer running either. (#328)
+
 ### Fixed
 
 - A side chat Codex's terminal app saves, from Codex 0.169.0, is no longer listed as a session of its own. Codex keeps it attached to the session it came from and leaves it out of its own lists, and Agent Lookout now does the same. (#409)

@@ -20,6 +20,7 @@ import {
   OPENCODE_2_SESSIONS_QUERY,
   PROBE_QUERY,
   SESSIONS_QUERY,
+  type V1Extras,
 } from "@collector/adapters/opencode/sessionRows";
 import { HOME, NOW, probeJson, sqliteJson } from "@tests/fixtures/opencode/opencode";
 import { handClock, memoryFiles, type MemoryFiles } from "@tests/support/adapters/codexAdapter";
@@ -43,13 +44,16 @@ export interface SqliteRun {
  * which the test changes, every argument list it was given, and a way to make
  * it fail, or not be there at all. A question it was not given an answer for
  * fails. `sessionsQuestions` are the questions of the sessions it answers,
- * OpenCode's unless a test of another agent of its family names its own, and
- * `probeQuestion` the probe it answers, OpenCode's unless one names its own.
+ * OpenCode's unless a test of another agent of its family names its own,
+ * `probeQuestion` the probe it answers, OpenCode's unless one names its own,
+ * and `lastTextExtras` what the question of a session's last text is built
+ * with, nothing unless one names its own.
  */
 export function standInSqlite(
   initial: Record<string, unknown>[] = [],
   sessionsQuestions: readonly string[] = SESSIONS_QUESTIONS,
   probeQuestion: string = PROBE_QUERY,
+  lastTextExtras: V1Extras = {},
 ) {
   let rows: Record<string, unknown>[] | string = initial;
   let probe = probeJson("v1");
@@ -103,7 +107,7 @@ export function standInSqlite(
     },
     /** What the question of this session's last text prints from now on, by OpenCode's own id for it. */
     said(sessionId: string, stdout: string) {
-      const question = lastTextQuery(sessionId);
+      const question = lastTextQuery(sessionId, lastTextExtras);
       if (question === null) throw new Error(`Not an id OpenCode makes: ${sessionId}`);
       lastTexts.set(question, stdout);
     },

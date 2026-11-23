@@ -260,7 +260,9 @@ export interface V1Extras {
    * The `message.agent_id` of the agent whose messages say how a session
    * stands, for an agent that writes its subagents' messages into the session
    * beside its own: MiMo Code's `main`. Only that agent's messages are read
-   * for the newest message, the newest prompt and the token counts.
+   * for the newest message, the newest prompt and the token counts, and
+   * looked through for the last message (`lastTextQuery` in
+   * `lastMessages.ts`).
    */
   mainAgent?: string;
   /**
@@ -302,7 +304,7 @@ function hasExtras(extras: V1Extras): boolean {
 type MainOnly = (alias: string) => string;
 
 /** The filter for these extras: ` AND <alias>.agent_id = '<main>'`, or nothing. */
-function mainOnly(extras: V1Extras): MainOnly {
+export function mainOnly(extras: V1Extras): MainOnly {
   const { mainAgent } = extras;
   if (mainAgent === undefined) return () => "";
   const main = fixedWord(mainAgent);

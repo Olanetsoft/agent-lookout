@@ -15,6 +15,7 @@ import {
   KILO_SESSIONS_QUERY,
   kiloDatabaseFor,
   kiloHomeFor,
+  LAST_MESSAGE_READ,
   NEEDS_YOU_NOTE,
   NO_DATABASE_NOTE,
   NO_SQLITE_ADVICE,
@@ -22,23 +23,31 @@ import {
   UNKNOWN_MESSAGE_NOTE,
   WINDOWS_DETAIL,
 } from "@collector/adapters/kilo-code/index";
-import type { DatabaseReader } from "@collector/adapters/opencode/database";
+import {
+  createDatabaseReader,
+  QUESTION_OUTPUT_BYTES,
+  type DatabaseReader,
+} from "@collector/adapters/opencode/database";
 import {
   createOpencodeProcessReader,
   OPENCODE_PROGRAMS,
   opencodeInTable,
 } from "@collector/adapters/opencode/processes";
 import { RECHECK_MS } from "@collector/adapters/opencode/index";
-import { PROBE_QUERY } from "@collector/adapters/opencode/sessionRows";
+import { lastTextQuery } from "@collector/adapters/opencode/lastMessages";
+import { PROBE_QUERY, sqliteArguments } from "@collector/adapters/opencode/sessionRows";
+import { createTailLimits } from "@collector/messages/tailReader";
 import {
   answerRow,
   DATA_HOME,
   DATABASE,
   DAY,
   HOME,
+  lastTextJson,
   MINUTE,
   NOW,
   probeJson,
+  SECOND,
   sessionId,
 } from "@tests/fixtures/kilo-code/kiloCode";
 import {
@@ -57,11 +66,12 @@ const WAL = `${DATABASE}-wal`;
 const SHM = `${DATABASE}-shm`;
 const NOTES = `${NEEDS_YOU_NOTE} ${UNCHECKED_NOTE}`;
 
-/** The rows Sources shows, for the default folder: no row of a last message, which is not read. */
+/** The rows Sources shows, for the default folder. */
 function watching(
   read: string,
   commandRun = "when the database changes",
   processCheckRun = "every 10 seconds at most, every 2 seconds at most while sessions are written and ps shows no Kilo Code",
+  lastMessageRead = LAST_MESSAGE_READ,
 ) {
   return [
     { label: "Data folder", value: "~/.local/share/kilo" },
@@ -71,6 +81,7 @@ function watching(
     { label: "Command run", value: commandRun },
     { label: "Process check", value: "ps -A -o comm=" },
     { label: "Process check run", value: processCheckRun },
+    { label: "Last message read", value: lastMessageRead },
   ];
 }
 
@@ -357,18 +368,211 @@ describe("reading the sessions", () => {
 });
 
 describe("what a session last said", () => {
-  test("is not read: the adapter has no lastMessage, and its card says nothing of one", async () => {
-    for (const env of [{}, { AGENT_LOOKOUT_LAST_MESSAGE: "off" }]) {
-      const { files, sqlite } = openKilo();
-      const adapter = kiloCodeAdapterFor(files, sqlite, { env });
-      expect(adapter, JSON.stringify(env)).not.toHaveProperty("lastMessage");
-      const { health, sessions } = await adapter.poll();
-      expect(sessions).toHaveLength(1);
-      expect(health.watching?.map((fact) => fact.label)).not.toContain("Last message read");
-      // A poll asks its two questions, and nothing more.
-      expect(sqlite.questions()).toEqual([]);
-    }
-    expect(KILO_CODE_PROFILE.lastMessageRead).toBeNull();
+  const SAID = `kilo-code:${A}`;
+
+  /** An open Kilo Code with A and B listed, and sqlite3 ready to say what each last said. */
+  function saying(options: Parameters<typeof kiloCodeAdapterFor>[2] = {}) {
+    const clock = handClock(NOW);
+    const { files, sqlite } = openKilo([answerRow({ id: A }), answerRow({ id: B })]);
+    sqlite.said(A, lastTextJson(["The reply."]));
+    sqlite.said(B, lastTextJson(["Another reply."]));
+    const adapter = kiloCodeAdapterFor(files, sqlite, { now: clock.now, ...options });
+    return { clock, files, sqlite, adapter };
+  }
+
+  test("is the newest reply's text for a listed session, asked with OpenCode's question only when asked", async () => {
+    const { adapter, files, sqlite } = saying();
+    await expect(adapter.lastMessage(SAID)).resolves.toBeNull();
+    expect(sqlite.runs).toEqual([]);
+    await adapter.poll();
+    expect(sqlite.questions()).toEqual([]);
+    await expect(adapter.lastMessage(SAID)).resolves.toEqual({
+      message: { text: "The reply.", cut: false },
+    });
+    expect(sqlite.questions()).toEqual([
+      {
+        binary: "/usr/bin/sqlite3",
+        args: sqliteArguments(DATABASE, "with-wal", lastTextQuery(A) ?? ""),
+        // The poll's own timeout, and at most 256 KB of what is printed.
+        timeoutMs: undefined,
+        maxOutputBytes: QUESTION_OUTPUT_BYTES,
+      },
+    ]);
+    expect(QUESTION_OUTPUT_BYTES).toBe(256 * 1024);
+
+    // Another session's, or another agent's of the same id, is never asked.
+    files.forget();
+    const before = sqlite.runs.length;
+    await expect(adapter.lastMessage(`kilo-code:${sessionId("c3")}`)).resolves.toBeNull();
+    await expect(adapter.lastMessage(`opencode:${A}`)).resolves.toBeNull();
+    await expect(adapter.lastMessage(`mimo-code:${A}`)).resolves.toBeNull();
+    expect(files.calls).toEqual([]);
+    expect(sqlite.runs).toHaveLength(before);
+  });
+
+  test("a poll asks the database what it asks with the reader off, and puts no message on a session", async () => {
+    const on = saying();
+    const off = saying({ env: { AGENT_LOOKOUT_LAST_MESSAGE: "off" } });
+    const onResult = await on.adapter.poll();
+    await off.adapter.poll();
+    expect(on.sqlite.runs.length).toBeGreaterThan(0);
+    expect(on.sqlite.runs).toEqual(off.sqlite.runs);
+    expect(on.files.calls).toEqual(off.files.calls);
+    expect(JSON.stringify(onResult.sessions)).not.toContain("The reply.");
+    await on.adapter.lastMessage(SAID);
+    // A poll after an ask asks no question either.
+    on.clock.advance(SECOND);
+    await on.adapter.poll();
+    expect(on.sqlite.questions()).toHaveLength(1);
+  });
+
+  test("Sources says it asks for a session's newest reply while its details are open", async () => {
+    const { adapter } = saying();
+    expect((await adapter.poll()).health.watching).toContainEqual({
+      label: "Last message read",
+      value: "a Kilo Code session's newest reply, with sqlite3, while its details are open",
+    });
+    expect(LAST_MESSAGE_READ).toBe(
+      "a Kilo Code session's newest reply, with sqlite3, while its details are open",
+    );
+    expect(KILO_CODE_PROFILE.lastMessageRead).toBe(LAST_MESSAGE_READ);
+  });
+
+  test.each([
+    [{ AGENT_LOOKOUT_LAST_MESSAGE: "off" }, "AGENT_LOOKOUT_LAST_MESSAGE"],
+    [{ AGENT_LOOKOUT_WAITING_TEXT: "off" }, "AGENT_LOOKOUT_WAITING_TEXT"],
+  ])("with %j, is off by that setting, and nothing is asked for it", async (env, setting) => {
+    const { adapter, files, sqlite } = saying({ env });
+    const result = await adapter.poll();
+    expect(result.health.watching).toContainEqual({ label: "Last message read", value: "Off" });
+    files.forget();
+    const before = sqlite.runs.length;
+    await expect(adapter.lastMessage(SAID)).resolves.toEqual({
+      message: null,
+      reason: "off",
+      setting,
+    });
+    expect(files.calls).toEqual([]);
+    expect(sqlite.runs).toHaveLength(before);
+    expect(adapter.lastMessagesKept).toBe(0);
+  });
+
+  test("on Windows, Sources says it is not read there, and no session is listed to be read", async () => {
+    const { adapter, sqlite } = saying({ platform: "win32" });
+    const result = await adapter.poll();
+    expect(result.health.watching).toContainEqual({
+      label: "Last message read",
+      value: "not read on Windows",
+    });
+    await expect(adapter.lastMessage(SAID)).resolves.toBeNull();
+    expect(sqlite.runs).toEqual([]);
+  });
+
+  test("with Kilo Code keeping its sessions in memory, nothing is listed, so nothing is asked", async () => {
+    const { adapter, sqlite } = saying({ env: { KILO_DB: ":memory:" } });
+    await adapter.poll();
+    await expect(adapter.lastMessage(SAID)).resolves.toBeNull();
+    expect(sqlite.runs).toEqual([]);
+  });
+
+  test("a session shown as finished, with no Kilo Code program running, is still read until it leaves the list", async () => {
+    const processes = standInProcesses({ ok: true, running: false });
+    const { adapter, clock, sqlite } = saying({ processes });
+    const closed = await adapter.poll();
+    expect(closed.sessions.find((session) => session.id === SAID)?.status).toBe("finished");
+    await expect(adapter.lastMessage(SAID)).resolves.toEqual({
+      message: { text: "The reply.", cut: false },
+    });
+
+    // A day on, it has left the list, and nothing of it is kept or asked.
+    clock.advance(DAY);
+    expect((await adapter.poll()).sessions).toEqual([]);
+    expect(adapter.lastMessagesKept).toBe(0);
+    const before = sqlite.runs.length;
+    await expect(adapter.lastMessage(SAID)).resolves.toBeNull();
+    expect(sqlite.runs).toHaveLength(before);
+  });
+
+  test("keeps none, and lets none be asked, after a poll that cannot read the database", async () => {
+    const { adapter, clock, files, sqlite } = saying();
+    await adapter.poll();
+    await adapter.lastMessage(SAID);
+    expect(adapter.lastMessagesKept).toBe(1);
+
+    sqlite.fail();
+    files.append(WAL, "more frames");
+    clock.advance(SECOND);
+    const failed = await adapter.poll();
+    expect(failed.health.state).toBe("error");
+    expect(failed.sessions).toEqual([]);
+    expect(adapter.lastMessagesKept).toBe(0);
+    const before = sqlite.runs.length;
+    await expect(adapter.lastMessage(SAID)).resolves.toBeNull();
+    expect(sqlite.runs).toHaveLength(before);
+  });
+
+  test("is dropped, and nothing may be asked, after a poll that throws", async () => {
+    const { files, sqlite } = openKilo([answerRow({ id: A })]);
+    sqlite.said(A, lastTextJson(["The reply."]));
+    const real = createDatabaseReader({
+      file: DATABASE,
+      io: files.io,
+      platform: "darwin",
+      run: sqlite.run,
+      find: sqlite.find,
+      v1Query: KILO_SESSIONS_QUERY,
+      readsV2: false,
+    });
+    let broken = false;
+    const reader: DatabaseReader = {
+      read: (at) => (broken ? Promise.reject(new Error("A reader that throws.")) : real.read(at)),
+      askOnce: (question, known) => real.askOnce(question, known),
+    };
+    const clock = handClock(NOW);
+    const adapter = kiloCodeAdapterFor(files, sqlite, { reader, now: clock.now });
+    await adapter.poll();
+    await adapter.lastMessage(SAID);
+    expect(adapter.lastMessagesKept).toBe(1);
+
+    broken = true;
+    clock.advance(SECOND);
+    expect((await adapter.poll()).health.detail).toBe(
+      "Something unexpected went wrong while reading Kilo Code sessions.",
+    );
+    expect(adapter.lastMessagesKept).toBe(0);
+    await expect(adapter.lastMessage(SAID)).resolves.toBeNull();
+  });
+
+  test("counts its asks against the limits the collector shares, and a poll counts none", async () => {
+    const limits = createTailLimits();
+    let asked = 0;
+    const lastMessageLimits = {
+      ...limits,
+      mayRead(at: number) {
+        asked += 1;
+        return limits.mayRead(at);
+      },
+    };
+    const { adapter } = saying({ lastMessageLimits });
+    await adapter.poll();
+    expect(asked).toBe(0);
+    await adapter.lastMessage(SAID);
+    expect(asked).toBe(1);
+    await adapter.lastMessage(`kilo-code:${B}`);
+    expect(asked).toBe(2);
+  });
+
+  test("of the database's three questions, a poll asks only its own two, and the details only the session's", async () => {
+    const { adapter, sqlite } = saying();
+    await adapter.poll();
+    await adapter.lastMessage(SAID);
+    await adapter.lastMessage(`kilo-code:${B}`);
+    expect(sqlite.runs.map((run) => run.args.at(-1))).toEqual([
+      PROBE_QUERY,
+      KILO_SESSIONS_QUERY,
+      lastTextQuery(A),
+      lastTextQuery(B),
+    ]);
   });
 });
 

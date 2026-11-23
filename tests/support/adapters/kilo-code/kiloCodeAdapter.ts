@@ -1,8 +1,9 @@
 // The Kilo Code adapter, cut off from this machine, for the tests that share
 // it: the OpenCode adapter's stand-ins, the files held in memory, a `sqlite3`
-// that answers Kilo Code's own sessions query and a probe of Kilo Code's
-// tables, and a `ps` that says a Kilo Code program runs, with a clock the test
-// moves by hand. Nothing here touches a real file or runs a program.
+// that answers Kilo Code's own sessions query, a probe of Kilo Code's tables
+// and OpenCode's question of a session's last text, and a `ps` that says a
+// Kilo Code program runs, with a clock the test moves by hand. Nothing here
+// touches a real file or runs a program.
 
 import {
   createKiloCodeAdapter,
