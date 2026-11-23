@@ -63,6 +63,11 @@ import { createOpencodeAdapter, OPENCODE_CAPABILITIES } from "@collector/adapter
 import { opencodeSession } from "@collector/adapters/opencode/toSession";
 import { CONTINUE_CAPABILITIES, createContinueAdapter } from "@collector/adapters/continue/index";
 import { continueSession } from "@collector/adapters/continue/toSession";
+import {
+  COPILOT_CLI_CAPABILITIES,
+  createCopilotCliAdapter,
+} from "@collector/adapters/copilot-cli/index";
+import { copilotCliSession } from "@collector/adapters/copilot-cli/toSession";
 import { createFxAdapter, FX_CAPABILITIES } from "@collector/adapters/fx/index";
 import { fxSession } from "@collector/adapters/fx/toSession";
 import {
@@ -118,6 +123,12 @@ import {
 } from "@core/mapping/antigravityMapping";
 import { mapClaudeCodeStatus } from "@core/mapping/claudeCodeMapping";
 import { mapClineStatus } from "@core/mapping/cline/clineMapping";
+import {
+  applyCopilotRecord,
+  startCopilotFold,
+  type CopilotRecord,
+} from "@core/mapping/copilot-cli/copilotCliFold";
+import { copilotCliStatusOf } from "@core/mapping/copilot-cli/copilotCliMapping";
 import { mapCrushStatus } from "@core/mapping/crush/crushMapping";
 import { mapDroidStatus } from "@core/mapping/droid/droidMapping";
 import { emptyGrokBuildTurn, mapGrokBuildStatus } from "@core/mapping/grok-build/grokBuildMapping";
@@ -200,6 +211,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Grok Build", GROK_BUILD_CAPABILITIES],
   ["Oh My Pi", OH_MY_PI_CAPABILITIES],
   ["Muse Code", MUSE_CODE_CAPABILITIES],
+  ["Copilot CLI", COPILOT_CLI_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -320,6 +332,9 @@ test("each adapter carries its own declaration, for the poller to pass on", () =
     expect(
       createMuseCodeAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
     ).toBe(MUSE_CODE_CAPABILITIES);
+    expect(
+      createCopilotCliAdapter({ env: {}, homeDir: home, io: files.io, platform }).capabilities,
+    ).toBe(COPILOT_CLI_CAPABILITIES);
   }
   expect(createMistralVibeAdapter({ env: {}, homeDir: home, io: files.io }).capabilities).toBe(
     MISTRAL_VIBE_CAPABILITIES,
@@ -1477,6 +1492,74 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(MUSE_CODE_CAPABILITIES.jump.level).toBe("no");
     expect(MUSE_CODE_CAPABILITIES.stop.level).toBe("no");
     expect(MUSE_CODE_CAPABILITIES.answer.level).toBe("no");
+  });
+
+  test("Copilot CLI: a session is working, idle, needs you for a permission or a question, finished, failed or unknown", () => {
+    const fold = (...records: CopilotRecord[]) => {
+      const made = startCopilotFold();
+      for (const record of [
+        { sort: "start", cwd: null, at: NOW - 60_000 } as CopilotRecord,
+        ...records,
+      ]) {
+        applyCopilotRecord(made, record);
+      }
+      return made;
+    };
+    const facts = (made = fold(), live: boolean | null = true) => ({
+      fold: made,
+      live,
+      writtenAt: NOW - 1_000,
+      changedAt: NOW - 1_000,
+      now: NOW,
+      seen: new Map<string, number>(),
+      waited: new Set<string>(),
+    });
+    const mapped = [
+      facts(fold({ sort: "user", at: NOW - 5_000 })),
+      facts(),
+      facts(fold({ sort: "permission", request: "r-1", byHook: false, at: NOW - 5_000 })),
+      facts(fold({ sort: "tool-start", call: "c-1", ask: true, at: NOW - 5_000 })),
+      facts(fold(), false),
+      facts(fold({ sort: "shutdown", kind: "error", at: NOW - 5_000 })),
+      facts(fold({ sort: "error", at: NOW - 5_000 })),
+    ].map((given) => copilotCliStatusOf(given));
+    expect(statuses(mapped.map((status) => status.status))).toEqual(
+      new Set(["working", "idle", "needs-you", "finished", "failed", "unknown"]),
+    );
+    expect(new Set(mapped.flatMap((status) => status.waitingReason ?? []))).toEqual(
+      new Set(["question", "permission"]),
+    );
+    expect(COPILOT_CLI_CAPABILITIES["working-and-idle"].level).toBe("partly");
+    expect(COPILOT_CLI_CAPABILITIES["needs-you"].level).toBe("partly");
+    expect(COPILOT_CLI_CAPABILITIES.finished.level).toBe("partly");
+    expect(COPILOT_CLI_CAPABILITIES.failed.level).toBe("partly");
+  });
+
+  test("Copilot CLI: a session has its working folder's name and its last write while it works, and no tokens, jump, stop or link", () => {
+    const session = copilotCliSession({
+      folderName: "0aaa0000-0000-4000-8000-000000000001",
+      cwd: "/Users/example/code/demo",
+      startedAt: NOW - 60_000,
+      status: { status: "working", since: NOW - 60_000, showsLastWrite: true },
+      writtenAt: NOW - 1_000,
+      now: NOW,
+    });
+    expect(session).toMatchObject({
+      id: "copilot-cli:0aaa0000-0000-4000-8000-000000000001",
+      source: "copilot-cli",
+      name: "demo",
+      lastWriteAt: NOW - 1_000,
+    });
+    for (const absent of ["tokens", "stop", "ask", "waitingText", "jump", "pid"]) {
+      expect(session, absent).not.toHaveProperty(absent);
+    }
+    expect(session.links).toEqual({});
+    expect(COPILOT_CLI_CAPABILITIES.names.level).toBe("partly");
+    expect(COPILOT_CLI_CAPABILITIES["quiet-for"].level).toBe("partly");
+    expect(COPILOT_CLI_CAPABILITIES.tokens.level).toBe("no");
+    expect(COPILOT_CLI_CAPABILITIES.jump.level).toBe("no");
+    expect(COPILOT_CLI_CAPABILITIES.stop.level).toBe("no");
+    expect(COPILOT_CLI_CAPABILITIES.answer.level).toBe("no");
   });
 
   test("Prime Agent: a session is working, idle, finished or unknown, and never waiting or failed", () => {

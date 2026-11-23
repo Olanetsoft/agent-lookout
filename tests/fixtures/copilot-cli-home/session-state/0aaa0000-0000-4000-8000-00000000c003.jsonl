@@ -1,0 +1,1 @@
+{"type":"session.start","data":{"sessionId":"0aaa0000-0000-4000-8000-00000000c003","version":1,"producer":"copilot-agent","copilotVersion":"1.0.114","startTime":"2026-11-20T07:00:00.000Z","context":{"cwd":"/Users/example/code/demo-project","branch":"main"},"alreadyInUse":false},"id":"0bbb0000-0000-4000-8000-000000000021","timestamp":"2026-11-20T07:00:00.000Z","parentId":null}

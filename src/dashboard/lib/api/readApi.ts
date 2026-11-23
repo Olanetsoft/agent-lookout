@@ -424,10 +424,10 @@ const MAX_AGENTS = 30;
 /**
  * The most parts read for one source: as many as the collector takes from one
  * machine (`MAX_REMOTE_PARTS` in `src/collector/remotes/remoteSessions.ts`), so
- * both compare that machine's sessions alike. Raised with it from 62 to 63
- * for Muse Code.
+ * both compare that machine's sessions alike. Raised with it from 63 to 64
+ * for Copilot CLI.
  */
-const MAX_PARTS = 63;
+const MAX_PARTS = 64;
 
 /** The way another machine read each of its sources, by the start of their sessions' ids, or null. */
 function readParts(value: unknown): Record<string, string> | null {

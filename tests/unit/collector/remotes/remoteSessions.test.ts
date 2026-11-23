@@ -6,6 +6,7 @@ import * as autohandCode from "@collector/adapters/autohand-code/index";
 import { CLAUDE_CODE_CAPABILITIES } from "@collector/adapters/claude-code/index";
 import * as codex from "@collector/adapters/codex/index";
 import * as continueAdapter from "@collector/adapters/continue/index";
+import * as copilotCli from "@collector/adapters/copilot-cli/index";
 import * as crush from "@collector/adapters/crush/index";
 import * as deepseekHarness from "@collector/adapters/deepseek-harness/index";
 import * as droid from "@collector/adapters/droid/index";
@@ -350,6 +351,7 @@ describe("readRemoteSnapshot", () => {
       "grok-build": grokBuild,
       "oh-my-pi": ohMyPi,
       "muse-code": museCode,
+      "copilot-cli": copilotCli,
       fx,
       "kilo-code": kiloCode,
       "mimo-code": mimoCode,

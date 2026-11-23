@@ -62,6 +62,9 @@ export type RemoteSourceId = `remote:${string}`;
  * each.
  * `muse-code` is Meta's Muse Code, in its command `muse`, whose sessions are
  * read from the log it keeps for each.
+ * `copilot-cli` is GitHub's Copilot CLI, in its command `copilot`, whose
+ * sessions are read from the event log it keeps for each and the names of the
+ * locks beside it.
  */
 export type SourceId =
   | "claude-code"
@@ -91,6 +94,7 @@ export type SourceId =
   | "grok-build"
   | "oh-my-pi"
   | "muse-code"
+  | "copilot-cli"
   | "status-files"
   | RemoteSourceId;
 

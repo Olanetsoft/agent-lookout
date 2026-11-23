@@ -90,6 +90,7 @@ async function start(env: Record<string, string>, entry = serveFile): Promise<St
       AGENT_LOOKOUT_GROK_HOME: await tempDir(),
       AGENT_LOOKOUT_OMP_HOME: await tempDir(),
       AGENT_LOOKOUT_MUSE_CODE_HOME: await tempDir(),
+      AGENT_LOOKOUT_COPILOT_HOME: await tempDir(),
       AGENT_LOOKOUT_STATUS_DIR: statusDir,
       AGENT_LOOKOUT_TMUX: "off",
       AGENT_LOOKOUT_HISTORY: "off",

@@ -776,6 +776,7 @@ describe("over a long run of snapshots", () => {
     "grok-build": [],
     "oh-my-pi": [],
     "muse-code": [],
+    "copilot-cli": [],
     "status-files": [F],
   };
   const sourceOf = (id: string): SourceId =>

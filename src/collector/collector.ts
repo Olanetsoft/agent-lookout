@@ -15,6 +15,7 @@ import { createClaudeCodeAdapter } from "./adapters/claude-code/index.ts";
 import { createClineAdapter } from "./adapters/cline/index.ts";
 import { createCodexAdapter } from "./adapters/codex/index.ts";
 import { createContinueAdapter } from "./adapters/continue/index.ts";
+import { createCopilotCliAdapter } from "./adapters/copilot-cli/index.ts";
 import { createCrushAdapter } from "./adapters/crush/index.ts";
 import { createDeepseekHarnessAdapter } from "./adapters/deepseek-harness/index.ts";
 import { createDroidAdapter } from "./adapters/droid/index.ts";
@@ -122,7 +123,7 @@ import { readWebhookSetup, webhookProblemLine } from "./webhook/webhookSettings.
 export interface CollectorOptions {
   /** The app version reported by `/api/health`. */
   version: string;
-  /** Defaults to every adapter the app ships: Claude Code, Codex, the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx, Unreal Agent, Autohand Code, DeepSeek Harness, Droid, Grok Build, Oh My Pi, Muse Code and status files. */
+  /** Defaults to every adapter the app ships: Claude Code, Codex, the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx, Unreal Agent, Autohand Code, DeepSeek Harness, Droid, Grok Build, Oh My Pi, Muse Code, Copilot CLI and status files. */
   adapters?: readonly Adapter[];
   /**
    * Where the default adapters read their settings, such as
@@ -139,7 +140,8 @@ export interface CollectorOptions {
    * `AGENT_LOOKOUT_UNREAL_AGENT_SESSION_DIR`, `AGENT_LOOKOUT_AUTOHAND_HOME`,
    * `AGENT_LOOKOUT_DEEPSEEK_HARNESS_HOME`, `AGENT_LOOKOUT_DROID_HOME`,
    * `AGENT_LOOKOUT_GROK_HOME`, `AGENT_LOOKOUT_OMP_HOME`,
-   * `AGENT_LOOKOUT_MUSE_CODE_HOME` and `AGENT_LOOKOUT_STATUS_DIR`, and
+   * `AGENT_LOOKOUT_MUSE_CODE_HOME`, `AGENT_LOOKOUT_COPILOT_HOME` and
+   * `AGENT_LOOKOUT_STATUS_DIR`, and
    * where `AGENT_LOOKOUT_NOTIFICATIONS`, the
    * history settings, the email settings, the webhook settings and
    * `AGENT_LOOKOUT_SETTINGS_FILE` are read. Defaults to `process.env`.
@@ -650,6 +652,14 @@ export function createCollector(options: CollectorOptions): Collector {
     createOhMyPiAdapter({ env: options.env, now, pollIntervalMs: intervalMs, platform }),
     // Read from each session's log, as bytes, with no last message.
     createMuseCodeAdapter({ env: options.env, now, pollIntervalMs: intervalMs, platform }),
+    // Read from each session's event log, as bytes, and the names of its locks, with no last message.
+    createCopilotCliAdapter({
+      env: options.env,
+      now,
+      pollIntervalMs: intervalMs,
+      platform,
+      readProcessStarts: options.readProcessStarts,
+    }),
     createStatusFileAdapter({ env: options.env, now, pollIntervalMs: intervalMs }),
   ];
   const poller = createPoller({

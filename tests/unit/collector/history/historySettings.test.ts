@@ -179,6 +179,16 @@ test("the fingerprint of the folders sessions are read from names none of them, 
   expect(
     sourcesFingerprint({ AGENT_LOOKOUT_MUSE_CODE_HOME: `${HOME}/.local/share/muse` }, HOME),
   ).toBe(defaults);
+  // Copilot CLI's COPILOT_HOME counts only as a whole path, and as it is: one
+  // that is not is passed over, as is an empty one, and its own folder named
+  // outright is the default.
+  for (const value of ["", "copilot", "~/.copilot", " /tmp/copilot"]) {
+    expect(sourcesFingerprint({ COPILOT_HOME: value }, HOME), value).toBe(defaults);
+  }
+  expect(sourcesFingerprint({ COPILOT_HOME: `${HOME}/.copilot` }, HOME)).toBe(defaults);
+  expect(sourcesFingerprint({ AGENT_LOOKOUT_COPILOT_HOME: `${HOME}/.copilot` }, HOME)).toBe(
+    defaults,
+  );
   // Agent Lookout's names the root outright. A home folder is a whole path,
   // with a drive on Windows, as the system gives it.
   const home = path.resolve(HOME);
@@ -265,6 +275,8 @@ test("the fingerprint of the folders sessions are read from names none of them, 
     sourcesFingerprint({ OMP_PROFILE: "work" }, HOME),
     sourcesFingerprint({ PI_CONFIG_DIR: ".omp-work" }, HOME),
     sourcesFingerprint({ AGENT_LOOKOUT_MUSE_CODE_HOME: "/tmp/empty-muse" }, HOME),
+    sourcesFingerprint({ AGENT_LOOKOUT_COPILOT_HOME: "/tmp/empty-copilot" }, HOME),
+    sourcesFingerprint({ COPILOT_HOME: path.resolve("/tmp/copilot-home") }, HOME),
     sourcesFingerprint({}, "/Users/someone-else"),
   ];
   for (const other of others) expect(other).not.toBe(defaults);

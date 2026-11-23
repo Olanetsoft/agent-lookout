@@ -165,6 +165,9 @@ export interface AdapterResult {
    *   Windows, when a session is finished only if Muse Code wrote that it let
    *   it go or, on macOS and Linux, its newest status record was written more
    *   than a minute before the computer started.
+   *
+   * The Copilot CLI adapter has one, `files`: Copilot CLI's event logs and the
+   * locks beside them, checked with signal 0 and, on a Mac, `ps`.
    */
   basis?: string;
 }

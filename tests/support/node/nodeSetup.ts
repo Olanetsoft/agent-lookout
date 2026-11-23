@@ -28,6 +28,7 @@ import {
   EMPTY_GROK_HOME,
   EMPTY_OMP_HOME,
   EMPTY_MUSE_CODE_HOME,
+  EMPTY_COPILOT_HOME,
   EMPTY_PI_HOME,
   EMPTY_GEMINI_CLI_HOME,
   EMPTY_HERMES_HOME,
@@ -253,6 +254,14 @@ delete process.env.PI_CONFIG_DIR;
 // the adapter names a folder of its own.
 mkdirSync(path.join(EMPTY_MUSE_CODE_HOME, "sessions"), { recursive: true });
 process.env.AGENT_LOOKOUT_MUSE_CODE_HOME = EMPTY_MUSE_CODE_HOME;
+
+// Nor Copilot CLI's, in `~/.copilot` or the folder `COPILOT_HOME` names: the
+// adapter is pointed at an empty folder, with an empty `session-state` folder
+// in it, which wins over both, and `COPILOT_HOME` is dropped. A test of the
+// adapter names a folder of its own.
+mkdirSync(path.join(EMPTY_COPILOT_HOME, "session-state"), { recursive: true });
+process.env.AGENT_LOOKOUT_COPILOT_HOME = EMPTY_COPILOT_HOME;
+delete process.env.COPILOT_HOME;
 
 // And `os.homedir()` is an empty folder, never the home of the person running
 // the tests, so a collector whose environment forgets to name a folder of an

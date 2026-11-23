@@ -1,0 +1,6 @@
+{"type":"session.start","data":{"sessionId":"0aaa0000-0000-4000-8000-00000000b002","version":1,"producer":"copilot-agent","copilotVersion":"1.0.114","startTime":"2026-11-20T08:00:00.000Z","context":{"cwd":"/Users/example/code/demo-project","branch":"main"},"alreadyInUse":false},"id":"0bbb0000-0000-4000-8000-000000000015","timestamp":"2026-11-20T08:00:00.000Z","parentId":null}
+{"type":"user.message","data":{"content":"PRIVATE_PROMPT placeholder prompt","interactionId":"i-1"},"id":"0bbb0000-0000-4000-8000-000000000016","timestamp":"2026-11-20T08:00:05.000Z","parentId":null}
+{"type":"assistant.turn_start","data":{"turnId":"0","interactionId":"i-1"},"id":"0bbb0000-0000-4000-8000-000000000017","timestamp":"2026-11-20T08:00:05.100Z","parentId":null}
+{"type":"assistant.message","data":{"messageId":"m-1","content":"PRIVATE_REPLY placeholder reply","toolRequests":[],"turnId":"0"},"id":"0bbb0000-0000-4000-8000-000000000018","timestamp":"2026-11-20T08:00:07.000Z","parentId":null}
+{"type":"assistant.turn_end","data":{"turnId":"0"},"id":"0bbb0000-0000-4000-8000-000000000019","timestamp":"2026-11-20T08:00:07.100Z","parentId":null}
+{"type":"session.shutdown","data":{"shutdownType":"routine","totalPremiumRequests":1},"id":"0bbb0000-0000-4000-8000-000000000020","timestamp":"2026-11-20T08:05:00.000Z","parentId":null}

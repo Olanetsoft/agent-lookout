@@ -2,7 +2,9 @@
  * A strict JSON tokenizer over the bytes of one line, which finds the values
  * at a few paths and steps over everything else, never turning a string into
  * text. Built for Muse Code's session logs, whose lines hold prompts,
- * questions, answers, commands and outputs unredacted.
+ * questions, answers, commands and outputs unredacted. The Copilot CLI
+ * adapter walks Copilot CLI's event logs with it too
+ * (`../copilot-cli/records.ts`), so a change here changes both.
  *
  * Muse Code writes each record as one line, with its keys in the order of
  * Meta's export in its cookbook
@@ -17,7 +19,8 @@
  *   `null` and whitespace, to a depth of 32;
  * - compares each key, between its quotes, byte for byte with the keys of the
  *   paths wanted, and never matches a key that holds an escape;
- * - gives each wanted value as where its bytes are, and steps over the rest;
+ * - gives each wanted value as where its bytes are, and for an array whether
+ *   it holds nothing, and steps over the rest;
  * - stops when the caller says it has what it needs, at the line's end, or at
  *   the end of the bytes it was given, when the line is longer than them.
  *
@@ -31,7 +34,9 @@ export type Token =
   | { type: "string"; start: number; end: number; escaped: boolean }
   /** A number: its bytes. */
   | { type: "number"; start: number; end: number }
-  | { type: "true" | "false" | "null" | "object" | "array" };
+  /** An array: whether it holds nothing. The Copilot CLI adapter asks this of a reply's tool requests. */
+  | { type: "array"; empty: boolean }
+  | { type: "true" | "false" | "null" | "object" };
 
 /** A path wanted: a key, and either the value read there or the keys wanted in the object there. */
 export interface WantedKey {
@@ -194,7 +199,11 @@ export function walkLine(
       return [end, { type: "string", start: at + 1, end: end - 1, escaped }];
     }
     if (byte === OPEN_BRACE) return [object(at, depth + 1, children ?? []), { type: "object" }];
-    if (byte === OPEN_BRACKET) return [array(at, depth + 1), { type: "array" }];
+    if (byte === OPEN_BRACKET) {
+      const inside = spaces(at + 1);
+      const empty = inside < length && line[inside] === CLOSE_BRACKET;
+      return [array(at, depth + 1), { type: "array", empty }];
+    }
     if (byte === 0x74) return [literal(at, TRUE), { type: "true" }];
     if (byte === 0x66) return [literal(at, FALSE), { type: "false" }];
     if (byte === 0x6e) return [literal(at, NULL), { type: "null" }];

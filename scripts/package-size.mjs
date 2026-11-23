@@ -88,11 +88,17 @@ import { gunzipSync } from "node:zlib";
  * tarball was raised from 1.20 MB to 1.25 MB on purpose, as Muse Code took it
  * to 1.20 MB, 2 KB under that limit, from 1.18 MB, which leaves no room for
  * another source.
+ *
+ * Unpacked was raised from 4.60 MB to 4.70 MB, and installed, which holds it
+ * and nodemailer's 1.76 MB, from 6.40 MB to 6.50 MB, once Copilot CLI took
+ * unpacked to 4.61 MB, past its limit. It added 22 KB of the documents the
+ * package ships, and its code in the command. The tarball, at 1.22 MB, is
+ * still under its 1.25 MB.
  */
 const LIMITS = {
   tarball: 1_250_000,
-  unpacked: 4_600_000,
-  installed: 6_400_000,
+  unpacked: 4_700_000,
+  installed: 6_500_000,
 };
 
 /** Bytes as megabytes, as npm gives sizes. */

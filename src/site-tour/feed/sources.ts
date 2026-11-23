@@ -8,9 +8,9 @@ import { MACHINE } from "@site-tour/feed/hour";
  * collector's order: Claude Code, Codex, the Antigravity CLI, Antigravity,
  * Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi,
  * Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx,
- * Unreal Agent, Autohand Code, DeepSeek Harness, Droid, Grok Build, Oh My Pi
- * and Muse Code, none of the twenty-five installed here, and status files. Then
- * the other machine, connected over SSH.
+ * Unreal Agent, Autohand Code, DeepSeek Harness, Droid, Grok Build, Oh My Pi,
+ * Muse Code and Copilot CLI, none of the twenty-six installed here, and status
+ * files. Then the other machine, connected over SSH.
  *
  * The adapters run in Node, so their declarations cannot be bundled into the
  * page. Their words are written here in their place, and a test holds each
@@ -1231,6 +1231,55 @@ export const MUSE_CODE_CAPABILITIES: SourceCapabilities = {
   },
 };
 
+export const COPILOT_CLI_CAPABILITIES: SourceCapabilities = {
+  "working-and-idle": {
+    level: "partly",
+    reason:
+      "Idle is read from a last turn that asked for no tools, as Copilot never writes it. A wait it never writes can show as working.",
+  },
+  "needs-you": {
+    level: "partly",
+    reason:
+      "Permission prompts and ask_user questions only. Plan approval, MCP prompts and sign-ins, and limit prompts are never written.",
+  },
+  finished: {
+    level: "partly",
+    reason:
+      "From its lock and that process. Off a Mac, signal 0 alone decides, so a crashed session can look open.",
+  },
+  failed: {
+    level: "partly",
+    reason:
+      "When Copilot writes that the session shut down on an error. A crash writes nothing and shows as finished.",
+  },
+  names: {
+    level: "partly",
+    reason:
+      "The working folder's. Copilot's own session name can be your first prompt, so it is never read.",
+  },
+  jump: {
+    level: "no",
+    reason: "Nothing Agent Lookout reads names a Copilot CLI session's terminal or window.",
+  },
+  "quiet-for": {
+    level: "partly",
+    reason:
+      "The time since its event log was last written, while it works. A long command may write nothing.",
+  },
+  tokens: {
+    level: "no",
+    reason: "Copilot's counts are on lines Agent Lookout steps over without reading them.",
+  },
+  stop: {
+    level: "no",
+    reason: "A lock names a process that can hold other sessions too, so Agent Lookout stops none.",
+  },
+  answer: {
+    level: "no",
+    reason: "Agent Lookout makes no request to Copilot CLI, so it cannot send an answer.",
+  },
+};
+
 /**
  * What Claude Code on the other machine can report, as it is seen from here:
  * what its Agent Lookout says, with Jump, Stop and Answer as no, since each
@@ -1946,6 +1995,35 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
       checkedAt,
     },
     {
+      // The adapter's card on a Mac, when Copilot CLI is not installed: its sessions folder is looked for, and nothing more.
+      id: "copilot-cli",
+      label: "Copilot CLI",
+      state: "unavailable",
+      detail:
+        "Copilot CLI was not found: there is no ~/.copilot/session-state folder. Agent Lookout looks again every minute.",
+      watching: [
+        { label: "Sessions folder", value: "~/.copilot/session-state" },
+        { label: "Read", value: "not found" },
+        {
+          label: "Event logs",
+          value:
+            "events.jsonl of each session, as bytes, only as far as it grew: at most 8 MiB, or its first 64 KiB and last 8 MiB. Only its working folder, times and IDs become text",
+        },
+        {
+          label: "Locks",
+          value: "the names of inuse.<pid>.lock in each session's folder, by lstat, never opened",
+        },
+        { label: "Process IDs", value: "signal 0, every 2 seconds" },
+        { label: "Process check", value: "ps -o pid=,lstart= -p <pids>" },
+        {
+          label: "Process check run",
+          value: "every 30 seconds while a session's process runs, and sooner when another appears",
+        },
+      ],
+      capabilities: COPILOT_CLI_CAPABILITIES,
+      checkedAt,
+    },
+    {
       id: "status-files",
       label: "Status files",
       state: "ok",
@@ -1999,6 +2077,7 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "Grok Build there", value: "Not found" },
         { label: "Oh My Pi there", value: "Not found" },
         { label: "Muse Code there", value: "Not found" },
+        { label: "Copilot CLI there", value: "Not found" },
         { label: "Status files there", value: "Not set up" },
       ],
       agents: [{ label: "Claude Code", capabilities: CLAUDE_CODE_THERE_CAPABILITIES }],

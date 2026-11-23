@@ -9,6 +9,7 @@ import { CLAUDE_HOME_ENV } from "../adapters/claude-code/index.ts";
 import { clineSessionsDirFor } from "../adapters/cline/index.ts";
 import { CODEX_HOME_ENV, CODEX_OWN_HOME_ENV } from "../adapters/codex/index.ts";
 import { continueHomeFor } from "../adapters/continue/index.ts";
+import { copilotCliSessionsDirFor } from "../adapters/copilot-cli/index.ts";
 import { crushDataDirFor } from "../adapters/crush/index.ts";
 import { deepseekHarnessSessionsDirFor } from "../adapters/deepseek-harness/index.ts";
 import { droidSessionsDirFor } from "../adapters/droid/index.ts";
@@ -74,7 +75,7 @@ export function readHistorySetup(
 }
 
 /**
- * The folders the twenty-four other sources read, and OpenCode's, Goose's, Kilo
+ * The folders the twenty-five other sources read, and OpenCode's, Goose's, Kilo
  * Code's and MiMo Code's databases,
  * as the adapters work them out on this system, made into a short fingerprint that
  * names none of them. Two copies of Agent Lookout with the same one see the
@@ -123,6 +124,7 @@ export function sourcesFingerprint(
     grokBuildHomeFor(env, homeDir, platform),
     ...ompSessionsDirsFor(env, homeDir, platform),
     museCodeSessionsDirFor(env, homeDir),
+    copilotCliSessionsDirFor(env, homeDir, platform),
   ];
   return createHash("sha256").update(JSON.stringify(folders)).digest("hex").slice(0, 32);
 }
