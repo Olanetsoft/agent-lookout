@@ -504,7 +504,11 @@ describe("what a session last said", () => {
     expect(sqlite.questions()).toEqual([
       {
         binary: "/usr/bin/sqlite3",
-        args: sqliteArguments(DATABASE, "with-wal", lastTextQuery(A, MIMO_EXTRAS) ?? ""),
+        args: sqliteArguments(
+          path.resolve(DATABASE),
+          "with-wal",
+          lastTextQuery(A, MIMO_EXTRAS) ?? "",
+        ),
         // The poll's own timeout, and at most 256 KB of what is printed.
         timeoutMs: undefined,
         maxOutputBytes: QUESTION_OUTPUT_BYTES,
