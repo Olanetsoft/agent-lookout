@@ -381,7 +381,7 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 - `lastMessages.ts` reads what a session last said, the text of its newest reply that is not a thought, from the end of the chat file the adapter last found, only when it is asked for, as [A session's last message](#a-sessions-last-message) says (#187). No poll reads it.
 - On each poll the adapter gives its open sessions' process IDs to the tmux pane finder and the Terminal tab finder it shares with Claude Code's adapter, for [Jump](#jump) (#186). Only a process that started by its record's `startedAt`, give or take a minute, gets a `jump`, since a later one was given the pid after a crash. On a Mac that comes from the `ps` answer the poll already has for every open session. On Linux `processCheck.ts` asks `ps` only about each process found in a pane.
 
-**How sure it is.** It was built from Qwen Code's source at v0.25.1 and has not yet been checked on a machine running Qwen Code. The card says so (`UNCHECKED_NOTE`).
+**How sure it is.** It was built from Qwen Code's source at v0.28.3 and has not yet been checked on a machine running Qwen Code. The card says so (`UNCHECKED_NOTE`).
 
 ### Hermes Agent
 

@@ -92,7 +92,7 @@ Gemini CLI support was built from its source at v0.64.0, with its tool calls che
 
 OpenCode support was built from its source at v1.19.0 and v2.2.5 and has not yet been checked on a computer running it.
 
-Qwen Code support was built from Qwen Code's source at 0.25.1 and has not yet been checked on a machine running it.
+Qwen Code support was built from Qwen Code's source at 0.28.3 and has not yet been checked on a machine running it.
 
 Hermes Agent support was built from its source at v0.22.5 and has not yet been checked on a computer running it.
 

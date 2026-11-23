@@ -623,6 +623,43 @@ describe("a question or a plan Qwen Code asks you, read from the file", () => {
   });
 });
 
+describe("a /restore, read from the file", () => {
+  test("stays idle, with the same title, once its rewind, result and copied lines are written", async () => {
+    const files = memoryFiles();
+    files.write(
+      FILE,
+      chatFile(
+        promptLine(NOW - 60_000),
+        lifecycleLine(NOW - 58_000, "started"),
+        lifecycleLine(NOW - 55_000, "ended"),
+        assistantLine(NOW - 55_000, { calls: 1 }),
+        toolResultLine(NOW - 50_000),
+        lifecycleLine(NOW - 49_000, "started"),
+        lifecycleLine(NOW - 45_000, "ended"),
+        assistantLine(NOW - 45_000),
+        titleLine(NOW - 44_000, "Fix the flaky test"),
+      ),
+    );
+    const reader = createChatReader(files.io);
+    const idle = { status: "idle", since: NOW - 45_000 };
+    expect(mapQwenCodeStatus((await readNow(files, reader)).fold, NOW - 120_000)).toEqual(idle);
+
+    // As Qwen Code 0.28.3 writes /restore: a rewind, the result of the call it ran again, then copies of the title and the rest.
+    files.append(
+      FILE,
+      systemLine(NOW - 10_000, "rewind", { truncatedCount: 2 }) +
+        toolResultLine(NOW - 10_000, "success") +
+        titleLine(NOW - 10_000, "Fix the flaky test") +
+        systemLine(NOW - 10_000, "session_model", { modelId: "demo-model", authType: "openai" }) +
+        snapshotLine(NOW - 10_000),
+      { mtimeMs: NOW + 1 },
+    );
+    const restored = await readNow(files, reader);
+    expect(restored.fold).toMatchObject({ event: "rewind", title: "Fix the flaky test" });
+    expect(mapQwenCodeStatus(restored.fold, NOW - 120_000)).toEqual(idle);
+  });
+});
+
 describe("the newest reply's token counts", () => {
   test("are those of the newest reply that has them, taken from the same read", async () => {
     const files = memoryFiles();

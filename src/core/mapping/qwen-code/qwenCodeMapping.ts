@@ -8,7 +8,7 @@
 // before Qwen Code asks, and its result once the person answers. So a Qwen
 // Code session is needs-you while Qwen Code 0.25.1 or newer asks one of
 // those, and otherwise working, idle or unknown, never "failed". Built from
-// Qwen Code's source at v0.25.1 and not yet checked on a machine running it.
+// Qwen Code's source at v0.28.3 and not yet checked on a machine running it.
 // See docs/adapters/qwen-code.md for where each value comes from.
 
 import type { SessionStatus, TokenCounts, WaitingReason } from "../../sessions/session.ts";
@@ -258,6 +258,7 @@ function userEvent(record: QwenCodeRecord): QwenCodeEvent | null {
  * | `assistant` right after a request stopped with Esc | none              |           |
  * | `tool_result`, none stopped since the calls        | results           | working   |
  * | `tool_result`, one or more stopped since the calls | cancelled-results | idle      |
+ * | `tool_result` right after a `rewind`               | none              |           |
  * | `request_lifecycle` `started`                      | request           | working   |
  * | `request_lifecycle` `started` during a wait        | none              |           |
  * | `request_lifecycle` `ended` `cancelled`            | cancelled         | idle      |
@@ -299,6 +300,12 @@ function userEvent(record: QwenCodeRecord): QwenCodeEvent | null {
  * was among them, Qwen Code goes on, and its next request, written from
  * 0.25.1, or a reply that calls a tool shows the session as working again.
  *
+ * From 0.26.2, `/restore` takes the session back to an earlier call and runs
+ * it again, then writes a rewind and that call's result, and sends nothing to
+ * the model. So a result right after a rewind changes nothing: the session
+ * stays idle. Only `/restore` writes one: after `/rewind`, the next turn
+ * begins with a prompt.
+ *
  * An `assistant` line with no subtype that has token counts gives the
  * session's counts, the part of a reply stopped with Esc among them, and one
  * whose counts could not be right gives none. One with no counts leaves them
@@ -335,6 +342,8 @@ export function foldQwenCodeRecord(fold: QwenCodeFold, record: QwenCodeRecord): 
       return next;
     }
     case "tool_result": {
+      // The result /restore writes after its rewind, with nothing sent to the model.
+      if (next.event === "rewind") return next;
       const batchCancelled = next.batchCancelled || record.cancelled === true;
       return withEvent(
         { ...next, batchCancelled },
