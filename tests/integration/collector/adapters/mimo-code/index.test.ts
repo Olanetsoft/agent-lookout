@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { mkdir } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { lstat, mkdir, readdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 
 import { describe, expect, test } from "vitest";
@@ -15,6 +16,8 @@ import {
   MIMO_EXTRAS,
   MIMO_SESSIONS_QUERY,
 } from "@collector/adapters/mimo-code/index";
+import { QUESTION_OUTPUT_BYTES } from "@collector/adapters/opencode/database";
+import { lastTextQuery } from "@collector/adapters/opencode/lastMessages";
 import {
   jsonRows,
   probeQueryFor,
@@ -22,6 +25,7 @@ import {
   readSessionRows,
   sqliteArguments,
 } from "@collector/adapters/opencode/sessionRows";
+import { ANSWER_AGAIN_MS } from "@collector/messages/tailReader";
 import {
   actorRow,
   assistantData,
@@ -36,6 +40,7 @@ import {
   SECRET_WORDS,
   sessionId,
   sessionRow,
+  text,
   textData,
   toolData,
   userData,
@@ -490,3 +495,333 @@ describe.skipIf(sqlite === null)("the MiMo Code adapter, with the real sqlite3",
     expect(sessions).toEqual([]);
   });
 });
+
+// What a session last said, the main agent's newest reply, asked with
+// OpenCode's question of a database laid out as MiMo Code v0.1.17 lays it
+// out, through the adapter MiMo Code's profile makes.
+
+/** A text part's data, saying these words, with any marks MiMo Code gives it. */
+function said(words: string, marks: Record<string, unknown> = {}): Record<string, unknown> {
+  return { type: "text", text: words, time: { start: 0, end: 0 }, ...marks };
+}
+
+/** MiMo Code's data folder with a database of these rows alone, in WAL mode, and nothing beside it. */
+async function makeMimoDatabase(rows: string[]): Promise<{ dir: string; file: string }> {
+  const dir = path.join(await tempDir(), "mimocode");
+  const file = path.join(dir, "mimocode.db");
+  await mkdir(dir, { recursive: true });
+  // On stdin, since Linux takes no argument longer than 128 KB.
+  execFileSync(sqlite as string, ["-bail", "-init", "/dev/null", file], {
+    input: ["PRAGMA journal_mode=WAL;", SCHEMA, ...rows].join("\n"),
+    stdio: ["pipe", "ignore", "ignore"],
+  });
+  // The SQLite of macOS keeps the two files once the database is closed; others remove them.
+  await rm(`${file}-wal`, { force: true });
+  await rm(`${file}-shm`, { force: true });
+  return { dir, file };
+}
+
+/** Each file in a folder, by name, with its hash, size and modified time. */
+async function snapshotOf(dir: string): Promise<Record<string, string>> {
+  const found: Record<string, string> = {};
+  for (const name of (await readdir(dir)).sort()) {
+    const info = await lstat(path.join(dir, name));
+    const hash = createHash("sha256")
+      .update(await readFile(path.join(dir, name)))
+      .digest("hex");
+    found[name] = `${hash} ${info.size} ${info.mtimeMs}`;
+  }
+  return found;
+}
+
+/** MiMo Code's adapter over that folder, polled once, and what it answers for a session, a second apart. */
+async function mimoReading(dir: string) {
+  let at = Date.now();
+  const adapter = createMimoCodeAdapter({
+    env: { AGENT_LOOKOUT_MIMO_CODE_HOME: dir },
+    homeDir: "/Users/example",
+    now: () => at,
+    processes: { read: async () => ({ ok: true, running: true }) },
+  });
+  const { sessions } = await adapter.poll();
+  return {
+    listed: sessions.map((session) => session.id),
+    async ask(id: string) {
+      at += ANSWER_AGAIN_MS;
+      return adapter.lastMessage(`mimo-code:${id}`);
+    },
+  };
+}
+
+/** What sqlite3 prints for MiMo Code's question of this session's last text, asked as the adapter asks it. */
+async function printed(file: string, id: string): Promise<string> {
+  const answer = await runSqlite(
+    sqlite as string,
+    sqliteArguments(file, "whole", lastTextQuery(id, MIMO_EXTRAS) ?? ""),
+    undefined,
+    QUESTION_OUTPUT_BYTES,
+  );
+  if (!answer.ok) throw new Error("sqlite3 did not answer.");
+  return answer.stdout;
+}
+
+describe.skipIf(sqlite === null)(
+  "what a MiMo Code session last said, with the real sqlite3",
+  () => {
+    const ROOT = sessionId("f1");
+    const OTHER = sessionId("f2");
+    const PEER = sessionId("f3");
+    const THIRD = sessionId("f4");
+    const now = Date.now();
+    const at = (minutes: number) => now - minutes * MINUTE;
+    /** A prompt, the person's to the main agent or the main agent's to a subagent, with one text part of these words. */
+    const prompt = (
+      session: string,
+      suffix: string,
+      minutes: number,
+      words: string,
+      agentId?: string,
+    ) => [
+      messageRow({
+        id: messageId(suffix),
+        sessionId: session,
+        createdAt: at(minutes),
+        agentId,
+        data: userData(at(minutes)),
+      }),
+      partRow({
+        id: partId(`${suffix}0`),
+        messageId: messageId(suffix),
+        sessionId: session,
+        createdAt: at(minutes),
+        data: said(words),
+      }),
+    ];
+    /** A step of a reply that ended, the main agent's unless `agentId` names a subagent, with these parts, each `[id suffix, data]`. */
+    const step = (
+      session: string,
+      suffix: string,
+      minutes: number,
+      parts: [string, Record<string, unknown>][],
+      options: { agentId?: string; marks?: Record<string, unknown> } = {},
+    ) => [
+      messageRow({
+        id: messageId(suffix),
+        sessionId: session,
+        createdAt: at(minutes),
+        agentId: options.agentId,
+        data: {
+          ...assistantData({ createdAt: at(minutes), completedAt: at(minutes), finish: "stop" }),
+          ...options.marks,
+        },
+      }),
+      ...parts.map(([part, data]) =>
+        partRow({
+          id: partId(`${suffix}${part}`),
+          messageId: messageId(suffix),
+          sessionId: session,
+          createdAt: at(minutes),
+          data,
+        }),
+      ),
+    ];
+    const toolSteps = (
+      session: string,
+      letter: string,
+      count: number,
+      from: number,
+      agentId?: string,
+    ) =>
+      Array.from({ length: count }, (_, index) =>
+        step(
+          session,
+          `${letter}${index + 10}`,
+          from - index * 0.1,
+          [["0", toolData({ status: "completed" })]],
+          { agentId },
+        ),
+      ).flat();
+
+    test("is the main agent's newest reply, never a subagent's newer one in the same session, and no file is made or changed", async () => {
+      const { dir, file } = await makeMimoDatabase([
+        sessionRow({ id: ROOT, updatedAt: at(1) }),
+        mainActorRow(ROOT, at(1)),
+        actorRow({ sessionId: ROOT, actorId: "sub_1", status: "idle", updatedAt: at(2) }),
+        ...prompt(ROOT, "u1", 10, "Words of the prompt."),
+        ...step(ROOT, "a1", 9, [
+          ["2", said("Second part.")],
+          ["0", { type: "reasoning", text: "Thinking it over.", time: { start: at(9) } }],
+          ["1", said("First part.")],
+          // A notice MiMo Code writes for itself.
+          ["3", said("Memory writes are off.", { synthetic: true, ignored: true })],
+        ]),
+        // The main agent hands work to a subagent, which replies in the same session, later.
+        ...step(ROOT, "a2", 8, [["0", toolData({ status: "completed", tool: "actor" })]]),
+        ...prompt(ROOT, "s1", 7, "Look into the tests.", "sub_1"),
+        ...step(ROOT, "s2", 6, [["0", said("What the subagent said.")]], { agentId: "sub_1" }),
+        // A compaction's summary, for the main agent.
+        ...step(ROOT, "a3", 5, [["0", said("The summary of the session.")]], {
+          marks: { summary: true, mode: "compaction", agent: "compaction" },
+        }),
+      ]);
+      const before = await snapshotOf(dir);
+      expect(Object.keys(before)).toEqual(["mimocode.db"]);
+
+      const reading = await mimoReading(dir);
+      expect(reading.listed).toEqual([`mimo-code:${ROOT}`]);
+      expect(await reading.ask(ROOT)).toEqual({
+        message: { text: "First part.\nSecond part.", cut: false },
+      });
+      expect(await snapshotOf(dir)).toEqual(before);
+
+      const answer = await printed(file, ROOT);
+      for (const words of [
+        "Words of the prompt.",
+        "Thinking it over.",
+        "Memory writes are off.",
+        "Look into the tests.",
+        "What the subagent said.",
+        "sub_1",
+        "The summary of the session.",
+        // The fixture's revert names no message, and is never printed.
+        PRIVATE_WORDS,
+        SECRET_WORDS,
+      ]) {
+        expect(answer).not.toContain(words);
+      }
+      expect(await snapshotOf(dir)).toEqual(before);
+    });
+
+    test("the newest 100 messages looked through, and those counted, are the main agent's alone", async () => {
+      const { dir } = await makeMimoDatabase([
+        // A main reply and 99 main steps that only call tools, then 50 of a
+        // subagent's: the reply is the oldest of the main agent's newest 100.
+        sessionRow({ id: ROOT, updatedAt: at(1) }),
+        ...step(ROOT, "r1", 300, [["0", said("Just in reach.")]]),
+        ...toolSteps(ROOT, "ra", 99, 200),
+        ...toolSteps(ROOT, "rb", 50, 50, "sub_1"),
+        // 100 main prompts, and 50 of a subagent's: no more than 100 are the main agent's.
+        sessionRow({ id: OTHER, updatedAt: at(1) }),
+        ...Array.from({ length: 100 }, (_, index) =>
+          prompt(OTHER, `o${index + 10}`, 200 - index * 0.5, "Tidy the docs."),
+        ).flat(),
+        ...toolSteps(OTHER, "ob", 50, 50, "sub_1"),
+        // A main reply, then 100 main steps that only call tools.
+        sessionRow({ id: THIRD, updatedAt: at(1) }),
+        ...step(THIRD, "t1", 300, [["0", said("Long ago.")]]),
+        ...toolSteps(THIRD, "ta", 100, 200),
+      ]);
+      const reading = await mimoReading(dir);
+      expect(await reading.ask(ROOT)).toEqual({ message: { text: "Just in reach.", cut: false } });
+      expect(await reading.ask(OTHER)).toEqual({ message: null, reason: "nothing-yet" });
+      expect(await reading.ask(THIRD)).toEqual({ message: null, reason: "too-far-back" });
+    });
+
+    test("after /undo, which can name a subagent's prompt, the main agent's reply before it shows, and nothing of revert is printed", async () => {
+      const { dir, file } = await makeMimoDatabase([
+        // /undo went back to the subagent's prompt, the newest prompt of the session.
+        sessionRow({ id: ROOT, updatedAt: at(1), undoneFrom: messageId("s1") }),
+        ...prompt(ROOT, "u1", 10, "Tidy the docs."),
+        ...step(ROOT, "a1", 9, [["0", said("Earlier reply.")]]),
+        ...prompt(ROOT, "s1", 8, "Clear out the old files.", "sub_1"),
+        ...step(ROOT, "s2", 7, [["0", said("The subagent's reply.")]], { agentId: "sub_1" }),
+        ...step(ROOT, "a2", 6, [["0", said("I deleted the migrations folder.")]]),
+        // /undo went back to the main agent's prompt.
+        sessionRow({ id: OTHER, updatedAt: at(1), undoneFrom: messageId("v8") }),
+        ...prompt(OTHER, "v1", 10, "Tidy the docs."),
+        ...step(OTHER, "v2", 9, [["0", said("Earlier reply.")]]),
+        ...prompt(OTHER, "v8", 8, "Clear out the old files."),
+        ...step(OTHER, "v0", 7, [["0", said("I deleted the migrations folder.")]]),
+      ]);
+      const reading = await mimoReading(dir);
+      expect(await reading.ask(ROOT)).toEqual({ message: { text: "Earlier reply.", cut: false } });
+      expect(await reading.ask(OTHER)).toEqual({ message: { text: "Earlier reply.", cut: false } });
+      for (const id of [ROOT, OTHER]) {
+        const answer = await printed(file, id);
+        for (const words of [
+          "I deleted the migrations folder.",
+          "The subagent's reply.",
+          messageId("s1"),
+          messageId("v8"),
+          "demo-snapshot",
+          PRIVATE_WORDS,
+        ]) {
+          expect(answer).not.toContain(words);
+        }
+      }
+    });
+
+    test("a peer's child session is never read as its parent's or as one of its own, and another session's text never shows", async () => {
+      const { dir, file } = await makeMimoDatabase([
+        sessionRow({ id: ROOT, updatedAt: at(1) }),
+        ...prompt(ROOT, "u1", 10, "Look into it."),
+        ...step(ROOT, "a1", 9, [["0", said("The parent's reply.")]]),
+        // A peer works in a child session, whose turns run under its own id.
+        sessionRow({ id: PEER, parentId: ROOT, updatedAt: at(2) }),
+        ...prompt(PEER, "c1", 4, "Look into it.", PEER),
+        ...step(PEER, "c2", 2, [["0", said("What the peer said.")]], { agentId: PEER }),
+        ...step(PEER, "c3", 1, [["0", said("The peer's main words.")]]),
+        // Another root session, written last.
+        sessionRow({ id: OTHER, updatedAt: at(1) }),
+        ...step(OTHER, "b1", 1, [["0", said("Another session's reply.")]]),
+      ]);
+      const reading = await mimoReading(dir);
+      expect(reading.listed.sort()).toEqual([`mimo-code:${ROOT}`, `mimo-code:${OTHER}`].sort());
+      expect(await reading.ask(ROOT)).toEqual({
+        message: { text: "The parent's reply.", cut: false },
+      });
+      expect(await reading.ask(OTHER)).toEqual({
+        message: { text: "Another session's reply.", cut: false },
+      });
+      expect(await reading.ask(PEER)).toBeNull();
+      expect(JSON.parse(await printed(file, PEER))).toEqual([
+        { kind: "reply", parts: 0, more: 0, n: null, cut: null, text: null },
+      ]);
+      const answer = await printed(file, ROOT);
+      for (const words of [
+        "What the peer said.",
+        "The peer's main words.",
+        "Another session's reply.",
+      ]) {
+        expect(answer).not.toContain(words);
+      }
+    });
+
+    test("what sqlite3 prints stays far under 256 KB, however long the reply", async () => {
+      const { dir, file } = await makeMimoDatabase([
+        sessionRow({ id: ROOT, updatedAt: at(1) }),
+        ...step(ROOT, "g1", 2, []),
+        "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 5000)",
+        `INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) SELECT 'prt_g' || printf('%05d', i), ${text(messageId("g1"))}, ${text(ROOT)}, 0, 0, json_object('type', 'text', 'text', 'y') FROM n;`,
+      ]);
+      const many = await (await mimoReading(dir)).ask(ROOT);
+      expect(many).toMatchObject({ message: { cut: true } });
+      expect((many as { message: { text: string } }).message.text).toMatch(/^(y\n)+y$/);
+      expect(Buffer.byteLength(await printed(file, ROOT))).toBeLessThan(QUESTION_OUTPUT_BYTES);
+      expect(QUESTION_OUTPUT_BYTES).toBe(256 * 1024);
+    });
+
+    test("with either setting off, it is off, by that setting", async () => {
+      const { dir } = await makeMimoDatabase([
+        sessionRow({ id: ROOT, updatedAt: at(1) }),
+        ...step(ROOT, "a1", 2, [["0", said("The reply.")]]),
+      ]);
+      for (const [setting, value] of [
+        ["AGENT_LOOKOUT_LAST_MESSAGE", "off"],
+        ["AGENT_LOOKOUT_WAITING_TEXT", "off"],
+      ] as const) {
+        const adapter = createMimoCodeAdapter({
+          env: { AGENT_LOOKOUT_MIMO_CODE_HOME: dir, [setting]: value },
+          homeDir: "/Users/example",
+          processes: { read: async () => ({ ok: true, running: true }) },
+        });
+        expect((await adapter.poll()).sessions).toHaveLength(1);
+        await expect(adapter.lastMessage(`mimo-code:${ROOT}`)).resolves.toEqual({
+          message: null,
+          reason: "off",
+          setting,
+        });
+      }
+    });
+  },
+);

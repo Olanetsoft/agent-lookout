@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { mkdir } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { lstat, mkdir, readdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 
 import { describe, expect, test } from "vitest";
@@ -14,6 +15,8 @@ import {
   createKiloCodeAdapter,
   KILO_SESSIONS_QUERY,
 } from "@collector/adapters/kilo-code/index";
+import { QUESTION_OUTPUT_BYTES } from "@collector/adapters/opencode/database";
+import { lastTextQuery } from "@collector/adapters/opencode/lastMessages";
 import {
   jsonRows,
   PROBE_QUERY,
@@ -21,6 +24,7 @@ import {
   readSessionRows,
   sqliteArguments,
 } from "@collector/adapters/opencode/sessionRows";
+import { ANSWER_AGAIN_MS } from "@collector/messages/tailReader";
 import {
   assistantData,
   messageId,
@@ -33,6 +37,7 @@ import {
   SECRET_WORDS,
   sessionId,
   sessionRow,
+  text,
   textData,
   toolData,
   userData,
@@ -308,3 +313,339 @@ describe.skipIf(sqlite === null)("the Kilo Code adapter, with the real sqlite3",
     expect(sessions).toEqual([]);
   });
 });
+
+// What a session last said, asked with OpenCode's own question of a database
+// laid out as Kilo Code v7.8.32 lays it out, which for this question is as
+// v7.8.27 does, through the adapter Kilo Code's profile makes.
+
+/** A text part's data, saying these words, with any marks Kilo Code gives it. */
+function said(words: string, marks: Record<string, unknown> = {}): Record<string, unknown> {
+  return { type: "text", text: words, time: { start: 0, end: 0 }, ...marks };
+}
+
+/** Kilo Code's data folder with a database of these rows alone, in WAL mode, and nothing beside it. */
+async function makeKiloDatabase(rows: string[]): Promise<{ dir: string; file: string }> {
+  const dir = path.join(await tempDir(), "kilo");
+  const file = path.join(dir, "kilo.db");
+  await mkdir(dir, { recursive: true });
+  // On stdin, since Linux takes no argument longer than 128 KB.
+  execFileSync(sqlite as string, ["-bail", "-init", "/dev/null", file], {
+    input: ["PRAGMA journal_mode=WAL;", SCHEMA, ...rows].join("\n"),
+    stdio: ["pipe", "ignore", "ignore"],
+  });
+  // The SQLite of macOS keeps the two files once the database is closed; others remove them.
+  await rm(`${file}-wal`, { force: true });
+  await rm(`${file}-shm`, { force: true });
+  return { dir, file };
+}
+
+/** Each file in a folder, by name, with its hash, size and modified time. */
+async function snapshotOf(dir: string): Promise<Record<string, string>> {
+  const found: Record<string, string> = {};
+  for (const name of (await readdir(dir)).sort()) {
+    const info = await lstat(path.join(dir, name));
+    const hash = createHash("sha256")
+      .update(await readFile(path.join(dir, name)))
+      .digest("hex");
+    found[name] = `${hash} ${info.size} ${info.mtimeMs}`;
+  }
+  return found;
+}
+
+/** Kilo Code's adapter over that folder, polled once, and what it answers for a session, a second apart. */
+async function kiloReading(dir: string) {
+  let at = Date.now();
+  const adapter = createKiloCodeAdapter({
+    env: { AGENT_LOOKOUT_KILO_HOME: dir },
+    homeDir: "/Users/example",
+    now: () => at,
+    processes: { read: async () => ({ ok: true, running: true }) },
+  });
+  const { sessions } = await adapter.poll();
+  return {
+    listed: sessions.map((session) => session.id),
+    async ask(id: string) {
+      at += ANSWER_AGAIN_MS;
+      return adapter.lastMessage(`kilo-code:${id}`);
+    },
+  };
+}
+
+/** What sqlite3 prints for the question of this session's last text, asked as the adapter asks it. */
+async function printed(file: string, id: string): Promise<string> {
+  const answer = await runSqlite(
+    sqlite as string,
+    sqliteArguments(file, "whole", lastTextQuery(id) ?? ""),
+    undefined,
+    QUESTION_OUTPUT_BYTES,
+  );
+  if (!answer.ok) throw new Error("sqlite3 did not answer.");
+  return answer.stdout;
+}
+
+describe.skipIf(sqlite === null)(
+  "what a Kilo Code session last said, with the real sqlite3",
+  () => {
+    const ROOT = sessionId("f1");
+    const OTHER = sessionId("f2");
+    const SUBAGENT = sessionId("f3");
+    const THIRD = sessionId("f4");
+    const now = Date.now();
+    const at = (minutes: number) => now - minutes * MINUTE;
+    /** The person's prompt, with one text part of these words. */
+    const prompt = (session: string, suffix: string, minutes: number, words: string) => [
+      messageRow({
+        id: messageId(suffix),
+        sessionId: session,
+        createdAt: at(minutes),
+        data: userData(at(minutes)),
+      }),
+      partRow({
+        id: partId(`${suffix}0`),
+        messageId: messageId(suffix),
+        sessionId: session,
+        createdAt: at(minutes),
+        data: said(words),
+      }),
+    ];
+    /** A step of a reply that ended, with these parts, written in the order given, each `[id suffix, data]`. */
+    const step = (
+      session: string,
+      suffix: string,
+      minutes: number,
+      parts: [string, Record<string, unknown>][],
+      marks: Record<string, unknown> = {},
+    ) => [
+      messageRow({
+        id: messageId(suffix),
+        sessionId: session,
+        createdAt: at(minutes),
+        data: {
+          ...assistantData({ createdAt: at(minutes), completedAt: at(minutes), finish: "stop" }),
+          ...marks,
+        },
+      }),
+      ...parts.map(([part, data]) =>
+        partRow({
+          id: partId(`${suffix}${part}`),
+          messageId: messageId(suffix),
+          sessionId: session,
+          createdAt: at(minutes),
+          data,
+        }),
+      ),
+    ];
+
+    test("is the newest reply's own text parts, in Kilo Code's order, joined with a line break, and no file is made or changed", async () => {
+      const { dir, file } = await makeKiloDatabase([
+        sessionRow({ id: ROOT, updatedAt: at(1) }),
+        ...prompt(ROOT, "u1", 6, "Words of the prompt."),
+        // Written out of the order of their ids, which is the order Kilo Code shows them in.
+        ...step(ROOT, "a1", 5, [
+          ["3", said("Second part.")],
+          ["0", { type: "reasoning", text: "Thinking it over.", time: { start: at(5) } }],
+          ["1", said("First part.")],
+          ["2", toolData({ status: "completed" })],
+          // The warning Kilo Code adds when a step stops at its output limit, and its passing note of progress.
+          ["4", said("Stopped at the output limit.", { ignored: true })],
+          [
+            "5",
+            said("Checking the files.", {
+              synthetic: true,
+              metadata: { "kilocode.lifecycle": "transient" },
+            }),
+          ],
+          ["6", { type: "step-finish", reason: "stop", cost: 0, tokens: { input: 1, output: 1 } }],
+        ]),
+        // A compaction's summary, then a reply under way, whose text part Kilo Code saves empty.
+        ...step(ROOT, "a2", 4, [["0", said("The summary of the session.")]], {
+          summary: true,
+          mode: "compaction",
+          agent: "compaction",
+        }),
+        messageRow({
+          id: messageId("a3"),
+          sessionId: ROOT,
+          createdAt: at(3),
+          data: assistantData({ createdAt: at(3) }),
+        }),
+        partRow({
+          id: partId("a30"),
+          messageId: messageId("a3"),
+          sessionId: ROOT,
+          createdAt: at(3),
+          data: { type: "text", text: "", time: { start: at(3) } },
+        }),
+      ]);
+      const before = await snapshotOf(dir);
+      expect(Object.keys(before)).toEqual(["kilo.db"]);
+
+      const reading = await kiloReading(dir);
+      expect(reading.listed).toEqual([`kilo-code:${ROOT}`]);
+      expect(await reading.ask(ROOT)).toEqual({
+        message: { text: "First part.\nSecond part.", cut: false },
+      });
+      expect(await snapshotOf(dir)).toEqual(before);
+
+      const answer = await printed(file, ROOT);
+      for (const words of [
+        "Words of the prompt.",
+        "Thinking it over.",
+        "Stopped at the output limit.",
+        "Checking the files.",
+        "kilocode.lifecycle",
+        "The summary of the session.",
+        PRIVATE_WORDS,
+        SECRET_WORDS,
+      ]) {
+        expect(answer).not.toContain(words);
+      }
+      expect(await snapshotOf(dir)).toEqual(before);
+    });
+
+    test("after /undo, the reply before the messages it took back shows, as Kilo Code shows it, and nothing of revert is printed", async () => {
+      /** Two prompts, each with its reply. */
+      const turns = (session: string, letter: string) => [
+        sessionRow({ id: session, updatedAt: at(1) }),
+        ...prompt(session, `${letter}1`, 10, "Tidy the docs."),
+        ...step(session, `${letter}2`, 9, [["0", said("Earlier reply.")]]),
+        ...prompt(session, `${letter}8`, 8, "Clear out the old files."),
+        // Written after the prompt, with a smaller id: what comes after it is told by time first.
+        ...step(session, `${letter}0`, 7, [["0", said("I deleted the migrations folder.")]]),
+      ];
+      /** The revert Kilo Code writes, with its own `workspace` beside OpenCode's fields. */
+      const revert = (session: string, fields: Record<string, unknown>) =>
+        `UPDATE session SET revert = ${text(JSON.stringify({ snapshot: "demo-snapshot", diff: PRIVATE_WORDS, workspace: "restored", ...fields }))} WHERE id = ${text(session)};`;
+      const { dir, file } = await makeKiloDatabase([
+        // /undo went back to the second prompt.
+        ...turns(ROOT, "a"),
+        revert(ROOT, { messageID: messageId("a8") }),
+        // /undo of a part of the newest reply names that reply, and hides it whole.
+        ...turns(OTHER, "b"),
+        revert(OTHER, { messageID: messageId("b0"), partID: partId("b00") }),
+        // No undo.
+        ...turns(THIRD, "c"),
+      ]);
+      const reading = await kiloReading(dir);
+      expect(await reading.ask(ROOT)).toEqual({ message: { text: "Earlier reply.", cut: false } });
+      expect(await reading.ask(OTHER)).toEqual({ message: { text: "Earlier reply.", cut: false } });
+      expect(await reading.ask(THIRD)).toEqual({
+        message: { text: "I deleted the migrations folder.", cut: false },
+      });
+
+      for (const id of [ROOT, OTHER]) {
+        const answer = await printed(file, id);
+        for (const words of [
+          "I deleted the migrations folder.",
+          messageId("a8"),
+          messageId("b0"),
+          partId("b00"),
+          "demo-snapshot",
+          "restored",
+          PRIVATE_WORDS,
+        ]) {
+          expect(answer).not.toContain(words);
+        }
+      }
+    });
+
+    test("a subagent's newer reply is never its parent's, its session is not asked as one of its own, and another session's text never shows", async () => {
+      const { dir, file } = await makeKiloDatabase([
+        sessionRow({ id: ROOT, updatedAt: at(1) }),
+        ...prompt(ROOT, "u1", 10, "Look into it."),
+        ...step(ROOT, "a1", 9, [
+          ["0", said("The parent's reply.")],
+          // The task tool that started the subagent, whose output is never taken.
+          ["1", toolData({ status: "completed", tool: "task" })],
+        ]),
+        // The subagent's own session, written after the parent's reply.
+        sessionRow({ id: SUBAGENT, parentId: ROOT, updatedAt: at(2) }),
+        ...prompt(SUBAGENT, "c1", 4, "Look into it."),
+        ...step(SUBAGENT, "c2", 2, [["0", said("What the subagent said.")]]),
+        // Another root session, written last.
+        sessionRow({ id: OTHER, updatedAt: at(1) }),
+        ...step(OTHER, "b1", 1, [["0", said("Another session's reply.")]]),
+      ]);
+      const reading = await kiloReading(dir);
+      expect(reading.listed.sort()).toEqual([`kilo-code:${ROOT}`, `kilo-code:${OTHER}`].sort());
+      expect(await reading.ask(ROOT)).toEqual({
+        message: { text: "The parent's reply.", cut: false },
+      });
+      expect(await reading.ask(OTHER)).toEqual({
+        message: { text: "Another session's reply.", cut: false },
+      });
+      // Not listed, so not asked; and asked all the same, the question finds no root session.
+      expect(await reading.ask(SUBAGENT)).toBeNull();
+      expect(JSON.parse(await printed(file, SUBAGENT))).toEqual([
+        { kind: "reply", parts: 0, more: 0, n: null, cut: null, text: null },
+      ]);
+      const answer = await printed(file, ROOT);
+      expect(answer).not.toContain("What the subagent said.");
+      expect(answer).not.toContain("Another session's reply.");
+    });
+
+    test("looks no further back than the newest 100 messages, and what sqlite3 prints stays far under 256 KB", async () => {
+      const toolSteps = (session: string, letter: string, count: number) =>
+        Array.from({ length: count }, (_, index) =>
+          step(session, `${letter}${index + 10}`, 100 - index * 0.5, [
+            ["0", toolData({ status: "completed" })],
+          ]),
+        ).flat();
+      const { dir, file } = await makeKiloDatabase([
+        // A reply, then 100 steps that only call tools.
+        sessionRow({ id: ROOT, updatedAt: at(1) }),
+        ...step(ROOT, "d1", 200, [["0", said("Long ago.")]]),
+        ...toolSteps(ROOT, "d", 100),
+        // A reply far longer than is kept, then five thousand parts of one letter each.
+        sessionRow({ id: OTHER, updatedAt: at(1) }),
+        ...step(OTHER, "e1", 2, [
+          ["0", said("filled below")],
+          ["1", said("The end of it.")],
+        ]),
+        `UPDATE part SET data = json_set(data, '$.text', hex(zeroblob(500000))) WHERE id = ${text(partId("e10"))};`,
+        sessionRow({ id: THIRD, updatedAt: at(1) }),
+        ...step(THIRD, "g1", 2, []),
+        "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 5000)",
+        `INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) SELECT 'prt_g' || printf('%05d', i), ${text(messageId("g1"))}, ${text(THIRD)}, 0, 0, json_object('type', 'text', 'text', 'y') FROM n;`,
+      ]);
+      const reading = await kiloReading(dir);
+      expect(await reading.ask(ROOT)).toEqual({ message: null, reason: "too-far-back" });
+
+      const long = await reading.ask(OTHER);
+      expect(long).toMatchObject({ message: { cut: true } });
+      expect(
+        (long as { message: { text: string } }).message.text.endsWith("0000\nThe end of it."),
+      ).toBe(true);
+      expect((await printed(file, OTHER)).length).toBeLessThan(16 * 1024);
+
+      const many = await reading.ask(THIRD);
+      expect(many).toMatchObject({ message: { cut: true } });
+      expect((many as { message: { text: string } }).message.text).toMatch(/^(y\n)+y$/);
+      expect(Buffer.byteLength(await printed(file, THIRD))).toBeLessThan(QUESTION_OUTPUT_BYTES);
+      expect(QUESTION_OUTPUT_BYTES).toBe(256 * 1024);
+    });
+
+    test("with either setting off, it is off, by that setting", async () => {
+      const { dir } = await makeKiloDatabase([
+        sessionRow({ id: ROOT, updatedAt: at(1) }),
+        ...step(ROOT, "a1", 2, [["0", said("The reply.")]]),
+      ]);
+      for (const [setting, value] of [
+        ["AGENT_LOOKOUT_LAST_MESSAGE", "off"],
+        ["AGENT_LOOKOUT_WAITING_TEXT", "off"],
+      ] as const) {
+        const adapter = createKiloCodeAdapter({
+          env: { AGENT_LOOKOUT_KILO_HOME: dir, [setting]: value },
+          homeDir: "/Users/example",
+          processes: { read: async () => ({ ok: true, running: true }) },
+        });
+        expect((await adapter.poll()).sessions).toHaveLength(1);
+        await expect(adapter.lastMessage(`kilo-code:${ROOT}`)).resolves.toEqual({
+          message: null,
+          reason: "off",
+          setting,
+        });
+      }
+    });
+  },
+);

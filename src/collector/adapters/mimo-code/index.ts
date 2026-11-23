@@ -1,6 +1,9 @@
 import type { SourceCapabilities, SourceId } from "../../../core/sessions/session.ts";
-import type { Adapter } from "../adapter.ts";
-import { createOpencodeFamilyAdapter, type OpencodeAdapterOptions } from "../opencode/index.ts";
+import {
+  createOpencodeFamilyAdapter,
+  type OpencodeAdapter,
+  type OpencodeAdapterOptions,
+} from "../opencode/index.ts";
 import { databaseFor, dataFolderFor, type OpencodeProfile } from "../opencode/profile.ts";
 import { v1SessionsQuery, type V1Extras, type V1Tools } from "../opencode/sessionRows.ts";
 
@@ -32,9 +35,11 @@ export {
  * is read only when MiMo Code marks it `generated`, or `user` once the person
  * renamed the session.
  *
- * It reads no `session_v2` and no last message. See
- * docs/adapters/mimo-code.md. Built from MiMo Code's source at v0.1.17 (MIT),
- * and not yet checked on a computer running it.
+ * It reads no `session_v2`. What a session last said, the main agent's
+ * newest reply, is asked with OpenCode's question while its details are open
+ * (`../opencode/lastMessages.ts`). See docs/adapters/mimo-code.md.
+ * Built from MiMo Code's source at v0.1.17 (MIT), and not yet checked on a
+ * computer running it.
  */
 
 export const SOURCE_ID: SourceId = "mimo-code";
@@ -116,6 +121,10 @@ export const UNCHECKED_NOTE =
 /** Said when a session's newest message is one this adapter does not know. */
 export const UNKNOWN_MESSAGE_NOTE =
   "Some sessions end in a way Agent Lookout does not know, perhaps from a newer MiMo Code, so they show as unknown.";
+
+/** What Sources says of the last-message read while it is on. */
+export const LAST_MESSAGE_READ =
+  "a MiMo Code session's newest reply, with sqlite3, while its details are open";
 
 /** Said on Windows, where nothing of MiMo Code's is read. */
 export const WINDOWS_DETAIL =
@@ -212,7 +221,7 @@ export const MIMO_CODE_PROFILE: OpencodeProfile = {
     unknownMessage: UNKNOWN_MESSAGE_NOTE,
     windows: WINDOWS_DETAIL,
   },
-  lastMessageRead: null,
+  lastMessageRead: LAST_MESSAGE_READ,
 };
 
 /**
@@ -240,8 +249,8 @@ export function mimoCodeDatabaseFor(env: NodeJS.ProcessEnv, homeDir: string): st
   return databaseFor(MIMO_CODE_PROFILE, env, homeDir);
 }
 
-/** Everything the adapter touches outside itself. Tests replace these. It reads no last message, so it has no limits for one. */
-export type MimoCodeAdapterOptions = Omit<OpencodeAdapterOptions, "lastMessageLimits">;
+/** Everything the adapter touches outside itself. Tests replace these. */
+export type MimoCodeAdapterOptions = OpencodeAdapterOptions;
 
 /**
  * Finds MiMo Code's sessions on this machine from the database MiMo Code
@@ -250,11 +259,18 @@ export type MimoCodeAdapterOptions = Omit<OpencodeAdapterOptions, "lastMessageLi
  * server: the status comes from the rows of `message`, `part` and
  * `actor_registry`.
  *
+ * What a session last said, the main agent's newest reply, is asked of the
+ * database with one more fixed question, OpenCode's, only while a page has
+ * the session's details open, and never by a poll.
+ * `AGENT_LOOKOUT_LAST_MESSAGE=off` or `AGENT_LOOKOUT_WAITING_TEXT=off` stops
+ * it.
+ *
  * MiMo Code not being installed costs nothing: when its data folder is
  * missing, the adapter says so and looks again only once a minute, with a
  * single `stat`, and runs neither `sqlite3` nor `ps`. Nothing is read on
  * Windows.
  */
-export function createMimoCodeAdapter(options: MimoCodeAdapterOptions = {}): Adapter {
-  return createOpencodeFamilyAdapter(MIMO_CODE_PROFILE, options);
+export function createMimoCodeAdapter(options: MimoCodeAdapterOptions = {}): OpencodeAdapter {
+  // MiMo Code's profile reads last messages, so the adapter has its `lastMessage`.
+  return createOpencodeFamilyAdapter(MIMO_CODE_PROFILE, options) as OpencodeAdapter;
 }

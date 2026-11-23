@@ -347,9 +347,10 @@ export function createEndReader<Target, Stamp>(
 
 /**
  * The reader of last messages for an agent that writes each session to a
- * file of its own, as every agent but OpenCode does: `createEndReader`,
- * reading the end of that file with `readTranscriptTail`, at most its last
- * 256 KB, by position, and not again while the file is unchanged.
+ * file of its own, as every agent whose last message is read does but
+ * OpenCode, Kilo Code and MiMo Code: `createEndReader`, reading the end of that file with
+ * `readTranscriptTail`, at most its last 256 KB, by position, and not again
+ * while the file is unchanged.
  */
 export function createTailReader<Target>(options: TailReaderOptions<Target>): TailReader<Target> {
   const io = options.io ?? nodeIo;

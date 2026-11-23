@@ -275,7 +275,7 @@ export interface OpencodeFamilyAdapter extends Adapter {
   readonly lastMessagesKept: number;
 }
 
-/** The OpenCode adapter, which reads what its sessions last said when asked. */
+/** The OpenCode adapter, and Kilo Code's and MiMo Code's, which read what their sessions last said when asked. */
 export interface OpencodeAdapter extends OpencodeFamilyAdapter {
   lastMessage: NonNullable<Adapter["lastMessage"]>;
 }
@@ -342,8 +342,10 @@ export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): Ope
  * `createOpencodeAdapter` describes it, with the names, files, programs, tools
  * and words of `profile`. OpenCode's adapter is this with `OPENCODE_PROFILE`,
  * and Kilo Code's and MiMo Code's with their own (`../kilo-code/index.ts`,
- * `../mimo-code/index.ts`). A profile with no `lastMessageRead` reads no last
- * message, and its adapter has no `lastMessage`.
+ * `../mimo-code/index.ts`). Each of the three reads a session's last message
+ * with the same question, given the profile's `v1Extras`. A profile with no
+ * `lastMessageRead` reads no last message, and its adapter has no
+ * `lastMessage`.
  */
 export function createOpencodeFamilyAdapter(
   profile: OpencodeProfile,
@@ -387,6 +389,7 @@ export function createOpencodeFamilyAdapter(
       ? createOpencodeLastMessages({
           reader,
           database,
+          extras: profile.v1Extras,
           now,
           limits: options.lastMessageLimits,
         })

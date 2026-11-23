@@ -8,7 +8,7 @@ import {
   MESSAGES_LOOKED_AT,
   TEXT_HANDED_BACK,
 } from "@collector/adapters/opencode/lastMessages";
-import { sqliteArguments } from "@collector/adapters/opencode/sessionRows";
+import { sqliteArguments, type V1Extras } from "@collector/adapters/opencode/sessionRows";
 import {
   ANSWER_AGAIN_MS,
   createTailLimits,
@@ -36,6 +36,8 @@ const SAID_A = `opencode:${A}`;
 const SAID_B = `opencode:${B}`;
 const WAL = `${DATABASE}-wal`;
 const SHM = `${DATABASE}-shm`;
+/** A main agent whose messages alone say how a session stands, as MiMo Code's. */
+const MAIN_AGENT: V1Extras = { mainAgent: "main" };
 
 describe("the question", () => {
   test("names the session by its id alone, once it is an id OpenCode makes", () => {
@@ -120,6 +122,31 @@ describe("the question", () => {
     expect(question).toContain("LIMIT 100)");
     expect(question).toContain("substr(t, -4000)");
     expect(question).toContain("WHERE after < 4000");
+  });
+
+  test("with no extras, is OpenCode's question, which Kilo Code is asked too", () => {
+    expect(lastTextQuery(A, {})).toBe(lastTextQuery(A));
+    expect(lastTextQuery(A, { actors: true, titleSources: ["generated"] })).toBe(lastTextQuery(A));
+  });
+
+  test("with a main agent, looks through and counts only its messages, and looks for the one /undo names among every agent's", () => {
+    const question = lastTextQuery(A, MAIN_AGENT) ?? "";
+    // Where the newest 100 are looked through, and where they are counted.
+    expect(question.match(/ AND m\.agent_id = 'main'/g)).toHaveLength(2);
+    expect(question.match(/\bagent_id\b/g)).toHaveLength(2);
+    expect(question).toContain(
+      "WHERE m.session_id = (SELECT id FROM asked) AND m.agent_id = 'main' AND NOT EXISTS (SELECT 1 FROM undone u",
+    );
+    expect(question).toContain(
+      "(SELECT count(*) FROM (SELECT 1 FROM message m WHERE m.session_id = (SELECT id FROM asked) AND m.agent_id = 'main' AND NOT EXISTS",
+    );
+    expect(question).toContain(
+      "undone AS (SELECT c.id, c.time_created FROM message c WHERE c.session_id = (SELECT id FROM asked) AND c.id = (SELECT undo_from FROM asked)),",
+    );
+    // Nothing else differs, so it asks for the same fields of the same three tables, and prints no agent_id.
+    expect(question.replaceAll(" AND m.agent_id = 'main'", "")).toBe(lastTextQuery(A));
+    expect(question.replace(A, B)).toBe(lastTextQuery(B, MAIN_AGENT));
+    expect(lastTextQuery(`${A}'`, MAIN_AGENT)).toBeNull();
   });
 });
 
@@ -213,7 +240,9 @@ describe("its answer", () => {
 });
 
 /** A reader of last messages over the stand-in files and sqlite3, with A and B listed. */
-function setUp(options: { platform?: NodeJS.Platform; files?: MemoryFiles } = {}) {
+function setUp(
+  options: { platform?: NodeJS.Platform; files?: MemoryFiles; extras?: V1Extras } = {},
+) {
   const clock = handClock(NOW);
   const files = options.files ?? memoryFiles(clock.now);
   if (options.files === undefined) {
@@ -221,7 +250,7 @@ function setUp(options: { platform?: NodeJS.Platform; files?: MemoryFiles } = {}
     files.write(WAL, "frames");
     files.write(SHM, "index");
   }
-  const sqlite = standInSqlite();
+  const sqlite = standInSqlite(undefined, undefined, undefined, options.extras);
   sqlite.said(A, lastTextJson(["The reply."]));
   sqlite.said(B, lastTextJson(["Another reply."]));
   const reader = createDatabaseReader({
@@ -235,6 +264,7 @@ function setUp(options: { platform?: NodeJS.Platform; files?: MemoryFiles } = {}
   const messages = createOpencodeLastMessages({
     reader,
     database: DATABASE,
+    extras: options.extras,
     now: clock.now,
     limits,
     later: () => {},
@@ -272,6 +302,20 @@ describe("the reader", () => {
     ]);
     expect(QUESTION_OUTPUT_BYTES).toBe(256 * 1024);
     expect(sqlite.runs).toHaveLength(1);
+  });
+
+  test("given a main agent, asks the question kept to its messages, and the same cap and arguments", async () => {
+    const { sqlite, messages } = setUp({ extras: MAIN_AGENT });
+    expect(await messages.read(SAID_A)).toEqual({ message: { text: "The reply.", cut: false } });
+    expect(sqlite.questions()).toEqual([
+      {
+        binary: "/usr/bin/sqlite3",
+        args: sqliteArguments(DATABASE, "with-wal", lastTextQuery(A, MAIN_AGENT) ?? ""),
+        timeoutMs: undefined,
+        maxOutputBytes: QUESTION_OUTPUT_BYTES,
+      },
+    ]);
+    expect(lastTextQuery(A, MAIN_AGENT)).not.toBe(lastTextQuery(A));
   });
 
   test("an id the last keep did not list, or another agent's, is null, and nothing is looked at", async () => {

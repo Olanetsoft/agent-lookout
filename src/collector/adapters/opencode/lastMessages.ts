@@ -2,7 +2,7 @@ import type { LastMessageResponse } from "../../../core/api.ts";
 import { MAX_MESSAGE_LENGTH, messageText } from "../../../core/text.ts";
 import { createEndReader, type TailLimits, type TailReader } from "../../messages/tailReader.ts";
 import type { DatabaseReader, DatabaseStamp } from "./database.ts";
-import { jsonRows, SESSION_ID } from "./sessionRows.ts";
+import { jsonRows, mainOnly, SESSION_ID, type V1Extras } from "./sessionRows.ts";
 
 /**
  * What a session of OpenCode 1.x last said, asked of OpenCode's database with one
@@ -53,6 +53,15 @@ import { jsonRows, SESSION_ID } from "./sessionRows.ts";
  * it. A prompt, the thinking, a tool's call or output, a file, a synthetic or
  * ignored part, a compaction's summary, a message `/undo` took back and a
  * subagent's session's text are never taken.
+ *
+ * Kilo Code and MiMo Code, built from OpenCode's source, are asked the same
+ * question of their own databases. Kilo Code's, checked at v7.8.32, is
+ * OpenCode's as it is. MiMo Code's subagents write into the session itself,
+ * so its question keeps to the main agent's messages, `agent_id` `main`,
+ * when it looks through and counts the newest 100 (`V1Extras`). `/undo` there
+ * goes back across every agent's messages, so the message `revert` names is
+ * looked for among them all (`revert` in MiMo Code v0.1.17's
+ * `packages/cli/src/session/revert.ts`).
  */
 
 /** How many of a session's newest messages are looked through for its newest reply with text. */
@@ -118,11 +127,17 @@ const NOT_UNDONE =
  * The session must be a root session, as every listed one is. Each `data` is
  * read only once `json_valid` says it is JSON, so one row that is not is
  * passed over rather than failing the whole answer.
+ *
+ * With a `mainAgent` in `extras`, as MiMo Code's, the messages looked through
+ * and counted are the main agent's alone, by `agent_id`, tested inside SQLite
+ * and never printed. `undone` is looked for among every agent's. Left out,
+ * the question is OpenCode's, and Kilo Code's.
  */
-export function lastTextQuery(sessionId: string): string | null {
+export function lastTextQuery(sessionId: string, extras: V1Extras = {}): string | null {
   if (!SESSION_ID.test(sessionId)) return null;
   const limit = MESSAGES_LOOKED_AT;
   const kept = TEXT_HANDED_BACK;
+  const main = mainOnly(extras);
   return [
     "WITH asked AS (SELECT s.id,",
     "CASE WHEN json_valid(s.revert) THEN json_extract(s.revert, '$.messageID') END AS undo_from",
@@ -130,7 +145,7 @@ export function lastTextQuery(sessionId: string): string | null {
     "undone AS (SELECT c.id, c.time_created FROM message c",
     "WHERE c.session_id = (SELECT id FROM asked) AND c.id = (SELECT undo_from FROM asked)),",
     `recent AS (SELECT m.id, m.time_created, ${REPLY_STEP} AS step FROM message m`,
-    `WHERE m.session_id = (SELECT id FROM asked) AND ${NOT_UNDONE}`,
+    `WHERE m.session_id = (SELECT id FROM asked)${main("m")} AND ${NOT_UNDONE}`,
     `ORDER BY m.time_created DESC, m.id DESC LIMIT ${limit}),`,
     "reply AS (SELECT r.id FROM recent r WHERE r.step = 1",
     `AND EXISTS (SELECT 1 FROM part p WHERE p.message_id = r.id AND ${TEXT_PART})`,
@@ -140,7 +155,7 @@ export function lastTextQuery(sessionId: string): string | null {
     "ends AS (SELECT id, t, coalesce(sum(length(t) + 1) OVER",
     "(ORDER BY id DESC ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS after FROM texts)",
     "SELECT 'reply' AS kind, (SELECT count(*) FROM texts) AS parts,",
-    "(SELECT count(*) FROM (SELECT 1 FROM message m WHERE m.session_id = (SELECT id FROM asked)",
+    `(SELECT count(*) FROM (SELECT 1 FROM message m WHERE m.session_id = (SELECT id FROM asked)${main("m")}`,
     `AND ${NOT_UNDONE} LIMIT ${limit + 1})) > ${limit} AS more, NULL AS n, NULL AS cut, NULL AS text`,
     "UNION ALL SELECT 'text', NULL, NULL, row_number() OVER (ORDER BY id),",
     `length(t) > ${kept}, substr(t, -${kept}) FROM ends WHERE after < ${kept}`,
@@ -216,6 +231,8 @@ export interface OpencodeLastMessagesOptions {
   reader: Pick<DatabaseReader, "askOnce">;
   /** The database's path, which `reader` reads. */
   database: string;
+  /** What the agent's layout has beyond OpenCode's, as MiMo Code's main agent. Left out, none. */
+  extras?: V1Extras;
   /** Shared with the other agents' readers. Left out, the reader has its own. */
   limits?: TailLimits;
   now?: () => number;
@@ -242,11 +259,11 @@ export interface OpencodeLastMessagesOptions {
 export function createOpencodeLastMessages(
   options: OpencodeLastMessagesOptions,
 ): TailReader<string> {
-  const { reader, database } = options;
+  const { reader, database, extras } = options;
   return createEndReader<string, DatabaseStamp>({
     find: () => Promise.resolve(database),
     async readEnd(_file, known, sessionId) {
-      const question = lastTextQuery(sessionId);
+      const question = lastTextQuery(sessionId, extras);
       if (question === null) throw new Error("Not an id OpenCode makes for a session.");
       const read = await reader.askOnce(question, known);
       if (read.unchanged) return read;

@@ -516,8 +516,8 @@ export function createCollector(options: CollectorOptions): Collector {
   });
   if (remotes.problem !== null) warn(remotesProblemLine(remotes.problem));
   // One set of limits for every agent's last messages, those of Claude Code,
-  // Codex, the Antigravity CLI, Antigravity, Gemini CLI, OpenCode and Qwen
-  // Code together: four reads a second, eight kept.
+  // Codex, the Antigravity CLI, Antigravity, Gemini CLI, OpenCode, Qwen Code,
+  // Kilo Code and MiMo Code together: four reads a second, eight kept.
   const lastMessageLimits = createTailLimits();
   const localAdapters = options.adapters ?? [
     createClaudeCodeAdapter({
@@ -593,10 +593,22 @@ export function createCollector(options: CollectorOptions): Collector {
     }),
     createContinueAdapter({ env: options.env, now, pollIntervalMs: intervalMs, platform }),
     createCrushAdapter({ env: options.env, now, pollIntervalMs: intervalMs, platform }),
-    // Read as OpenCode is, with no last message, so it needs no share of the limits.
-    createKiloCodeAdapter({ env: options.env, now, pollIntervalMs: intervalMs, platform }),
-    // Read as Kilo Code is, with no last message.
-    createMimoCodeAdapter({ env: options.env, now, pollIntervalMs: intervalMs, platform }),
+    // Read as OpenCode is, its last message too, with the same share of the limits.
+    createKiloCodeAdapter({
+      env: options.env,
+      now,
+      pollIntervalMs: intervalMs,
+      platform,
+      lastMessageLimits,
+    }),
+    // Read as Kilo Code is, with the main agent's last message.
+    createMimoCodeAdapter({
+      env: options.env,
+      now,
+      pollIntervalMs: intervalMs,
+      platform,
+      lastMessageLimits,
+    }),
     // Read as Pi is, with no last message.
     createKimchiAdapter({ env: options.env, now, pollIntervalMs: intervalMs, platform }),
     // Read as Pi is, with a status of its own from its leases and journals, and no last message.
