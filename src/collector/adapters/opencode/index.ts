@@ -116,7 +116,7 @@ export const NEEDS_YOU_NOTE =
 
 /** Said whenever OpenCode is watched, until the adapter has been checked on a computer running it. */
 export const UNCHECKED_NOTE =
-  "This was built from the source of OpenCode 1.19.0 and 2.2.5 and not yet checked on a computer running OpenCode, so a status can be wrong.";
+  "This was checked against the source of OpenCode 1.19.6 and 2.3.2 and not yet on a computer running OpenCode, so a status can be wrong.";
 
 /** Said while a session of OpenCode 2's is listed, since what shows for it differs from 1.x. */
 export const OPENCODE_2_SESSIONS_NOTE =
@@ -329,7 +329,8 @@ type HomeFrom = "agent-lookout" | "default";
  * a missing OpenCode.
  *
  * This was built from OpenCode's source at v1.19.0, with `session_v2` read at
- * v2.2.5, and has not yet been checked on a computer running OpenCode.
+ * v2.2.5, and checked again against v1.19.6 and v2.3.2. It has not yet been
+ * checked on a computer running OpenCode.
  */
 export function createOpencodeAdapter(options: OpencodeAdapterOptions = {}): OpencodeAdapter {
   // OpenCode's profile reads last messages, so the adapter has its `lastMessage`.

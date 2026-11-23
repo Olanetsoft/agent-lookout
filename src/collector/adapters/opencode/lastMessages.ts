@@ -12,8 +12,8 @@ import { jsonRows, SESSION_ID } from "./sessionRows.ts";
  * is no file of the session's own whose end could be read. The question is
  * asked with the same `sqlite3`, the same address and the same arguments as
  * the poll's (`database.ts`), and its answer stands in for a transcript's
- * end. These notes are from OpenCode's source at v1.19.0, not yet checked on
- * a computer running it:
+ * end. These notes are from OpenCode's source at v1.19.0, checked again
+ * against v1.19.6, and not yet checked on a computer running it:
  *
  * - Each step of a reply is an `assistant` message of its own, and its parts
  *   are rows of `part`, which OpenCode shows in the order of their ids

@@ -9,9 +9,9 @@
 // it. Waits for an answer or an approval are in the service's memory alone, and
 // nothing marks a session closed, since one background service owns every
 // session. So a session is never "needs-you" here. This was built from
-// OpenCode's source at v2.2.5, and has not yet been checked on a computer
-// running OpenCode. See docs/adapters/opencode.md for where each value comes
-// from.
+// OpenCode's source at v2.2.5, and checked again against v2.3.2. It has not
+// yet been checked on a computer running OpenCode. See
+// docs/adapters/opencode.md for where each value comes from.
 
 import type { SessionStatus } from "../../sessions/session.ts";
 import { plausibleTime } from "../../time.ts";

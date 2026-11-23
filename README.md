@@ -90,7 +90,7 @@ Mistral Vibe support was built from the source of Vibe 2.26.1 and 3.0.4 and has 
 
 Gemini CLI support was built from its source at v0.64.0, with its tool calls checked again at v0.70.0, and has not yet been checked on a machine running it.
 
-OpenCode support was built from its source at v1.19.0 and v2.2.5 and has not yet been checked on a computer running it.
+OpenCode support was built from its source at v1.19.0 and v2.2.5, checked again at v1.19.6 and v2.3.2, and has not yet been checked on a computer running it.
 
 Qwen Code support was built from Qwen Code's source at 0.28.3 and has not yet been checked on a machine running it.
 

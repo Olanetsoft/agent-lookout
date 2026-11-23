@@ -347,7 +347,7 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 
 **Where.** `src/collector/adapters/opencode/`, with the mappings in `src/core/mapping/opencode/opencodeMapping.ts` and, for OpenCode 2, `opencode2Mapping.ts`. [adapters/opencode.md](adapters/opencode.md) is the full reference. The [Kilo Code](#kilo-code) and [MiMo Code](#mimo-code) adapters share these modules, each with a profile of its own.
 
-**Where it came from.** Issue #18 asked for OpenCode. It reads OpenCode 1.x's sessions, and, since #189, OpenCode 2's, from `session_v2` in the same file. It was built from OpenCode's source at v1.19.0, with `session_v2` read at v2.2.5, and has not yet been checked on a computer running OpenCode. The card says so (`UNCHECKED_NOTE`).
+**Where it came from.** Issue #18 asked for OpenCode. It reads OpenCode 1.x's sessions, and, since #189, OpenCode 2's, from `session_v2` in the same file. It was built from OpenCode's source at v1.19.0, with `session_v2` read at v2.2.5, checked again at v1.19.6 and v2.3.2, and has not yet been checked on a computer running OpenCode. The card says so (`UNCHECKED_NOTE`).
 
 **Why `sqlite3`.** OpenCode keeps every session, message and part in one SQLite database, `opencode.db`. Starting `opencode` makes OpenCode's folders, and `opencode session list`, the command checked, also opens that database to write. A plugin needs a change to OpenCode's config. So the adapter reads the database alone, with the system's `sqlite3`, started as for Antigravity, and never on Windows.
 

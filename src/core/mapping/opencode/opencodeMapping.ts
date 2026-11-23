@@ -10,8 +10,9 @@
 // presses Esc. So a session is "needs-you" while one of those waits, and
 // otherwise working, idle, failed, finished or unknown here. This was built
 // from OpenCode's source at v1.19.0, with the waits checked at v1.19.5, and
-// has not yet been checked on a computer running OpenCode. See
-// docs/adapters/opencode.md for where each value comes from.
+// checked again against v1.19.6. It has not yet been checked on a computer
+// running OpenCode. See docs/adapters/opencode.md for where each value comes
+// from.
 //
 // Kilo Code's sessions map the same way (docs/adapters/kilo-code.md), with
 // one more rule: Kilo Code's `suggest` waits inside its call while Kilo Code
