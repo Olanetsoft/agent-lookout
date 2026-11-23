@@ -23,6 +23,7 @@ import {
   fixtureSessions,
   HOME,
   ids,
+  indexLine,
   lockPath,
   messageLine,
   metaLine,
@@ -32,6 +33,7 @@ import {
   rolloutPath,
   threadId,
   turnLine,
+  userItemLine,
 } from "@tests/fixtures/codex";
 import { handClock, healthy, inTimeZone, noLockFolder } from "@tests/support/adapters/codexAdapter";
 import { CODEX_FIXTURE_HOME, makeCodexHome, tempDir } from "@tests/support/node/tempFiles";
@@ -229,6 +231,44 @@ describe("the Codex adapter, on a folder laid out as Codex lays it out", () => {
     await expect(later.lastMessage(`codex:${thread}`)).resolves.toEqual({
       message: { text: "Now it is read.", cut: false },
     });
+  });
+
+  test("a name that is the first prompt cut with … gives way to the folder's, from the session file's head alone", async () => {
+    const thread = threadId("e6");
+    const file = path.relative("/h", rolloutPath("/h", "2026-10-01T11-59-05", thread));
+    const prompt = "Add a retry to the demo upload job so that a failed request is tried again.";
+    const home = await makeCodexHome({
+      [file]: rollout(
+        metaLine(NOW - MINUTE, { id: thread, cwd: "/Users/example/code/demo-upload" }),
+        turnLine(NOW - MINUTE, "task_started"),
+        messageLine(NOW - MINUTE, prompt),
+        userItemLine(NOW - MINUTE, prompt),
+      ),
+      [`thread-writer-locks/${thread}.lock`]: "",
+    });
+    const { io, calls } = recordingIo();
+    const clock = handClock();
+    const adapter = adapterFor(home, { io, now: clock.now });
+    const named = async () => (await adapter.poll()).sessions.map((session) => session.name);
+    expect(await named()).toEqual(["demo-upload"]);
+
+    // Codex saves the title once the prompt is written, so it is compared on the next poll.
+    const index = path.join(home, "session_index.jsonl");
+    await writeFile(
+      index,
+      rollout(indexLine(thread, "Add a retry to the demo upload job so that a failed request…")),
+    );
+    calls.length = 0;
+    clock.advance(2_000);
+    expect(await named()).toEqual(["demo-upload"]);
+    expect(calls.filter((call) => call.method === "openRegular").map((call) => call.path)).toEqual([
+      index,
+      path.join(home, file),
+    ]);
+
+    await appendFile(index, rollout(indexLine(thread, "Demo upload retries")));
+    clock.advance(2_000);
+    expect(await named()).toEqual(["Demo upload retries"]);
   });
 
   test("a turn that ends shows as idle, and once Codex closes the session it is finished", async () => {

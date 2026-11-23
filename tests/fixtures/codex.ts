@@ -1,6 +1,7 @@
 // Test fixtures only. Every id, name and path here is invented and generic.
-// The lines follow the shapes in Codex's source at rust-v0.160.0, as written up
-// in docs/adapters/codex.md, and nothing in them is copied from a real machine.
+// The lines follow the shapes in Codex's source at rust-v0.160.0, and the
+// prompt lines at rust-v0.171.0, as written up in docs/adapters/codex.md, and
+// nothing in them is copied from a real machine.
 // Product code never imports this file.
 //
 // The folder `codex-home/` beside this file is the same kind of data laid out on
@@ -122,6 +123,48 @@ export function messageLine(time: number, text = "A placeholder message.", role 
     timestamp: at(time),
     type: "response_item",
     payload: { type: "message", role, content: [{ type: "input_text", text }] },
+  });
+}
+
+/**
+ * A prompt as a legacy session records it, after its `response_item` copy:
+ * an `event_msg` of type `user_message`
+ * (codex-rs/protocol/src/protocol.rs, `UserMessageEvent`).
+ */
+export function userMessageLine(time: number, message: string): string {
+  return JSON.stringify({
+    timestamp: at(time),
+    type: "event_msg",
+    payload: { type: "user_message", message, local_images: [], text_elements: [] },
+  });
+}
+
+/**
+ * A prompt as a paginated session records it, with the line's `ordinal`: an
+ * `event_msg` of type `item_completed` whose `item` is a `UserMessage`
+ * (codex-rs/protocol/src/items.rs, `UserMessageItem`). Each string is a text
+ * item, and each object another item, such as an image.
+ */
+export function userItemLine(
+  time: number,
+  ...content: (string | Record<string, unknown>)[]
+): string {
+  return JSON.stringify({
+    timestamp: at(time),
+    ordinal: 3,
+    type: "event_msg",
+    payload: {
+      type: "item_completed",
+      thread_id: ids.working,
+      turn_id: "turn-0001",
+      item: {
+        type: "UserMessage",
+        id: "item-0001",
+        content: content.map((item) =>
+          typeof item === "string" ? { type: "text", text: item, text_elements: [] } : item,
+        ),
+      },
+    },
   });
 }
 

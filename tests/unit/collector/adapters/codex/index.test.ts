@@ -36,6 +36,8 @@ import {
   tokenCountLine,
   turnLine,
   usage,
+  userItemLine,
+  userMessageLine,
 } from "@tests/fixtures/codex";
 import {
   codexAdapterFor,
@@ -828,6 +830,43 @@ describe("when Codex is read", () => {
     );
     const { sessions } = await codexAdapterFor(files).poll();
     expect(sessions.map((session) => session.name)).toEqual(["demo-project", "demo-api"]);
+  });
+
+  test("a name that is the first prompt, whole or cut with …, as Codex saves when its model gives no title, gives way to the folder's", async () => {
+    const files = emptyCodex();
+    const long = "Add a retry to the demo upload job so that a failed request is tried again.";
+    addSession(files, {
+      thread: ids.working,
+      lines: [
+        ...linesFor("demo", ids.working, [[NOW - MINUTE, "task_started"]]),
+        messageLine(NOW - MINUTE, long),
+        userItemLine(NOW - MINUTE, long),
+      ],
+      lock: true,
+    });
+    addSession(files, {
+      thread: ids.idle,
+      created: "2026-10-01T10-00-00",
+      lines: [
+        ...linesFor("demo-api", ids.idle, [[NOW - MINUTE, "task_complete"]]),
+        userMessageLine(NOW - MINUTE, "Fix the **flaky** demo test"),
+      ],
+      lock: true,
+    });
+    files.write(
+      INDEX,
+      rollout(
+        indexLine(ids.working, "Add a retry to the demo upload job so that a failed request…"),
+        indexLine(ids.idle, "Fix the flaky demo test"),
+      ),
+    );
+    const adapter = codexAdapterFor(files);
+    const names = async () => (await adapter.poll()).sessions.map((session) => session.name);
+    expect(await names()).toEqual(["demo", "demo-api"]);
+
+    // A name you give the session afterwards is shown.
+    files.append(INDEX, rollout(indexLine(ids.working, "Demo upload retries")));
+    expect(await names()).toEqual(["Demo upload retries", "demo-api"]);
   });
 
   test("with no folder of locks, as with Codex before 0.155, it says so and shows nothing as finished", async () => {

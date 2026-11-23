@@ -2,6 +2,7 @@ import { isImportedCodexTurn } from "../../../core/mapping/codexMapping.ts";
 import type { TokenCounts } from "../../../core/sessions/session.ts";
 import { tokenCountsOf } from "../../../core/tokens/tokenCounts.ts";
 import type { ReadOnlyIo, FileInfo, OpenFile } from "../../files/readOnlyIo.ts";
+import { isFirstPromptName } from "./firstPrompt.ts";
 
 /**
  * Reading one Codex session file, a rollout, for the little this adapter needs.
@@ -28,14 +29,19 @@ import type { ReadOnlyIo, FileInfo, OpenFile } from "../../files/readOnlyIo.ts";
  *   rate limits, plan and credits (`rate_limits`) and the model's context
  *   window, which are dropped (codex-rs/protocol/src/protocol.rs,
  *   `TokenCountEvent`).
+ * - When the session has a name, whether it is the first prompt in the bytes
+ *   the head was searched in, whole or cut with `…`, compared as bytes
+ *   (`firstPrompt.ts`). The head is read again for it only when the name
+ *   changes.
  *
  * Nothing else is kept: no prompt, reply, command or file content. `JSON.parse`
  * runs only on a line that names `session_meta`, or names `event_msg` and looks
  * like a turn line or a token count line, so message lines are never parsed.
  *
  * Every read is bounded: 2 MiB for the head and 8 MiB for the tail. After the
- * first read, only what was appended since is read. A last line that is still
- * being written is left for the next read.
+ * first read, only what was appended since is read, and the head again, as far
+ * as before, when the name changes. A last line that is still being written is
+ * left for the next read.
  */
 
 /** The most of a file's start that is searched for its `session_meta` line. */
@@ -105,6 +111,12 @@ export interface RolloutState {
    * compacts a conversation.
    */
   tokens: TokenCounts | null;
+  /**
+   * Set when the name `read` was given is the session's first prompt, whole
+   * or cut with `…`, as Codex saves one when its model gives no title. Such a
+   * name is not shown.
+   */
+  nameIsPrompt?: true;
 }
 
 /** Codex writes times as `YYYY-MM-DDTHH:MM:SS.mmmZ`. Anything else is not read as a time. */
@@ -256,8 +268,15 @@ async function readExactly(file: OpenFile, position: number, length: number): Pr
   return data;
 }
 
+/** What the head gave: its `session_meta`, the bytes searched for it, and the limit they were read to. */
+interface Head {
+  meta: RolloutMeta | null;
+  bytes: Buffer;
+  limit: number;
+}
+
 /** The first complete `session_meta` line within the head limit. */
-async function readHead(file: OpenFile, size: number): Promise<RolloutMeta | null> {
+async function readHead(file: OpenFile, size: number): Promise<Head> {
   for (const limit of [FIRST_HEAD_BYTES, HEAD_LIMIT_BYTES]) {
     const length = Math.min(limit, size);
     const head = await readExactly(file, 0, length);
@@ -270,12 +289,12 @@ async function readHead(file: OpenFile, size: number): Promise<RolloutMeta | nul
       if (end === -1) break;
       const start = named > 0 ? head.lastIndexOf(NEWLINE, named - 1) + 1 : 0;
       const meta = readMetaLine(head.toString("utf8", start, end));
-      if (meta) return meta;
+      if (meta) return { meta, bytes: head, limit };
       named = head.indexOf('"session_meta"', end + 1);
     }
-    if (length >= size) return null;
+    if (length >= size) return { meta: null, bytes: head, limit };
   }
-  return null;
+  return { meta: null, bytes: Buffer.alloc(0), limit: HEAD_LIMIT_BYTES };
 }
 
 interface Tail {
@@ -378,16 +397,21 @@ async function scanTail(file: OpenFile, size: number): Promise<Tail> {
 }
 
 /** What is cached for one file between polls. */
-interface Cached extends RolloutState {
+interface Cached extends Omit<RolloutState, "nameIsPrompt"> {
   ino: number;
   size: number;
   mtimeMs: number;
   /** Where the lines read so far end, always at a line's start. Null when not known. */
   offset: number | null;
+  /** How far the head was read to find the `session_meta` line, and is read again to compare a name. */
+  headLimit: number;
+  /** The name last compared with the first prompt, and whether it is that prompt. */
+  name: string | undefined;
+  nameIsPrompt: boolean;
 }
 
 function stateOf(cached: Cached): RolloutState {
-  return {
+  const state: RolloutState = {
     meta: cached.meta,
     lastTurn: cached.lastTurn,
     lastTurnAt: cached.lastTurnAt,
@@ -395,15 +419,18 @@ function stateOf(cached: Cached): RolloutState {
     lastLineAt: cached.lastLineAt,
     tokens: cached.tokens,
   };
+  if (cached.nameIsPrompt) state.nameIsPrompt = true;
+  return state;
 }
 
 export interface RolloutReader {
   /**
    * What is known about a file, read only as far as it changed since the last
-   * call. `info` is what a `lstat` of it said this poll. Throws when the file
-   * cannot be read; the caller skips it for this poll.
+   * call. `info` is what a `lstat` of it said this poll. `name` is the
+   * session's name, compared with its first prompt when it changes. Throws
+   * when the file cannot be read; the caller skips it for this poll.
    */
-  read(file: string, info: FileInfo): Promise<RolloutState>;
+  read(file: string, info: FileInfo, name?: string): Promise<RolloutState>;
   /** Forgets every file not in this set. */
   keepOnly(files: ReadonlySet<string>): void;
 }
@@ -411,14 +438,18 @@ export interface RolloutReader {
 export function createRolloutReader(io: ReadOnlyIo): RolloutReader {
   const cache = new Map<string, Cached>();
 
-  async function readFresh(file: string): Promise<Cached> {
+  async function readFresh(file: string, name: string | undefined): Promise<Cached> {
     const handle = await io.openRegular(file);
     try {
       const { info } = handle;
-      const meta = await readHead(handle, info.size);
+      const head = await readHead(handle, info.size);
+      const promptName = name !== undefined && isFirstPromptName(head.bytes, name);
       const tail = await scanTail(handle, info.size);
       return {
-        meta,
+        meta: head.meta,
+        headLimit: head.limit,
+        name,
+        nameIsPrompt: promptName,
         lastTurn: tail.lastTurn,
         lastTurnAt: tail.lastTurnAt,
         lastTurnImported: tail.lastTurnImported,
@@ -489,18 +520,34 @@ export function createRolloutReader(io: ReadOnlyIo): RolloutReader {
     }
   }
 
+  /**
+   * Compares a name that changed with the first prompt, in the head read
+   * again as far as before: the name comes after the prompt, often polls later.
+   */
+  async function compareName(file: string, cached: Cached, name: string | undefined) {
+    if (cached.meta === null || name === undefined) return { ...cached, name, nameIsPrompt: false };
+    const handle = await io.openRegular(file);
+    try {
+      const { info } = handle;
+      if (info.ino !== cached.ino) throw new Error("The file changed while it was read.");
+      const bytes = await readExactly(handle, 0, Math.min(cached.headLimit, info.size));
+      return { ...cached, name, nameIsPrompt: isFirstPromptName(bytes, name) };
+    } finally {
+      await handle.close();
+    }
+  }
+
   return {
-    async read(file, info) {
+    async read(file, info, name) {
       const cached = cache.get(file);
-      if (
+      let next =
         cached &&
         cached.ino === info.ino &&
         cached.size === info.size &&
         cached.mtimeMs === info.mtimeMs
-      ) {
-        return stateOf(cached);
-      }
-      const next = (cached && (await readOnward(file, cached, info))) || (await readFresh(file));
+          ? cached
+          : (cached && (await readOnward(file, cached, info))) || (await readFresh(file, name));
+      if (next.name !== name) next = await compareName(file, next, name);
       cache.set(file, next);
       return stateOf(next);
     },

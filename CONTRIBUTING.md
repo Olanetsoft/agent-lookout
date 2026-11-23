@@ -94,7 +94,7 @@ node /path/to/agent-lookout/scripts/start-check.mjs --command npx --yes=false ag
 
 `npm pack --dry-run` lists what would go in without writing the tarball. `--yes=false` stops npx installing the published package in place of the one you installed.
 
-`scripts/package-size.mjs` prints three sizes and fails when one has grown past its limit: the tarball, 0.66 MB with a limit of 1 MB, the files in it, 2.37 MB with a limit of 3 MB, and the installed `node_modules`, the package and nodemailer, 3.96 MB with a limit of 5 MB. Before the MCP SDK was bundled they were 0.63 MB, 1.69 MB and 20.45 MB. The CI job `package` runs it, and so does the release workflow before it publishes. Raise a limit only on purpose, and say why in the pull request. The package holds only `.woff2` fonts, and the same job fails if a `.woff` gets in.
+`scripts/package-size.mjs` prints three sizes and fails when one has grown past its limit, the `LIMITS` at its top: 1.30 MB for the tarball, 4.80 MB for the files in it, and 6.60 MB for the installed `node_modules`, the package and nodemailer. A note there says why each limit was last raised. Before the MCP SDK was bundled the three were 0.63 MB, 1.69 MB and 20.45 MB. The CI job `package` runs it, and so does the release workflow before it publishes. Raise a limit only on purpose, and say why in the pull request. The package holds only `.woff2` fonts, and the same job fails if a `.woff` gets in.
 
 ## The pictures in the docs
 

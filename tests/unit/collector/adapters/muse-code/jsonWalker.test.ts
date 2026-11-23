@@ -101,6 +101,32 @@ describe("walking a line", () => {
   test("goes into a wanted object only, and not into one at another path", () => {
     expect(walk('{"z":{"b":{"c":"x"}},"b":"flat"}').got).toEqual([]);
   });
+
+  test("goes into each object of an array wanted with elements, and says where each of its values ends", () => {
+    const line = Buffer.from(
+      '{"x":[{"t":"no"}],"list":[{"t":"a","u":1},"b",{"u":2,"t":"c"},[{"t":"no"}]]}',
+    );
+    const elements = { keys: [key("t", 1)], leaf: 2 };
+    const got: [number, string][] = [];
+    const end = walkLine(line, true, [{ key: Buffer.from("list"), elements }], (leaf, token) => {
+      got.push([
+        leaf,
+        token.type === "string" ? line.subarray(token.start, token.end).toString() : token.type,
+      ]);
+      return false;
+    });
+    expect({ end, got }).toEqual({
+      end: "end",
+      got: [
+        [1, "a"],
+        [2, "object"],
+        [2, "b"],
+        [1, "c"],
+        [2, "object"],
+        [2, "array"],
+      ],
+    });
+  });
 });
 
 describe("a line that is not JSON, or is past what is walked", () => {
