@@ -130,6 +130,7 @@ export function hermesAgentSession(input: HermesAgentSessionInput): Session | nu
     endedAt: tip.endedAt,
     endReason: tip.endReason,
     newest: tip.newest,
+    refusedAt: tip.refusedAt,
     openQuestions: tip.openQuestions,
     openCalls: tip.openCalls,
     callsAt: tip.callsAt,

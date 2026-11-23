@@ -1,9 +1,9 @@
 // Test fixtures only. Every id, time, folder and word here is invented and
-// generic. The tables follow the columns Hermes Agent v0.22.5's source gives
+// generic. The tables follow the columns Hermes Agent v0.23.3's source gives
 // `sessions`, `messages` and `session_turn_leases` (`SCHEMA_SQL` in
-// `hermes_state_common.py`), and the rows follow the shapes that source
-// writes, as written up in docs/adapters/hermes-agent.md. Beside them are
-// tables the adapter must never read, holding words that stand for secrets
+// `persistence/sqlite/_schema_ddl.py`), and the rows follow the shapes that
+// source writes, as written up in docs/adapters/hermes-agent.md. Beside them
+// are tables the adapter must never read, holding words that stand for secrets
 // and for what was written. Nothing here is copied from a real machine or a
 // real session, and nothing was read from a computer running Hermes Agent.
 // Product code never imports this file.
@@ -63,7 +63,7 @@ function value(given: string | number | null | undefined): string {
 export const seconds = (ms: number) => ms / 1000;
 
 /**
- * The tables of Hermes Agent v0.22.5 the adapter reads, with every column,
+ * The tables of Hermes Agent v0.23.3 the adapter reads, with every column,
  * and five it must never read, with words that stand for secrets in them.
  * Hermes Agent's `messages_fts` is an FTS5 table over `content`; a plain table
  * of the same name and column stands in for it, so any sqlite3 can build this.
@@ -92,7 +92,7 @@ export const SCHEMA = [
     transport_profile TEXT, rewind_count INTEGER NOT NULL DEFAULT 0,
     archived INTEGER NOT NULL DEFAULT 0, auto_archived INTEGER NOT NULL DEFAULT 0,
     pinned INTEGER NOT NULL DEFAULT 0, hidden INTEGER NOT NULL DEFAULT 0, last_read_at REAL,
-    tool_names TEXT, transcript_revision INTEGER NOT NULL DEFAULT 0,
+    tool_names TEXT, transcript_revision INTEGER NOT NULL DEFAULT 0, prompt_cache_clock TEXT,
     FOREIGN KEY (parent_session_id) REFERENCES sessions(id),
     FOREIGN KEY (system_prompt_hash) REFERENCES system_prompts(hash));`,
   `CREATE TABLE messages (
@@ -234,6 +234,8 @@ export interface MessageFields {
   finish?: string;
   /** Defaults to 1: a row of the conversation as it is now. */
   active?: 0 | 1;
+  /** Defaults to 0. 1 for a row taken out of the conversation that is still shown. */
+  compacted?: 0 | 1;
 }
 
 /** A row of `messages`, with private words in every column of text the adapter must not read. */
@@ -267,6 +269,7 @@ export function messageRow(fields: MessageFields): string {
     reasoning_content: PRIVATE_WORDS,
     api_content: PRIVATE_WORDS,
     active: fields.active ?? 1,
+    compacted: fields.compacted ?? 0,
     display_kind: fields.kind,
     display_metadata: metadata,
   };
@@ -301,6 +304,12 @@ export const APPROVAL_LABEL = `waiting for user approval (20s elapsed) ${PRIVATE
 /** The label the gateway saves while a question waits. */
 export const QUESTION_LABEL = `waiting for user clarify response (20s elapsed) ${PRIVATE_WORDS}`;
 
+/** The label a plugin's approval transport saves while its approval waits. */
+export const PLUGIN_APPROVAL_LABEL = `waiting for plugin approval transport (20s elapsed) ${PRIVATE_WORDS}`;
+
+/** The label a chat's turn saves while it waits for a one-time code. */
+export const CODE_LABEL = `waiting for a one-time code (20s elapsed) ${PRIVATE_WORDS}`;
+
 /** The label of a tool that runs, which says nothing of a wait. */
 export const TOOL_LABEL = `executing tool: terminal ${PRIVATE_WORDS}`;
 
@@ -331,6 +340,8 @@ export const SCENE = {
   filtered: sessionId("e2"),
   /** A live lease whose process is gone. */
   deadHolder: sessionId("e3"),
+  /** A turn refused for safety, which Hermes Agent took back out of the conversation. */
+  refused: sessionId("e4"),
   /** Left out: a subagent's run, hidden, archived, three hidden sources, and one too old. */
   delegate: sessionId("ff01"),
   hidden: sessionId("ff02"),
@@ -371,6 +382,7 @@ export interface SceneOptions {
  * | resetChild               | idle       | 8 minutes              |
  * | filtered                 | failed     | 9 minutes              |
  * | deadHolder               | idle       | 5 minutes              |
+ * | refused                  | failed     | the tool, 12 minutes   |
  */
 export function sceneRows(now: number, options: SceneOptions = {}): string[] {
   const at = (minutes: number) => now - minutes * MINUTE;
@@ -562,6 +574,37 @@ export function sceneRows(now: number, options: SceneOptions = {}): string[] {
       until: now + 4 * MINUTE,
     }),
 
+    // A turn refused for safety, after one that was answered. Hermes Agent
+    // took the refused turn, its message and its tool round, out of the
+    // conversation, and keeps the message on screen as `content_refused`.
+    // It is failed from the turn's newest row, its tool's result.
+    sessionRow({ id: SCENE.refused, title: "Refused turn", startedAt: at(18) }),
+    messageRow({ sessionId: SCENE.refused, role: "user", at: at(17) }),
+    messageRow({ sessionId: SCENE.refused, role: "assistant", at: at(16), finish: "stop" }),
+    messageRow({
+      sessionId: SCENE.refused,
+      role: "user",
+      at: at(13),
+      active: 0,
+      compacted: 1,
+      kind: "content_refused",
+      metadata: { content_refused: { notice: PRIVATE_WORDS } },
+    }),
+    messageRow({
+      sessionId: SCENE.refused,
+      role: "assistant",
+      at: at(12.5),
+      toolCalls: [{ id: "call_x1", name: "read_file" }],
+      active: 0,
+    }),
+    messageRow({
+      sessionId: SCENE.refused,
+      role: "tool",
+      at: at(12),
+      toolCallId: "call_x1",
+      active: 0,
+    }),
+
     // A subagent's run, a hidden row, an archived one, the three sources
     // Hermes Agent hides from people, and a session three days old. Each but
     // the last has no parent, so it is its own marker, flag or source alone
@@ -596,7 +639,7 @@ export function sqliteJson(rows: readonly Record<string, unknown>[]): string {
   return `[${rows.map((row) => JSON.stringify(row)).join(",\n")}]\n`;
 }
 
-/** The columns the adapter needs of each table, as v0.22.5 has them. */
+/** The columns the adapter needs of each table, as v0.23.3 has them. */
 const PROBED: Record<string, string[]> = {
   sessions: [
     "id",
@@ -635,12 +678,12 @@ const PROBED: Record<string, string[]> = {
 };
 
 /**
- * What the probe prints: for v0.22.5's tables, for v0.21.5's, the last with
+ * What the probe prints: for v0.23.3's tables, for v0.21.5's, the last with
  * no `created_source`, for a database with no lease table, or for one with
  * none of the three.
  */
 export function probeJson(
-  layout: "v0.22.5" | "v0.21.5" | "no-leases" | "none" = "v0.22.5",
+  layout: "v0.23.3" | "v0.21.5" | "no-leases" | "none" = "v0.23.3",
 ): string {
   if (layout === "none") return "";
   const rows: Record<string, unknown>[] = [];
@@ -690,6 +733,7 @@ export function answerRow(fields: AnswerRow): Record<string, unknown> {
     n_kind: null,
     n_finish: "stop",
     n_error: null,
+    refused_at: null,
     calls_at: null,
     open_questions: 0,
     open_calls: 0,

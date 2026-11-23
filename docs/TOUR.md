@@ -387,7 +387,7 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 
 **Where.** `src/collector/adapters/hermes-agent/`, with the mapping in `src/core/mapping/hermes-agent/hermesAgentMapping.ts`. [adapters/hermes-agent.md](adapters/hermes-agent.md) is the full reference.
 
-**Where it came from.** Issue #149 asked for Hermes Agent, Nous Research's open-source agent. It reads Hermes Agent v0.21.6 and later. It was built from Hermes Agent's source at v0.22.5 and has not yet been checked on a computer running Hermes Agent. The card says so (`UNCHECKED_NOTE`).
+**Where it came from.** Issue #149 asked for Hermes Agent, Nous Research's open-source agent. It reads Hermes Agent v0.21.6 and later. It was built from Hermes Agent's source at v0.23.3 and has not yet been checked on a computer running Hermes Agent. The card says so (`UNCHECKED_NOTE`).
 
 **Why `sqlite3`.** Hermes Agent keeps each profile's sessions in one SQLite database, `state.db`, in its root, `~/.hermes`, and in `profiles/<name>`. Its `hermes` command runs Hermes Agent's own code and can start its gateway, its gateway's API is a request to Hermes Agent, and its JSON files of running sessions hold chat and user ids. So the adapter reads the databases alone, with the system's `sqlite3`, started as for OpenCode, and never on Windows.
 
@@ -398,11 +398,11 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 - `sqlite.ts` finds `sqlite3` at the fixed places, with Homebrew's own two added for Hermes Agent alone, and asks each its version once, and again only when the program there changes or a poll's time for reading cut that run short. A live `-wal` is read only with one that passes Hermes Agent's own test for SQLite's WAL-reset bug, copied from `hermes_cli/sqlite_runtime.py`.
 - `sessionRows.ts` holds the two fixed questions, a probe of three tables and their columns and the query of conversations, which follows each row through Hermes Agent's compressions to its root and lists the roots as Hermes Agent lists them. No text of a message is asked for, and a title Hermes Agent made from one is left out inside SQLite.
 - `toSession.ts` folds a conversation's rows into one session, `hermes-agent:<profile>/<root id>`, named and placed by its newest row, and `processes.ts` checks a live turn lease's process with signal 0, by Hermes Agent's own rule for pid namespaces.
-- `hermesAgentMapping.ts` turns the newest row and the turn lease into a status on every poll. A live lease is working, or needs you while a `clarify` question of that turn has no answer, or Hermes Agent's label, saved since the turn's newest tool call, says an approval or an answer waits. A turn Hermes Agent closed on an error is failed, a session it ended is finished, and the rest are idle.
+- `hermesAgentMapping.ts` turns the newest row and the turn lease into a status on every poll. A live lease is working, or needs you while a `clarify` question of that turn has no answer, or Hermes Agent's label, saved since the turn's newest tool call, says an approval or an answer waits. A turn Hermes Agent closed on an error, or took back after a safety refusal, is failed, a session it ended is finished, and the rest are idle.
 
 **Basis and parts.** `database` is the one basis. Each profile read on a poll, or found with no database, is named in the health's `parts`, so the sessions of a profile that could not be read drop out of the list without being told as ended, and their waits are not announced again when it is read once more. Another machine's Hermes Agent keeps its profiles' parts here too.
 
-**How sure it is.** Not checked against Hermes Agent yet. An approval shows 10 to 70 seconds late, since Hermes Agent saves its label at most once a minute, and a session whose Hermes Agent or gateway was killed stays idle.
+**How sure it is.** Not checked against Hermes Agent yet. An approval shows 10 to 70 seconds late, since Hermes Agent saves its label at most once a minute, and a session whose gateway was killed stays idle.
 
 ### Cline
 

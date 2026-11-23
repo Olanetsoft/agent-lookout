@@ -18,9 +18,11 @@ import { chainsOf, hermesAgentSession } from "@collector/adapters/hermes-agent/t
 import { nodeIo } from "@collector/files/readOnlyIo";
 import {
   APPROVAL_LABEL,
+  CODE_LABEL,
   leaseRow,
   messageRow,
   MINUTE,
+  PLUGIN_APPROVAL_LABEL,
   PRIVATE_WORDS,
   SCENE,
   SCHEMA,
@@ -32,7 +34,7 @@ import {
 import { tempDir } from "@tests/support/node/tempFiles";
 
 // The real sqlite3 is run, as the adapter runs it, on databases this test
-// writes with that same sqlite3, laid out as Hermes Agent v0.22.5's are: one
+// writes with that same sqlite3, laid out as Hermes Agent v0.23.3's are: one
 // in rollback-journal mode, one in WAL mode with nothing in a -wal, and one in
 // WAL mode whose newest commits lie only in the -wal of a second sqlite3 that
 // keeps it open, as Hermes Agent's gateway does while it runs. This is the
@@ -101,6 +103,7 @@ const PRINTED = [
   "n_kind",
   "n_finish",
   "n_error",
+  "refused_at",
   "calls_at",
   "open_questions",
   "open_calls",
@@ -123,6 +126,7 @@ const LISTED = [
   SCENE.resetChild,
   SCENE.filtered,
   SCENE.deadHolder,
+  SCENE.refused,
 ];
 
 /** Those it leaves out, and the row a compressed conversation went on in, which is never a root. */
@@ -274,6 +278,17 @@ async function nameOf(file: string, now: number): Promise<string | undefined> {
   expect(chains).toHaveLength(1);
   const chain = chains[0] ?? [];
   return hermesAgentSession({ profile: "default", chain, holderAlive: () => null, now })?.name;
+}
+
+/** The one session in a database of these rows, read with the real sqlite3, with every lease's process taken to run. */
+async function shownOf(rows: string[], now: number) {
+  const { file } = await makeDatabase("rollback", rows);
+  const read = await readerFor(file).reader.read(now);
+  expect(read.state).toBe("read");
+  const chains = [...chainsOf(read.rows).values()];
+  expect(chains).toHaveLength(1);
+  const chain = chains[0] ?? [];
+  return hermesAgentSession({ profile: "default", chain, holderAlive: () => true, now });
 }
 
 /** A title, and what Hermes Agent wrote of where it came from. */
@@ -820,6 +835,99 @@ describe.skipIf(sqlite === null)("reading Hermes Agent's database with the real 
     ];
     expect(await statusOf(movedOn)).toEqual(["working", undefined, now - 2 * MINUTE]);
   });
+
+  test("a turn Hermes Agent took back after a safety refusal is failed, from its newest row, until a newer turn is written", async () => {
+    const now = Date.now();
+    const id = sessionId("r9");
+    // A turn that was answered, then a refused one. As Hermes Agent leaves a
+    // refusal, every row of the refused turn is set to active = 0, and its
+    // message is kept on screen, compacted, as content_refused.
+    const refused = [
+      sessionRow({ id, title: "Refused turn", startedAt: now - 20 * MINUTE }),
+      messageRow({ sessionId: id, role: "user", at: now - 10 * MINUTE }),
+      messageRow({ sessionId: id, role: "assistant", at: now - 9 * MINUTE, finish: "stop" }),
+      messageRow({
+        sessionId: id,
+        role: "user",
+        at: now - 5 * MINUTE,
+        active: 0,
+        compacted: 1,
+        kind: "content_refused",
+        metadata: { content_refused: { notice: PRIVATE_WORDS } },
+      }),
+      messageRow({
+        sessionId: id,
+        role: "assistant",
+        at: now - 4 * MINUTE,
+        toolCalls: [{ id: "call_r", name: "read_file" }],
+        active: 0,
+      }),
+    ];
+    const at = async (rows: string[]) => {
+      const shown = await shownOf(rows, now);
+      return [shown?.status, shown?.statusSince];
+    };
+    expect(await at(refused)).toEqual(["failed", now - 4 * MINUTE]);
+    // Once a later turn is answered, the refusal is behind its rows.
+    const answered = [
+      ...refused,
+      messageRow({ sessionId: id, role: "user", at: now - 2 * MINUTE }),
+      messageRow({ sessionId: id, role: "assistant", at: now - MINUTE, finish: "stop" }),
+    ];
+    expect(await at(answered)).toEqual(["idle", now - MINUTE]);
+    // A turn taken back with /undo, not for a refusal, is no failure.
+    const undone = [
+      ...refused.slice(0, 3),
+      messageRow({ sessionId: id, role: "user", at: now - 5 * MINUTE, active: 0 }),
+    ];
+    expect(await at(undone)).toEqual(["idle", now - 9 * MINUTE]);
+  });
+
+  test("sqlite3 prints a refused turn's time alone, not its kind", async () => {
+    const now = Date.now();
+    const { file } = await makeDatabase("rollback", sceneRows(now));
+    expect(await answers(file, "rollback")).not.toContain("content_refused");
+    const row = (await printedRows(file, "rollback")).find((each) => each.id === SCENE.refused);
+    expect(row?.refused_at).toBeCloseTo((now - 12 * MINUTE) / 1000, 3);
+    expect(row?.n_at).toBeCloseTo((now - 16 * MINUTE) / 1000, 3);
+  });
+
+  test.each<[string, string, string, string]>([
+    ["a plugin's approval transport", PLUGIN_APPROVAL_LABEL, "terminal", "permission"],
+    ["a chat's one-time code", CODE_LABEL, "browser_vault", "question"],
+  ])(
+    "the label %s saves, for the turn's tool call that waits, is a wait for you",
+    async (_, label, tool, reason) => {
+      const now = Date.now();
+      const id = sessionId("w9");
+      const shown = await shownOf(
+        [
+          sessionRow({
+            id,
+            title: "Asks for you",
+            startedAt: now - 10 * MINUTE,
+            lastActivityAt: now - 20_000,
+            label,
+          }),
+          messageRow({ sessionId: id, role: "user", at: now - 2 * MINUTE }),
+          messageRow({
+            sessionId: id,
+            role: "assistant",
+            at: now - MINUTE,
+            toolCalls: [{ id: "call_w", name: tool }],
+            finish: "tool_calls",
+          }),
+          leaseRow({ conversationId: id, at: now - 2 * MINUTE, until: now + 4 * MINUTE }),
+        ],
+        now,
+      );
+      expect([shown?.status, shown?.waitingReason, shown?.statusSince]).toEqual([
+        "needs-you",
+        reason,
+        now - MINUTE,
+      ]);
+    },
+  );
 
   test("a folder whose name has a space, a question mark and a percent sign in it is read", async () => {
     const now = Date.now();

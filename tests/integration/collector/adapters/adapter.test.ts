@@ -273,7 +273,7 @@ test("PRIVACY.md and the Cline notes name what is read and from which version", 
   expect(cline).toContain("built from Cline's source at cli-v3.0.74");
   expect(cline).not.toContain("Hermes Agent");
   expect(line("For Hermes Agent, Agent Lookout runs")).toContain(
-    "built from Hermes Agent's source at v0.22.5",
+    "built from Hermes Agent's source at v0.23.3",
   );
   expect(notes).toContain("cli-v3.0.74");
 

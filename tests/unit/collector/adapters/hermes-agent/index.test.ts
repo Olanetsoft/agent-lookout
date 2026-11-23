@@ -1724,7 +1724,7 @@ test("what Hermes Agent can report, in the words of the design, each reason shor
     finished: {
       level: "partly",
       reason:
-        "When Hermes Agent ends a session. One whose process was killed, or whose gateway stopped, shows as idle.",
+        "When Hermes Agent ends a session. One whose gateway was killed or stopped shows as idle.",
     },
     failed: {
       level: "partly",
@@ -1759,7 +1759,7 @@ test("what Hermes Agent can report, in the words of the design, each reason shor
     },
   });
   expect(UNCHECKED_NOTE).toBe(
-    "This was built from Hermes Agent v0.22.5's source and not yet checked on a computer running Hermes Agent, so a status can be wrong.",
+    "This was built from Hermes Agent v0.23.3's source and not yet checked on a computer running Hermes Agent, so a status can be wrong.",
   );
   expect(LATE_NOTE).toContain("at most once a minute");
   expect(createHermesAgentAdapter({ env: {}, homeDir: HOME, platform: "win32" }).capabilities).toBe(

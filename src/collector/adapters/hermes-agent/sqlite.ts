@@ -21,7 +21,7 @@ import { isExecutableFile } from "../../files/paths.ts";
  * (`hermes_cli/sqlite_runtime.py`). Hermes Agent refuses a `sqlite3` that fails
  * it even on a copy of a database: such a program, opening a live database,
  * can delete its `-wal` and `-shm` and split it in two, losing writes Hermes
- * Agent had already confirmed (`hermes_cli/session_lost_and_found.py`).
+ * Agent had already confirmed (`persistence/sqlite/admin/_lost_and_found.py`).
  * Each place is asked its version once, with `sqlite3 -init /dev/null
  * --version`, and again only when the program there changes. `-init
  * /dev/null` keeps it from running the person's own `~/.sqliterc`, which
@@ -39,7 +39,7 @@ import { isExecutableFile } from "../../files/paths.ts";
  * was cut short: it is not taken as having failed, and a version it was
  * asked is asked again on the next pick.
  *
- * Built from Hermes Agent's source at v0.22.5, and not yet checked on a
+ * Built from Hermes Agent's source at v0.23.3, and not yet checked on a
  * computer running Hermes Agent.
  */
 

@@ -377,7 +377,7 @@ export const HERMES_AGENT_CAPABILITIES: SourceCapabilities = {
   finished: {
     level: "partly",
     reason:
-      "When Hermes Agent ends a session. One whose process was killed, or whose gateway stopped, shows as idle.",
+      "When Hermes Agent ends a session. One whose gateway was killed or stopped shows as idle.",
   },
   failed: {
     level: "partly",

@@ -42,7 +42,7 @@ import { tempDir, writeStub } from "@tests/support/node/tempFiles";
 
 // The adapter end to end, with the real sqlite3, the real signal 0 and, on
 // Linux, the real /proc/self/ns/pid, on a copy of
-// `tests/fixtures/hermes-agent/home`, a Hermes Agent root as v0.22.5 lays one
+// `tests/fixtures/hermes-agent/home`, a Hermes Agent root as v0.23.3 lays one
 // out, with a default profile and a `coder` profile, and databases this test
 // writes. The default profile's is in rollback-journal mode and the coder
 // profile's in WAL mode. The process that holds the leases is this test's
@@ -278,6 +278,7 @@ describe.skipIf(sqlite === null)("the Hermes Agent adapter, with the real sqlite
       [id(SCENE.resetChild)]: ["Afternoon chat", null, "unknown", "idle", null, at(8)],
       [id(SCENE.filtered)]: ["Filtered reply", FOLDER, "terminal", "failed", null, at(9)],
       [id(SCENE.deadHolder)]: ["Killed gateway", FOLDER, "terminal", "idle", null, at(5)],
+      [id(SCENE.refused)]: ["Refused turn", FOLDER, "terminal", "failed", null, at(12)],
       [id(CODER_IDLE, "coder")]: ["Coder work", FOLDER, "terminal", "idle", null, at(12)],
     });
 

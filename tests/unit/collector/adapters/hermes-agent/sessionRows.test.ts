@@ -65,8 +65,12 @@ describe("the two questions", () => {
       expect(query.replaceAll("count(*)", "").replaceAll("GLOB 'pid=[0-9]*'", "")).not.toContain(
         "*",
       );
-      // Its one use of `title_source`, a test that prints nothing of it, is looked at below.
-      const rest = query.replaceAll(titleTest("c"), "").replaceAll(titleTest("r"), "");
+      // Its one use of `title_source`, a test that prints nothing of it, is looked at below, and
+      // so is its one use of `content_refused`, a row's kind.
+      const rest = query
+        .replaceAll(titleTest("c"), "")
+        .replaceAll(titleTest("r"), "")
+        .replaceAll("x.display_kind = 'content_refused'", "");
       for (const never of [
         "system_prompt",
         "session_admissions",
@@ -148,16 +152,31 @@ describe("the two questions", () => {
     );
   });
 
-  test("test the activity label with two prefixes alone, and print only whether each matched", () => {
+  test("test the activity label with four prefixes alone, and print only whether it waits for an approval or an answer", () => {
     const likes = [...SESSIONS_QUERY.matchAll(/(\S+) LIKE '([^']*)'/g)].map((match) => [
       match[1],
       match[2],
     ]);
     expect(likes).toEqual([
-      ["c.last_activity_description", "waiting for user approval%"],
-      ["c.last_activity_description", "waiting for user clarify response%"],
+      ["(c.last_activity_description", "waiting for user approval%"],
+      ["c.last_activity_description", "waiting for plugin approval transport%"],
+      ["(c.last_activity_description", "waiting for user clarify response%"],
+      ["c.last_activity_description", "waiting for a one-time code%"],
     ]);
-    expect(SESSIONS_QUERY.split("last_activity_description").length - 1).toBe(2);
+    expect(SESSIONS_QUERY.split("last_activity_description").length - 1).toBe(4);
+    expect(SESSIONS_QUERY).toContain(
+      "(c.last_activity_description LIKE 'waiting for user approval%' OR c.last_activity_description LIKE 'waiting for plugin approval transport%') AS approval_label,",
+    );
+    expect(SESSIONS_QUERY).toContain(
+      "(c.last_activity_description LIKE 'waiting for user clarify response%' OR c.last_activity_description LIKE 'waiting for a one-time code%') AS question_label,",
+    );
+  });
+
+  test("ask for a refused turn's time alone, the newest of its rows, from a message taken out of the conversation that is newer than the newest row", () => {
+    expect(SESSIONS_QUERY).toContain(
+      "(SELECT max(m.timestamp) FROM messages m WHERE m.session_id = c.id AND m.active = 0 AND m.id >= (SELECT x.id FROM messages x WHERE x.session_id = c.id AND x.active = 0 AND x.display_kind = 'content_refused' AND x.id > coalesce(n.id, 0) ORDER BY x.id DESC LIMIT 1)) AS refused_at,",
+    );
+    expect(SESSIONS_QUERY.match(/display_kind/g)).toHaveLength(2);
   });
 
   test("cut a title and a folder inside SQLite, a character past what is kept", () => {
@@ -227,14 +246,14 @@ describe("sqliteArguments", () => {
 });
 
 describe("readSchema", () => {
-  /** The rows the probe prints for v0.22.5, without one. */
+  /** The rows the probe prints for v0.23.3, without one. */
   const without = (table: string, name: string) => {
     const rows = JSON.parse(probeJson()) as { kind: string; name: string }[];
     return sqliteJson(rows.filter((each) => !(each.kind === table && each.name === name)));
   };
 
   test("supports a database laid out as v0.21.6 and later lay one out", () => {
-    expect(readSchema(probeJson("v0.22.5"))).toBe("supported");
+    expect(readSchema(probeJson("v0.23.3"))).toBe("supported");
   });
 
   test("does not support one before v0.21.6, with no created_source, one with no lease table, or one with none of the tables", () => {
@@ -325,6 +344,7 @@ describe("readSessionRows", () => {
       calls_at: seconds(NOW - 4 * MINUTE),
       open_questions: 1,
       open_calls: 2,
+      refused_at: seconds(NOW - 3 * MINUTE),
       ended_at: seconds(NOW) + 0.25,
       end_reason: "cli_close",
     });
@@ -348,6 +368,7 @@ describe("readSessionRows", () => {
       approvalLabel: 1,
       questionLabel: 0,
       newest: { role: "assistant", at: NOW - MINUTE, kind: null, finish: "stop", error: null },
+      refusedAt: NOW - 3 * MINUTE,
       callsAt: NOW - 4 * MINUTE,
       openQuestions: 1,
       openCalls: 2,
@@ -462,9 +483,16 @@ describe("readSessionRows", () => {
 
   test("marks a time that is not a number that could be one as of the wrong type", () => {
     for (const time of ["1790000000", -1, 253_402_300_800, true, { at: 1 }]) {
-      const kept = row({ started_at: time, n_at: time, calls_at: time, lease_until: time });
+      const kept = row({
+        started_at: time,
+        n_at: time,
+        refused_at: time,
+        calls_at: time,
+        lease_until: time,
+      });
       expect(kept?.startedAt, JSON.stringify(time)).toBeUndefined();
       expect(kept?.newest?.at).toBeUndefined();
+      expect(kept?.refusedAt).toBeUndefined();
       expect(kept?.callsAt).toBeUndefined();
       expect(kept?.lease?.until).toBeUndefined();
     }

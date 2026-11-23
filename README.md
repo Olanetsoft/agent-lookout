@@ -94,7 +94,7 @@ OpenCode support was built from its source at v1.19.0 and v2.2.5 and has not yet
 
 Qwen Code support was built from Qwen Code's source at 0.28.3 and has not yet been checked on a machine running it.
 
-Hermes Agent support was built from its source at v0.22.5 and has not yet been checked on a computer running it.
+Hermes Agent support was built from its source at v0.23.3 and has not yet been checked on a computer running it.
 
 Cline support reads the sessions of its newer runtime, in `~/.cline/data/sessions`, as its CLI and desktop app write them, not the older VS Code extension's tasks. It was built from its source at cli-v3.0.74 and has not yet been checked on a computer running it.
 
