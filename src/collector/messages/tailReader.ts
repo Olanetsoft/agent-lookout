@@ -120,7 +120,7 @@ export interface TailReader<Target> {
   readonly size: number;
 }
 
-export interface TailReaderOptions<Target> {
+export interface TailReaderOptions<Target, End = string> {
   /**
    * Where a listed session's transcript is, from what its adapter read for it
    * on its own, never from a request. Null when it is not found.
@@ -130,7 +130,7 @@ export interface TailReaderOptions<Target> {
    * The answer the end of a transcript gives, made fit to show. `fromStart`
    * says whether the tail is the whole file. Nothing of the tail is kept.
    */
-  answerFrom(tail: string, fromStart: boolean): LastMessageResponse;
+  answerFrom(tail: End, fromStart: boolean): LastMessageResponse;
   /**
    * What names a target's transcript. When a poll gives a session a target
    * with another key, what was kept of it is dropped and its transcript is
@@ -164,7 +164,10 @@ function runLater(run: () => void, ms: number): void {
   setTimeout(run, ms).unref();
 }
 
-export interface EndReaderOptions<Target, Stamp> extends Omit<TailReaderOptions<Target>, "io"> {
+export interface EndReaderOptions<Target, Stamp, End = string> extends Omit<
+  TailReaderOptions<Target, End>,
+  "io"
+> {
   /**
    * Reads the end of the transcript `find` gave for the session `target`
    * names, or says it is as it was when `known` was read, and then reads
@@ -172,7 +175,7 @@ export interface EndReaderOptions<Target, Stamp> extends Omit<TailReaderOptions<
    * that says so, which `isMissing` knows, and for anything else that cannot
    * be read with any other.
    */
-  readEnd(file: string, known: Stamp | null, target: Target): Promise<TailRead<Stamp>>;
+  readEnd(file: string, known: Stamp | null, target: Target): Promise<TailRead<Stamp, End>>;
 }
 
 /**
@@ -181,8 +184,12 @@ export interface EndReaderOptions<Target, Stamp> extends Omit<TailReaderOptions<
  * are the same for every agent that has one; only where its transcript is,
  * how its end is read and what its lines mean are the agent's own, `find`,
  * `readEnd` and `answerFrom`. `createTailReader` reads the end of a file of
- * the session's own. OpenCode, which keeps every session in one database,
- * asks the database instead (`src/collector/adapters/opencode/lastMessages.ts`).
+ * the session's own. OpenCode, Kilo Code and MiMo Code, which each keep every
+ * session in one database, ask it instead
+ * (`src/collector/adapters/opencode/lastMessages.ts`), and Mistral Vibe's
+ * reader reads the end of a session's journal and, when that holds no reply, the newest pieces of its saved history, and hands on
+ * what it found in them
+ * (`src/collector/adapters/mistral-vibe/history/lastMessages.ts`).
  *
  * - Only a session the last `keep` listed is read. The path comes from what
  *   the adapter read for it, through `find`, never from a request. A listed
@@ -199,8 +206,8 @@ export interface EndReaderOptions<Target, Stamp> extends Omit<TailReaderOptions<
  *   15 seconds after each was last asked for, or until a poll does not list
  *   the session.
  */
-export function createEndReader<Target, Stamp>(
-  options: EndReaderOptions<Target, Stamp>,
+export function createEndReader<Target, Stamp, End = string>(
+  options: EndReaderOptions<Target, Stamp, End>,
 ): TailReader<Target> {
   const now = options.now ?? Date.now;
   const later = options.later ?? runLater;
@@ -347,10 +354,11 @@ export function createEndReader<Target, Stamp>(
 
 /**
  * The reader of last messages for an agent that writes each session to a
- * file of its own, as every agent whose last message is read does but
- * OpenCode, Kilo Code and MiMo Code: `createEndReader`, reading the end of that file with
- * `readTranscriptTail`, at most its last 256 KB, by position, and not again
- * while the file is unchanged.
+ * file of its own and reads only that file for it, as every agent whose last
+ * message is read does but OpenCode, Kilo Code, MiMo Code and Mistral Vibe:
+ * `createEndReader`, reading the end of that file with `readTranscriptTail`,
+ * at most its last 256 KB, by position, and not again while the file is
+ * unchanged.
  */
 export function createTailReader<Target>(options: TailReaderOptions<Target>): TailReader<Target> {
   const io = options.io ?? nodeIo;

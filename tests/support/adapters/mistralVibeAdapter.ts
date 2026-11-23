@@ -109,13 +109,21 @@ export const MAC_PROCESS_CHECK = [
   },
 ];
 
-/** The facts of a Mac's card, in the order the adapter gives them, for a session folder written as people see it. */
-export function watching(dir: string, read: string) {
+/** What the card says of the last-message read while it is on. */
+export const LAST_MESSAGE_READ =
+  "end of a session's journal and history, while its details are open";
+
+/**
+ * The facts of a Mac's card, in the order the adapter gives them, for a session
+ * folder written as people see it, with what it says of the last-message read.
+ */
+export function watching(dir: string, read: string, lastMessageRead = LAST_MESSAGE_READ) {
   return [
     { label: "Sessions folder", value: `${dir}/unified` },
     { label: "Read", value: read },
     { label: "Open-sessions folder", value: `${dir}/active` },
     ...MAC_PROCESS_CHECK,
+    { label: "Last message read", value: lastMessageRead },
   ];
 }
 

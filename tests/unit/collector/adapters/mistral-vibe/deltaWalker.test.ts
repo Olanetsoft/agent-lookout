@@ -1,6 +1,10 @@
 import { describe, expect, test } from "vitest";
 
-import { deltaStateOf, type DeltaState } from "@collector/adapters/mistral-vibe/deltaWalker";
+import {
+  deltaSpanOf,
+  deltaStateOf,
+  type DeltaState,
+} from "@collector/adapters/mistral-vibe/deltaWalker";
 import {
   canonical,
   delta,
@@ -140,5 +144,56 @@ describe("walking a projection_delta line back from its end", () => {
     expect(found(text, 1)).toBe("bad");
     // With the key before the bytes given, the array is walked as the delta.
     expect(found(text, text.indexOf('"later"') + 1)).toBe(STATE);
+  });
+});
+
+/** The steps a walk of the line from byte `from` on found, as text, or the kind of answer when it found none. */
+function steps(text: string, from = 0): string {
+  const line = bytes(text).subarray(from);
+  const result = deltaSpanOf(line, from === 0);
+  return result.kind === "delta"
+    ? line.toString("utf8", result.delta.start, result.delta.end)
+    : result.kind;
+}
+
+describe("finding a projection_delta line's steps", () => {
+  const step = { op: "set_envelope", state: publicState(running) };
+  const entries = [{ id: "entry-5", text: '{"op":"x"}],"session_api":{},"watermark":1}' }];
+
+  test("is its delta array, byte for byte, with or without session_api, and nothing of what follows", () => {
+    const array = canonical([...entries.map((entry) => ({ op: "append_entry", entry })), step]);
+    expect(steps(delta(5, running, entries))).toBe(array);
+    expect(steps(delta(5, running, entries, sessionApiFacts()))).toBe(array);
+    expect(steps(record("projection_delta", 5, { delta: [], watermark: 5 }))).toBe("[]");
+    const facts = sessionApiFacts({ delta: [step], watermark: 1 });
+    expect(
+      steps(record("projection_delta", 5, { delta: [], session_api: facts, watermark: 5 })),
+    ).toBe("[]");
+  });
+
+  test("is bad for a line not laid out as Vibe writes a projection_delta, as the state's walk is", () => {
+    for (const text of [
+      "",
+      "not json",
+      record("projection_delta", 5, { watermark: 5 }),
+      record("projection_delta", 5, { delta: [step], later: [], watermark: 5 }),
+      record("projection_delta", 5, { delta: [step], queue: [], session_api: {}, watermark: 5 }),
+      record("projection_delta", 5, { delta: {}, watermark: 5 }),
+      record("projection_delta", 5, { steps: [step], watermark: 5 }),
+      record("projection_delta", 5, { delta: [], watermark: 5, zone: 1 }),
+    ]) {
+      expect(steps(text), text.slice(0, 80)).toBe("bad");
+    }
+  });
+
+  test("is cut when the array, or its key, starts before the bytes it was given", () => {
+    const text = delta(5, running, entries, sessionApiFacts());
+    expect(steps(text, text.indexOf('"record_sha256"'))).toBe("cut");
+    expect(steps(text, text.indexOf("entry-5"))).toBe("cut");
+    expect(steps(text, text.indexOf('"delta"') + 1)).toBe("cut");
+    // From the key's opening quote, what is before it, a backslash or not, is not known.
+    expect(steps(text, text.indexOf('"delta"'))).toBe("cut");
+    // From the payload's opening brace on, the array and its key are found.
+    expect(steps(text, text.indexOf('"delta"') - 1)).toBe(steps(text));
   });
 });

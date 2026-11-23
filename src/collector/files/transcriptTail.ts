@@ -24,15 +24,18 @@ export interface TranscriptStamp {
 /**
  * What one read of a transcript's end found. `Stamp` is what tells the next
  * read whether it changed: for a file, its size, modified time and identity.
+ * `End` is what the read hands on: for a file, its end, decoded. A reader that
+ * reads more than one file for an answer, as Mistral Vibe's does, can hand on
+ * what it found in them instead.
  */
-export type TailRead<Stamp = TranscriptStamp> =
+export type TailRead<Stamp = TranscriptStamp, End = string> =
   /** The file is as it was. Nothing was read. */
   | { unchanged: true; stamp: Stamp }
   | {
       unchanged: false;
       stamp: Stamp;
-      /** The end of the file, decoded. */
-      tail: string;
+      /** The end of the file, decoded, or what was found in it. */
+      tail: End;
       /** Whether that is the whole file, so its first line is whole too. */
       fromStart: boolean;
     };

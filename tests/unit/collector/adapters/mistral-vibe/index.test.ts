@@ -20,6 +20,7 @@ import {
 import { TAIL_LIMIT_BYTES } from "@collector/adapters/mistral-vibe/journal";
 import { LEASE_RETRY_MS } from "@collector/adapters/mistral-vibe/leases";
 import type { ReadOnlyIo } from "@collector/files/readOnlyIo";
+import { createTailLimits } from "@collector/messages/tailReader";
 import { keepsAwake } from "@core/keep-awake/keepAwakeRule";
 import { EMPTY_CHANGE_MEMORY, sessionChanges } from "@core/notices/sessionChanges";
 import {
@@ -35,24 +36,30 @@ import {
   SECOND,
   SESSION_DIR,
   SUBAGENT_ID,
+  appendStep,
   callbackRegistered,
   callbackResolved,
   current,
   delta,
+  historyChunk,
+  historyDelta,
   journalPath,
   leaseFile,
   otherRecord,
   record,
   publicState,
+  replyEntry,
   savedCallback,
   sessionId,
   storePath,
   usage,
+  userEntry,
   type StateFields,
 } from "@tests/fixtures/mistralVibe";
 import {
   handClock,
   healthy,
+  LAST_MESSAGE_READ,
   MAC_PROCESS_CHECK,
   memoryFiles,
   releaseLease,
@@ -2933,5 +2940,181 @@ describe("the token counts of the newest reply", () => {
     expect(withCounts.session?.tokens).toEqual(FIRST);
     expect(without.session).not.toHaveProperty("tokens");
     expect(withCounts.paths).toEqual(without.paths);
+  });
+});
+
+describe("what a session last said", () => {
+  const ID_A = `mistral-vibe:${A}`;
+  const ID_B = `mistral-vibe:${B}`;
+  const piece = historyChunk([userEntry("user-1"), replyEntry("assistant-1", "The tests pass.")]);
+  const chunkFile = (id: string) => `${SESSION_DIR}/${storePath(id)}/chunks/${piece.name}.json`;
+
+  /** A held session whose turn has ended, its reply in the pieces of its history. */
+  function endedSession(env: NodeJS.ProcessEnv = {}, minor?: number) {
+    const files = vibeFiles();
+    writeStore(files, { id: A, state: idle(A), historyChunks: [piece], minor });
+    writeLease(files, A);
+    return { files, adapter: vibeAdapterFor(files, standInPids(), { env }) };
+  }
+
+  test("is read only when asked, never by a poll, for a session the last poll listed", async () => {
+    const { files, adapter } = endedSession();
+    await adapter.poll();
+    await adapter.poll();
+    expect(files.opened().some((file) => file.includes("/chunks/"))).toBe(false);
+    expect(adapter.lastMessagesKept).toBe(0);
+
+    files.forget();
+    await expect(adapter.lastMessage(ID_A)).resolves.toEqual({
+      message: { text: "The tests pass.", cut: false },
+    });
+    expect(files.opened()).toEqual([`${SESSION_DIR}/${journalPath(A)}`, chunkFile(A)]);
+    await expect(adapter.lastMessage(ID_B)).resolves.toBeNull();
+  });
+
+  test("comes from the journal while a turn runs, with no piece of the history opened", async () => {
+    const files = vibeFiles();
+    writeStore(files, {
+      id: A,
+      state: running(A),
+      historyChunks: [piece],
+      journal: [
+        historyDelta(5, [appendStep(userEntry("user-2"))], { state: running(A) }),
+        historyDelta(6, [appendStep(replyEntry("assistant-2", "Looking now."))]),
+      ],
+    });
+    writeLease(files, A);
+    const adapter = vibeAdapterFor(files);
+    await adapter.poll();
+    files.forget();
+    await expect(adapter.lastMessage(ID_A)).resolves.toEqual({
+      message: { text: "Looking now.", cut: false },
+    });
+    expect(files.opened()).toEqual([`${SESSION_DIR}/${journalPath(A)}`]);
+  });
+
+  test("with AGENT_LOOKOUT_LAST_MESSAGE=off or AGENT_LOOKOUT_WAITING_TEXT=off is off, opens nothing, and the card says Off", async () => {
+    for (const [name, env] of [
+      ["AGENT_LOOKOUT_LAST_MESSAGE", { AGENT_LOOKOUT_LAST_MESSAGE: "off" }],
+      ["AGENT_LOOKOUT_WAITING_TEXT", { AGENT_LOOKOUT_WAITING_TEXT: " OFF " }],
+    ] as const) {
+      const { files, adapter } = endedSession(env);
+      const { health } = await adapter.poll();
+      expect(health.watching).toEqual(watching("~/.vibe/logs/session", "every 2 seconds", "Off"));
+      files.forget();
+      await expect(adapter.lastMessage(ID_A)).resolves.toEqual({
+        message: null,
+        reason: "off",
+        setting: name,
+      });
+      expect(files.calls).toEqual([]);
+    }
+  });
+
+  test("the card says what is read while it is on", async () => {
+    const { adapter } = endedSession();
+    const { health } = await adapter.poll();
+    expect(health.watching).toContainEqual({
+      label: "Last message read",
+      value: LAST_MESSAGE_READ,
+    });
+  });
+
+  test("is not read for a store a newer Vibe wrote, and nothing of it is opened", async () => {
+    const { files, adapter } = endedSession({}, 11);
+    const { sessions } = await adapter.poll();
+    expect(sessions.map((session) => session.id)).toEqual([ID_A]);
+    files.forget();
+    await expect(adapter.lastMessage(ID_A)).resolves.toEqual({ message: null, reason: "not-read" });
+    expect(files.calls).toEqual([]);
+  });
+
+  test("is kept for no session once a poll no longer lists it", async () => {
+    const { files, adapter } = endedSession();
+    await adapter.poll();
+    await adapter.lastMessage(ID_A);
+    expect(adapter.lastMessagesKept).toBe(1);
+
+    // The session is deleted, so the next poll lists it no more.
+    files.remove(`${SESSION_DIR}/${storePath(A)}`);
+    releaseLease(files, A);
+    expect((await adapter.poll()).sessions).toEqual([]);
+    expect(adapter.lastMessagesKept).toBe(0);
+    await expect(adapter.lastMessage(ID_A)).resolves.toBeNull();
+  });
+
+  test("is kept for no session once a poll fails, and is read again once a poll lists it", async () => {
+    const files = vibeFiles();
+    writeStore(files, { id: A, state: idle(A), historyChunks: [piece] });
+    writeLease(files, A);
+    let failing = false;
+    const pids = standInPids();
+    const adapter = vibeAdapterFor(files, pids, {
+      // Nothing a poll calls is expected to throw: this stands in for what might.
+      isAlive(pid) {
+        if (failing) throw new Error("A stand-in failure.");
+        return pids.isAlive(pid);
+      },
+    });
+    await adapter.poll();
+    await adapter.lastMessage(ID_A);
+    expect(adapter.lastMessagesKept).toBe(1);
+
+    failing = true;
+    const { health, sessions } = await adapter.poll();
+    expect(health.state).toBe("error");
+    expect(sessions).toEqual([]);
+    expect(adapter.lastMessagesKept).toBe(0);
+    files.forget();
+    await expect(adapter.lastMessage(ID_A)).resolves.toBeNull();
+    expect(files.calls).toEqual([]);
+
+    failing = false;
+    await adapter.poll();
+    await expect(adapter.lastMessage(ID_A)).resolves.toEqual({
+      message: { text: "The tests pass.", cut: false },
+    });
+  });
+
+  test("counts its reads against the limits the collector shares", async () => {
+    const limits = createTailLimits();
+    let asked = 0;
+    const lastMessageLimits = {
+      ...limits,
+      mayRead(at: number) {
+        asked += 1;
+        return limits.mayRead(at);
+      },
+    };
+    const files = vibeFiles();
+    writeStore(files, { id: A, state: idle(A), historyChunks: [piece] });
+    writeLease(files, A);
+    const adapter = vibeAdapterFor(files, standInPids(), { lastMessageLimits });
+    await adapter.poll();
+    expect(asked).toBe(0);
+    await expect(adapter.lastMessage(ID_A)).resolves.toEqual({
+      message: { text: "The tests pass.", cut: false },
+    });
+    expect(asked).toBe(1);
+  });
+
+  test("a new save drops what was kept, and is read from its own pieces", async () => {
+    const { files, adapter } = endedSession();
+    await adapter.poll();
+    await expect(adapter.lastMessage(ID_A)).resolves.toEqual({
+      message: { text: "The tests pass.", cut: false },
+    });
+    const next = historyChunk([
+      userEntry("user-1"),
+      replyEntry("assistant-1", "The tests pass."),
+      userEntry("user-2"),
+      replyEntry("assistant-2", "And the build."),
+    ]);
+    writeStore(files, { id: A, sequence: 9, state: idle(A), historyChunks: [next] });
+    await adapter.poll();
+    expect(adapter.lastMessagesKept).toBe(0);
+    await expect(adapter.lastMessage(ID_A)).resolves.toEqual({
+      message: { text: "And the build.", cut: false },
+    });
   });
 });

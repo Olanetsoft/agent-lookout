@@ -27,7 +27,10 @@ import { envelopeOf, isRecord, type Envelope } from "./envelope.ts";
  *   the journal segment that records what happened since,
  *   `journal/<16 digits>.jsonl` (`journal.ts`).
  * - `generations/<g>/projection-state.json` holds the session's public state
- *   as it was when the generation was saved (`envelope.ts`).
+ *   as it was when the generation was saved (`envelope.ts`), with its history
+ *   left out. The history is in pieces in `chunks/<sha256>.json`, which the
+ *   manifest names in order, oldest first, as `projection_state.chunks`. Only
+ *   the names of the newest five are kept.
  * - `generations/<g>/runtime-state.json` holds, with much else, the session's
  *   folder (`session_metadata.cwd`), whether it is a session of its own, a
  *   fork or a subagent (`identity.kind`), whether it is being deleted
@@ -42,11 +45,17 @@ import { envelopeOf, isRecord, type Envelope } from "./envelope.ts";
  * readers do, and if that fails too, what was read before stands until the
  * next poll.
  *
- * Nothing else in a store is opened: not `checkpoint.json`, which holds the
- * whole conversation, nor `chunks/`, `attachments/`, `processes/`,
+ * No poll opens anything else in a store: not `checkpoint.json`, which holds
+ * the whole conversation, nor `chunks/`, `attachments/`, `processes/`,
  * `quarantine/`, the sidecar `meta.json`, or `unified/.session-index.json`.
+ * Of `chunks/`, only the newest pieces of the history the manifest names are
+ * opened, and only when a session's last message is asked for
+ * (`history/lastMessages.ts`).
  */
 export const STORE_DIR = "unified";
+
+/** Where a store keeps the pieces of its documents, the history's among them. */
+export const CHUNKS_DIR = "chunks";
 
 /** The only store format this adapter knows. */
 export const STORE_FORMAT = "mistral.vibe.unified-session-store/v1";
@@ -77,6 +86,17 @@ const GENERATION = /^[0-9]{16}$/;
 /** A journal segment's path, relative to its store, as a manifest names it. */
 const JOURNAL_PATH = /^journal\/[0-9]{16}\.jsonl$/;
 
+/** A piece's name in `chunks/`, without `.json`: the SHA-256 of its body, as Vibe checks one. */
+const CHUNK_DIGEST = /^[0-9a-f]{64}$/;
+
+/**
+ * How many of the newest pieces of the history are named for a session's last
+ * message. Vibe closes a piece once it holds 64 KiB, so only the newest one can
+ * be smaller, and the 256 KB a last message may read holds at most four: five
+ * are always enough.
+ */
+export const HISTORY_CHUNKS_KEPT = 5;
+
 /**
  * The two files of a generation this adapter opens, by the names Vibe always
  * gives them. A manifest that names any other file for them, such as
@@ -91,6 +111,14 @@ const RUNTIME_FILE = "runtime-state.json";
  */
 const LEGACY_FOLDER = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}_[0-9]{8}_[0-9]{6}_[A-Za-z0-9_-]{1,8}$/;
 
+/** The newest pieces of a session's saved history, by name. None is opened by a poll. */
+export interface HistoryChunks {
+  /** The names of at most the newest five, oldest first. Empty when the history is empty. */
+  newest: string[];
+  /** Whether the manifest names older pieces than those. */
+  older: boolean;
+}
+
 /** What is kept of one session's store. */
 export interface Store {
   generation: string;
@@ -100,6 +128,11 @@ export interface Store {
   journal: string | null;
   /** The public state when the generation was saved. Null when it could not be read. */
   snapshot: Envelope | null;
+  /**
+   * The newest pieces of the history the manifest names, for the session's
+   * last message alone. Null when it names none that could be right.
+   */
+  history: HistoryChunks | null;
   /** The session's folder. */
   cwd: string | null;
   /** `root`, `fork` or `subagent`. Null when it could not be read. */
@@ -199,6 +232,20 @@ function generationFile(
   return isRecord(record) && record.path === expected ? expected : null;
 }
 
+/**
+ * The pieces of the history a manifest's `projection_state` names, when each
+ * is a name Vibe gives one. Null for any other list, or none.
+ */
+function historyChunksOf(record: unknown): HistoryChunks | null {
+  if (!isRecord(record) || !Array.isArray(record.chunks)) return null;
+  const names: unknown[] = record.chunks;
+  if (!names.every((name) => typeof name === "string" && CHUNK_DIGEST.test(name))) return null;
+  return {
+    newest: (names as string[]).slice(-HISTORY_CHUNKS_KEPT),
+    older: names.length > HISTORY_CHUNKS_KEPT,
+  };
+}
+
 /** Whether an error says a file is not there: a generation that went while it was read. */
 function wentAway(error: unknown): boolean {
   return isMissing(error);
@@ -234,6 +281,7 @@ export function createStoreReader(storesDir: string, io: ReadOnlyIo): StoreReade
 
     let snapshot: Envelope | null = null;
     const projectionFile = generationFile(manifest, "projection_state", PROJECTION_FILE);
+    const history = projectionFile === null ? null : historyChunksOf(manifest.projection_state);
     if (projectionFile !== null) {
       try {
         const projection = await readObject(
@@ -269,7 +317,7 @@ export function createStoreReader(storesDir: string, io: ReadOnlyIo): StoreReade
       }
     }
 
-    return { journal, snapshot, cwd, kind, deleting, pending };
+    return { journal, snapshot, history, cwd, kind, deleting, pending };
   }
 
   /** `CURRENT`, read whole. Null when it says nothing this adapter can read. */
@@ -330,10 +378,13 @@ export function createStoreReader(storesDir: string, io: ReadOnlyIo): StoreReade
           return { state: "ok", store: cached.store, current };
         }
         try {
+          const files = await readGeneration(root, sessionId, pointer);
+          // A newer Vibe's history may not be laid out as this one's is.
           const store: Store = {
             generation: pointer.generation,
             tooNew,
-            ...(await readGeneration(root, sessionId, pointer)),
+            ...files,
+            history: tooNew ? null : files.history,
           };
           cache.set(sessionId, { current, store });
           return { state: "ok", store, current };
@@ -346,6 +397,7 @@ export function createStoreReader(storesDir: string, io: ReadOnlyIo): StoreReade
               tooNew,
               journal: null,
               snapshot: null,
+              history: null,
               cwd: null,
               kind: null,
               deleting: false,
