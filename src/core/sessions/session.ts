@@ -65,6 +65,9 @@ export type RemoteSourceId = `remote:${string}`;
  * `copilot-cli` is GitHub's Copilot CLI, in its command `copilot`, whose
  * sessions are read from the event log it keeps for each and the names of the
  * locks beside it.
+ * `kiro-cli` is Kiro CLI, in its command `kiro-cli`, whose sessions are read
+ * from the header, the lock and the log it keeps for each, in its V3 store and
+ * its V2 store side by side.
  */
 export type SourceId =
   | "claude-code"
@@ -95,6 +98,7 @@ export type SourceId =
   | "oh-my-pi"
   | "muse-code"
   | "copilot-cli"
+  | "kiro-cli"
   | "status-files"
   | RemoteSourceId;
 
