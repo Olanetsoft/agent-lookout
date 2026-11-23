@@ -13,8 +13,9 @@ import type { ReadOnlyIo, FileInfo, OpenFile } from "../../files/readOnlyIo.ts";
  *
  * - From the head, the first `session_meta` line, and from it only `id`,
  *   `timestamp`, `cwd`, `source`, `thread_source`, `parent_thread_id`,
- *   `originator` and `cli_version`. The same line also carries the base
- *   instructions, tool definitions, git details and account ids, which are dropped.
+ *   `attached_thread` when it is `true`, `originator` and `cli_version`. The
+ *   same line also carries the base instructions, tool definitions, git
+ *   details and account ids, which are dropped.
  * - From the tail, the last turn line, an `event_msg` whose `payload.type` is
  *   `task_started`, `task_complete` or `turn_aborted` (or another name that
  *   starts with `task_` or `turn_`), with its time and whether its `turn_id`
@@ -66,6 +67,13 @@ export interface RolloutMeta {
   source?: CodexSource;
   threadSource?: string;
   parentThreadId?: string;
+  /**
+   * The thread is one Codex keeps attached to the thread it was forked from,
+   * such as a side chat its terminal app saves, and leaves out of its own lists.
+   * Codex writes `attached_thread` only when it is true
+   * (codex-rs/protocol/src/protocol.rs, `SessionMeta`).
+   */
+  attachedThread?: true;
   /** The program that created the session, such as `codex_cli_rs` or `Codex Desktop`. */
   originator?: string;
   /** The Codex version that created the session, such as `0.160.0`. */
@@ -167,6 +175,7 @@ export function readMetaLine(line: string): RolloutMeta | null {
     source: compactSource(payload.source),
     threadSource: text(payload.thread_source),
     parentThreadId: text(payload.parent_thread_id),
+    attachedThread: payload.attached_thread === true ? true : undefined,
     originator: label(payload.originator),
     cliVersion: label(payload.cli_version),
   };

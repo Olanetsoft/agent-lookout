@@ -2,6 +2,12 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
+## Unreleased
+
+### Fixed
+
+- A side chat Codex's terminal app saves, from Codex 0.169.0, is no longer listed as a session of its own. Codex keeps it attached to the session it came from and leaves it out of its own lists, and Agent Lookout now does the same. (#409)
+
 ## 0.2.29 - 2026-11-22
 
 Grok Build, Kimi Code and Prime Agent sessions keep the right status after a resume, a clock set forward or a background task, and Pi and Oh My Pi read their own folders when Agent Lookout runs inside Kimchi.
