@@ -87,6 +87,17 @@ describe("walking a line", () => {
     ]);
   });
 
+  test("an array where a value is wanted says whether it holds anything", () => {
+    const empties: boolean[] = [];
+    for (const text of ['{"e":[]}', '{"e":[ \t]}', '{"e":[{}]}', '{"e":[ 1 ,2]}']) {
+      walkLine(Buffer.from(text), true, WANTED, (_leaf, token) => {
+        if (token.type === "array") empties.push(token.empty);
+        return false;
+      });
+    }
+    expect(empties).toEqual([true, true, false, false]);
+  });
+
   test("goes into a wanted object only, and not into one at another path", () => {
     expect(walk('{"z":{"b":{"c":"x"}},"b":"flat"}').got).toEqual([]);
   });
