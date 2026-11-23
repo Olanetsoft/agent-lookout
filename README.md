@@ -41,7 +41,7 @@ Then open http://127.0.0.1:4777. Your sessions appear within a few seconds.
 - **Needs you:** the sessions waiting for your permission or an answer, longest first, with what a Claude Code session is asking.
 - **Sessions:** everything else, by status, by repository or on a board, with folder and branch.
 - **Answer and act:** Allow or Deny a Claude Code prompt, jump to its terminal or editor, or stop it after you confirm.
-- **Details:** Claude Code, Codex, Antigravity, Gemini CLI, OpenCode 1.x, Qwen Code, Kilo Code and MiMo Code sessions show what they last said, and how many tokens the newest reply took. Mistral Vibe sessions show the tokens.
+- **Details:** Claude Code, Codex, Antigravity, Mistral Vibe, Gemini CLI, OpenCode 1.x, Qwen Code, Kilo Code and MiMo Code sessions show what they last said, and how many tokens the newest reply took.
 - **Notifications:** on your desktop, by email, by webhook or on your phone, when a session waits or finishes. All off until you turn them on.
 - **Your own agents:** any agent that writes one small JSON file per session shows up too.
 
@@ -87,7 +87,7 @@ Any other agent can show up by writing one small file per session, and Amp throu
 
 Codex doesn't record when it waits for your approval, so a waiting session shows as working, and after 5 minutes its row says how long it has been quiet. The Antigravity CLI and the Antigravity app show as needing you while they ask you to approve a step, but not what they ask. [What each agent can report](docs/GUIDE.md#what-each-agent-can-report) explains every Partly and No.
 
-Mistral Vibe support was built from the source of Vibe 2.26.1 and 3.0.4 and has not yet been checked on a computer running Vibe.
+Mistral Vibe support was built from the source of Vibe 2.26.1, 3.0.4 and 3.1.4 and has not yet been checked on a computer running Vibe.
 
 Gemini CLI support was built from its source at v0.64.0, with its tool calls checked again at v0.70.0, and has not yet been checked on a machine running it.
 

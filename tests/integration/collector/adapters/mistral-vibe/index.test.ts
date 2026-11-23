@@ -7,6 +7,8 @@ import {
   readdir,
   readFile,
   readlink,
+  rename,
+  rm as rmFile,
   symlink,
   utimes,
   writeFile,
@@ -22,10 +24,13 @@ import {
 } from "@collector/adapters/mistral-vibe/index";
 import { nodeIo, type ReadOnlyIo } from "@collector/files/readOnlyIo";
 import {
+  appendStep,
   callbackRegistered,
   callbackResolved,
   delta,
   document,
+  historyChunk,
+  historyDelta,
   HOME,
   HOUR,
   leaseFile,
@@ -34,6 +39,7 @@ import {
   otherRecord,
   PRIVATE_WORDS,
   publicState,
+  replyEntry,
   sessionApiFacts,
   sessionId,
   storeFiles,
@@ -41,6 +47,7 @@ import {
   SUBAGENT_ID,
   journalPath,
   usage,
+  userEntry,
   type StateFields,
 } from "@tests/fixtures/mistralVibe";
 import { tempDir } from "@tests/support/node/tempFiles";
@@ -667,5 +674,87 @@ describe("a Mistral Vibe session's token counts, on a real folder", () => {
     expect(session?.tokens).toEqual(FIRST);
     expect(JSON.stringify(session)).not.toContain(PRIVATE_WORDS);
     expect(await snapshotOf(dir)).toEqual(before);
+  });
+});
+
+describe("a Mistral Vibe session's last message, on a real folder", () => {
+  const SAID = sessionId("e1");
+  const ID = `mistral-vibe:${SAID}`;
+  const piece = historyChunk([userEntry("user-1"), replyEntry("assistant-1", "The tests pass.")]);
+
+  /** A session this process holds, whose turn has ended, its reply in a piece of its history. */
+  async function saidDir(journal: string[] = []) {
+    const dir = await tempDir();
+    await writeAll(dir, {
+      ...storeFiles({
+        id: SAID,
+        state: idle(SAID, "demo-project notes"),
+        historyChunks: [piece],
+        journal,
+      }),
+      [`active/${SAID}.lock`]: "",
+      [`active/${SAID}.lock.json`]: leaseFile(SAID, process.pid, Date.now() - MINUTE),
+    });
+    return dir;
+  }
+
+  const chunksOf = (dir: string) => path.join(dir, "unified", SAID, "chunks");
+
+  test("is read from the piece when asked, opening only the journal and that piece, and changes nothing", async () => {
+    const dir = await saidDir();
+    const before = await snapshotOf(dir);
+    const { io, calls } = recordingIo();
+    const adapter = adapterFor(dir, { io });
+    await adapter.poll();
+    expect(calls.filter((call) => call.path.includes("chunks"))).toEqual([]);
+
+    calls.length = 0;
+    await expect(adapter.lastMessage(ID)).resolves.toEqual({
+      message: { text: "The tests pass.", cut: false },
+    });
+    expect(calls.filter((call) => call.method === "openRegular").map((call) => call.path)).toEqual([
+      path.join(dir, ...journalPath(SAID).split("/")),
+      path.join(chunksOf(dir), `${piece.name}.json`),
+    ]);
+    expect(await snapshotOf(dir)).toEqual(before);
+  });
+
+  test("is read from the journal while it holds a reply, with no piece opened", async () => {
+    const dir = await saidDir([
+      historyDelta(5, [appendStep(replyEntry("assistant-2", "Looking now."))]),
+    ]);
+    const { io, calls } = recordingIo();
+    const adapter = adapterFor(dir, { io });
+    await adapter.poll();
+    calls.length = 0;
+    await expect(adapter.lastMessage(ID)).resolves.toEqual({
+      message: { text: "Looking now.", cut: false },
+    });
+    expect(calls.filter((call) => call.path.includes("chunks"))).toEqual([]);
+  });
+
+  test("is not read through a piece, or a chunks/ folder, that is a link", async () => {
+    const linkedPiece = await saidDir();
+    const elsewhere = await tempDir();
+    const real = path.join(elsewhere, `${piece.name}.json`);
+    await writeFile(real, piece.body);
+    const file = path.join(chunksOf(linkedPiece), `${piece.name}.json`);
+    await rmFile(file);
+    await symlink(real, file);
+    const adapter = adapterFor(linkedPiece);
+    await adapter.poll();
+    await expect(adapter.lastMessage(ID)).resolves.toEqual({
+      message: null,
+      reason: "unreadable",
+    });
+
+    const linkedFolder = await saidDir();
+    const chunks = chunksOf(linkedFolder);
+    const moved = path.join(elsewhere, "chunks");
+    await rename(chunks, moved);
+    await symlink(moved, chunks);
+    const other = adapterFor(linkedFolder);
+    await other.poll();
+    await expect(other.lastMessage(ID)).resolves.toEqual({ message: null, reason: "unreadable" });
   });
 });

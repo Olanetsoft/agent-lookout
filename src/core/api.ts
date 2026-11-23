@@ -217,7 +217,8 @@ export const LAST_MESSAGE_PATH = "/api/sessions/last-message";
  *
  * off           a setting turns it off, and `setting` names it
  * not-read      Agent Lookout does not read what this session says: its agent is not read, it was read from
- *               OpenCode 2's `session_v2`, or it is on another machine
+ *               OpenCode 2's `session_v2`, a newer Mistral Vibe than it knows wrote its store, or it is on
+ *               another machine
  * not-found     its transcript was not found, or its id names none, as a background job's job id does.
  *               A link or a pipe where it should be is not taken for it
  * unreadable    its transcript could not be read, as when a link or a pipe took its place after it was found

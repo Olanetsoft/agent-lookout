@@ -1,13 +1,16 @@
 // Test fixtures only. Every id, time and word here is invented and generic.
 // The files follow the layout the source of Mistral Vibe 2.26.1 and 3.0.4
-// writes, with a journal record's `session_api` as 3.1.4 writes it, as
-// written up in docs/adapters/mistral-vibe.md: a store for each session under
+// writes, with a journal record's `session_api`, the history's entries and
+// steps and its pieces in `chunks/` as 3.1.4 writes them, as written up in
+// docs/adapters/mistral-vibe.md: a store for each session under
 // `unified/<id>/`, with `CURRENT`, one generation's `manifest.json`,
-// `projection-state.json` and `runtime-state.json`, and a journal segment,
-// and a lease for each open session under `active/`. Every document is JSON
+// `projection-state.json` and `runtime-state.json`, a journal segment and the
+// pieces of the history, and a lease for each open session under `active/`. Every document is JSON
 // as Vibe writes it, with its keys sorted, no spaces and a newline at the end.
 // Nothing in them is copied from a real machine or a real session. Product
 // code never imports this file.
+
+import { createHash } from "node:crypto";
 
 export const HOME = "/Users/example";
 
@@ -170,6 +173,12 @@ export interface StoreFields {
   journal?: string[];
   /** Callbacks the generation saved, beside the settled one every store here has. */
   callbacks?: SavedCallback[];
+  /**
+   * The pieces of the history the generation saved, oldest first, as
+   * `historyChunk` makes them, which the manifest names and `chunks/` holds.
+   * Left out, the manifest names one piece that `chunks/` holds with other bytes.
+   */
+  historyChunks?: HistoryChunk[];
 }
 
 /** The path of a session's store, relative to the session folder. */
@@ -197,8 +206,13 @@ export function current(fields: {
   });
 }
 
-/** A generation's manifest. */
-export function manifest(id: string, sequence = 4): string {
+/**
+ * A generation's manifest. `historyChunks` are the names of the pieces of the
+ * history, oldest first, and null leaves the list out, as for a history kept
+ * whole. Left out, it names one piece that the store holds under that name
+ * with other bytes.
+ */
+export function manifest(id: string, sequence = 4, historyChunks: unknown = [digest(7)]): string {
   return document({
     manifest_version: 1,
     session_id: id,
@@ -213,7 +227,11 @@ export function manifest(id: string, sequence = 4): string {
       checkpoint_version: 1,
     },
     runtime_state: { path: "runtime-state.json", sha256: digest(4), chunks: [digest(5)] },
-    projection_state: { path: "projection-state.json", sha256: digest(6), chunks: [digest(7)] },
+    projection_state: {
+      path: "projection-state.json",
+      sha256: digest(6),
+      ...(historyChunks === null ? {} : { chunks: historyChunks }),
+    },
     recovery_journal_segment: {
       path: `journal/${segmentName(sequence + 1)}`,
       first_sequence: sequence + 1,
@@ -305,7 +323,13 @@ export function storeFiles(fields: StoreFields): Record<string, string> {
       minor: fields.minor,
       storeFormat: fields.storeFormat,
     }),
-    [`${generation}/manifest.json`]: manifest(id, sequence),
+    [`${generation}/manifest.json`]: manifest(
+      id,
+      sequence,
+      fields.historyChunks === undefined
+        ? [digest(7)]
+        : fields.historyChunks.map(({ name }) => name),
+    ),
     [`${generation}/projection-state.json`]: projectionState(
       id,
       fields.state ?? { id, status: "idle" },
@@ -320,6 +344,13 @@ export function storeFiles(fields: StoreFields): Record<string, string> {
     }),
     [`${generation}/checkpoint.json`]: document({ context: { messages: [PRIVATE_WORDS] } }),
     [`${root}/chunks/${digest(7)}.json`]: document([{ id: "entry-1", text: PRIVATE_WORDS }]),
+    // A piece of the checkpoint, which shares the folder, holding a reply the adapter must never take.
+    [`${root}/chunks/${digest(3)}.json`]: document([
+      replyEntry("assistant-checkpoint", PRIVATE_WORDS),
+    ]),
+    ...Object.fromEntries(
+      (fields.historyChunks ?? []).map(({ name, body }) => [`${root}/chunks/${name}.json`, body]),
+    ),
     [`${root}/meta.json`]: document({ title: PRIVATE_WORDS, username: PRIVATE_WORDS }),
     [journalPath(id, sequence)]: (fields.journal ?? []).join(""),
   };
@@ -485,4 +516,210 @@ export function leaseFile(id: string, pid: unknown = LIVE_PID, acquiredAt = NOW 
     process_id: pid,
     session_id: id,
   });
+}
+
+/** A text block of a history entry. */
+export const textBlock = (text: string) => ({ type: "text", text });
+
+/** An image block of a reply, as the public history shows one. */
+export const imageBlock = () => ({
+  type: "image",
+  attachment: {
+    source: { kind: "inline", data: "aW1hZ2U=" },
+    alias: "image",
+    mimeType: "image/png",
+  },
+});
+
+/** A resource block of a reply, holding words the adapter must never take. */
+export const resourceBlock = () => ({
+  type: "resource",
+  resource: { kind: "text", uri: "file:///Users/example/code/demo/notes.md", text: PRIVATE_WORDS },
+});
+
+export interface ReplyFields {
+  /** `completed`, as Vibe saves every reply, unless a test says otherwise. */
+  generationStatus?: string;
+  /** `{ type: "committed" }` unless a test says otherwise. Null leaves it out. */
+  outcome?: unknown;
+  turnId?: string;
+}
+
+/**
+ * A reply in the public history, as Vibe 3.1.4 builds one (`_message_entry`):
+ * its text as one text block, or the blocks given.
+ */
+export function replyEntry(
+  id: string,
+  content: string | unknown[],
+  fields: ReplyFields = {},
+): Record<string, unknown> {
+  const outcome = fields.outcome === undefined ? { type: "committed" } : fields.outcome;
+  return {
+    type: "message",
+    id,
+    sessionId: sessionId("a1"),
+    turnId: fields.turnId ?? "turn-1",
+    createdAt: NOW - 2 * MINUTE,
+    updatedAt: NOW - 2 * MINUTE,
+    generationStatus: fields.generationStatus ?? "completed",
+    relatedEntryId: null,
+    inputEntryId: "user-1",
+    role: "assistant",
+    content: typeof content === "string" ? [textBlock(content)] : content,
+    source: "harness",
+    ...(outcome === null ? {} : { outcome }),
+  };
+}
+
+/** A prompt in the public history, in words the adapter must never take. */
+export function userEntry(id: string, text = PRIVATE_WORDS): Record<string, unknown> {
+  return {
+    type: "message",
+    id,
+    sessionId: sessionId("a1"),
+    turnId: "turn-1",
+    createdAt: NOW - 5 * MINUTE,
+    updatedAt: NOW - 5 * MINUTE,
+    generationStatus: "completed",
+    relatedEntryId: null,
+    inputEntryId: null,
+    role: "user",
+    content: [textBlock(text)],
+    source: "turn_start",
+  };
+}
+
+/** The model's thinking, an entry of its own, in words the adapter must never take. */
+export function reasoningEntry(id: string): Record<string, unknown> {
+  return {
+    type: "reasoning",
+    id,
+    sessionId: sessionId("a1"),
+    turnId: "turn-1",
+    createdAt: NOW - 3 * MINUTE,
+    updatedAt: NOW - 3 * MINUTE,
+    generationStatus: "completed",
+    relatedEntryId: null,
+    inputEntryId: "user-1",
+    text: PRIVATE_WORDS,
+    summary: [PRIVATE_WORDS],
+  };
+}
+
+/** A tool's call and its output, in words the adapter must never take. */
+export function effectEntry(id: string): Record<string, unknown> {
+  return {
+    type: "effect",
+    id,
+    sessionId: sessionId("a1"),
+    turnId: "turn-1",
+    createdAt: NOW - 3 * MINUTE,
+    updatedAt: NOW - 3 * MINUTE,
+    generationStatus: "completed",
+    relatedEntryId: null,
+    inputEntryId: "user-1",
+    detail: {
+      kind: "tool",
+      toolName: "bash",
+      input: { command: PRIVATE_WORDS },
+      display: { summary: "bash", message: PRIVATE_WORDS },
+    },
+    state: { status: "succeeded", outputText: PRIVATE_WORDS },
+  };
+}
+
+/** A question Vibe asked and its answer, settled into the history. */
+export function callbackEntry(id: string): Record<string, unknown> {
+  return {
+    ...callbackRouting({ id, kind: "user_input", createdAt: NOW - 3 * MINUTE }),
+    generationStatus: "completed",
+    state: { status: "resolved", result: { answers: [PRIVATE_WORDS] } },
+  };
+}
+
+/** The mark a rewind leaves in the history. */
+export function checkpointEntry(id: string): Record<string, unknown> {
+  return {
+    type: "checkpoint",
+    id,
+    sessionId: sessionId("a1"),
+    turnId: null,
+    createdAt: NOW - MINUTE,
+    updatedAt: NOW - MINUTE,
+    generationStatus: "completed",
+    relatedEntryId: null,
+    inputEntryId: null,
+    kind: "rewind",
+    message: "Conversation rewound",
+    details: { entryId: "user-1", restoreFiles: false, inplace: true },
+  };
+}
+
+/** A notice a hook left in the history, in words the adapter must never take. */
+export function noticeEntry(id: string): Record<string, unknown> {
+  return {
+    type: "notice",
+    id,
+    sessionId: sessionId("a1"),
+    turnId: "turn-1",
+    createdAt: NOW - MINUTE,
+    updatedAt: NOW - MINUTE,
+    generationStatus: "completed",
+    relatedEntryId: null,
+    inputEntryId: null,
+    level: "info",
+    detail: { kind: "hook", scope: "turn", content: PRIVATE_WORDS },
+  };
+}
+
+/** The steps of a `projection_delta`, as Vibe 3.1.4 writes them (`compute_projection_delta`). */
+export const appendStep = (entry: unknown) => ({ op: "append_entry", entry });
+export const replaceStep = (id: string, entry: unknown) => ({ op: "replace_entry", id, entry });
+export const removeStep = (id: string) => ({ op: "remove_entry", id });
+export const setEntriesStep = (entries: unknown[]) => ({ op: "set_history_entries", entries });
+
+/**
+ * A `projection_delta` record made of the steps given and, with `state`, the
+ * new public state last. With `sessionApi`, it is a record of Vibe 3.1's,
+ * whose `session_api` comes between `delta` and `watermark`.
+ */
+export function historyDelta(
+  sequence: number,
+  steps: unknown[],
+  options: { state?: StateFields; sessionApi?: unknown } = {},
+): string {
+  const delta = options.state
+    ? [...steps, { op: "set_envelope", state: publicState(options.state) }]
+    : steps;
+  const payload =
+    options.sessionApi === undefined
+      ? { delta, watermark: sequence }
+      : { delta, session_api: options.sessionApi, watermark: sequence };
+  return record("projection_delta", sequence, payload);
+}
+
+/** A `session_relocated` record: the session moved to another folder, with the steps that mark it. */
+export function relocatedRecord(sequence: number, steps: unknown[]): string {
+  return record("session_relocated", sequence, {
+    delta: steps,
+    metadata: { cwd: CWD, active_model: "demo-model", agent_name: "default" },
+    plugin_lock: {},
+    watermark: sequence,
+  });
+}
+
+/** A piece of the history as Vibe writes one: its name and what is in `chunks/<name>.json`. */
+export interface HistoryChunk {
+  name: string;
+  body: string;
+}
+
+/**
+ * A piece of the history holding these entries, as Vibe writes one: a JSON
+ * array and a newline, named for the SHA-256 of the array.
+ */
+export function historyChunk(entries: unknown[]): HistoryChunk {
+  const array = canonical(entries);
+  return { name: createHash("sha256").update(array).digest("hex"), body: `${array}\n` };
 }

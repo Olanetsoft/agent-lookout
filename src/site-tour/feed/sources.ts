@@ -1450,6 +1450,10 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
           value:
             "once for each lease, after a minute with nothing written or as soon as its session waits, then every 30 seconds while it waits or until ps answers",
         },
+        {
+          label: "Last message read",
+          value: "end of a session's journal and history, while its details are open",
+        },
       ],
       capabilities: MISTRAL_VIBE_CAPABILITIES,
       checkedAt,

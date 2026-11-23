@@ -83,6 +83,12 @@ const READ_SOURCES: ReadonlySet<string> = new Set([
   "codex",
   "antigravity-cli",
   "antigravity-app",
+  "mistral-vibe",
+  "gemini-cli",
+  "opencode",
+  "qwen-code",
+  "kilo-code",
+  "mimo-code",
 ]);
 
 /**
@@ -444,8 +450,8 @@ export function createFeed(t0: number): Feed {
     lastMessage(id, shown, now) {
       const session = feed.snapshot(shown, now).sessions.find((listed) => listed.id === id);
       if (!session) return null;
-      // As the collector answers: Claude Code, Codex, the Antigravity CLI and
-      // Antigravity are read, another agent or another machine is not.
+      // As the collector answers: the ten agents whose last message it reads
+      // are read, another agent or another machine is not.
       if (!READ_SOURCES.has(session.source)) {
         return { message: null, reason: "not-read" };
       }
