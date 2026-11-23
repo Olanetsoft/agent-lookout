@@ -1,5 +1,5 @@
 // Test fixtures only. Every id, name, path and word here is invented and
-// generic. A manifest follows the shape Cline's source writes at cli-v3.0.74
+// generic. A manifest follows the shape Cline's source writes at cli-v3.0.75
 // (`session/models/session-manifest.ts`), as written up in
 // docs/adapters/cline.md, and nothing in it is copied from a real machine:
 // Cline was not run to make it. Product code never imports this file.

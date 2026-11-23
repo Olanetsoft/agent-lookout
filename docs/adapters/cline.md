@@ -2,9 +2,9 @@
 
 These notes record what Agent Lookout reads from Cline, where each value comes from, and what breaks when Cline changes. When the adapter stops working, start here.
 
-Written on 2026-11-04 from the source of Cline's CLI at `cli-v3.0.74`, released 2026-10-26 (commit `04b6775` of [cline/cline](https://github.com/cline/cline)), whose runtime is `@cline/core` 0.2.0. The newest tags, `v4.1.26` for the VS Code extension and `desktop-v0.0.49` for the desktop app, are two commits and one commit on from it, and change only version numbers and changelogs. Cline was not installed or run on the machine where the adapter was written, and no Cline folder was read there. Everything below comes from that source and from hand-written files laid out the same way. **The adapter was built from Cline's source at cli-v3.0.74 and has not yet been checked on a computer running Cline.** The Sources view says so too.
+Written on 2026-11-04 from the source of Cline's CLI at `cli-v3.0.74`, released 2026-10-26 (commit `071e1b2` of [cline/cline](https://github.com/cline/cline)), and checked again on 2026-11-22 against `cli-v3.0.75`, released 2026-11-21 (commit `06f0ec7`), whose runtime is `@cline/core` 0.2.1. Of what changed between the two, only the process of a one-shot run touches this adapter, as [The process, and Cline's hub](#the-process-and-clines-hub) says. The newest tags, `v4.1.27` for the VS Code extension and `desktop-v0.0.50` for the desktop app, are three commits and two commits on from `cli-v3.0.75`, and change only version numbers and changelogs. Cline was not installed or run on the machine where the adapter was written, and no Cline folder was read there. Everything below comes from that source, and from hand-written files laid out the same way. **The adapter was built from Cline's source at cli-v3.0.75 and has not yet been checked on a computer running Cline.** The Sources view says so too.
 
-Each citation is `path:line` at `cli-v3.0.74`, where `core/` is `sdk/packages/core/src/` and `shared/` is `sdk/packages/shared/src/`.
+Each citation is `path:line` at `cli-v3.0.75`, where `core/` is `sdk/packages/core/src/` and `shared/` is `sdk/packages/shared/src/`.
 
 The code is in `src/collector/adapters/cline/`, and the status mapping is in `src/core/mapping/cline/clineMapping.ts`.
 
@@ -15,7 +15,7 @@ Cline has two ways of keeping sessions, and this adapter reads one.
 - Its newer runtime, `@cline/core`, keeps a folder for each session under `~/.cline/data/sessions/`. Cline's CLI uses it, its desktop app uses it, and so do the VS Code builds that run the same runtime. This adapter reads that folder.
 - The older VS Code extension keeps its tasks in the editor's own storage, in another layout. This adapter does not read them, so a session of that extension is not listed.
 
-The issue this adapter came from says that a status, a folder and a process ID are on disk, and that a pending tool approval is not. The first holds. The second does not hold at `cli-v3.0.74`: the runtime writes `pending` for as long as a tool's approval is asked, as [Needs you](#needs-you) says, so a Cline session can show as needing you.
+The issue this adapter came from says that a status, a folder and a process ID are on disk, and that a pending tool approval is not. The first holds. The second does not hold at `cli-v3.0.75`: the runtime writes `pending` for as long as a tool's approval is asked, as [Needs you](#needs-you) says, so a Cline session can show as needing you.
 
 ## How it reads Cline, and why
 
@@ -69,7 +69,7 @@ A person who uses `--config` can start Agent Lookout with `CLINE_DIR` set to the
 
 `<id>/<id>.json` is JSON, two spaces to a level, written with `writeFileSync` (`core/session/stores/session-manifest-store.ts:112-119`), so in place and not through a temporary file. A read can catch one half written. What was last read of that file then stands in for one poll.
 
-Cline makes a session's manifest at its first prompt, and for a forked or restored session as it starts (`core/runtime/host/local-runtime-host.ts:2437-2462`). The desktop app also makes one for each session it imports from Claude Code, Codex or OpenCode, already `completed`, with pid 0 and the times that session had there (`core/services/session-import/service.ts:325-345`), and [Imported sessions](#imported-sessions) says which of those are listed. A session opened with no prompt has none, so it is not listed until its first prompt. After that, the runtime reads the manifest, changes it and writes it whole each time the status, the title or the session's other details change (`core/runtime/host/local-runtime-host.ts:1933-1969`).
+Cline makes a session's manifest at its first prompt, and for a forked or restored session as it starts (`core/runtime/host/local-runtime-host.ts:2442-2467`). The desktop app also makes one for each session it imports from Claude Code, Codex or OpenCode, already `completed`, with pid 0 and the times that session had there (`core/services/session-import/service.ts:325-345`), and [Imported sessions](#imported-sessions) says which of those are listed. A session opened with no prompt has none, so it is not listed until its first prompt. After that, the runtime reads the manifest, changes it and writes it whole each time the status, the title or the session's other details change (`core/runtime/host/local-runtime-host.ts:1938-1974`).
 
 | Field                                                                                                             | Meaning                                                                                                                                                           | Kept                                                                                          |
 | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
@@ -109,10 +109,10 @@ An import writes the manifest with `completed`, pid 0 and the session's times in
 
 So `metadata.importedFrom` is the mark of an import. It does not say whether the session was resumed, and neither does pid 0:
 
-- A resume keeps the manifest it finds, with its mark, its pid 0 and its `started_at` (`core/runtime/host/local-runtime-host.ts:628-650`, `:780-786`).
+- A resume keeps the manifest it finds, with its mark, its pid 0 and its `started_at` (`core/runtime/host/local-runtime-host.ts:628-650`, `:784-790`).
 - A fork copies the mark with the rest of `metadata` (`core/session/fork-metadata.ts:1-29`, `apps/cli/src/runtime/interactive/fork/metadata.ts:21-25`).
 
-What a resume changes is `status` and `ended_at`. The first turn writes `running` and removes `ended_at`, and when the session ends Cline writes a status and a new `ended_at` (`core/runtime/host/local-runtime-host.ts:2032`, `:2744-2773`). So a session is left out when all of these hold:
+What a resume changes is `status` and `ended_at`. The first turn writes `running` and removes `ended_at`, and when the session ends Cline writes a status and a new `ended_at` (`core/runtime/host/local-runtime-host.ts:2037`, `:2749-2778`). So a session is left out when all of these hold:
 
 - `status` is `completed`.
 - `metadata.importedFrom.importedAt` is an ISO time.
@@ -122,21 +122,21 @@ The `ended_at` an import writes is the session's last time in the other tool, wh
 
 Anything else is listed, because a session wrongly left out is worse than one shown twice. That covers a manifest with no mark, a mark of the wrong type, and an `ended_at` that is missing, is not a time or is later than `importedAt`, so a fork that has ended is listed too.
 
-Opening an imported session and sending it nothing is not a resume. That can rewrite `metadata`, but `status` and `ended_at` stay, and closing it writes no status (`core/runtime/host/local-runtime-host.ts:1468-1471`), so the session stays left out. So does one you only rename.
+Opening an imported session and sending it nothing is not a resume. That can rewrite `metadata`, but `status` and `ended_at` stay, and closing it writes no status (`core/runtime/host/local-runtime-host.ts:1473-1476`), so the session stays left out. So does one you only rename.
 
 Of `metadata`, only `importedFrom.importedAt` is read. For a session left out, nothing is kept but that answer. For any other, nothing of `metadata` is kept.
 
 ## Status
 
-`status` is one of six words (`shared/session/records.ts:1-22`). The runtime writes each change to the manifest through `updateStatus` (`core/runtime/host/local-runtime-host.ts:2744-2773`).
+`status` is one of six words (`shared/session/records.ts:1-22`). The runtime writes each change to the manifest through `updateStatus` (`core/runtime/host/local-runtime-host.ts:2749-2778`).
 
 | `status`                     | Its process | Status    | Written                                                                                                      |
 | ---------------------------- | ----------- | --------- | ------------------------------------------------------------------------------------------------------------ |
-| `completed`, `cancelled`     | Any         | Finished  | When a one-shot run ends, or an open session closes, by how its last turn ended (`:2069-2086`, `:2551-2564`) |
-| `failed`                     | Any         | Failed    | When a turn throws, a one-shot run ends on an error, or an open session closes after one (`:2566-2577`)      |
-| `running`                    | Runs        | Working   | From a turn's start to its end (`:2032`)                                                                     |
-| `pending`                    | Runs        | Needs you | While a tool's approval is asked (`:957-978`)                                                                |
-| `idle`                       | Runs        | Idle      | When a turn ends in an open session (`:2059-2067`), and for a session opened with no prompt                  |
+| `completed`, `cancelled`     | Any         | Finished  | When a one-shot run ends, or an open session closes, by how its last turn ended (`:2074-2091`, `:2556-2569`) |
+| `failed`                     | Any         | Failed    | When a turn throws, a one-shot run ends on an error, or an open session closes after one (`:2571-2582`)      |
+| `running`                    | Runs        | Working   | From a turn's start to its end (`:2037`)                                                                     |
+| `pending`                    | Runs        | Needs you | While a tool's approval is asked (`:961-982`)                                                                |
+| `idle`                       | Runs        | Idle      | When a turn ends in an open session (`:2064-2072`), and for a session opened with no prompt                  |
 | `running`, `pending`, `idle` | Gone        | Finished  | A crash writes nothing, so the manifest says what it said last                                               |
 | `running`, `pending`, `idle` | Not known   | Unknown   | A manifest with no pid that could be one: a status that needs a process is not guessed at                    |
 | Anything else                | Any         | Unknown   |                                                                                                              |
@@ -147,7 +147,7 @@ When Cline next starts, or lists its sessions, it finds each open session whose 
 
 ### Needs you
 
-The runtime wraps the callback that asks for a tool's approval. It writes `pending` before it asks and `running` once it has an answer (`core/runtime/host/local-runtime-host.ts:957-978`). Both ways of hosting a session go through it: the CLI passes its callback to the local runtime, and the hub passes one to the runtime it runs (`core/hub/server/handlers/session-handlers.ts:447-450`). That wrapper is the one thing that writes `pending` to a manifest at this tag.
+The runtime wraps the callback that asks for a tool's approval. It writes `pending` before it asks and `running` once it has an answer (`core/runtime/host/local-runtime-host.ts:961-982`). Both ways of hosting a session go through it: the CLI passes its callback to the local runtime, and the hub passes one to the runtime it runs (`core/hub/server/handlers/session-handlers.ts:490-493`). That wrapper is the one thing that writes `pending` to a manifest at this tag.
 
 `pending` is shown as needing you, with the reason permission. What Cline asks is not in the manifest, so nothing of it is shown.
 
@@ -157,7 +157,7 @@ A question, the `ask_question` tool, runs through its own callback and writes no
 
 ## The process, and Cline's hub
 
-`pid` is `process.pid` of whatever hosts the session (`core/runtime/host/local-runtime-host.ts:611,2443`), and that depends on the app:
+`pid` is `process.pid` of whatever hosts the session (`core/runtime/host/local-runtime-host.ts:611,2448`), and that depends on the app:
 
 | App                                                            | What hosts the session                    | What `pid` is        |
 | -------------------------------------------------------------- | ----------------------------------------- | -------------------- |
@@ -166,9 +166,11 @@ A question, the `ask_question` tool, runs through its own callback and writes no
 | The desktop app                                                | Cline's hub                               | The hub's            |
 | The VS Code builds that run the runtime                        | The extension host                        | The extension host's |
 
-(`core/runtime/host/host.ts:211-262`, `apps/cli/src/runtime/interactive/session-runtime.ts:160-169`, `apps/examples/desktop-app/sidecar/context.ts:1308`, `apps/vscode/src/sdk/vscode-session-host.ts:180`.)
+(`core/runtime/host/host.ts:211-262`, `apps/cli/src/runtime/interactive/session-runtime.ts:160-169`, `apps/examples/desktop-app/sidecar/context.ts:1308`, `apps/vscode/src/sdk/vscode-session-host.ts:181`.)
 
-So several sessions can name one pid, and it may be in no terminal. And a program that closes a hub's session only detaches from it: the CLI's stop sends `session.detach` (`core/hub/runtime-host/hub-runtime-host.ts:1395-1399`), and the hub keeps the session, as it was, for as long as it runs. It has no idle shutdown. When the hub stops, each session it holds is ended and written as finished or failed (`core/hub/server/hub-server-transport.ts:788`). So a session you closed in the CLI stays idle here until the hub stops, or until it leaves the list a day after it was last written. A manifest does not say whether a hub session has a window open.
+From `cli-v3.0.75`, a one-shot run, whose prompt is given on the command line or piped in, is in yolo mode, so the CLI hosts it even while a hub runs, and `pid` is the CLI's. It is not put in yolo mode, and is hosted as the rows above say, when auto-approval is off, with `--auto-approve false` or in Cline's settings, when a mode is given, as with `--act` or `--plan`, when plan mode is saved, and for a `/team` prompt (`apps/cli/src/utils/startup-settings.ts:11-40`, `apps/cli/src/runtime/run-agent.ts:165,175`).
+
+So several sessions can name one pid, and it may be in no terminal. And a program that closes a hub's session only detaches from it: the CLI's stop sends `session.detach` (`core/hub/runtime-host/hub-runtime-host.ts:1373-1377`), and the hub keeps the session, as it was, for as long as it runs. It has no idle shutdown. When the hub stops, each session it holds is ended and written as finished or failed (`core/hub/server/hub-server-transport.ts:800`). So a session you closed in the CLI stays idle here until the hub stops, or until it leaves the list a day after it was last written. A manifest does not say whether a hub session has a window open.
 
 Every session whose manifest says it is open is asked about with signal 0 on every poll. A session that has ended is not, and it shows no process ID. A manifest that names no pid is not asked about, and shows as unknown.
 
@@ -181,17 +183,17 @@ Only on a Mac, because a comparison acts only when it is sure. Linux's `ps` work
 ## Names, folders and apps
 
 - **Name:** the folder's name, then the id.
-- **Why not `metadata.title`:** by default it is the first line of the first prompt, cut to 120 characters (`core/services/session-data.ts:232-249`), so it would carry what was typed into emails, webhook posts and pushes, which promise no prompt. You can set another with `cline history update --title`, but no field says which of the two a title is, and comparing it with `prompt` does not tell: a fork's is made from the session it forked, with its spaces collapsed and ` (fork)` added (`apps/cli/src/runtime/interactive/fork/title.ts`), and a fork or a restored session keeps its title while its manifest holds a later prompt (`core/runtime/host/local-runtime-host.ts:2011-2015`, `core/session/services/persistence-service.ts:243-246`). So it is dropped with the rest of the file, and, as for Qwen Code, what was typed is never used. `prompt` is never read for a name.
+- **Why not `metadata.title`:** by default it is the first line of the first prompt, cut to 120 characters (`core/services/session-data.ts:232-249`), so it would carry what was typed into emails, webhook posts and pushes, which promise no prompt. You can set another with `cline history update --title`, but no field says which of the two a title is, and comparing it with `prompt` does not tell: a fork's is made from the session it forked, with its spaces collapsed and ` (fork)` added (`apps/cli/src/runtime/interactive/fork/title.ts`), and a fork or a restored session keeps its title while its manifest holds a later prompt (`core/runtime/host/local-runtime-host.ts:2016-2020`, `core/session/services/persistence-service.ts:243-246`). So it is dropped with the rest of the file, and, as for Qwen Code, what was typed is never used. `prompt` is never read for a name.
 - **Folder:** `cwd`, as written.
 - **App:** not known. `source` is `cli`, `desktop`, `vscode` and others, and it is not kept, so the session's app is not shown.
 
 ## Quiet for
 
-The last write of a session whose manifest says it is open is the newest modified time of its manifest and its messages file. Cline rewrites the messages file at each reply and each step of a turn (`core/runtime/host/local-runtime-host.ts:1003-1016`, `core/services/agent-events.ts:312-318`), so its time moves as the session works. Only its time is looked up. Nothing is written while one long reply comes in or one long tool runs, so a session busy on either shows as quiet.
+The last write of a session whose manifest says it is open is the newest modified time of its manifest and its messages file. Cline rewrites the messages file at each reply and each step of a turn (`core/runtime/host/local-runtime-host.ts:1007-1020`, `core/services/agent-events.ts:313-319`), so its time moves as the session works. Only its time is looked up. Nothing is written while one long reply comes in or one long tool runs, so a session busy on either shows as quiet.
 
 ## Token counts
 
-No. `Session.tokens` holds the counts of the newest reply. The manifest's `metadata` holds a session's running totals, `usage` and `aggregateUsage` (`core/runtime/host/local-runtime-host.ts:2246-2252`), which are not those, and a reply's own counts are in the messages file beside the conversation, which is never opened. For the same reason there is no [last message](../GUIDE.md#a-sessions-details).
+No. `Session.tokens` holds the counts of the newest reply. The manifest's `metadata` holds a session's running totals, `usage` and `aggregateUsage` (`core/runtime/host/local-runtime-host.ts:2251-2257`), which are not those, and a reply's own counts are in the messages file beside the conversation, which is never opened. For the same reason there is no [last message](../GUIDE.md#a-sessions-details).
 
 ## Jump, Stop and Answer
 

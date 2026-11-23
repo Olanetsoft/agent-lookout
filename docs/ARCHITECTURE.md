@@ -290,7 +290,7 @@ A session's id is `hermes-agent:<profile>/<root id>`. Its name is the title of i
 
 ## The Cline adapter
 
-The adapter lives in `src/collector/adapters/cline/`. [adapters/cline.md](adapters/cline.md) is its reference: the files it reads, the full status table, the Cline version it was written from, what is not yet checked and what breaks when Cline changes. It was built from Cline's source at cli-v3.0.74 and has not yet been checked on a computer running it.
+The adapter lives in `src/collector/adapters/cline/`. [adapters/cline.md](adapters/cline.md) is its reference: the files it reads, the full status table, the Cline version it was written from, what is not yet checked and what breaks when Cline changes. It was built from Cline's source at cli-v3.0.75 and has not yet been checked on a computer running it.
 
 Cline's newer runtime keeps a folder for each session in `~/.cline/data/sessions`, with a manifest, `<id>/<id>.json`, that it rewrites each time the session's status, title or settings change. The CLI, the desktop app and the VS Code builds that run the runtime write it. The older VS Code extension keeps its tasks in the editor's own storage, which is not read. `clineSessionsDirFor` in `index.ts` works the folder out as Cline does, from `CLINE_SESSION_DATA_DIR`, `CLINE_DATA_DIR` and `CLINE_DIR`, unless `AGENT_LOOKOUT_CLINE_HOME` names Cline's folder.
 
