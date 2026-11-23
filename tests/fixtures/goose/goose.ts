@@ -1,8 +1,8 @@
 // Test fixtures only. Every id, name, path and word here is invented and
-// generic. A database follows the tables Goose's source makes at v1.57.0
-// (`create_schema` in `crates/goose/src/session/session_manager.rs`), as written
-// up in docs/adapters/goose.md, and nothing in it is copied from a real machine:
-// Goose was not run to make it. Product code never imports this file.
+// generic. A database follows the tables Goose's source makes at v1.57.0 or
+// v1.60.2 (`create_schema` in `crates/goose/src/session/session_manager.rs`), as
+// written up in docs/adapters/goose.md, and nothing in it is copied from a real
+// machine: Goose was not run to make it. Product code never imports this file.
 
 export const HOME = "/Users/example";
 
@@ -129,6 +129,21 @@ CREATE INDEX idx_sessions_updated ON sessions(updated_at DESC);
 CREATE INDEX idx_sessions_type ON sessions(session_type);
 `;
 
+/**
+ * Goose's tables at v1.60.2, schema version 18: `sessions` and `messages` as
+ * at v1.57.0, and `session_tags`, which version 18 adds
+ * (`create_session_tags_table`).
+ */
+export const SCHEMA_18 = `${SCHEMA.replace("VALUES (17)", "VALUES (18)")}
+CREATE TABLE session_tags (
+  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  key TEXT NOT NULL,
+  value TEXT NOT NULL,
+  PRIMARY KEY (session_id, key)
+);
+CREATE INDEX idx_session_tags_key_value ON session_tags(key, value, session_id);
+`;
+
 /** Text as SQL, with its quotes doubled. */
 const quoted = (value: string) => `'${value.replace(/'/g, "''")}'`;
 
@@ -171,4 +186,9 @@ INSERT INTO messages (message_id, session_id, role, content_json, created_timest
 VALUES ('msg_1', ${quoted(id)}, 'user', ${quoted(`[{"type":"text","text":"${PRIVATE_WORDS}"}]`)},
   strftime('%s', 'now'), ${secret});
 `;
+}
+
+/** A tag on a session, as an ACP client sets one from v1.59.0 on, with placeholder words for its value. */
+export function sessionTagSql(sessionId = "20261001_1"): string {
+  return `INSERT INTO session_tags (session_id, key, value) VALUES (${quoted(sessionId)}, 'demo.thread', ${quoted(PRIVATE_WORDS)});`;
 }

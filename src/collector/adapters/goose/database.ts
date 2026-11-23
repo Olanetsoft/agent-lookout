@@ -47,7 +47,7 @@ import {
  * next change, or 10 seconds later. That is one run of `sqlite3`, and a second,
  * the probe, only when the first fails.
  *
- * Built from Goose's source at v1.57.0, and not yet checked on a computer
+ * Built from Goose's source at v1.60.2, and not yet checked on a computer
  * running Goose.
  */
 

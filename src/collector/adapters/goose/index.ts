@@ -70,7 +70,7 @@ export const STATUS_NOTE =
 
 /** Said whenever Goose is watched, until the adapter has been checked on a computer running it. */
 export const UNCHECKED_NOTE =
-  "This was built from Goose's source at v1.57.0 and not yet checked on a computer running Goose, so a status can be wrong.";
+  "This was built from Goose's source at v1.60.2 and not yet checked on a computer running Goose, so a status can be wrong.";
 
 /** Said on Linux when no sqlite3 was found, which Ubuntu and Debian do not install. */
 export const NO_SQLITE_ADVICE = "On Ubuntu or Debian, install it with sudo apt install sqlite3.";
@@ -85,7 +85,7 @@ export const WINDOWS_DETAIL =
 /**
  * What a Goose session can show, from the database this adapter reads with
  * `sqlite3`. See docs/adapters/goose.md for each. Built from Goose's source at
- * v1.57.0 and not yet checked on a computer running it.
+ * v1.60.2 and not yet checked on a computer running it.
  *
  * - No Working and idle: nothing ties a session to a process, so a turn a crash
  *   cut off cannot be told from one under way.
@@ -222,7 +222,7 @@ export interface GooseAdapterOptions {
  * it out (`gooseDataDirFor`). Someone who sets the variable means that folder: if
  * it holds no database, that is an answer, not a missing Goose.
  *
- * Built from Goose's source at v1.57.0, and not yet checked on a computer
+ * Built from Goose's source at v1.60.2, and not yet checked on a computer
  * running Goose.
  */
 export function createGooseAdapter(options: GooseAdapterOptions = {}): Adapter {

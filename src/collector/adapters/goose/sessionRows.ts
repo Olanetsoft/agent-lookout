@@ -34,7 +34,7 @@ import { jsonRows } from "../opencode/sessionRows.ts";
  * Each answer is checked field by field, and a row whose id is not one Goose
  * makes is dropped.
  *
- * Built from Goose's source at v1.57.0, and not yet checked on a computer
+ * Built from Goose's source at v1.60.2, and not yet checked on a computer
  * running Goose.
  */
 

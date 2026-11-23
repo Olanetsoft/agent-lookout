@@ -21,7 +21,12 @@ import {
   runSqlite,
 } from "@collector/adapters/antigravity/app/summaries";
 import { createDatabaseReader } from "@collector/adapters/goose/database";
-import { MAX_SESSIONS, PROBE_QUERY, SESSIONS_QUERY } from "@collector/adapters/goose/sessionRows";
+import {
+  MAX_SESSIONS,
+  PROBE_QUERY,
+  readSchema,
+  SESSIONS_QUERY,
+} from "@collector/adapters/goose/sessionRows";
 import { sqliteArguments } from "@collector/adapters/opencode/sessionRows";
 import { nodeIo } from "@collector/files/readOnlyIo";
 import {
@@ -30,26 +35,31 @@ import {
   PRIVATE_WORDS,
   PROJECT,
   SCHEMA,
+  SCHEMA_18,
   sessionSql,
+  sessionTagSql,
 } from "@tests/fixtures/goose/goose";
 import { tempDir } from "@tests/support/node/tempFiles";
 
 // The real sqlite3 is run, as the adapter runs it, on a database this test
-// writes with that same sqlite3, laid out as Goose v1.57.0's is. What Goose
-// saves lies in the database's -wal file, and a second sqlite3, kept open as
-// Goose keeps its database open, stands in for it here. Where there is no
-// sqlite3, as on Windows, there is nothing to run.
+// writes with that same sqlite3, laid out as Goose v1.57.0's or v1.60.2's is.
+// What Goose saves lies in the database's -wal file, and a second sqlite3, kept
+// open as Goose keeps its database open, stands in for it here. Where there is
+// no sqlite3, as on Windows, there is nothing to run.
 
 const sqlite = process.platform === "win32" ? null : await findSqlite();
 
 /** Goose's data folder, with its database, in WAL mode, holding these rows, and nothing beside it. */
-async function makeDatabase(rows: string[]): Promise<{ dir: string; file: string }> {
+async function makeDatabase(
+  rows: string[],
+  schema = SCHEMA,
+): Promise<{ dir: string; file: string }> {
   const dir = path.join(await tempDir(), "goose", "sessions");
   const file = path.join(dir, "sessions.db");
   await mkdir(dir, { recursive: true });
   // On stdin, since Linux takes no argument longer than 128 KB.
   execFileSync(sqlite as string, ["-init", "/dev/null", file], {
-    input: [SCHEMA, ...rows].join("\n"),
+    input: [schema, ...rows].join("\n"),
     stdio: ["pipe", "ignore", "ignore"],
   });
   // The SQLite of macOS keeps the two files once the database is closed; others remove them.
@@ -262,6 +272,24 @@ describe.skipIf(sqlite === null)("reading Goose's database with the real sqlite3
     await rm(`${file}-wal`, { force: true });
     await rm(`${file}-shm`, { force: true });
     expect((await readNow(file)).state).toBe("unsupported");
+  });
+
+  test("a database at schema 18, as Goose v1.60.2 makes it, is read as before, and no tag is printed", async () => {
+    const { file } = await makeDatabase([sessionSql(), sessionTagSql()], SCHEMA_18);
+    expect(JSON.parse(await printed(file, "SELECT max(version) AS v FROM schema_version"))).toEqual(
+      [{ v: 18 }],
+    );
+    expect(JSON.parse(await printed(file, "SELECT count(*) AS n FROM session_tags"))).toEqual([
+      { n: 1 },
+    ]);
+    const read = await readNow(file);
+    expect(read.state).toBe("read");
+    expect(read.rows.map(({ id }) => id)).toEqual(["20261001_1"]);
+    expect(await printed(file, SESSIONS_QUERY)).not.toContain(PRIVATE_WORDS);
+    expect(readSchema(await printed(file, PROBE_QUERY))).toBe("supported");
+    const plan = await printed(file, `EXPLAIN QUERY PLAN ${SESSIONS_QUERY}`);
+    expect(plan).toContain("idx_sessions_updated");
+    expect(plan).not.toContain("TEMP B-TREE");
   });
 
   test("a link at the database's name is not followed", async () => {

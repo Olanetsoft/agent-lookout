@@ -4,7 +4,7 @@
 // A row of Goose's `sessions` table has no field that says a session is
 // running, waiting, over or failed, and none that names a process, so all there
 // is to go on is whether any Goose program runs. This was worked out from
-// Goose's source at v1.57.0, not checked on a computer running it. See
+// Goose's source at v1.60.2, not checked on a computer running it. See
 // docs/adapters/goose.md.
 
 import type { SessionStatus } from "../../sessions/session.ts";
