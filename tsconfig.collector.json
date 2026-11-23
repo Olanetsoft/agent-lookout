@@ -44,6 +44,8 @@
     "tests/unit/collector",
     "tests/unit/core",
     "tests/unit/desktop",
+    // The tests of the helpers in tests/support/ that have one, which run in Node.
+    "tests/unit/support",
     "tests/unit/site-tour/feed/sources.test.ts"
   ]
 }

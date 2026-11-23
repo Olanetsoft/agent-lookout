@@ -12,6 +12,7 @@ import { defineConfig } from "vitest/config";
 import type { BrowserCommand } from "vitest/node";
 
 import { collectorPlugin } from "./src/collector/hosts/collectorPlugin.ts";
+import { stallWatch } from "./tests/support/reporters/stallWatch.ts";
 
 const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")) as {
   version: string;
@@ -202,7 +203,17 @@ const emulateMedia: BrowserCommand<[EmulatedMedia]> = async (context, media) => 
 };
 
 export default defineConfig({
-  plugins: [react(), tailwindcss(), cssAndFontLicenses(), !isTest && collectorPlugin()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    cssAndFontLicenses(),
+    !isTest && collectorPlugin(),
+    // A test run in which nothing has reported for minutes, as when a component
+    // test file sat open on Windows CI, ends with a failure that names the files
+    // still open, not at the job's time limit. The watch sits beside the reporters
+    // Vitest picks, so what a run prints is otherwise unchanged.
+    isTest && stallWatch(),
+  ],
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
   },
