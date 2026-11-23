@@ -33,6 +33,8 @@ import {
   NOW,
   otherRecord,
   PRIVATE_WORDS,
+  publicState,
+  sessionApiFacts,
   sessionId,
   storeFiles,
   storePath,
@@ -558,6 +560,23 @@ describe("a Mistral Vibe session's token counts, on a real folder", () => {
 
     await addTo(dir, delta(10, counted(running(COUNTED, "demo-project counts"), usage(0, 0))), 9);
     expect(await pollFor(adapter)).not.toHaveProperty("tokens");
+  });
+
+  test("are read, with the status, from a line of Vibe 3.1.4's, whose session_api comes after the state", async () => {
+    const dir = await countedDir({ id: COUNTED, state: idle(COUNTED, "demo-project counts") });
+    const adapter = adapterFor(dir);
+    expect((await pollFor(adapter))?.status).toBe("idle");
+
+    // A tool's arguments in session_api that hold a state of their own.
+    const facts = sessionApiFacts({
+      op: "set_envelope",
+      state: publicState(counted(idle(COUNTED, PRIVATE_WORDS), usage(1, 1))),
+    });
+    const state = counted(running(COUNTED, "demo-project counts"), usage(13_500, 96));
+    await addTo(dir, delta(4, state, undefined, facts));
+    const session = await pollFor(adapter);
+    expect(session).toMatchObject({ status: "working", tokens: SECOND });
+    expect(JSON.stringify(session)).not.toContain(PRIVATE_WORDS);
   });
 
   test("are none after a rewind in place, which leaves the usage but no turn, until the next reply", async () => {

@@ -2,7 +2,7 @@
 
 These notes record what Agent Lookout reads from Mistral Vibe, where each value comes from, and what breaks when Vibe changes. Vibe does not document these files for other programs, so when the adapter stops working, start here.
 
-Built on 2026-10-14 from the source of Mistral Vibe 2.26.1, released 2026-10-09 (tag `v2.26.1`, commit `4ae5c59` of [mistralai/mistral-vibe](https://github.com/mistralai/mistral-vibe)), with its store at format `mistral.vibe.unified-session-store/v1`, minor 8. Needs you and token counts were added on 2026-11-04 from the source of 2.26.1 and of 3.0.4, released 2026-10-30 (tag `v3.0.4`, commit `338ad4b`), whose store is minor 10. **Vibe was not installed on the machine where the adapter was written, and nothing here has been checked on a computer running Vibe.** Everything below comes from Vibe's source and from hand-written files laid out the same way. A citation is a path in that repository at `v2.26.1`, unless it says `3.0.4`, and a line number is one at `v3.0.4`. `harness/…/vibe/` stands for `harness/runtimes/python/python/mistralai_vibe_local_harness/vibe/`.
+Built on 2026-10-14 from the source of Mistral Vibe 2.26.1, released 2026-10-09 (tag `v2.26.1`, commit `4ae5c59` of [mistralai/mistral-vibe](https://github.com/mistralai/mistral-vibe)), with its store at format `mistral.vibe.unified-session-store/v1`, minor 8. Needs you and token counts were added on 2026-11-04 from the source of 2.26.1 and of 3.0.4, released 2026-10-30 (tag `v3.0.4`, commit `338ad4b`), whose store is minor 10. The journal's `session_api` was read on 2026-11-23 from the source of 3.1.4, released 2026-11-20 (tag `v3.1.4`, commit `e76235b`). **Vibe was not installed on the machine where the adapter was written, and nothing here has been checked on a computer running Vibe.** Everything below comes from Vibe's source and from hand-written files laid out the same way. A citation is a path in that repository at `v2.26.1`, unless it says `3.0.4` or `3.1.4`, and a line number is one at `v3.0.4`, unless it says `at 3.1.4`. `harness/…/vibe/` stands for `harness/runtimes/python/python/mistralai_vibe_local_harness/vibe/`.
 
 The code is in `src/collector/adapters/mistral-vibe/`, and the status mapping is in `src/core/mapping/mistral-vibe/mistralVibeMapping.ts`.
 
@@ -15,6 +15,7 @@ This version reads Needs you, working, idle, finished and failed, the name, the 
 | 2.26.0, 2.26.1 | 8           | Yes                                                           |
 | 3.0.0 to 3.0.2 | 9           | Yes                                                           |
 | 3.0.3, 3.0.4   | 10          | Yes                                                           |
+| 3.1.0 to 3.1.4 | 10          | Yes                                                           |
 | A newer store  | Above 10    | With no status and no token counts, until the adapter is told |
 
 The adapter was written from 2.26.1 and 3.0.4, and the minor of each tag between was read from its `_storage.py`. Every field the adapter reads is the same at 2.26.1 and 3.0.4. `CurrentPointerV1`, `GenerationManifestV1`, the callback models, `compute_projection_delta`, `_journal_record_bytes` and the public state's statuses have not changed. `RuntimeStateV3` gained fields the adapter does not read, and `ProjectionStateV1` holds the same public state, which 3.0.4 keeps with any field a newer Vibe added left in (`StoredPublicSessionState`). What changed does not touch what is read:
@@ -23,6 +24,11 @@ The adapter was written from 2.26.1 and 3.0.4, and the minor of each tag between
 - From 3.0.2, `resolve_callback` writes nothing for a callback already settled, where 2.26.1 wrote a second record. A second `callback_resolved` closes nothing more, so either reads the same.
 - From 3.0.4, a settled question is added to the session's history (`_record_settled_user_input`, `_session.py:2966`), which is a `projection_delta` like any other.
 - From 3.0.4, the first time a Vibe process takes a lease it deletes the leases no process holds (`_sweep_once`), so a lease a killed Vibe left behind goes when Vibe next runs, where before it stayed until its session was opened again.
+
+3.1.0 to 3.1.4 keep minor 10 (`STORE_FORMAT_MINOR`, `_storage.py:135` at 3.1.4). At 3.1.4, `CurrentPointerV1`, `GenerationManifestV1`, the callback models, `SetEnvelopeOp`, `compute_projection_delta`, `_journal_record_bytes`, the lease and the fields the adapter reads of the public state and the runtime state are as at 3.0.4. Two changes touch what is read:
+
+- From 3.1.0, a `projection_delta` can hold `session_api` between `delta` and `watermark` (`ProjectionDeltaPayloadV1`, `_storage.py:1997-2002` at 3.1.4), and from 3.1.4, where the Session API runs local sessions by default (`CHANGELOG.md`, `vibe/core/config/vibe_schema.py:1283-1291` at 3.1.4), most that add to the conversation or end a turn do. The adapter reads the state past it (see [The journal](#the-journal)).
+- From 3.1.4, a Vibe that takes up a turn a stopped Vibe left asks again an approval or a question still `pending`, under its old id, and journals nothing new (`pending_approval` and `pending_user_question`, `_runtime.py:2280-2312`, and `_request_approval`, `_session.py:3517`, at 3.1.4). That callback's `createdAt` is before the new lease, so the wait does not count (see [Known gaps](#known-gaps)).
 
 ## How it reads Vibe, and why
 
@@ -139,7 +145,7 @@ Each session's store is `unified/<session ID>/` (`_storage.py`). Every file in i
 
 `CURRENT` names the session's newest saved state, a generation: `store_format`, `store_format_minor`, `session_id`, `generation`, 16 digits, `snapshot_sequence` and `manifest_sha256` (`CurrentPointerV1`). The adapter reads it whole when it changes, and goes on only when the format is `mistral.vibe.unified-session-store/v1`, the session ID is the folder's and the generation is 16 digits.
 
-Vibe's readers accept a store of their own minor or lower and refuse a higher one (`STORE_FORMAT_MINOR`, 8 at 2.26.1 and 10 at 3.0.4). A field Vibe adds raises no minor (`_StoredModel`). The adapter does the same: it reads any minor up to 10, keeps no key it does not know, and shows a session whose store has a higher minor with no status and no token counts, with its name and folder when they still read, and a sentence on the card.
+Vibe's readers accept a store of their own minor or lower and refuse a higher one (`STORE_FORMAT_MINOR`, 8 at 2.26.1 and 10 at 3.0.4 and 3.1.4). A field Vibe adds raises no minor (`_StoredModel`). The adapter does the same: it reads any minor up to 10, keeps no key it does not know, and shows a session whose store has a higher minor with no status and no token counts, with its name and folder when they still read, and a sentence on the card.
 
 When `CURRENT` names a generation not read before, the adapter reads, once each while it follows the session, since Vibe never changes them:
 
@@ -161,14 +167,20 @@ Between two saves, Vibe records what happens in the segment the manifest names, 
 
 A last line with no newline is one Vibe is still writing, or one it will cut off before its next write (`_read_journal`), and is left for the next read.
 
-The public state changes only through `projection_delta` records, whose payload is `{"delta":[<steps>],"watermark":N}`. The steps add, replace or remove entries of the conversation first, then, when anything else changed, end with `{"op":"set_envelope","state":{…}}`: the whole public state with its history left out (`compute_projection_delta`, `SetEnvelopeOp`). So:
+The public state changes only through `projection_delta` records, whose payload is `{"delta":[<steps>],"watermark":N}`. The steps add, replace or remove entries of the conversation first, then, when anything else changed, end with `{"op":"set_envelope","state":{…}}`: the whole public state with its history left out (`compute_projection_delta`, `SetEnvelopeOp`). From 3.1.0, while the Session API serves a session, a payload can hold `session_api` between the two, the Session API's facts the change added (`ProjectionDeltaPayloadV1`, `_storage.py:1997-2002` at 3.1.4):
+
+```text
+{"payload":{"delta":[…,{"op":"set_envelope","state":{…}}],"session_api":{…},"watermark":5},"previous_record_sha256":…,"type":"projection_delta"}
+```
+
+`session_api` can keep a tool's arguments as the JSON object the model wrote (`SessionApiFactsV1`, `tool_calls`, `_storage.py:1243` at 3.1.4, and `_record_tool_call`, `_projection.py:210` at 3.1.4), so it can hold any key, `set_envelope` and `watermark` among them. A record that only adds facts has an empty `delta` (`save_session_api_facts`, `_runtime.py:2123` at 3.1.4). So:
 
 - each line's type is read from its end, `,"type":"<type>"}`, and no line is parsed for it;
-- for a `projection_delta`, only what lies between the last `{"op":"set_envelope","state":` and the last `}],"watermark":` is parsed. A `"` inside a JSON string is always escaped, so the two can only be the record's own structure. The entries before them hold your prompts, Vibe's replies, the commands it ran and what they printed, and are never parsed;
+- a `projection_delta` is walked back from the end of its line as bytes: past the header, `watermark` and, when it is there, `session_api`, stepped over whole, then `delta`, stepped over whole to check its key, then into it and through its steps from the last to the newest `set_envelope` step, whose `state` alone is parsed (`deltaWalker.ts`). A string is stepped over to the nearest `"` before it with an even run of `\` before that, since a `"` inside a JSON string is always escaped, and an object or an array bracket by bracket, so nothing inside a string or `session_api` is taken for the record's own structure. A payload with another key after `delta`, or with no `delta`, is a state the adapter does not read. On a line whose start was not read, the key of the array taken for `delta` is not checked when it is before the bytes read. The entries before the state hold your prompts, Vibe's replies, the commands it ran and what they printed, and neither they nor `session_api` are parsed;
 - a `projection_advanced` record, a whole state that no build from 2.25.7 on writes, is a state the adapter does not read: the status is not known until a newer state or a save;
 - `callback_registered` and `callback_resolved` are read from the first bytes of the line, at most 1 KiB, and no further (see [Needs you](#needs-you)).
 
-The first read of a segment looks back from its end through at most 8 MiB for the newest line that sets the state. A single line can be longer, up to Vibe's 64 MiB, and the state, which comes last on it, is still read from its end. It stops at that line unless the state has a turn in flight, the one time a callback can hold the session. Then it goes on through the same 8 MiB for the turn's callbacks, and a segment begins at the last save, so that is most often the whole turn. After that, only what was added is read, at most 8 MiB at a time. A segment that shrinks, is replaced or grows by more than that is read afresh from its end.
+The first read of a segment looks back from its end through at most 8 MiB for the newest line that sets the state. A single line can be longer, up to Vibe's 64 MiB, and its state is still read from its end, when what follows the state, `session_api` and the header, is in what was read. It stops at that line unless the state has a turn in flight, the one time a callback can hold the session. Then it goes on through the same 8 MiB for the turn's callbacks, and a segment begins at the last save, so that is most often the whole turn. After that, only what was added is read, at most 8 MiB at a time. A segment that shrinks, is replaced or grows by more than that is read afresh from its end.
 
 The newest state in the segment wins over the generation's. Vibe saves a session whole when a turn ends with nothing left running and the journal holds something, and when its folder, model or settings change (`harness/…/vibe/_runtime.py`). A rename, and the title Vibe makes for a session in the background, are journaled with no save after them. So the generation's state is often older than the journal's, and an idle session's segment is often not empty.
 
@@ -358,6 +370,7 @@ The three numbers are kept in memory, with the rest of what is kept of a public 
 - A lease left behind looks held while its process ID belongs to another program that cannot be told from Vibe: on Linux and Windows, unless the adapter found the process gone first and still remembers that, since neither a start time nor a program's name is sure there (see [When a lease's process ID goes to another program](#when-a-leases-process-id-goes-to-another-program)), and on a Mac when `ps` gives no answer or the program started within a minute of the lease. On a Mac, a lease `ps` answered for is not asked about again while no poll finds its process gone, so a Vibe that crashed and had its process ID given out again between two polls is not seen, unless its session waits. A lock left with no process ID looks held for good, and one whose `.lock.json` changed and cannot be read, or has never been read, looks held for as long as that lasts.
 - A finished session shows as open while Vibe holds its lease, from when Vibe writes to it under the lease, as to rename it, or from 30 seconds into the lease, as in a long clearing of old output. That adds two entries to the Events log and sends Finished again. A session a program reopens shows as finished for up to 30 seconds, until Vibe writes to it. On a disk that keeps a file's time in whole seconds, or steps of 2 seconds, a session Vibe closes and takes back within 2 seconds to clear old output can show as open until Vibe lets go, when no poll saw its last write before then, a poll since could not read the session, or the clock was set back after a poll saw it. Finished is sent then, again if a poll had shown it finished. One last written to more than a day ago is listed only once its lease is 30 seconds old, so a clearing of old output that takes longer than that lists it too.
 - A Vibe that stops mid-turn without closing records no error, so the session shows as finished once its process is gone.
+- From 3.1.4, an approval or a question Vibe asks again, when it takes up a turn a stopped Vibe left, shows as working: Vibe journals nothing new for it, and the callback's time is before the lease.
 - A failure Vibe reports only to its clients, as when a turn cannot start, may never reach the files, so the session shows as idle or working.
 - A session folder moved by `save_dir` is not followed.
 - From 3.0.0, a session's move to another folder is journaled as `session_relocated`, which is not read, so the old folder shows until Vibe next saves the session.
@@ -369,7 +382,7 @@ The three numbers are kept in memory, with the rest of what is kept of a public 
 
 All of this comes from Vibe's source. A computer running Vibe has yet to show:
 
-- that real journal lines are laid out as above: `type` last, `set_envelope` the last step, `}],"watermark":` right after the state;
+- that real journal lines are laid out as above: `type` last, `set_envelope` the last step, and only `session_api` and `watermark` after `delta`;
 - that a real `callback_registered` line begins as above, and a real wait shows as needing you within a poll of the prompt;
 - that a real `session.contextUsage` is laid out as above and changes with each reply, and that a real `/rewind` in place leaves it with `latestTurn` null;
 - what closing a terminal does to a Vibe that waits: whether it closes its callbacks or is killed with them;
@@ -383,7 +396,7 @@ All of this comes from Vibe's source. A computer running Vibe has yet to show:
 
 - A store minor above 10: those sessions show with no status and no token counts until the adapter knows the new minor.
 - A field renamed in `CURRENT`, the manifest, the public state or the runtime state.
-- Journal lines with `type` no longer last, or a step after `set_envelope`: states are no longer read, and sessions show as unknown.
+- Journal lines with `type` no longer last, or a payload key after `delta` but `session_api` and `watermark`: states are no longer read, and sessions show as unknown. On a line whose start was not read, the key of the array taken for `delta` is not checked when it is before what was read, so a new key's array there is read as `delta`.
 - `session.contextUsage` renamed, or a `totalTokens` that is no longer the input and the output together: sessions show a dash for Tokens. `inputTokens` or `outputTokens` given a new meaning with no new minor would show wrong counts, since a file cannot say so.
 - A key that sorts before `callbackId` or `createdAt` in a callback, or a callback's fields renamed: waits are no longer read, and sessions that wait show as working. So does a new kind of callback.
 - `acquired_at` written another way, which leaves a lease with no time: no wait shows.

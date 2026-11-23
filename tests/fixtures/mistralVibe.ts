@@ -1,7 +1,8 @@
 // Test fixtures only. Every id, time and word here is invented and generic.
 // The files follow the layout the source of Mistral Vibe 2.26.1 and 3.0.4
-// writes, as written up in docs/adapters/mistral-vibe.md: a store for each
-// session under `unified/<id>/`, with `CURRENT`, one generation's `manifest.json`,
+// writes, with a journal record's `session_api` as 3.1.4 writes it, as
+// written up in docs/adapters/mistral-vibe.md: a store for each session under
+// `unified/<id>/`, with `CURRENT`, one generation's `manifest.json`,
 // `projection-state.json` and `runtime-state.json`, and a journal segment,
 // and a lease for each open session under `active/`. Every document is JSON
 // as Vibe writes it, with its keys sorted, no spaces and a newline at the end.
@@ -339,16 +340,46 @@ export function record(type: string, sequence: number, payload: unknown): string
 /**
  * A `projection_delta` record: steps that add history entries, holding words
  * the adapter must never keep, and, when `state` is given, the new public
- * state last, with its history left out.
+ * state last, with its history left out. With `sessionApi`, it is a record of
+ * Vibe 3.1's, whose `session_api` comes between `delta` and `watermark`.
  */
 export function delta(
   sequence: number,
   state?: StateFields,
   entries: unknown[] = [{ id: `entry-${sequence}`, type: "message", text: PRIVATE_WORDS }],
+  sessionApi?: unknown,
 ): string {
   const steps: unknown[] = entries.map((entry) => ({ op: "append_entry", entry }));
   if (state) steps.push({ op: "set_envelope", state: publicState(state) });
-  return record("projection_delta", sequence, { delta: steps, watermark: sequence });
+  const payload =
+    sessionApi === undefined
+      ? { delta: steps, watermark: sequence }
+      : { delta: steps, session_api: sessionApi, watermark: sequence };
+  return record("projection_delta", sequence, payload);
+}
+
+/**
+ * The Session API facts a record of Vibe 3.1's carries, as a journal keeps
+ * them: the history's positions in `sparse_history`, how a turn ended, and a
+ * tool call's id with the arguments the model wrote, as JSON.
+ */
+export function sessionApiFacts(
+  toolArguments: unknown = { command: PRIVATE_WORDS },
+): Record<string, unknown> {
+  return {
+    history_positions: {},
+    metadata_version: 1,
+    next_history_index: 0,
+    sparse_history: { next_index: 3, positions: { "entry-1": 0, "entry-2": 1, "entry-3": 2 } },
+    tool_calls: { "entry-2": { arguments: toolArguments, toolCallId: "call-1" } },
+    turn_outcomes: {
+      "turn-0": {
+        completedAt: NOW - HOUR,
+        startedAt: NOW - 2 * HOUR,
+        termination: { type: "completed" },
+      },
+    },
+  };
 }
 
 /** A record of another kind, carrying words the adapter must never keep. */
