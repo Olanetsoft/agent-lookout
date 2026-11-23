@@ -16,7 +16,8 @@ import type { FileInfo, OpenFile, ReadOnlyIo } from "../../files/readOnlyIo.ts";
  * Reading one Qwen Code chat file for the little this adapter needs.
  *
  * A chat file is JSON Lines, one record per line, appended as the session
- * works and never rewritten (`chatRecordingService.ts` at v0.25.1). Each line
+ * works (`chatRecordingService.ts` at v0.28.3). Deleting messages from a
+ * session Qwen Code's Web Shell drives writes the file anew. Each line
  * holds a whole prompt, reply or tool result, so it is read narrowly and
  * almost nothing is kept: of each line, its type, subtype and time, and
  *
@@ -43,7 +44,7 @@ import type { FileInfo, OpenFile, ReadOnlyIo } from "../../files/readOnlyIo.ts";
  * 64 KiB, and a reply's token counts, which come after the reply, are not read.
  * A file that shrank, or was replaced, is read again from the end.
  *
- * Built from Qwen Code's source at v0.25.1 and not yet checked on a machine
+ * Built from Qwen Code's source at v0.28.3 and not yet checked on a machine
  * running it.
  */
 

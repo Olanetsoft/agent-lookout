@@ -356,6 +356,29 @@ describe("mapQwenCodeStatus, over a whole turn", () => {
     expect(statusOf([prompt(0), calls(1), system(2, "turn_result")]).status).toBe("idle");
   });
 
+  test("a result straight after a rewind, as /restore writes, changes nothing: the session stays idle", () => {
+    // From 0.26.2, /restore writes a rewind, then the result of the call it ran again, and asks the model nothing.
+    const restored = [prompt(0), calls(1), result(2), reply(5), system(60, "rewind")];
+    expect(fold([...restored, result(60)])).toEqual(fold(restored));
+    expect(statusOf([...restored, result(60)])).toEqual({ status: "idle", since: at(5) });
+    // A rewind after calls is idle from the rewind, and stays so.
+    expect(statusOf([prompt(0), calls(1), system(2, "rewind"), result(2)])).toEqual({
+      status: "idle",
+      since: at(2),
+    });
+  });
+
+  test("a result straight after a rewind changes nothing when a call before the rewind was stopped", () => {
+    const restored = [prompt(0), calls(1), result(2, true), system(60, "rewind")];
+    expect(fold([...restored, result(60)])).toEqual(fold(restored));
+    expect(statusOf([...restored, result(60)])).toEqual({ status: "idle", since: at(2) });
+  });
+
+  test("after a rewind, a prompt, its calls and their results are working as before", () => {
+    const lines = [prompt(0), reply(5), system(10, "rewind"), prompt(20), calls(21), result(25)];
+    expect(statusOf(lines)).toEqual({ status: "working", since: at(20) });
+  });
+
   test("a line of a type it does not know, or a reply too long to read, is unknown with no time", () => {
     expect(statusOf([prompt(0), { type: "summary", at: at(1) }])).toEqual({
       status: "unknown",

@@ -73,7 +73,7 @@ export const NEEDS_YOU_NOTE =
 
 /** Said whenever Qwen Code is watched, until Agent Lookout has been checked against it. */
 export const UNCHECKED_NOTE =
-  "This was built from Qwen Code's source at 0.25.1 and has not yet been checked on a machine running it, so a status can be wrong.";
+  "This was built from Qwen Code's source at 0.28.3 and has not yet been checked on a machine running it, so a status can be wrong.";
 
 /** Said when there are chat files and no list of running sessions. */
 export const OLDER_QWEN_NOTE =
@@ -98,7 +98,7 @@ export const UNKNOWN_NOTE =
 /**
  * What a Qwen Code session can show, from the files this adapter reads. See
  * docs/adapters/qwen-code.md for each. Built from Qwen Code's source at
- * v0.25.1 and not yet checked on a machine running it.
+ * v0.28.3 and not yet checked on a machine running it.
  *
  * - Working and idle are the end of the chat file (`qwenCodeMapping.ts`), but
  *   a request that fails for good writes nothing that ends the turn, and
@@ -380,7 +380,7 @@ export interface QwenCodeAdapter extends Adapter {
 /**
  * Finds Qwen Code sessions on this machine from the files Qwen Code keeps,
  * with nothing installed, no setting changed and no Qwen Code program run.
- * Built from Qwen Code's source at v0.25.1 and not yet checked on a machine
+ * Built from Qwen Code's source at v0.28.3 and not yet checked on a machine
  * running it.
  *
  * It reads two things, both read-only:

@@ -264,7 +264,7 @@ What a session of OpenCode 1.x last said is read only when `GET /api/sessions/la
 
 ## The Qwen Code adapter
 
-The adapter lives in `src/collector/adapters/qwen-code/`. [adapters/qwen-code.md](adapters/qwen-code.md) is its reference: every file it reads and how often, the full status table, the Qwen Code version it was written from and what breaks when Qwen Code changes. It was built from Qwen Code's source at v0.25.1 and has not yet been checked on a machine running Qwen Code.
+The adapter lives in `src/collector/adapters/qwen-code/`. [adapters/qwen-code.md](adapters/qwen-code.md) is its reference: every file it reads and how often, the full status table, the Qwen Code version it was written from and what breaks when Qwen Code changes. It was built from Qwen Code's source at v0.28.3 and has not yet been checked on a machine running Qwen Code.
 
 Qwen Code documents a list of its running sessions for other programs to read, `<qwen home>/sessions/`, one small JSON file for each session a process has open. Its own command for that list, `qwen sessions ps`, deletes the records whose process has gone, and its hooks need a change to its settings. So the adapter reads files alone, and runs no Qwen Code program.
 
