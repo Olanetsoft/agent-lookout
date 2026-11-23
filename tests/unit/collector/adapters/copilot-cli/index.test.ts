@@ -1,3 +1,4 @@
+import path from "node:path";
 import { describe, expect, test } from "vitest";
 
 import {
@@ -109,7 +110,9 @@ describe("where it looks", () => {
     const named = await copilotCliAdapterFor(memoryFiles(), {
       env: { COPILOT_HOME: "/srv/none" },
     }).poll();
-    expect(named.health.detail).toContain("COPILOT_HOME is set to /srv/none, and there is no");
+    expect(named.health.detail).toContain(
+      `COPILOT_HOME is set to ${path.resolve("/srv/none")}, and there is no`,
+    );
   });
 
   test("AGENT_LOOKOUT_COPILOT_HOME with no session-state is an answer, looked for on every poll", async () => {
@@ -119,9 +122,13 @@ describe("where it looks", () => {
     });
     const { health } = await adapter.poll();
     expect(health.state).toBe("ok");
-    expect(health.detail).toMatch(
-      /^AGENT_LOOKOUT_COPILOT_HOME is set, and there is no \/tmp\/empty-copilot\/session-state folder, so no Copilot CLI sessions are listed\. /,
-    );
+    const folder = path.join(path.resolve("/tmp/empty-copilot"), "session-state");
+    expect(
+      health.detail?.startsWith(
+        `AGENT_LOOKOUT_COPILOT_HOME is set, and there is no ${folder} folder, so no Copilot CLI sessions are listed. `,
+      ),
+      health.detail,
+    ).toBe(true);
     files.forget();
     await adapter.poll();
     expect(files.count("lstat")).toBe(1);
