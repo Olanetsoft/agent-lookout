@@ -475,7 +475,7 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 
 **Where.** `src/collector/adapters/kimi-code/`, with the mapping in `src/core/mapping/kimi-code/kimiCodeMapping.ts`. [adapters/kimi-code.md](adapters/kimi-code.md) is the full reference.
 
-**Where it came from.** Issue #32 asked for Kimi Code. It reads the files of the TypeScript Kimi Code in `~/.kimi-code`, not the older Python Kimi CLI's in `~/.kimi`. It was built from Kimi Code's source at 2.4.1 and has not yet been checked on a computer running Kimi Code. The card says so (`UNCHECKED_NOTE`).
+**Where it came from.** Issue #32 asked for Kimi Code. It reads the files of the TypeScript Kimi Code in `~/.kimi-code`, not the older Python Kimi CLI's in `~/.kimi`. It was built from Kimi Code's source at 2.7.2 and has not yet been checked on a computer running Kimi Code. The card says so (`UNCHECKED_NOTE`).
 
 **Why the lock.** The issue said nothing marks a terminal session as running. Since 2.3.0 something does, while a session is busy: `locks/sessions/<id>.lock` names the process using it, so that two processes do not write one session at once. Nothing marks a session idle between turns, as Kimi Code lets the lock go 3 seconds after it stops being busy. So the adapter keeps, in memory, the process it last saw hold a lock, and a session is idle while that runs. The notes say what that leaves out.
 
@@ -493,7 +493,7 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 
 **The name.** Kimi Code's default title is the first 200 characters of the first prompt, word for word, marked `replaceable`. It is dropped. A title marked `generated` or `custom` is kept, unless the session was brought over from another program, which keeps its old title marked `generated`.
 
-**How sure it is.** Not checked against Kimi Code yet. A session left idle in a Kimi Code opened before Agent Lookout saw it busy shows as finished until its next turn.
+**How sure it is.** Not checked against Kimi Code yet. A session left idle in a Kimi Code opened before Agent Lookout saw its lock shows as finished until its next turn.
 
 ### Continue
 
@@ -774,7 +774,7 @@ In short:
 - **Cline** reports working and idle from each session's manifest, needs you while it waits for a tool's approval, and finished and failed as it writes them, and finished once the process of a session it left open has gone. Names are its folders', since its titles are by default the start of the first prompt, and Quiet for comes from its files' times. No Jump, tokens, Stop or Answer.
 - **Goose** reports finished alone, for every session at once when `ps` shows no Goose program, on macOS and Linux. Otherwise a session is unknown. Names are its folders', or one the person gave it, since its titles can be the start of the first prompt. No working and idle, needs you, failed, Jump, Quiet for, tokens, Stop or Answer.
 - **Pi** reports finished alone, for every session at once when `ps` shows no `pi` program, on macOS and Linux. Otherwise a session is unknown. Names are its folders', or one a person or an extension gave it. No working and idle, needs you, failed, Jump, Quiet for, tokens, Stop or Answer.
-- **Kimi Code** reports working from the lock it keeps while a session is busy, needs you while it waits for an approval or an answer, in the main agent alone, idle only once Agent Lookout has seen a session busy, while that process runs, finished once that process goes or for a session it never saw busy, and failed when its last turn failed. Names are the title a model or the person set, else its folders'. Quiet for comes from the main agent's event file. No Jump, tokens, Stop or Answer.
+- **Kimi Code** reports working from the lock it keeps while a session is busy and, from 2.6.0, for a few seconds after a process opens it, needs you while it waits for an approval or an answer, in the main agent alone, idle only once Agent Lookout has seen a session's lock, while that process runs, finished once that process goes or for a session whose lock it never saw, and failed when its last turn failed. Names are the title a model or the person set, else its folders'. Quiet for comes from the main agent's event file. No Jump, tokens, Stop or Answer.
 - **Continue** reports none of the statuses: a session is always unknown. Names are its folders', since its titles can be a line of the first prompt. No working and idle, needs you, finished, failed, Jump, Quiet for, tokens, Stop or Answer.
 - **Crush** reports finished alone, for every session at once when `ps` shows no Crush program, on macOS and Linux. Otherwise a session is unknown. Names are its folders', since its titles can be the start of the first prompt. No working and idle, needs you, failed, Jump, Quiet for, tokens, Stop or Answer.
 - **Kilo Code** reports what OpenCode 1.x does, on macOS and Linux: working and idle, finished once `ps` shows no Kilo Code program, failed for the errors it records, names and tokens. Needs you only while it asks a question. No Jump, Quiet for, Stop or Answer.

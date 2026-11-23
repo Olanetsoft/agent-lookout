@@ -5,7 +5,7 @@ import { isRecord } from "./sessionIndex.ts";
 
 /**
  * Reading a session's event file for the approvals and questions left
- * unanswered, and nothing else. Built from Kimi Code's source at 2.4.1 and not
+ * unanswered, and nothing else. Built from Kimi Code's source at 2.7.2 and not
  * yet checked on a computer running it.
  *
  * `agents/main/wire.jsonl` is JSON Lines, one record per line, appended as the

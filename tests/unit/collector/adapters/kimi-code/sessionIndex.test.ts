@@ -43,6 +43,12 @@ describe("parseIndex", () => {
     expect(parsed(indexLine(ID, { sessionDir }), "win32")[0]?.bucket).toBe(BUCKET);
   });
 
+  test("takes the bucket of a workspace added in kimi web, wm_ and a uuid", () => {
+    const bucket = "wm_00000000-0000-4000-8000-000000000001";
+    const sessionDir = `${KIMI_HOME}/sessions/${bucket}/${ID}`;
+    expect(parsed(indexLine(ID, { sessionDir }))[0]?.bucket).toBe(bucket);
+  });
+
   test("never takes a path that leaves the folder of sessions", () => {
     for (const sessionDir of [
       `/elsewhere/${BUCKET}/${ID}`,

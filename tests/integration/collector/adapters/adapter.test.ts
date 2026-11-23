@@ -364,8 +364,8 @@ test("PRIVACY.md and the Kimi Code notes name what is read and from which versio
   const start = privacy.indexOf("### Kimi Code's files");
   const section = privacy.slice(start, privacy.indexOf("\n### ", start));
   expect(start).toBeGreaterThan(-1);
-  expect(section).toContain("built from Kimi Code's source at 2.4.1");
-  expect(notes).toContain("2.4.1");
+  expect(section).toContain("built from Kimi Code's source at 2.7.2");
+  expect(notes).toContain("2.7.2");
 
   for (const text of [section, notes]) {
     for (const field of [

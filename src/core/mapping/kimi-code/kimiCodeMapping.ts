@@ -1,11 +1,12 @@
 // How Kimi Code's session files map onto the session model. Pure, so the
 // collector today and a browser or desktop host later share one mapping.
 //
-// Kimi Code keeps a lock for a session while the session is busy, which names
-// the process that holds it, and writes each approval and question it asks, and
-// each answer, into the session's event file. It writes how a turn ended into
-// the session's `state.json`. This mapping reads only what those say, and was
-// worked out from Kimi Code's source at 2.4.1, not checked on a computer
+// Kimi Code keeps a lock for a session while the session is busy and, from
+// 2.6.0, for a few seconds after a process opens it. The lock names the process
+// that holds it. Kimi Code writes each approval and question it asks, and each
+// answer, into the session's event file, and how a turn ended into the
+// session's `state.json`. This mapping reads only what those say, and was
+// worked out from Kimi Code's source at 2.7.2, not checked on a computer
 // running it. See docs/adapters/kimi-code.md.
 
 import type { SessionStatus, WaitingReason } from "../../sessions/session.ts";

@@ -102,7 +102,7 @@ Goose support reads its database, `~/.local/share/goose/sessions/sessions.db`, o
 
 Pi support reads its session files, in `~/.pi/agent/sessions`. A session shows as unknown while a `pi` program runs and as finished once none does, as nothing ties a session to a process. On Windows it stays unknown. It was built from its source at v1.5.0 and has not yet been checked on a computer running it.
 
-Kimi Code support reads `~/.kimi-code`. A session shows as working from the lock Kimi Code keeps while it is busy, and as idle only once Agent Lookout has seen it busy, while that process runs. It was built from its source at 2.4.1 and has not yet been checked on a computer running it.
+Kimi Code support reads `~/.kimi-code`. A session shows as working from the lock Kimi Code keeps while it is busy and, from 2.6.0, for a few seconds after a process opens it, and as idle only once Agent Lookout has seen its lock, while that process runs. It was built from its source at 2.7.2 and has not yet been checked on a computer running it.
 
 Continue support reads the list in `~/.continue/sessions`, which its `cn` command and its editor extensions share. A session always shows as unknown, as nothing says whether one runs. It was built from its source at v1.5.45 and has not yet been checked on a computer running it.
 

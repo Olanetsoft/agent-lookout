@@ -64,11 +64,11 @@ export const NEEDS_YOU_NOTE =
 
 /** Said whenever Kimi Code is watched: why an open session can show as finished. */
 export const OPEN_NOTE =
-  "Kimi Code keeps a lock on a session only while it is busy, so a session shows as idle only once Agent Lookout has seen it busy, for as long as that process runs. Any other session with no lock shows as finished.";
+  "Kimi Code keeps a lock on a session only while it is busy and, from 2.6.0, for a few seconds after a process opens it, so a session shows as idle only once Agent Lookout has seen its lock, for as long as that process runs. Any other session with no lock shows as finished.";
 
 /** Said whenever Kimi Code is watched, until Agent Lookout has been checked against it. */
 export const UNCHECKED_NOTE =
-  "This was built from Kimi Code's source at 2.4.1 and has not yet been checked on a computer running it, so a status can be wrong.";
+  "This was built from Kimi Code's source at 2.7.2 and has not yet been checked on a computer running it, so a status can be wrong.";
 
 /** Said when a `state.json` is over the most this reads. */
 export const TOO_LARGE_NOTE =
@@ -76,19 +76,20 @@ export const TOO_LARGE_NOTE =
 
 /**
  * What a Kimi Code session can show, from the files this adapter reads. See
- * docs/adapters/kimi-code.md for each. Built from Kimi Code's source at 2.4.1 and
+ * docs/adapters/kimi-code.md for each. Built from Kimi Code's source at 2.7.2 and
  * not yet checked on a computer running it.
  *
  * - Working is a lock a process that runs holds, which Kimi Code takes for as
- *   long as a session is busy. Idle is a session whose lock Agent Lookout saw
- *   held, let go, with that process still running: Kimi Code writes nothing that
- *   says a session is open but idle.
+ *   long as a session is busy and, from 2.6.0, for a few seconds after a process
+ *   opens it. Idle is a session whose lock Agent Lookout saw held, let go, with
+ *   that process still running: Kimi Code writes nothing that says a session is
+ *   open but idle.
  * - Needs you is an approval or a question the main agent's event file holds
  *   with no answer, asked since the lock was taken (`kimiCodeWaitOf`). A
  *   subagent's wait is in its own file, which is not read.
  * - Finished is a session with no lock held and no process known to have it. So
- *   a session idle in a Kimi Code that was opened before Agent Lookout saw it
- *   busy shows as finished until its next turn.
+ *   a session idle in a Kimi Code that was opened before Agent Lookout saw its
+ *   lock shows as finished until its next turn.
  * - Failed is a last turn `state.json` says failed. A Kimi Code that stops
  *   mid-turn writes nothing, and shows as finished.
  * - The name is the title a model or a person set, else the folder's. The
@@ -106,7 +107,7 @@ export const KIMI_CODE_CAPABILITIES: SourceCapabilities = {
   "working-and-idle": {
     level: "partly",
     reason:
-      "Working from the lock Kimi Code keeps on a busy session. Idle only after that, while the same process runs.",
+      "Working from Kimi Code's lock on a busy session or, from 2.6.0, one just opened. Idle only after that, while that process runs.",
   },
   "needs-you": {
     level: "partly",
@@ -116,7 +117,7 @@ export const KIMI_CODE_CAPABILITIES: SourceCapabilities = {
   finished: {
     level: "partly",
     reason:
-      "Once its process goes. A session idle since before Agent Lookout saw it busy also shows as finished.",
+      "Once its process goes. A session idle since before Agent Lookout saw its lock also shows as finished.",
   },
   failed: {
     level: "partly",
@@ -227,7 +228,7 @@ function processCheckFacts(asksPs: boolean, pollIntervalMs: number): SourceFact[
 /**
  * Finds Kimi Code sessions on this machine from the files Kimi Code keeps, with
  * nothing installed, no setting changed and no Kimi Code program run. Built from
- * Kimi Code's source at 2.4.1 and not yet checked on a computer running it.
+ * Kimi Code's source at 2.7.2 and not yet checked on a computer running it.
  *
  * Kimi Code's command, its web page and its editor extension keep their sessions
  * in one folder, `~/.kimi-code`. Its own lists are its `kimi` command, which

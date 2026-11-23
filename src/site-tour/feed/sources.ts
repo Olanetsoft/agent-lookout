@@ -541,7 +541,7 @@ export const KIMI_CODE_CAPABILITIES: SourceCapabilities = {
   "working-and-idle": {
     level: "partly",
     reason:
-      "Working from the lock Kimi Code keeps on a busy session. Idle only after that, while the same process runs.",
+      "Working from Kimi Code's lock on a busy session or, from 2.6.0, one just opened. Idle only after that, while that process runs.",
   },
   "needs-you": {
     level: "partly",
@@ -551,7 +551,7 @@ export const KIMI_CODE_CAPABILITIES: SourceCapabilities = {
   finished: {
     level: "partly",
     reason:
-      "Once its process goes. A session idle since before Agent Lookout saw it busy also shows as finished.",
+      "Once its process goes. A session idle since before Agent Lookout saw its lock also shows as finished.",
   },
   failed: {
     level: "partly",

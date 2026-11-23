@@ -5,7 +5,7 @@ import { isFolderName, SESSIONS_DIR, type SessionPlace } from "./paths.ts";
 
 /**
  * Reading `session_index.jsonl`, the list Kimi Code keeps of its sessions, in
- * its folder. Built from Kimi Code's source at 2.4.1 and not yet checked on a
+ * its folder. Built from Kimi Code's source at 2.7.2 and not yet checked on a
  * computer running it.
  *
  * Kimi Code appends one line when it makes or forks a session,

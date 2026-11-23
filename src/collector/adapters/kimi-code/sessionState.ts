@@ -4,7 +4,7 @@ import { folderOf, isRecord } from "./sessionIndex.ts";
 
 /**
  * Reading a session's `state.json`, for the little this adapter needs. Built
- * from Kimi Code's source at 2.4.1 and not yet checked on a computer running it.
+ * from Kimi Code's source at 2.7.2 and not yet checked on a computer running it.
  *
  * Kimi Code rewrites the file whole, through a temporary file, each time a
  * session's title, last prompt, agents or last turn changes
