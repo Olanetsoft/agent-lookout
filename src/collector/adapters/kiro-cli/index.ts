@@ -200,7 +200,7 @@ export function kiroHomeFor(
     return { home: path.resolve(kiro), named: false, fromKiroHome: true, passedOver: false };
   }
   return {
-    home: path.join(homeDir, DEFAULT_KIRO_HOME),
+    home: path.resolve(homeDir, DEFAULT_KIRO_HOME),
     named: false,
     fromKiroHome: false,
     passedOver: kiro !== undefined,
