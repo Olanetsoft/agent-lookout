@@ -1,5 +1,5 @@
 // Test fixtures only. Every id, name, path and word here is invented and
-// generic. A session file follows the shape Pi's source writes at v1.5.0
+// generic. A session file follows the shape Pi's source writes at v1.6.0
 // (`packages/coding-agent/src/core/session-manager.ts`), as written up in
 // docs/adapters/pi.md, and nothing in it is copied from a real machine: Pi was
 // not run to make it. Product code never imports this file.

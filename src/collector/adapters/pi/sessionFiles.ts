@@ -13,7 +13,7 @@ import type { FileInfo, ReadOnlyIo } from "../../files/readOnlyIo.ts";
  * directly, so both are looked for. `/import` keeps a file's own name, so any
  * name that ends in `.jsonl` counts, as it does for Pi's own list.
  *
- * Pi never removes a session by itself, so these folders can hold thousands. A
+ * Pi never removes an old session by itself, so these folders can hold thousands. A
  * poll lists the sessions folder, looks up each project folder with one `lstat`,
  * and lists a project folder again only when its modified time moves, as it does
  * when Pi adds a file. Then it looks up each file not already known to be old.

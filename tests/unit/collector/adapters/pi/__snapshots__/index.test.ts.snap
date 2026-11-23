@@ -16,7 +16,7 @@ exports[`the golden runs > on darwin, with AGENT_LOOKOUT_PI_HOME, are as before 
       "basis": "files",
       "health": {
         "checkedAt": 1790856000000,
-        "detail": "AGENT_LOOKOUT_PI_HOME is set, and there is no ~/al-home/sessions folder, so no Pi sessions are listed. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong.",
+        "detail": "AGENT_LOOKOUT_PI_HOME is set, and there is no ~/al-home/sessions folder, so no Pi sessions are listed. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -57,7 +57,7 @@ exports[`the golden runs > on darwin, with AGENT_LOOKOUT_PI_HOME, are as before 
       "basis": "files",
       "health": {
         "checkedAt": 1790856001000,
-        "detail": "AGENT_LOOKOUT_PI_HOME is set, and there is no ~/al-home/sessions folder, so no Pi sessions are listed. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong.",
+        "detail": "AGENT_LOOKOUT_PI_HOME is set, and there is no ~/al-home/sessions folder, so no Pi sessions are listed. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -164,7 +164,7 @@ exports[`the golden runs > on darwin, with AGENT_LOOKOUT_PI_HOME, are as before 
       "basis": "files",
       "health": {
         "checkedAt": 1790856061000,
-        "detail": "Sessions are read from the files Pi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong.",
+        "detail": "Sessions are read from the files Pi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -275,7 +275,7 @@ exports[`the golden runs > on darwin, with AGENT_LOOKOUT_PI_HOME, are as before 
       "basis": "files",
       "health": {
         "checkedAt": 1790856063000,
-        "detail": "Sessions are read from the files Pi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong.",
+        "detail": "Sessions are read from the files Pi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -395,7 +395,7 @@ exports[`the golden runs > on darwin, with AGENT_LOOKOUT_PI_HOME, are as before 
       "basis": "files",
       "health": {
         "checkedAt": 1790856065000,
-        "detail": "Sessions are read from the files Pi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong.",
+        "detail": "Sessions are read from the files Pi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -502,7 +502,7 @@ exports[`the golden runs > on darwin, with AGENT_LOOKOUT_PI_HOME, are as before 
       "basis": "files",
       "health": {
         "checkedAt": 1790856067000,
-        "detail": "Sessions are read from the files Pi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong.",
+        "detail": "Sessions are read from the files Pi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -605,7 +605,7 @@ exports[`the golden runs > on darwin, with AGENT_LOOKOUT_PI_HOME, are as before 
       "basis": "files-closed",
       "health": {
         "checkedAt": 1790856077000,
-        "detail": "Sessions are read from the files Pi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong. No pi program runs, so each session shows as finished.",
+        "detail": "Sessions are read from the files Pi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong. No pi program runs, so each session shows as finished.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -722,7 +722,7 @@ exports[`the golden runs > on darwin, with AGENT_LOOKOUT_PI_HOME, are as before 
       "basis": "files-closed",
       "health": {
         "checkedAt": 1790856080000,
-        "detail": "Sessions are read from the files Pi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong. No pi program runs, so each session shows as finished.",
+        "detail": "Sessions are read from the files Pi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong. No pi program runs, so each session shows as finished.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -825,7 +825,7 @@ exports[`the golden runs > on darwin, with AGENT_LOOKOUT_PI_HOME, are as before 
       "basis": "files-without-processes",
       "health": {
         "checkedAt": 1790856090000,
-        "detail": "Sessions are read from the files Pi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong. ps could not be run to tell whether Pi runs, so no session is shown as finished.",
+        "detail": "Sessions are read from the files Pi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong. ps could not be run to tell whether Pi runs, so no session is shown as finished.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -936,7 +936,7 @@ exports[`the golden runs > on darwin, with AGENT_LOOKOUT_PI_HOME, are as before 
       "basis": "files",
       "health": {
         "checkedAt": 1790856150000,
-        "detail": "Sessions are read from the files Pi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong.",
+        "detail": "Sessions are read from the files Pi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -1017,7 +1017,7 @@ exports[`the golden runs > on darwin, with AGENT_LOOKOUT_PI_HOME, are as before 
       "basis": "files",
       "health": {
         "checkedAt": 1790856152000,
-        "detail": "AGENT_LOOKOUT_PI_HOME is set, and there is no ~/al-home/sessions folder, so no Pi sessions are listed. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong.",
+        "detail": "AGENT_LOOKOUT_PI_HOME is set, and there is no ~/al-home/sessions folder, so no Pi sessions are listed. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -1058,7 +1058,7 @@ exports[`the golden runs > on darwin, with AGENT_LOOKOUT_PI_HOME, are as before 
       "basis": "files",
       "health": {
         "checkedAt": 1790856154000,
-        "detail": "AGENT_LOOKOUT_PI_HOME is set, and there is no ~/al-home/sessions folder, so no Pi sessions are listed. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong.",
+        "detail": "AGENT_LOOKOUT_PI_HOME is set, and there is no ~/al-home/sessions folder, so no Pi sessions are listed. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -1099,7 +1099,7 @@ exports[`the golden runs > on darwin, with AGENT_LOOKOUT_PI_HOME, are as before 
       "basis": "files",
       "health": {
         "checkedAt": 1790856214000,
-        "detail": "Sessions are read from the files Pi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong.",
+        "detail": "Sessions are read from the files Pi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -1286,7 +1286,7 @@ exports[`the golden runs > on darwin, without AGENT_LOOKOUT_PI_HOME, are as befo
       "basis": "files",
       "health": {
         "checkedAt": 1790856061000,
-        "detail": "Sessions are read from the files Pi keeps in ~/.pi/agent/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong.",
+        "detail": "Sessions are read from the files Pi keeps in ~/.pi/agent/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -1397,7 +1397,7 @@ exports[`the golden runs > on darwin, without AGENT_LOOKOUT_PI_HOME, are as befo
       "basis": "files",
       "health": {
         "checkedAt": 1790856063000,
-        "detail": "Sessions are read from the files Pi keeps in ~/.pi/agent/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong.",
+        "detail": "Sessions are read from the files Pi keeps in ~/.pi/agent/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -1517,7 +1517,7 @@ exports[`the golden runs > on darwin, without AGENT_LOOKOUT_PI_HOME, are as befo
       "basis": "files",
       "health": {
         "checkedAt": 1790856065000,
-        "detail": "Sessions are read from the files Pi keeps in ~/.pi/agent/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong.",
+        "detail": "Sessions are read from the files Pi keeps in ~/.pi/agent/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -1624,7 +1624,7 @@ exports[`the golden runs > on darwin, without AGENT_LOOKOUT_PI_HOME, are as befo
       "basis": "files",
       "health": {
         "checkedAt": 1790856067000,
-        "detail": "Sessions are read from the files Pi keeps in ~/.pi/agent/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong.",
+        "detail": "Sessions are read from the files Pi keeps in ~/.pi/agent/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -1727,7 +1727,7 @@ exports[`the golden runs > on darwin, without AGENT_LOOKOUT_PI_HOME, are as befo
       "basis": "files-closed",
       "health": {
         "checkedAt": 1790856077000,
-        "detail": "Sessions are read from the files Pi keeps in ~/.pi/agent/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong. No pi program runs, so each session shows as finished.",
+        "detail": "Sessions are read from the files Pi keeps in ~/.pi/agent/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong. No pi program runs, so each session shows as finished.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -1844,7 +1844,7 @@ exports[`the golden runs > on darwin, without AGENT_LOOKOUT_PI_HOME, are as befo
       "basis": "files-closed",
       "health": {
         "checkedAt": 1790856080000,
-        "detail": "Sessions are read from the files Pi keeps in ~/.pi/agent/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong. No pi program runs, so each session shows as finished.",
+        "detail": "Sessions are read from the files Pi keeps in ~/.pi/agent/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong. No pi program runs, so each session shows as finished.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -1947,7 +1947,7 @@ exports[`the golden runs > on darwin, without AGENT_LOOKOUT_PI_HOME, are as befo
       "basis": "files-without-processes",
       "health": {
         "checkedAt": 1790856090000,
-        "detail": "Sessions are read from the files Pi keeps in ~/.pi/agent/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong. ps could not be run to tell whether Pi runs, so no session is shown as finished.",
+        "detail": "Sessions are read from the files Pi keeps in ~/.pi/agent/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong. ps could not be run to tell whether Pi runs, so no session is shown as finished.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -2058,7 +2058,7 @@ exports[`the golden runs > on darwin, without AGENT_LOOKOUT_PI_HOME, are as befo
       "basis": "files",
       "health": {
         "checkedAt": 1790856150000,
-        "detail": "Sessions are read from the files Pi keeps in ~/.pi/agent/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong.",
+        "detail": "Sessions are read from the files Pi keeps in ~/.pi/agent/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -2214,7 +2214,7 @@ exports[`the golden runs > on darwin, without AGENT_LOOKOUT_PI_HOME, are as befo
       "basis": "files",
       "health": {
         "checkedAt": 1790856214000,
-        "detail": "Sessions are read from the files Pi keeps in ~/.pi/agent/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong.",
+        "detail": "Sessions are read from the files Pi keeps in ~/.pi/agent/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -2260,7 +2260,7 @@ exports[`the golden runs > on win32, with AGENT_LOOKOUT_PI_HOME, are as before 1
       "basis": "files-without-processes",
       "health": {
         "checkedAt": 1790856000000,
-        "detail": "AGENT_LOOKOUT_PI_HOME is set, and there is no ~/al-home/sessions folder, so no Pi sessions are listed. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong.",
+        "detail": "AGENT_LOOKOUT_PI_HOME is set, and there is no ~/al-home/sessions folder, so no Pi sessions are listed. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -2301,7 +2301,7 @@ exports[`the golden runs > on win32, with AGENT_LOOKOUT_PI_HOME, are as before 1
       "basis": "files-without-processes",
       "health": {
         "checkedAt": 1790856001000,
-        "detail": "AGENT_LOOKOUT_PI_HOME is set, and there is no ~/al-home/sessions folder, so no Pi sessions are listed. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong.",
+        "detail": "AGENT_LOOKOUT_PI_HOME is set, and there is no ~/al-home/sessions folder, so no Pi sessions are listed. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -2402,7 +2402,7 @@ exports[`the golden runs > on win32, with AGENT_LOOKOUT_PI_HOME, are as before 1
       "basis": "files-without-processes",
       "health": {
         "checkedAt": 1790856061000,
-        "detail": "Sessions are read from the files Pi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong. Agent Lookout cannot tell on this system whether Pi runs, so no session is shown as finished.",
+        "detail": "Sessions are read from the files Pi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong. Agent Lookout cannot tell on this system whether Pi runs, so no session is shown as finished.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -2513,7 +2513,7 @@ exports[`the golden runs > on win32, with AGENT_LOOKOUT_PI_HOME, are as before 1
       "basis": "files-without-processes",
       "health": {
         "checkedAt": 1790856063000,
-        "detail": "Sessions are read from the files Pi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong. Agent Lookout cannot tell on this system whether Pi runs, so no session is shown as finished.",
+        "detail": "Sessions are read from the files Pi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong. Agent Lookout cannot tell on this system whether Pi runs, so no session is shown as finished.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -2633,7 +2633,7 @@ exports[`the golden runs > on win32, with AGENT_LOOKOUT_PI_HOME, are as before 1
       "basis": "files-without-processes",
       "health": {
         "checkedAt": 1790856065000,
-        "detail": "Sessions are read from the files Pi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong. Agent Lookout cannot tell on this system whether Pi runs, so no session is shown as finished.",
+        "detail": "Sessions are read from the files Pi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong. Agent Lookout cannot tell on this system whether Pi runs, so no session is shown as finished.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -2740,7 +2740,7 @@ exports[`the golden runs > on win32, with AGENT_LOOKOUT_PI_HOME, are as before 1
       "basis": "files-without-processes",
       "health": {
         "checkedAt": 1790856067000,
-        "detail": "Sessions are read from the files Pi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong. Agent Lookout cannot tell on this system whether Pi runs, so no session is shown as finished.",
+        "detail": "Sessions are read from the files Pi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong. Agent Lookout cannot tell on this system whether Pi runs, so no session is shown as finished.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -2837,7 +2837,7 @@ exports[`the golden runs > on win32, with AGENT_LOOKOUT_PI_HOME, are as before 1
       "basis": "files-without-processes",
       "health": {
         "checkedAt": 1790856077000,
-        "detail": "Sessions are read from the files Pi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong. Agent Lookout cannot tell on this system whether Pi runs, so no session is shown as finished.",
+        "detail": "Sessions are read from the files Pi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong. Agent Lookout cannot tell on this system whether Pi runs, so no session is shown as finished.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -2948,7 +2948,7 @@ exports[`the golden runs > on win32, with AGENT_LOOKOUT_PI_HOME, are as before 1
       "basis": "files-without-processes",
       "health": {
         "checkedAt": 1790856080000,
-        "detail": "Sessions are read from the files Pi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong. Agent Lookout cannot tell on this system whether Pi runs, so no session is shown as finished.",
+        "detail": "Sessions are read from the files Pi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong. Agent Lookout cannot tell on this system whether Pi runs, so no session is shown as finished.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -3045,7 +3045,7 @@ exports[`the golden runs > on win32, with AGENT_LOOKOUT_PI_HOME, are as before 1
       "basis": "files-without-processes",
       "health": {
         "checkedAt": 1790856090000,
-        "detail": "Sessions are read from the files Pi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong. Agent Lookout cannot tell on this system whether Pi runs, so no session is shown as finished.",
+        "detail": "Sessions are read from the files Pi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong. Agent Lookout cannot tell on this system whether Pi runs, so no session is shown as finished.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -3150,7 +3150,7 @@ exports[`the golden runs > on win32, with AGENT_LOOKOUT_PI_HOME, are as before 1
       "basis": "files-without-processes",
       "health": {
         "checkedAt": 1790856150000,
-        "detail": "Sessions are read from the files Pi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong. Agent Lookout cannot tell on this system whether Pi runs, so no session is shown as finished.",
+        "detail": "Sessions are read from the files Pi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong. Agent Lookout cannot tell on this system whether Pi runs, so no session is shown as finished.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -3231,7 +3231,7 @@ exports[`the golden runs > on win32, with AGENT_LOOKOUT_PI_HOME, are as before 1
       "basis": "files-without-processes",
       "health": {
         "checkedAt": 1790856152000,
-        "detail": "AGENT_LOOKOUT_PI_HOME is set, and there is no ~/al-home/sessions folder, so no Pi sessions are listed. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong.",
+        "detail": "AGENT_LOOKOUT_PI_HOME is set, and there is no ~/al-home/sessions folder, so no Pi sessions are listed. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -3272,7 +3272,7 @@ exports[`the golden runs > on win32, with AGENT_LOOKOUT_PI_HOME, are as before 1
       "basis": "files-without-processes",
       "health": {
         "checkedAt": 1790856154000,
-        "detail": "AGENT_LOOKOUT_PI_HOME is set, and there is no ~/al-home/sessions folder, so no Pi sessions are listed. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong.",
+        "detail": "AGENT_LOOKOUT_PI_HOME is set, and there is no ~/al-home/sessions folder, so no Pi sessions are listed. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -3313,7 +3313,7 @@ exports[`the golden runs > on win32, with AGENT_LOOKOUT_PI_HOME, are as before 1
       "basis": "files-without-processes",
       "health": {
         "checkedAt": 1790856214000,
-        "detail": "Sessions are read from the files Pi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong.",
+        "detail": "Sessions are read from the files Pi keeps in ~/al-home/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -3494,7 +3494,7 @@ exports[`the golden runs > on win32, without AGENT_LOOKOUT_PI_HOME, are as befor
       "basis": "files-without-processes",
       "health": {
         "checkedAt": 1790856061000,
-        "detail": "Sessions are read from the files Pi keeps in ~/.pi/agent/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong. Agent Lookout cannot tell on this system whether Pi runs, so no session is shown as finished.",
+        "detail": "Sessions are read from the files Pi keeps in ~/.pi/agent/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong. Agent Lookout cannot tell on this system whether Pi runs, so no session is shown as finished.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -3605,7 +3605,7 @@ exports[`the golden runs > on win32, without AGENT_LOOKOUT_PI_HOME, are as befor
       "basis": "files-without-processes",
       "health": {
         "checkedAt": 1790856063000,
-        "detail": "Sessions are read from the files Pi keeps in ~/.pi/agent/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong. Agent Lookout cannot tell on this system whether Pi runs, so no session is shown as finished.",
+        "detail": "Sessions are read from the files Pi keeps in ~/.pi/agent/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong. Agent Lookout cannot tell on this system whether Pi runs, so no session is shown as finished.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -3725,7 +3725,7 @@ exports[`the golden runs > on win32, without AGENT_LOOKOUT_PI_HOME, are as befor
       "basis": "files-without-processes",
       "health": {
         "checkedAt": 1790856065000,
-        "detail": "Sessions are read from the files Pi keeps in ~/.pi/agent/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong. Agent Lookout cannot tell on this system whether Pi runs, so no session is shown as finished.",
+        "detail": "Sessions are read from the files Pi keeps in ~/.pi/agent/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong. Agent Lookout cannot tell on this system whether Pi runs, so no session is shown as finished.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -3832,7 +3832,7 @@ exports[`the golden runs > on win32, without AGENT_LOOKOUT_PI_HOME, are as befor
       "basis": "files-without-processes",
       "health": {
         "checkedAt": 1790856067000,
-        "detail": "Sessions are read from the files Pi keeps in ~/.pi/agent/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong. Agent Lookout cannot tell on this system whether Pi runs, so no session is shown as finished.",
+        "detail": "Sessions are read from the files Pi keeps in ~/.pi/agent/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong. Agent Lookout cannot tell on this system whether Pi runs, so no session is shown as finished.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -3929,7 +3929,7 @@ exports[`the golden runs > on win32, without AGENT_LOOKOUT_PI_HOME, are as befor
       "basis": "files-without-processes",
       "health": {
         "checkedAt": 1790856077000,
-        "detail": "Sessions are read from the files Pi keeps in ~/.pi/agent/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong. Agent Lookout cannot tell on this system whether Pi runs, so no session is shown as finished.",
+        "detail": "Sessions are read from the files Pi keeps in ~/.pi/agent/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong. Agent Lookout cannot tell on this system whether Pi runs, so no session is shown as finished.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -4040,7 +4040,7 @@ exports[`the golden runs > on win32, without AGENT_LOOKOUT_PI_HOME, are as befor
       "basis": "files-without-processes",
       "health": {
         "checkedAt": 1790856080000,
-        "detail": "Sessions are read from the files Pi keeps in ~/.pi/agent/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong. Agent Lookout cannot tell on this system whether Pi runs, so no session is shown as finished.",
+        "detail": "Sessions are read from the files Pi keeps in ~/.pi/agent/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong. Agent Lookout cannot tell on this system whether Pi runs, so no session is shown as finished.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -4137,7 +4137,7 @@ exports[`the golden runs > on win32, without AGENT_LOOKOUT_PI_HOME, are as befor
       "basis": "files-without-processes",
       "health": {
         "checkedAt": 1790856090000,
-        "detail": "Sessions are read from the files Pi keeps in ~/.pi/agent/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong. Agent Lookout cannot tell on this system whether Pi runs, so no session is shown as finished.",
+        "detail": "Sessions are read from the files Pi keeps in ~/.pi/agent/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong. Agent Lookout cannot tell on this system whether Pi runs, so no session is shown as finished.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -4242,7 +4242,7 @@ exports[`the golden runs > on win32, without AGENT_LOOKOUT_PI_HOME, are as befor
       "basis": "files-without-processes",
       "health": {
         "checkedAt": 1790856150000,
-        "detail": "Sessions are read from the files Pi keeps in ~/.pi/agent/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong. Agent Lookout cannot tell on this system whether Pi runs, so no session is shown as finished.",
+        "detail": "Sessions are read from the files Pi keeps in ~/.pi/agent/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong. Agent Lookout cannot tell on this system whether Pi runs, so no session is shown as finished.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",
@@ -4398,7 +4398,7 @@ exports[`the golden runs > on win32, without AGENT_LOOKOUT_PI_HOME, are as befor
       "basis": "files-without-processes",
       "health": {
         "checkedAt": 1790856214000,
-        "detail": "Sessions are read from the files Pi keeps in ~/.pi/agent/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong.",
+        "detail": "Sessions are read from the files Pi keeps in ~/.pi/agent/sessions. Nothing Agent Lookout reads says whether a Pi session is working or waiting for you, and nothing ties a session to a process, so a session shows as unknown while a pi program runs and as finished once none does. This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong.",
         "id": "pi",
         "label": "Pi",
         "state": "ok",

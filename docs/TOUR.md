@@ -452,9 +452,9 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 
 **Where.** `src/collector/adapters/pi/`, with the mapping in `src/core/mapping/pi/piMapping.ts`. [adapters/pi.md](adapters/pi.md) is the full reference.
 
-**Where it came from.** Issue #36 asked for Pi. It reads the JSONL file Pi keeps for each session. It was built from Pi's source at v1.5.0 and has not yet been checked on a computer running Pi. The card says so (`UNCHECKED_NOTE`).
+**Where it came from.** Issue #36 asked for Pi. It reads the JSONL file Pi keeps for each session. It was built from Pi's source at v1.6.0 and has not yet been checked on a computer running Pi. The card says so (`UNCHECKED_NOTE`).
 
-**Why so little of each file.** A session file holds the whole conversation, and Pi removes no session by itself. So a poll looks up files and opens only those written in the last day, when they change, and turns only two kinds of line into text: the header, and a line that names the session. Those are found in the bytes, so no prompt or reply is ever read as text.
+**Why so little of each file.** A session file holds the whole conversation, and Pi removes no old session by itself. So a poll looks up files and opens only those written in the last day, when they change, and turns only two kinds of line into text: the header, and a line that names the session. Those are found in the bytes, so no prompt or reply is ever read as text.
 
 **How it works.**
 

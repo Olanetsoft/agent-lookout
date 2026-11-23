@@ -3,7 +3,7 @@
 //
 // A Pi session file has no field that says a session is running, waiting or
 // over, and none that names a process, so all there is to go on is whether any
-// `pi` program runs. This was worked out from Pi's source at v1.5.0, not checked
+// `pi` program runs. This was worked out from Pi's source at v1.6.0, not checked
 // on a computer running it. See docs/adapters/pi.md.
 
 import type { SessionStatus } from "../../sessions/session.ts";
