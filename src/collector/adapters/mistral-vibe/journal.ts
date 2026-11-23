@@ -9,6 +9,7 @@ import {
   type CallbackFold,
   type CallbackLine,
 } from "./callbacks.ts";
+import { deltaStateOf } from "./deltaWalker.ts";
 import { envelopeOf, type Envelope } from "./envelope.ts";
 
 /**
@@ -24,21 +25,22 @@ import { envelopeOf, type Envelope } from "./envelope.ts";
  * `{"payload":{…},"previous_record_sha256":…,"record_sha256":"…","recovery_journal_record_version":1,"sequence":N,"type":"<type>"}`
  *
  * The status and the title change only through `projection_delta` records,
- * whose payload is `{"delta":[<steps>],"watermark":N}`. The steps add or
- * replace entries of the conversation first, then, when anything else
- * changed, end with `{"op":"set_envelope","state":{<public state>}}`: the
- * whole public state with its history left out. A rename and a title Vibe
- * makes are recorded this way, with no save after them, so the newest state
- * is often here and not in the generation (`stores.ts`).
+ * whose payload is `{"delta":[<steps>],"watermark":N}`, with `session_api`
+ * between the two from 3.1.0. The steps add or replace entries of the
+ * conversation first, then, when anything else changed, end with
+ * `{"op":"set_envelope","state":{<public state>}}`: the whole public state
+ * with its history left out. A rename and a title Vibe makes are recorded
+ * this way, with no save after them, so the newest state is often here and
+ * not in the generation (`stores.ts`).
  *
  * So the reader:
  *
  * - tells each line's type by its end, `,"type":"<type>"}`, and parses no line;
- * - for a `projection_delta`, takes only what lies between the last
- *   `{"op":"set_envelope","state":` and the last `}],"watermark":`, and
- *   parses that alone. A `"` inside a JSON string is always escaped, so the
- *   two can only be the record's own structure. The entries before them,
- *   which hold what was said, run and read, are never parsed or kept;
+ * - for a `projection_delta`, walks the line back from its end as bytes, past
+ *   `watermark` and `session_api`, to the newest `set_envelope` step in
+ *   `delta` (`deltaWalker.ts`), and parses its state alone. The entries
+ *   before it, which hold what was said, run and read, and `session_api`,
+ *   which holds a tool's arguments, are never parsed or kept;
  * - takes a `projection_advanced` record, a whole state that only some older
  *   builds wrote, as a state it does not read.
  *
@@ -59,9 +61,6 @@ export const TAIL_LIMIT_BYTES = 8 * 1024 * 1024;
 const TAIL_CHUNK_BYTES = 256 * 1024;
 
 const NEWLINE = 0x0a;
-
-const ENVELOPE_START = Buffer.from('{"op":"set_envelope","state":');
-const ENVELOPE_END = Buffer.from('}],"watermark":');
 
 /** A record's type, from the end of its line. */
 const RECORD_TYPE = /,"type":"([a-z_]{1,64})"\}$/;
@@ -95,22 +94,21 @@ export function recordTypeOf(line: Uint8Array): string | null {
 /**
  * What one line says of the session's public state: a state, a state not
  * read, or null when the line sets none. `whole` is false for a line whose
- * start was not read: when the state does not begin in what was read, it may
- * begin before, and it is not known.
+ * start was not read: when the walk to the state reaches the start of what was
+ * read, the state may be before it, and it is not known.
  */
 export function readJournalLine(line: Uint8Array, whole = true): Newest | null {
   const type = recordTypeOf(line);
   if (type === "projection_advanced") return { kind: "unread" };
   if (type !== "projection_delta") return null;
   const bytes = Buffer.from(line.buffer, line.byteOffset, line.byteLength);
-  const start = bytes.lastIndexOf(ENVELOPE_START);
-  if (start === -1) return whole ? null : { kind: "beyond" };
-  const from = start + ENVELOPE_START.byteLength;
-  const end = bytes.lastIndexOf(ENVELOPE_END);
-  if (end < from) return { kind: "unread" };
+  const found = deltaStateOf(bytes, whole);
+  if (found.kind === "none") return null;
+  if (found.kind === "cut") return { kind: "beyond" };
+  if (found.kind === "bad") return { kind: "unread" };
   let value: unknown;
   try {
-    value = JSON.parse(bytes.toString("utf8", from, end));
+    value = JSON.parse(bytes.toString("utf8", found.state.start, found.state.end));
   } catch {
     return { kind: "unread" };
   }
@@ -224,7 +222,7 @@ async function scanTail(file: OpenFile, size: number): Promise<Tail> {
     return tail(end ?? 0, true);
   }
   // The limit was reached. The end of the line it stopped inside may still
-  // hold the state, which comes last on a line.
+  // hold the state, which is found from a line's end.
   if (newest === null && end !== null && fragment.byteLength > 0) {
     newest = readJournalLine(fragment, false);
   }

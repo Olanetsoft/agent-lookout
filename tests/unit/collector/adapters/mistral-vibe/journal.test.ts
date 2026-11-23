@@ -18,6 +18,7 @@ import {
   PRIVATE_WORDS,
   publicState,
   record,
+  sessionApiFacts,
   sessionId,
   usage,
   type StateFields,
@@ -128,13 +129,17 @@ describe("one line of a journal", () => {
   test("the entries before the state are never parsed, even when they are not JSON at all", () => {
     const text = delta(5, running, [{ id: "entry-5", text: "ENTRY-ONLY" }]).replace(
       '{"id":"entry-5","text":"ENTRY-ONLY"}',
-      `{not json ${PRIVATE_WORDS} ENTRY-ONLY`,
+      `{not json ${PRIVATE_WORDS} ENTRY-ONLY}`,
     );
     const parse = vi.spyOn(JSON, "parse");
     expect(statusOf(readJournalLine(line(text))!)).toBe("state:running");
     for (const [argument] of parse.mock.calls) {
       expect(String(argument)).not.toContain("ENTRY-ONLY");
     }
+    // Their brackets are matched to reach the delta's key, so one left open is a line Vibe does not write.
+    expect(readJournalLine(line(text.replace("ENTRY-ONLY}", "ENTRY-ONLY")))).toEqual({
+      kind: "unread",
+    });
   });
 
   test("an entry before the state that holds the markers as structure does not hide the state", () => {
@@ -148,6 +153,110 @@ describe("one line of a journal", () => {
     expect(text).toContain('{"a":1}],"watermark":2}');
     expect(text).toContain('{"op":"set_envelope","state":{"a":1}}');
     expect(statusOf(readJournalLine(line(text))!)).toBe("state:running");
+  });
+
+  describe("as each Vibe lays it out", () => {
+    // Written by hand, as each version's canonical_json and _journal_record_bytes lay a line out.
+    const state =
+      `{"format":"harness.public-session-state/v1","latestTurn":{"id":"turn-1","startedAt":${NOW - MINUTE},"status":"in_progress"},` +
+      `"session":{"contextUsage":{"cachedInputTokens":0,"inputTokens":4200,"outputTokens":96,"totalTokens":4296},"createdAt":${NOW - 60 * MINUTE},` +
+      `"id":"${ID}","status":{"activeTurnId":"turn-1","type":"running"},"title":"demo-project refactor","updatedAt":${NOW - MINUTE}}}`;
+    const steps =
+      '[{"entry":{"id":"entry-5","text":"ENTRY-ONLY","type":"message"},"op":"append_entry"},' +
+      `{"op":"set_envelope","state":${state}}]`;
+    const header =
+      '"previous_record_sha256":"0000000000000000000000000000000000000000000000000000000000000004",' +
+      '"record_sha256":"0000000000000000000000000000000000000000000000000000000000000005",' +
+      '"recovery_journal_record_version":1,"sequence":5,"type":"projection_delta"}';
+    const sessionApi =
+      '{"history_positions":{},"metadata_version":1,"next_history_index":0,' +
+      '"sparse_history":{"next_index":2,"positions":{"entry-4":0,"entry-5":1}},' +
+      '"tool_calls":{"entry-4":{"arguments":{"path":"src/API-ONLY.ts"},"toolCallId":"call-1"}},"turn_outcomes":{}}';
+    const kept: Newest = {
+      kind: "state",
+      envelope: {
+        title: "demo-project refactor",
+        statusType: "running",
+        createdAt: NOW - 60 * MINUTE,
+        updatedAt: NOW - MINUTE,
+        turnStatus: "in_progress",
+        turnStartedAt: NOW - MINUTE,
+        turnCompletedAt: null,
+        tokens: { input: 4_200, output: 96 },
+      },
+    };
+
+    test("a line of Vibe 3.0, whose state comes right before watermark, gives its state", () => {
+      const text = `{"payload":{"delta":${steps},"watermark":5},${header}`;
+      expect(readJournalLine(line(text))).toEqual(kept);
+    });
+
+    test("a line of Vibe 3.1.4, with session_api between delta and watermark, gives its state and parses nothing else", () => {
+      const text = `{"payload":{"delta":${steps},"session_api":${sessionApi},"watermark":5},${header}`;
+      const parse = vi.spyOn(JSON, "parse");
+      expect(readJournalLine(line(text))).toEqual(kept);
+      expect(parse).toHaveBeenCalledTimes(1);
+      expect(parse.mock.calls[0]?.[0]).toBe(state);
+    });
+
+    test("an empty delta, which Vibe 3.1 writes to keep Session API facts alone, sets no state", () => {
+      const text = `{"payload":{"delta":[],"session_api":${sessionApi},"watermark":5},${header}`;
+      expect(readJournalLine(line(text))).toBeNull();
+    });
+  });
+
+  test("session_api whose tool's arguments hold a state's opening bytes, as structure, gives the delta's own state", () => {
+    // `session_api` keeps a tool's arguments as the JSON object the model wrote.
+    const arguments_ = {
+      op: "set_envelope",
+      state: publicState(idle),
+      table: { rows: [{ a: 1 }], watermark: 2 },
+    };
+    const text = delta(5, running, undefined, sessionApiFacts(arguments_));
+    expect(text).toContain('"arguments":{"op":"set_envelope","state":{"activeCallbacks":');
+    expect(text).toContain('{"a":1}],"watermark":2}');
+    expect(text.indexOf('"session_api":')).toBeGreaterThan(text.lastIndexOf('"op":"append_entry"'));
+    expect(statusOf(readJournalLine(line(text))!)).toBe("state:running");
+    expect(
+      readJournalLine(line(delta(5, undefined, undefined, sessionApiFacts(arguments_)))),
+    ).toBeNull();
+  });
+
+  test("a state's opening bytes in a string of session_api, escaped, are never taken either", () => {
+    const text = delta(
+      5,
+      undefined,
+      undefined,
+      sessionApiFacts({ text: '{"op":"set_envelope","state":{}}],"watermark":1}\\' }),
+    );
+    expect(readJournalLine(line(text))).toBeNull();
+  });
+
+  test("a payload with a key this adapter does not know after the delta, or in its place, is a state not read", () => {
+    const step = { op: "set_envelope", state: publicState(running) };
+    for (const payload of [
+      { delta: [step], later: 1, watermark: 5 },
+      { delta: [step], session_api: {}, zone: 1 },
+      { delta: [step], later: [], watermark: 5 },
+      { delta: [], later: [step], watermark: 5 },
+      { delta: [step], queue: [], session_api: {}, watermark: 5 },
+      { steps: [step], watermark: 5 },
+    ]) {
+      expect(readJournalLine(line(record("projection_delta", 5, payload)))).toEqual({
+        kind: "unread",
+      });
+    }
+  });
+
+  test("a set_envelope step that is not the last still sets the state, as Vibe replays a delta", () => {
+    const text = record("projection_delta", 5, {
+      delta: [
+        { op: "set_envelope", state: publicState(idle) },
+        { op: "append_entry", entry: { id: "entry-5", text: PRIVATE_WORDS } },
+      ],
+      watermark: 5,
+    });
+    expect(statusOf(readJournalLine(line(text))!)).toBe("state:idle");
   });
 
   test("what the person asked, errors and the queue are not kept", () => {
@@ -292,6 +401,24 @@ describe("reading a segment", () => {
     expect(files.reads.reduce((sum, each) => sum + each.length, 0)).toBeLessThanOrEqual(
       TAIL_LIMIT_BYTES,
     );
+  });
+
+  test("a line of Vibe 3.1.4 longer than the tail, whose start is never read, gives its own state, not one in session_api", async () => {
+    const files = memoryFiles();
+    const facts = sessionApiFacts({ op: "set_envelope", state: publicState(running) });
+    const huge = delta(6, idle, [{ id: "entry-6", text: "y".repeat(9 * 1024 * 1024) }], facts);
+    files.write(FILE, `${delta(5, running)}${huge}`);
+    expect(statusOf(await readNow(files))).toBe("state:idle");
+    expect(files.reads.reduce((sum, each) => sum + each.length, 0)).toBeLessThanOrEqual(
+      TAIL_LIMIT_BYTES,
+    );
+  });
+
+  test("a line whose session_api is longer than the tail is not known, as its state is before what was read", async () => {
+    const files = memoryFiles();
+    const facts = sessionApiFacts({ content: "y".repeat(9 * 1024 * 1024) });
+    files.write(FILE, `${delta(5, running)}${delta(6, idle, undefined, facts)}`);
+    expect(await readNow(files)).toEqual({ kind: "beyond" });
   });
 
   test("a line longer than the tail that sets no state there is not known", async () => {
