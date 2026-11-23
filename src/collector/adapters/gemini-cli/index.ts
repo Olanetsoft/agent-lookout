@@ -66,7 +66,7 @@ export const FILES_ONLY_NOTE =
 
 /** Said until this adapter is checked against a machine that runs Gemini CLI. */
 export const UNCHECKED_NOTE =
-  "This was written from Gemini CLI 0.64.0's source and not yet checked against a real session, so a status can be wrong.";
+  "This was written from Gemini CLI 0.64.0's source, with its tool calls checked again at 0.70.0, and not yet checked against a real session, so a status can be wrong.";
 
 /** Said when a project holds session files changed in the last day in the format this adapter does not read. */
 export const OLDER_FORMAT_NOTE =
@@ -308,7 +308,7 @@ export interface GeminiCliAdapter extends Adapter {
  * sessions, that is an answer, not a missing Gemini CLI.
  *
  * Built from Gemini CLI's source at v0.64.0, with its tool calls checked again
- * at v0.69.0, and not yet checked against a machine running it.
+ * at v0.70.0, and not yet checked against a machine running it.
  */
 export function createGeminiCliAdapter(options: GeminiCliAdapterOptions = {}): GeminiCliAdapter {
   const env = options.env ?? process.env;

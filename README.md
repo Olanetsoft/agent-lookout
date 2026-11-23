@@ -88,7 +88,7 @@ Codex doesn't record when it waits for your approval, so a waiting session shows
 
 Mistral Vibe support was built from the source of Vibe 2.26.1 and 3.0.4 and has not yet been checked on a computer running Vibe.
 
-Gemini CLI support was built from its source at v0.64.0, with its tool calls checked again at v0.69.0, and has not yet been checked on a machine running it.
+Gemini CLI support was built from its source at v0.64.0, with its tool calls checked again at v0.70.0, and has not yet been checked on a machine running it.
 
 OpenCode support was built from its source at v1.19.0 and v2.2.5 and has not yet been checked on a computer running it.
 

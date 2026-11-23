@@ -17,7 +17,7 @@
 //
 // Built from Gemini CLI's source at v0.64.0
 // (packages/core/src/services/chatRecordingService.ts), with its tool calls
-// checked again at v0.69.0, and not yet checked against a machine running it.
+// checked again at v0.70.0, and not yet checked against a machine running it.
 
 import type { SessionStatus, TokenCounts } from "../../sessions/session.ts";
 
@@ -76,9 +76,9 @@ export const GEMINI_CLI_ENDED_CALL_STATUSES = ["success", "error", "cancelled"] 
 /**
  * The statuses of a tool call that has not ended, the rest of
  * `CoreToolCallStatus` (packages/core/src/scheduler/types.ts:26-34 at
- * v0.69.0). Gemini CLI 0.69.0 writes only `scheduled`, as soon as the reply
- * ends (packages/core/src/core/geminiChat.ts:1857-1884). The other three are
- * read in case a later version writes them too.
+ * v0.69.0). Gemini CLI 0.69.0 and 0.70.0 write only `scheduled`, as soon as
+ * the reply ends (packages/core/src/core/geminiChat.ts:1914-1941 at v0.70.0).
+ * The other three are read in case a later version writes them too.
  */
 export const GEMINI_CLI_OPEN_CALL_STATUSES = [
   "scheduled",

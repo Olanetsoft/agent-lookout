@@ -1,8 +1,9 @@
 // Test fixtures only. Every id, name and path here is invented and generic.
 // The lines follow the shapes in Gemini CLI's source at v0.64.0
 // (packages/core/src/services/chatRecordingService.ts and chatRecordingTypes.ts),
-// at v0.63.0 for the helpers whose names end `AsOf063`, and at v0.69.0 for
-// `scheduledToolCall`, as written up in
+// at v0.63.0 for the helpers whose names end `AsOf063`, at v0.69.0 for
+// `scheduledToolCall`, and at v0.70.0 for `interruptedResultsLine`,
+// `interruptedReplyLine` and `shellNoteLine`, as written up in
 // docs/adapters/gemini-cli.md, and nothing in them is copied from a real
 // machine. Product code never imports this file.
 //
@@ -188,8 +189,8 @@ export function toolCall(status: string, time: number, callId = "call-0001") {
 /**
  * A tool call as Gemini CLI 0.69.0 records it as soon as the reply ends, before
  * it runs: no result, the status `scheduled` unless a test gives another, and
- * the fields `recordToolCalls` adds (geminiChat.ts:1857-1884 and
- * chatRecordingService.ts:1199-1212 at v0.69.0).
+ * the fields `recordToolCalls` adds (geminiChat.ts:1914-1941 and
+ * chatRecordingService.ts:1199-1212 at v0.70.0).
  */
 export function scheduledToolCall(time: number, callId = "call-0001", status = "scheduled") {
   return {
@@ -278,6 +279,64 @@ export function failedRequestLine(
   text = `[API Error: ${PRIVATE_WORDS}]`,
 ): string {
   return JSON.stringify({ id, timestamp: at(time), type: "error", content: text });
+}
+
+/**
+ * The output of a command run with `!`, which Gemini CLI records through
+ * `addHistory` with no `displayContent` (useExecutionLifecycle.ts:63-70 and
+ * geminiChat.ts:1429-1450 at v0.70.0).
+ */
+export function shellNoteLine(id: string, time: number): string {
+  return JSON.stringify({
+    id,
+    timestamp: at(time),
+    type: "user",
+    content: [
+      {
+        text: `I ran the following shell command:\n\`\`\`sh\necho ${PRIVATE_WORDS}\n\`\`\`\n\nThis produced the following result:\n\`\`\`\n${PRIVATE_WORDS}\n\`\`\``,
+      },
+    ],
+  });
+}
+
+/**
+ * What Gemini CLI 0.70.0 writes before a note when its history ends with a
+ * reply whose calls were never answered: each call answered with the same
+ * error (`closeUnansweredToolCallsTurn` and `buildInterruptedToolResponseParts`,
+ * geminiChat.ts:911-931 and :2070-2082 at v0.70.0).
+ */
+export function interruptedResultsLine(id: string, time: number, callId = "call-0001"): string {
+  return JSON.stringify({
+    id,
+    timestamp: at(time),
+    type: "user",
+    content: [
+      {
+        functionResponse: {
+          name: "run_shell_command",
+          id: callId,
+          response: { error: "Response was lost or interrupted." },
+        },
+      },
+    ],
+  });
+}
+
+/**
+ * The reply Gemini CLI 0.70.0 writes in the model's place before a note when
+ * its history ends with a tool's result, through `recordSyntheticMessage`: no
+ * model, no thoughts and no counts (`closeUnansweredToolResponseTurn`,
+ * geminiChat.ts:962-1008, and chatRecordingService.ts:1110-1158 at v0.70.0).
+ */
+export function interruptedReplyLine(id: string, time: number): string {
+  return JSON.stringify({
+    id,
+    timestamp: at(time),
+    type: "gemini",
+    content: [{ text: "[The previous response was interrupted before it completed.]" }],
+    thoughts: [],
+    tokens: null,
+  });
 }
 
 /** A `$set` of the session's details. */
