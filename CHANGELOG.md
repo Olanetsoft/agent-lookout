@@ -2,7 +2,9 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
-## Unreleased
+## 0.2.30 - 2026-11-23
+
+Copilot CLI and Kiro CLI sessions show, Kilo Code, MiMo Code and Mistral Vibe sessions give their last message, Mistral Vibe 3.1.4, Qwen Code and Hermes Agent sessions keep the right status, and a Codex side chat no longer shows as a session, or a Codex session's first prompt as its name.
 
 ### Added
 

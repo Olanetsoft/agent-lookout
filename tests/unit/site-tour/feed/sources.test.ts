@@ -779,7 +779,7 @@ test("the other machine's card names the ssh command the tunnel runs, as it runs
  * soon as it changes, so it names an agent at the release that ships it, and
  * the agent leaves this list then.
  */
-const NOT_ON_THE_PAGE_YET = new Set<string>(["Copilot CLI", "Kiro CLI"]);
+const NOT_ON_THE_PAGE_YET = new Set<string>();
 
 test("the page's Works with names every agent the tour's Sources reads", () => {
   const works = /<div class="works">([\s\S]*?)<\/div\s*>/.exec(page)?.[1] ?? "";
@@ -797,7 +797,7 @@ test("the page's Works with names every agent the tour's Sources reads", () => {
   const inReadme = rows
     .map((row) => row.split("|")[1].trim())
     .filter((agent) => agent !== "Status files" && !NOT_ON_THE_PAGE_YET.has(agent));
-  expect(named).toHaveLength(27);
+  expect(named).toHaveLength(29);
   expect(new Set(named)).toEqual(new Set(read));
   expect(new Set(named)).toEqual(new Set(inReadme));
 });
