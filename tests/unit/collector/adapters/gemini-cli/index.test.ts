@@ -42,6 +42,8 @@ import {
   HOUR,
   idleSession,
   ids,
+  interruptedReplyLine,
+  interruptedResultsLine,
   messageIdOf,
   messagesAsOf063,
   MINUTE,
@@ -65,6 +67,7 @@ import {
   sessionIdOf,
   setLine,
   setMessagesLine,
+  shellNoteLine,
   SLUG,
   subagentPath,
   titleLine,
@@ -442,6 +445,100 @@ describe("a request that fails", () => {
     const lines = failed.with(5, noticeLine("error", error, NOW - 2 * MINUTE));
     const { sessions } = await geminiCliAdapterFor(filesOf(lines)).poll();
     expect(sessions[0]).toMatchObject({ status: "idle", statusSince: NOW - 2 * MINUTE });
+  });
+});
+
+describe("a note after a turn Gemini CLI 0.70.0 closes first", () => {
+  const sessionId = sessionIdOf("f2");
+  const began = NOW - 10 * MINUTE;
+  const FILE = chatPath(chatName(began, sessionId));
+  const [prompt = "", reply = "", result = "", error = "", closing = "", stand = "", note = ""] = [
+    "a1",
+    "a2",
+    "a3",
+    "a4",
+    "a5",
+    "a6",
+    "a7",
+  ].map(messageIdOf);
+
+  /** A prompt, then its reply and that reply's one call, ended at `NOW - 3 * MINUTE`. */
+  const round = [
+    headerLine({ sessionId, startTime: began }),
+    userLine(prompt, NOW - 5 * MINUTE),
+    updatedLine(NOW - 5 * MINUTE),
+    geminiLine(reply, NOW - 4 * MINUTE, { content: "" }),
+    updatedLine(NOW - 4 * MINUTE),
+    geminiLine(reply, NOW - 4 * MINUTE, {
+      content: "",
+      toolCalls: [scheduledToolCall(NOW - 4 * MINUTE)],
+    }),
+    geminiLine(reply, NOW - 4 * MINUTE, {
+      content: "",
+      toolCalls: [toolCall("success", NOW - 3 * MINUTE)],
+    }),
+  ];
+
+  /** The reply in the model's place, then the output of a command run with `!`. */
+  const placeholderThenNote = [
+    interruptedReplyLine(stand, NOW - MINUTE),
+    updatedLine(NOW - MINUTE),
+    shellNoteLine(note, NOW - MINUTE + SECOND),
+    updatedLine(NOW - MINUTE + SECOND),
+  ];
+
+  function adapterOf(lines: string[]) {
+    const files = memoryFiles();
+    files.write(projectRootPath(), PROJECT);
+    files.write(FILE, chatFile(lines));
+    return { files, adapter: geminiCliAdapterFor(files) };
+  }
+
+  test("a request that failed while it sent the tools' results is idle from the reply written in the model's place", async () => {
+    const { files, adapter } = adapterOf([
+      ...round,
+      toolResultLine(result, NOW - 3 * MINUTE),
+      updatedLine(NOW - 3 * MINUTE),
+      failedRequestLine(error, NOW - 2 * MINUTE),
+      updatedLine(NOW - 2 * MINUTE),
+    ]);
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "failed",
+      statusSince: NOW - 2 * MINUTE,
+    });
+
+    files.append(FILE, chatFile(placeholderThenNote));
+    const { sessions } = await adapter.poll();
+    // The reply in the model's place has no counts, so the reply before it counts.
+    expect(sessions[0]).toMatchObject({
+      status: "idle",
+      statusSince: NOW - MINUTE,
+      tokens: REPLY_COUNTS,
+    });
+    expect(JSON.stringify(sessions)).not.toContain(PRIVATE_WORDS);
+    expect(JSON.stringify(sessions)).not.toContain("interrupted");
+  });
+
+  test("a batch a tool stopped, its calls answered in the tools' place, is idle from the reply written in the model's place", async () => {
+    const { files, adapter } = adapterOf(round);
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "unknown",
+      statusSince: null,
+    });
+
+    files.append(
+      FILE,
+      chatFile([
+        interruptedResultsLine(closing, NOW - MINUTE - SECOND),
+        updatedLine(NOW - MINUTE - SECOND),
+        ...placeholderThenNote,
+      ]),
+    );
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "idle",
+      statusSince: NOW - MINUTE,
+      tokens: REPLY_COUNTS,
+    });
   });
 });
 
