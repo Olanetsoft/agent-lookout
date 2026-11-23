@@ -80,15 +80,16 @@ export const TOO_LARGE_NOTE =
  * not yet checked on a computer running it.
  *
  * - Working is a lock a process that runs holds, which Kimi Code takes for as
- *   long as a session is busy. Idle is a session whose lock Agent Lookout saw
- *   held, let go, with that process still running: Kimi Code writes nothing that
- *   says a session is open but idle.
+ *   long as a session is busy and, from 2.6.0, for a few seconds after a process
+ *   opens it. Idle is a session whose lock Agent Lookout saw held, let go, with
+ *   that process still running: Kimi Code writes nothing that says a session is
+ *   open but idle.
  * - Needs you is an approval or a question the main agent's event file holds
  *   with no answer, asked since the lock was taken (`kimiCodeWaitOf`). A
  *   subagent's wait is in its own file, which is not read.
  * - Finished is a session with no lock held and no process known to have it. So
- *   a session idle in a Kimi Code that was opened before Agent Lookout saw it
- *   busy shows as finished until its next turn.
+ *   a session idle in a Kimi Code that was opened before Agent Lookout saw its
+ *   lock shows as finished until its next turn.
  * - Failed is a last turn `state.json` says failed. A Kimi Code that stops
  *   mid-turn writes nothing, and shows as finished.
  * - The name is the title a model or a person set, else the folder's. The
@@ -106,7 +107,7 @@ export const KIMI_CODE_CAPABILITIES: SourceCapabilities = {
   "working-and-idle": {
     level: "partly",
     reason:
-      "Working from the lock Kimi Code keeps on a busy session. Idle only after that, while the same process runs.",
+      "Working from Kimi Code's lock on a busy session or, from 2.6.0, one just opened. Idle only after that, while that process runs.",
   },
   "needs-you": {
     level: "partly",
@@ -116,7 +117,7 @@ export const KIMI_CODE_CAPABILITIES: SourceCapabilities = {
   finished: {
     level: "partly",
     reason:
-      "Once its process goes. A session idle since before Agent Lookout saw it busy also shows as finished.",
+      "Once its process goes. A session idle since before Agent Lookout saw its lock also shows as finished.",
   },
   failed: {
     level: "partly",
