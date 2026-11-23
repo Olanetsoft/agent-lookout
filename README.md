@@ -96,7 +96,7 @@ Qwen Code support was built from Qwen Code's source at 0.28.3 and has not yet be
 
 Hermes Agent support was built from its source at v0.23.3 and has not yet been checked on a computer running it.
 
-Cline support reads the sessions of its newer runtime, in `~/.cline/data/sessions`, as its CLI and desktop app write them, not the older VS Code extension's tasks. It was built from its source at cli-v3.0.74 and has not yet been checked on a computer running it.
+Cline support reads the sessions of its newer runtime, in `~/.cline/data/sessions`, as its CLI and desktop app write them, not the older VS Code extension's tasks. It was built from its source at cli-v3.0.75 and has not yet been checked on a computer running it.
 
 Goose support reads its database, `~/.local/share/goose/sessions/sessions.db`, on macOS and Linux. A session shows as unknown while a Goose program runs and as finished once none does, as nothing ties a session to a process. It was built from its source at v1.60.2 and has not yet been checked on a computer running it.
 

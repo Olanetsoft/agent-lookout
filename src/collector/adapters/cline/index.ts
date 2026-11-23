@@ -56,7 +56,7 @@ export const NEEDS_YOU_NOTE =
 
 /** Said whenever Cline is watched, until Agent Lookout has been checked against it. */
 export const UNCHECKED_NOTE =
-  "This was built from Cline's source at cli-v3.0.74 and has not yet been checked on a computer running it, so a status can be wrong.";
+  "This was built from Cline's source at cli-v3.0.75 and has not yet been checked on a computer running it, so a status can be wrong.";
 
 /** Said when a manifest is of a newer format than this reads. */
 export const NEWER_FORMAT_NOTE =
@@ -72,7 +72,7 @@ export const UNKNOWN_NOTE =
 
 /**
  * What a Cline session can show, from the files this adapter reads. See
- * docs/adapters/cline.md for each. Built from Cline's source at cli-v3.0.74 and
+ * docs/adapters/cline.md for each. Built from Cline's source at cli-v3.0.75 and
  * not yet checked on a computer running it. The older VS Code extension keeps
  * its tasks in the editor's own storage, which this adapter does not read.
  *
@@ -232,7 +232,7 @@ function processCheckFacts(asksPs: boolean, pollIntervalMs: number): SourceFact[
 /**
  * Finds Cline sessions on this machine from the files Cline's runtime keeps,
  * with nothing installed, no setting changed and no Cline program run. Built
- * from Cline's source at cli-v3.0.74 and not yet checked on a computer running
+ * from Cline's source at cli-v3.0.75 and not yet checked on a computer running
  * it.
  *
  * Cline's CLI, its desktop app and the VS Code builds that run the same runtime

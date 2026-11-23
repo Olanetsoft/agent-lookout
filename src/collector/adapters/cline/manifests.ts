@@ -5,7 +5,7 @@ import { validPid } from "../../processes/pids.ts";
 
 /**
  * Reading the manifest Cline's runtime keeps for each session, for the little
- * this adapter needs. Built from the source of Cline's CLI at cli-v3.0.74 and
+ * this adapter needs. Built from the source of Cline's CLI at cli-v3.0.75 and
  * not yet checked on a computer running it.
  *
  * Each session has a folder, `<sessions folder>/<session id>/`, with its

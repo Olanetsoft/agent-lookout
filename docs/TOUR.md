@@ -408,7 +408,7 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 
 **Where.** `src/collector/adapters/cline/`, with the mapping in `src/core/mapping/cline/clineMapping.ts`. [adapters/cline.md](adapters/cline.md) is the full reference.
 
-**Where it came from.** Issue #34 asked for Cline. It reads the folder Cline's newer runtime keeps, which its CLI, its desktop app and the VS Code builds that run the runtime write. The older VS Code extension keeps its tasks in the editor's own storage, which is not read. It was built from Cline's source at cli-v3.0.74 and has not yet been checked on a computer running Cline. The card says so (`UNCHECKED_NOTE`).
+**Where it came from.** Issue #34 asked for Cline. It reads the folder Cline's newer runtime keeps, which its CLI, its desktop app and the VS Code builds that run the runtime write. The older VS Code extension keeps its tasks in the editor's own storage, which is not read. It was built from Cline's source at cli-v3.0.75 and has not yet been checked on a computer running Cline. The card says so (`UNCHECKED_NOTE`).
 
 **Why the manifests.** Each session has a small file that says its status, its folder and the process that hosts it. Cline's commands write when they list sessions, its database holds the same status beside the prompts, and its hub needs a token. So the adapter reads the manifests alone.
 
@@ -419,7 +419,7 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 - `clineMapping.ts` turns the status and whether the process runs into a session's status. `running`, `idle` and `pending` hold only while the process runs, so a crash left behind is finished, and a manifest with no pid is unknown.
 - `toSession.ts` makes the session, `cline:<session id>`, named after its folder.
 
-**Needs you.** The issue said a pending tool approval is not on disk. At cli-v3.0.74 it is: the runtime writes `pending` around each approval, and nothing else writes it. A question writes nothing, so it shows as working.
+**Needs you.** The issue said a pending tool approval is not on disk. At cli-v3.0.75 it is: the runtime writes `pending` around each approval, and nothing else writes it. A question writes nothing, so it shows as working.
 
 **The hub.** The CLI and the desktop app usually run sessions in Cline's hub, one background process, so `pid` can be shared and in no terminal. A session closed in the CLI stays in the hub, so it shows as idle for as long as the hub runs. That is why it has no Jump, and why an idle session leaves the list a day after it was last written.
 
