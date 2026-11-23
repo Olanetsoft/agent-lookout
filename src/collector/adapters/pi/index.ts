@@ -70,7 +70,7 @@ export const STATUS_NOTE =
 
 /** Said whenever Pi is watched, until the adapter has been checked on a computer running it. */
 export const UNCHECKED_NOTE =
-  "This was built from Pi's source at v1.5.0 and not yet checked on a computer running Pi, so a status can be wrong.";
+  "This was built from Pi's source at v1.6.0 and not yet checked on a computer running Pi, so a status can be wrong.";
 
 /** Said when a file is of a newer format than this reads. */
 export const NEWER_FORMAT_NOTE =
@@ -78,7 +78,7 @@ export const NEWER_FORMAT_NOTE =
 
 /**
  * What a Pi session can show, from the files this adapter reads. See
- * docs/adapters/pi.md for each. Built from Pi's source at v1.5.0 and not yet
+ * docs/adapters/pi.md for each. Built from Pi's source at v1.6.0 and not yet
  * checked on a computer running it.
  *
  * - No Working and idle: nothing ties a session to a process, so a turn a crash
@@ -233,10 +233,10 @@ export interface PiStatusSource {
 /**
  * Finds Pi's sessions on this machine from the files Pi keeps, with nothing
  * installed, no setting changed and no program of Pi's run. Built from Pi's source
- * at v1.5.0, and not yet checked on a computer running it.
+ * at v1.6.0, and not yet checked on a computer running it.
  *
  * Pi keeps each session in one JSONL file, in a folder for its working directory
- * under `~/.pi/agent/sessions`, and removes none by itself. So a poll looks up
+ * under `~/.pi/agent/sessions`, and removes no old one by itself. So a poll looks up
  * each project folder and each file written in the last day, with `lstat`, and
  * looks through every other file once a minute (`sessionFiles.ts`).
  * It opens a file only when it changes, and reads the first line and the lines
@@ -249,8 +249,8 @@ export interface PiStatusSource {
  * Each session whose file was written in the last 24 hours is listed. Nothing Pi
  * writes says whether a session is open: it shows as unknown while a `pi` program
  * runs, or while `ps` cannot say, as on Windows, and as finished once none does.
- * It never shows as working or as needing you. A crash leaves a session as a quit
- * does, and it is finished like the others once no `pi` runs.
+ * It never shows as working or as needing you. A crash, like a quit, writes no end
+ * to a session, and it is finished like the others once no `pi` runs.
  *
  * Pi not being installed costs nothing: when the sessions folder is missing, the
  * adapter says so and looks again only once a minute, and runs nothing. Someone

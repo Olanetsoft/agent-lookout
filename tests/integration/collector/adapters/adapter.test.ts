@@ -343,10 +343,10 @@ test("PRIVACY.md and the Pi notes name what is read and from which version", asy
   const line = (start: string) => privacy.split("\n").find((one) => one.startsWith(start)) ?? "";
 
   const pi = line("For Pi, Agent Lookout reads");
-  expect(pi).toContain("built from Pi's source at v1.5.0");
+  expect(pi).toContain("built from Pi's source at v1.6.0");
   expect(pi).not.toContain("Goose");
   expect(pi).toContain("`ps`");
-  expect(notes).toContain("v1.5.0");
+  expect(notes).toContain("v1.6.0");
 
   const start = privacy.indexOf("### Pi's files");
   const section = privacy.slice(start, privacy.indexOf("\n### ", start));

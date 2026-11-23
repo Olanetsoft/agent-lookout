@@ -6,7 +6,7 @@ import type { SessionFileRef } from "./sessionFiles.ts";
 
 /**
  * Reading the little this adapter needs from a Pi session file. Built from Pi's
- * source at v1.5.0 and not yet checked on a computer running it.
+ * source at v1.6.0 and not yet checked on a computer running it.
  *
  * A session file is JSONL, and holds the whole conversation. Pi makes it at a
  * session's first message, with a header line first, and adds to it, one line at a

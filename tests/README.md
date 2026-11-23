@@ -168,7 +168,7 @@ Use values that could belong to nobody: `demo-project` for a name, `/Users/examp
 
 `fixtures/goose/goose.ts` holds the tables Goose's source gives `sessions` and `messages` at v1.57.0, with every column, builds a session's rows with placeholder words in every column that can hold what was said, and what `sqlite3` prints for the adapter's two questions, as `docs/adapters/goose.md` describes. Goose was not run to make them.
 
-`fixtures/pi/pi.ts` builds session files in the shape Pi's source writes at v1.5.0, with placeholder words wherever a prompt, a reply, a tool's arguments or a system prompt goes, as `docs/adapters/pi.md` describes. Pi was not run to make them.
+`fixtures/pi/pi.ts` builds session files in the shape Pi's source writes at v1.6.0, with placeholder words wherever a prompt, a reply, a tool's arguments or a system prompt goes, as `docs/adapters/pi.md` describes. Pi was not run to make them.
 
 `fixtures/kimchi/kimchi.ts` builds session files in the shape Kimchi's source writes at v1.35.0 through Pi 1.3.0, with the second lines that mark a subagent's and Ferment's evaluator's session, a side chat's path, and a name made of placeholder words, as Kimchi makes one from a prompt, as `docs/adapters/kimchi.md` describes. Kimchi was not run to make them.
 

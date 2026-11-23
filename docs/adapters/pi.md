@@ -2,9 +2,9 @@
 
 These notes record what Agent Lookout reads from Pi, where each value comes from, and what breaks when Pi changes. When the adapter stops working, start here.
 
-Written on 2026-11-04 from Pi's source at `v1.5.0`, released 2026-11-02 (commit `f9a2636` of [earendil-works/pi](https://github.com/earendil-works/pi)), the newest release then. Pi is under the MIT licence. Pi was not installed or run to write them, and no real session was looked at. The fixtures are written by hand from the source. **The adapter was built from Pi's source at v1.5.0 and has not yet been checked on a computer running Pi.** The Sources view says so too.
+Written on 2026-11-04 from Pi's source at `v1.5.0`, released 2026-11-02 (commit `f9a2636` of [earendil-works/pi](https://github.com/earendil-works/pi)), and checked again on 2026-11-22 against `v1.6.0`, released 2026-11-20 (commit `faac585`), the newest release then. Pi is under the MIT licence. Pi was not installed or run to write them, and no real session was looked at. **The adapter was built from Pi's source at v1.6.0 and has not yet been checked on a computer running Pi.** The Sources view says so too.
 
-Each citation is `path:line` at `v1.5.0`. Every path is in `packages/coding-agent/`, and `session-manager.ts` is `src/core/session-manager.ts`.
+Each citation is `path:line` at `v1.6.0`. Every path is in `packages/coding-agent/`, and `session-manager.ts` is `src/core/session-manager.ts`.
 
 The code is in `src/collector/adapters/pi/`, and the status mapping is in `src/core/mapping/pi/piMapping.ts`. What tells Pi apart is `PI_PROFILE`, a `PiProfile` of `profile.ts`, and the body is `createPiFamilyAdapter`, which Kimchi's and Prime Agent's adapters share.
 
@@ -16,7 +16,7 @@ The code is in `src/collector/adapters/pi/`, and the status mapping is in `src/c
 | Grouped by folder                                                      | True by default, with one folder for each working directory. A sessions folder named with a setting holds its files directly, with no folders in it                                                                                                                                                                                                                 |
 | Nothing on disk marks a session as running                             | True. Pi writes no status, no end, no pid and no lock for a session                                                                                                                                                                                                                                                                                                 |
 | So that would rest on the `pi` process and on recent writes            | On the process only as far as it goes: it says whether any `pi` runs, never which session it holds, as [The process](#the-process) says. Not on recent writes, which would be a guess                                                                                                                                                                               |
-| Pi does not ask for approval before tool calls                         | True of Pi itself, which has no permission system of its own (`README.md:90` at the top of the repository). An extension can ask, with `ctx.ui.confirm`, and that is written nowhere (`docs/extensions.md:2757-2762`)                                                                                                                                               |
+| Pi does not ask for approval before tool calls                         | True of Pi itself, which has no permission system of its own (`README.md:90` at the top of the repository). An extension can ask, with `ctx.ui.confirm`, and that is written nowhere (`docs/extensions.md:2777-2782`)                                                                                                                                               |
 | The only wait is for the next prompt, which an extension event reports | True, and of no use here. The event is `agent_settled`, not `agent_end`, which Pi's docs say can be followed by more work (`docs/extensions.md:336`). It goes to extensions and to a program that drives Pi, in RPC or JSON mode or through its SDK, and in the terminal it sets the status Pi reports to a terminal that supports it. Nothing of it reaches a file |
 
 ## How it reads Pi, and why
@@ -33,7 +33,7 @@ Pi has other ways in, and none of them can be used that way:
 
 ## Where it looks
 
-Pi works the folder out in `src/config.ts:630-636` and `:674-676`, and takes the setting first in `src/main.ts:702-706`. The first of these that is set is used, and an empty one counts as unset:
+Pi works the folder out in `src/config.ts:630-636` and `:674-676`, and takes the setting first in `src/main.ts:733-737`. The first of these that is set is used, and an empty one counts as unset:
 
 | Setting                       | Sessions folder                                     |
 | ----------------------------- | --------------------------------------------------- |
@@ -50,7 +50,7 @@ When the folder is missing, Pi is reported as not found, with no advice, and the
 
 Three ways Pi moves its folder cannot be followed, because Agent Lookout never reads Pi's settings or a process's arguments:
 
-- `pi --session-dir <folder>`, which comes before everything else (`src/main.ts:703-704`).
+- `pi --session-dir <folder>`, which comes before everything else (`src/main.ts:734-735`).
 - The `sessionDir` setting in Pi's `settings.json` (`src/core/settings-manager.ts:703-706`).
 - A package that renames Pi with `piConfig`, which gives it another folder and other variables (`src/config.ts:602-611`).
 
@@ -67,15 +67,15 @@ A person who uses the first two can start Agent Lookout with `PI_CODING_AGENT_SE
 | Every other `*.jsonl`                  | One `lstat`. Never opened                                                                       | Once a minute                                                                                        |
 | A session file written in the last day | Opened read-only: its first 64 KiB and its last 256 KiB, then only what Pi added, up to 256 KiB | When its size, modified time or identity changes                                                     |
 
-Pi never removes a session by itself, so these folders can hold thousands. A poll looks up each project folder, so a new file is found by the next poll: adding a file moves its folder's time. Adding to a file does not, so a look through every file once a minute is what finds an old session opened again. A file last written over a day ago is never opened.
+Pi never removes an old session by itself, so these folders can hold thousands. A poll looks up each project folder, so a new file is found by the next poll: adding a file moves its folder's time. Adding to a file does not, so a look through every file once a minute is what finds an old session opened again. A file last written over a day ago is never opened.
 
-A file is opened without following a link at its name and without waiting on a pipe, and read only if the open file is an ordinary file. It is not opened through a link at a project folder, which is looked up again just before. The sessions folder itself can be a link. Any name that ends in `.jsonl` counts, as it does for Pi's own list (`session-manager.ts:951-955`), since `/import` keeps a file's own name (`src/core/agent-session-runtime.ts:370`). Nothing else in Pi's folder is read: not `settings.json`, `auth.json`, `models.json` or anything beside the sessions folder.
+A file is opened without following a link at its name and without waiting on a pipe, and read only if the open file is an ordinary file. It is not opened through a link at a project folder, which is looked up again just before. The sessions folder itself can be a link. Any name that ends in `.jsonl` counts, as it does for Pi's own list (`session-manager.ts:958-962`), since `/import` keeps a file's own name (`src/core/agent-session-runtime.ts:389`). Nothing else in Pi's folder is read: not `settings.json`, `auth.json`, `models.json` or anything beside the sessions folder.
 
 ## The session file
 
-`<project folder>/<time>_<id>.jsonl` is JSON Lines, one entry to a line, as `docs/session-format.md` describes. `<time>` is the header's with `:` and `.` as `-`, and `<id>` is a UUID, or what `--session-id` gives (`session-manager.ts:1058-1084`). The project folder is the working directory with its first `/` or `\` dropped, and `/`, `\` and `:` as `-`, between `--` and `--` (`:590-595`). It cannot be read back into a path, so the adapter takes the folder from the header.
+`<project folder>/<time>_<id>.jsonl` is JSON Lines, one entry to a line, as `docs/session-format.md` describes. `<time>` is the header's with `:` and `.` as `-`, and `<id>` is a UUID, or what `--session-id` gives (`session-manager.ts:1065-1091`). The project folder is the working directory with its first `/` or `\` dropped, and `/`, `\` and `:` as `-`, between `--` and `--` (`:590-595`). It cannot be read back into a path, so the adapter takes the folder from the header.
 
-**What writes it, and when.** `SessionManager` makes the file at the session's first message, with everything held until then, so a session opened with no prompt has no file (`_persist`, `:1173-1190`). After that it adds one line for each entry with `appendFileSync`, at the end of each message and not while one comes in (`src/core/agent-session.ts:1163-1181`). So nothing is written during a long reply or a long tool. Pi rewrites a file whole only to move an old session to the newest format (`session-manager.ts:1125-1135`). It writes no line that says a session ended, however it ends: extensions get `session_shutdown`, and that goes no further (`src/core/agent-session-runtime.ts:404-410`).
+**What writes it, and when.** `SessionManager` makes the file at the session's first message, with everything held until then, so a session opened with no prompt has no file (`_persist`, `:1180-1197`). After that it adds one line for each entry with `appendFileSync`, at the end of each message and not while one comes in (`src/core/agent-session.ts:1216-1234`). So no message is written during a long reply or a long tool. Cache warming can write a `usage` line then, and by default for up to 30 minutes between runs (`src/core/cache-warmer.ts:265-271`, `docs/settings.md:21`). Pi rewrites a file whole only to move an old session to the newest format (`session-manager.ts:1132-1142`). It writes no line that says a session ended, however it ends: a quit first stops a turn under way, which writes that turn's last messages, and extensions get `session_shutdown`, which goes no further (`src/core/agent-session-runtime.ts:434-443`).
 
 ### The header
 
@@ -94,7 +94,7 @@ A session's id in Agent Lookout is `pi:<id>`. A file with no whole first line in
 
 ### The name
 
-`{"type":"session_info","id":…,"parentId":…,"timestamp":…,"name":…}`, written by `appendSessionInfo` (`session-manager.ts:1315-1326`). The newest one wins and an empty one clears the name, as Pi reads it (`:830-832`, `:1329-1340`).
+`{"type":"session_info","id":…,"parentId":…,"timestamp":…,"name":…}`, written by `appendSessionInfo` (`session-manager.ts:1322-1333`). The newest one wins and an empty one clears the name, as Pi reads it (`:832-834`, `:1336-1347`).
 
 The adapter looks for these lines in the bytes, with `Buffer.lastIndexOf`, and turns only the newest whole one in each part read into text, up to 4 KiB. Every other line is left as bytes. No line is parsed but the header and those, so no prompt, reply, tool's argument or output is ever turned into text. The search is for a line break followed by `{"type":"session_info"`. JSON writes a line break inside a string as `\n`, two characters, so those bytes can only be the start of a line, and nothing said in a session can look like one. `JSON.stringify` writes `type` first because `appendSessionInfo` does.
 
@@ -108,7 +108,7 @@ Every other entry is passed over. `message` entries hold the prompts, the replie
 
 Each session whose file was written in the last 24 hours, by its modified time, the newest 200. So a session that sits open and quiet for a day leaves the list until it is next written. One opened again after that is found by the next look through every file, within a minute.
 
-Pi writes a file only once a session has a message, so a new session is not listed until its first prompt. With `--no-session`, nothing is written (`src/main.ts:364-365`), so it is never listed. A subagent, in the extension Pi gives as an example, runs with `--no-session` (`examples/extensions/subagent/index.ts:298`). A fork or a clone is a new file, and is listed as a session of its own.
+Pi writes a file only once a session has a message, so a new session is not listed until its first prompt. With `--no-session`, nothing is written (`src/main.ts:405-406`), so it is never listed. A subagent, in the extension Pi gives as an example, runs with `--no-session` (`examples/extensions/subagent/index.ts:389`). A fork or a clone is a new file, and is listed as a session of its own.
 
 ## Status
 
@@ -131,11 +131,11 @@ So `processes.ts` asks only whether any `pi` runs, with `ps -A -o comm=`, the na
 
 It compares each line with `pi` and `pi-rpc`, or a path ending in one, and drops it. It asks at most every 10 seconds while there are sessions to show, and sooner, though not within 2 seconds of the last ask, when a session is written after `ps` said none runs, or up to 2 seconds before, as some disks keep a write's time in whole seconds, or steps of 2 seconds, rounded down. On macOS and Linux only.
 
-A session whose process has gone never shows as running, since no session does. Recent writes cannot say whether Pi is working: nothing is written while a reply comes in or a tool runs, so a quiet file says nothing, and a file written a moment ago may belong to a process that has just crashed.
+A session whose process has gone never shows as running, since no session does. Recent writes cannot say whether Pi is working: no message is written while a reply comes in or a tool runs, so a quiet file says nothing, and a file written a moment ago may belong to a process that has just crashed, or to one that waits for your next prompt and has just warmed its cache.
 
 ### A crash
 
-A crash writes nothing, and a quit writes no line that says it was one, so the two cannot be told apart. With no `pi` left, such a session is finished, and while another `pi` runs it is unknown.
+A crash writes nothing, and a quit between turns writes nothing either, so the two cannot be told apart. A quit during a turn first writes that turn's last messages, and those lines are not parsed. With no `pi` left, such a session is finished, and while another `pi` runs it is unknown.
 
 The newest lines could say more, and they are not parsed. A `user` or `toolResult` line last means a turn was under way, and an assistant line's `stopReason` says how a reply ended: `stop`, `toolUse`, `error`, `aborted` and others (`docs/message-types.md:134`). But a crash leaves a `user` or `toolResult` line last too, and with nothing to tie the session to a process, a session could show as working with nobody there, for as long as any other `pi` runs. Pi writes a turn that failed in such a line as well, so a failed turn is not shown either. Parsing any of them would mean turning into text the lines that hold what was said, for half an answer.
 
@@ -147,9 +147,9 @@ Pi itself asks for no approval before a tool runs. By default it does ask whethe
 
 Pi names no session by itself.
 
-- A session has no name until something gives it one. Pi's list shows the first prompt where there is none (`src/modes/interactive/components/session-selector.ts:459`), and that is never written as a name, so nothing here parses it.
-- A person gives one with `/name` (`src/modes/interactive/interactive-mode.ts:6784`), `pi --name` (`src/main.ts:721-728`) or a rename in the session picker (`interactive-mode.ts:5841`).
-- A program that drives Pi over RPC gives one with `set_session_name` (`src/modes/rpc/rpc-mode.ts:659-665`), and an extension with `pi.setSessionName()` (`src/core/agent-session.ts:3494`). Pi's own extensions, under `src/extensions/`, do not. Pi cannot tell these from a person's, and an extension can read prompts, so such a name is whatever that program writes, which can be a model's title or your own words.
+- A session has no name until something gives it one. Pi's list shows the first prompt where there is none (`src/modes/interactive/components/session-selector.ts:475`), and that is never written as a name, so nothing here parses it.
+- A person gives one with `/name` (`src/modes/interactive/interactive-mode.ts:6922`), `pi --name` (`src/main.ts:764-771`) or a rename in the session picker (`interactive-mode.ts:5980`).
+- A program that drives Pi over RPC gives one with `set_session_name` (`src/modes/rpc/rpc-mode.ts:671-677`), and an extension with `pi.setSessionName()` (`src/core/agent-session.ts:3584`). Pi's own extensions, under `src/extensions/`, do not. Pi cannot tell these from a person's, and an extension can read prompts, so such a name is whatever that program writes, which can be a model's title or your own words.
 
 So a name on a `session_info` line is kept, and a session without one takes its folder's name, else its id. [What a session's name can hold](../../PRIVACY.md#what-a-sessions-name-can-hold) in PRIVACY.md says this for people.
 
@@ -201,7 +201,7 @@ Everything here is read from the source, so each of these is for a person with P
 1. That a session's file appears at its first prompt, under `~/.pi/agent/sessions/`, on macOS, Linux and Windows, with the header above as its first line, and that `--name` puts a `session_info` line near the start.
 2. That `ps -A -o comm=` shows `pi` for a Pi from npm, pnpm, Homebrew and the built binary, on macOS and Linux, and `pi-rpc` for the RPC entry point.
 3. That a file's modified time moves with each line, and its folder's with each new file, on each system.
-4. That a killed `pi` leaves the file as a quit does, and that a real session stays well within what is read.
+4. That a killed `pi` leaves the file as a quit between turns does, and that a real session stays well within what is read.
 5. That a name set with `/name`, the picker and `set_session_name` reads as above, with `type` first.
 
 ## What breaks when Pi changes

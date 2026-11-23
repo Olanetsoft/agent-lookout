@@ -21,7 +21,7 @@ import {
 } from "@tests/fixtures/pi/pi";
 import { makeClaudeHome, NO_SETTINGS_FILE, tempDir } from "@tests/support/node/tempFiles";
 
-// The adapter end to end, on real files this test writes, laid out as Pi v1.5.0
+// The adapter end to end, on real files this test writes, laid out as Pi v1.6.0
 // lays them out, and through the collector, which runs the real `ps` on macOS and
 // Linux. Whether a Pi runs on the machine under test is not known, so a test that
 // goes through it takes either status.

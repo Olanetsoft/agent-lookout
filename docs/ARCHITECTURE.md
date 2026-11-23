@@ -314,9 +314,9 @@ A session's id is `goose:<session id>`. Its name is the one the person gave it, 
 
 ## The Pi adapter
 
-The adapter lives in `src/collector/adapters/pi/`. [adapters/pi.md](adapters/pi.md) is its reference: what it reads, the fields and their values, the Pi version it was written from, what is not yet checked and what breaks when Pi changes. It was built from Pi's source at v1.5.0 and has not yet been checked on a computer running it.
+The adapter lives in `src/collector/adapters/pi/`. [adapters/pi.md](adapters/pi.md) is its reference: what it reads, the fields and their values, the Pi version it was written from, what is not yet checked and what breaks when Pi changes. It was built from Pi's source at v1.6.0 and has not yet been checked on a computer running it.
 
-Pi keeps each session in one JSONL file, in a folder for its working directory under `~/.pi/agent/sessions`, and never removes one by itself. `piSessionsDirFor` in `index.ts` works the folder out as Pi does, from `PI_CODING_AGENT_SESSION_DIR` and `PI_CODING_AGENT_DIR`, unless `AGENT_LOOKOUT_PI_HOME` names Pi's agent folder. `--session-dir` and the `sessionDir` setting are not followed. The files are read on every system.
+Pi keeps each session in one JSONL file, in a folder for its working directory under `~/.pi/agent/sessions`, and never removes an old session by itself. `piSessionsDirFor` in `index.ts` works the folder out as Pi does, from `PI_CODING_AGENT_SESSION_DIR` and `PI_CODING_AGENT_DIR`, unless `AGENT_LOOKOUT_PI_HOME` names Pi's agent folder. `--session-dir` and the `sessionDir` setting are not followed. The files are read on every system.
 
 `sessionFiles.ts` finds the files without opening them. A poll lists the sessions folder and looks up each project folder with `lstat`, lists one again when its modified time moves, and looks up each file written in the last day. Once a minute it looks at everything, for an old session opened again. So thousands of old files cost nothing on most polls. It gives at most the newest 200. The Unreal Agent adapter finds its files with it too, flat and with a test of its own for which names are session files, so a change to it changes that adapter as well.
 
