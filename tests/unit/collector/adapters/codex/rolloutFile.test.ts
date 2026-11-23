@@ -129,7 +129,11 @@ describe("readMetaLine", () => {
   });
 
   test("attached_thread is kept only when it is true, as Codex writes it for a side chat it saves", () => {
-    const sideChat = { forked_from_id: ids.idle, thread_source: "tui_side_chat" };
+    const sideChat = {
+      forked_from_id: ids.idle,
+      thread_source: "tui_side_chat",
+      cli_version: "0.169.0",
+    };
     const meta = readMetaLine(metaLine(START, { ...sideChat, attached_thread: true }));
     expect(meta).toMatchObject({ threadSource: "tui_side_chat", attachedThread: true });
     // The thread it was forked from is not kept.

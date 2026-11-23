@@ -737,6 +737,7 @@ describe("when Codex is read", () => {
           thread_source: "tui_side_chat",
           forked_from_id: ids.working,
           attached_thread: true,
+          cli_version: "0.169.0",
         }),
         turnLine(NOW - 25 * MINUTE, "task_started"),
       ],
