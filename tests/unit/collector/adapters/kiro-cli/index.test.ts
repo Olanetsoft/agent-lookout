@@ -1,3 +1,4 @@
+import path from "node:path";
 import { describe, expect, test } from "vitest";
 
 import {
@@ -12,6 +13,7 @@ import {
   UNCHECKED_NOTE,
   V2_NOTE,
 } from "@collector/adapters/kiro-cli/index";
+import { asWritten } from "@tests/support/paths";
 import { MAX_HEADER_BYTES } from "@collector/adapters/kiro-cli/headers";
 import {
   BUCKET,
@@ -57,32 +59,38 @@ const V3 = v3IdOf(1);
 const V2 = uuidOf(2);
 
 describe("Kiro's folder", () => {
+  /** Kiro's folder as the tests write paths, so Windows' drive and `\\` meet them. */
+  const homeFor = (...given: Parameters<typeof kiroHomeFor>) => {
+    const found = kiroHomeFor(...given);
+    return { ...found, home: asWritten(found.home) };
+  };
+
   test("is ~/.kiro, or the folder AGENT_LOOKOUT_KIRO_HOME names, which wins", () => {
-    expect(kiroHomeFor({}, HOME, "darwin")).toEqual({
+    expect(homeFor({}, HOME, "darwin")).toEqual({
       home: KIRO_HOME,
       named: false,
       fromKiroHome: false,
       passedOver: false,
     });
     expect(
-      kiroHomeFor({ AGENT_LOOKOUT_KIRO_HOME: "/tmp/kiro", KIRO_HOME: "/opt/kiro" }, HOME, "darwin"),
+      homeFor({ AGENT_LOOKOUT_KIRO_HOME: "/tmp/kiro", KIRO_HOME: "/opt/kiro" }, HOME, "darwin"),
     ).toMatchObject({
       home: "/tmp/kiro",
       named: true,
     });
-    expect(kiroSessionsDirFor({}, HOME, "darwin")).toBe(`${KIRO_HOME}/sessions`);
+    expect(asWritten(kiroSessionsDirFor({}, HOME, "darwin"))).toBe(`${KIRO_HOME}/sessions`);
   });
 
   test("is KIRO_HOME when Kiro takes it: an absolute path that is not a root, the home folder or above it", () => {
     for (const value of ["/opt/kiro-work", `${HOME}/kiro-work`, " /opt/kiro-work "]) {
-      expect(kiroHomeFor({ KIRO_HOME: value }, HOME, "darwin"), value).toMatchObject({
+      expect(homeFor({ KIRO_HOME: value }, HOME, "darwin"), value).toMatchObject({
         home: value.trim(),
         fromKiroHome: true,
         passedOver: false,
       });
     }
     for (const value of ["/", HOME, `${HOME}/`, "/Users", "kiro-work", "./kiro", "~/kiro"]) {
-      expect(kiroHomeFor({ KIRO_HOME: value }, HOME, "darwin"), value).toEqual({
+      expect(homeFor({ KIRO_HOME: value }, HOME, "darwin"), value).toEqual({
         home: KIRO_HOME,
         named: false,
         fromKiroHome: false,
@@ -90,7 +98,7 @@ describe("Kiro's folder", () => {
       });
     }
     // Empty is not set.
-    expect(kiroHomeFor({ KIRO_HOME: "  " }, HOME, "darwin").passedOver).toBe(false);
+    expect(homeFor({ KIRO_HOME: "  " }, HOME, "darwin").passedOver).toBe(false);
   });
 
   test("follows Windows' rules on Windows, with no regard to case", () => {
@@ -126,7 +134,7 @@ describe("the Kiro CLI adapter", () => {
     const files = memoryFiles(() => NOW);
     const there = kiroCliAdapterFor(files, { env: { KIRO_HOME: "/opt/kiro-work" } });
     expect((await there.poll()).health.detail).toBe(
-      "Kiro CLI was not found: KIRO_HOME is set, and there is no /opt/kiro-work folder. Agent Lookout looks again every minute.",
+      `Kiro CLI was not found: KIRO_HOME is set, and there is no ${path.resolve("/opt/kiro-work")} folder. Agent Lookout looks again every minute.`,
     );
     const passedOver = "KIRO_HOME is set to a folder Kiro does not use, so ~/.kiro is read.";
     // On the Not found card, the card that cannot read the sessions folder, and the healthy card.
@@ -164,9 +172,12 @@ describe("the Kiro CLI adapter", () => {
     const adapter = kiroCliAdapterFor(files, { env: { AGENT_LOOKOUT_KIRO_HOME: "/tmp/kiro" } });
     const { health, sessions } = await adapter.poll();
     expect(health.state).toBe("ok");
-    expect(health.detail).toMatch(
-      /^AGENT_LOOKOUT_KIRO_HOME is set, and there is no \/tmp\/kiro folder/,
-    );
+    expect(
+      health.detail?.startsWith(
+        `AGENT_LOOKOUT_KIRO_HOME is set, and there is no ${path.resolve("/tmp/kiro")} folder`,
+      ),
+      health.detail,
+    ).toBe(true);
     expect(sessions).toEqual([]);
   });
 
