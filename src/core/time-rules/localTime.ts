@@ -1,8 +1,8 @@
 /**
  * The local clock that quiet hours and the times in messages go by. It is the
  * one `Date` reads, in the time zone this process, or the page, started in,
- * until `followZone` names another. The collector does, once the computer's
- * zone changes while it runs: Node reads the zone once, as it starts.
+ * until `followZone` names one. The collector names the computer's, which can
+ * change while it runs: Node reads the zone once, as it starts.
  */
 
 let zone: Intl.DateTimeFormat | null = null;

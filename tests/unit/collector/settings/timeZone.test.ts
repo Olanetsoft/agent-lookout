@@ -38,9 +38,9 @@ const OWN = new Date(T0).getHours();
 describe("the computer's time zone", () => {
   test("is followed within a minute of a change, as often as it changes", () => {
     const { system, poll } = setUp(LAGOS);
-    expect(poll()).toBe(OWN);
+    expect(poll()).toBe(9);
     system.link = NEW_YORK;
-    expect(poll(ZONE_LOOK_MS - 1)).toBe(OWN);
+    expect(poll(ZONE_LOOK_MS - 1)).toBe(9);
     expect(poll(1)).toBe(3);
     system.link = LAGOS;
     expect(poll()).toBe(9);
@@ -50,12 +50,13 @@ describe("the computer's time zone", () => {
   test("is looked at no more often than that, however many polls there are", () => {
     const { system, poll } = setUp(LAGOS);
     for (let polls = 0; polls < 45; polls += 1) poll(2_000);
-    // As it was made, and every 30 seconds of the 90.
-    expect(system.looks).toBe(4);
+    // At the first, and every 30 seconds of the 88 after it.
+    expect(system.looks).toBe(3);
   });
 
   test("is looked at as often after the clock is set back", () => {
     const { system, poll } = setUp(LAGOS);
+    expect(poll()).toBe(9);
     system.link = NEW_YORK;
     expect(poll(-3_600_000)).toBe(3);
     expect(poll(2_000)).toBe(3);
@@ -76,11 +77,29 @@ describe("the computer's time zone", () => {
     ["a zone Node does not know", "/usr/share/zoneinfo/Nowhere/None"],
     ["gone", null],
   ])("stays as it was when the link is %s, and nothing throws", (_what, link) => {
-    const { system, poll } = setUp(NEW_YORK);
+    const { system, poll } = setUp(link);
+    expect(poll()).toBe(OWN);
+    // One it knows is followed all the same, and stays.
+    system.link = NEW_YORK;
+    expect(poll()).toBe(3);
     system.link = link;
-    expect(poll()).toBe(OWN);
-    expect(poll()).toBe(OWN);
-    // One it knows is followed all the same.
+    expect(poll()).toBe(3);
+    expect(poll()).toBe(3);
+  });
+
+  test("is followed on a Mac whose zones are the ones macOS came with", () => {
+    const { system, poll } = setUp("/usr/share/zoneinfo.default/Africa/Lagos");
+    expect(poll()).toBe(9);
+    system.link = "/usr/share/zoneinfo.default/America/New_York";
+    expect(poll()).toBe(3);
+  });
+
+  test("is the one gone by from the first look, in a Node that started in another, as when the dev server makes a collector again", () => {
+    const before = setUp(LAGOS);
+    expect(before.poll()).toBe(9);
+    before.system.link = NEW_YORK;
+    const { system, poll } = setUp(NEW_YORK);
+    expect(poll(0)).toBe(3);
     system.link = LAGOS;
     expect(poll()).toBe(9);
   });
@@ -94,9 +113,10 @@ describe("the computer's time zone", () => {
     expect(poll()).toBe(13);
   });
 
-  test("the same zone by another path, as after the system's zones are updated, is no change", () => {
+  test("the same zone by another path, as after the system's zones are updated, is the same", () => {
     const { system, poll } = setUp(LAGOS);
+    expect(poll()).toBe(9);
     system.link = "/var/db/timezone/tz/2026d.1.0/zoneinfo/Africa/Lagos";
-    expect(poll()).toBe(OWN);
+    expect(poll()).toBe(9);
   });
 });

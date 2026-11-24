@@ -5,8 +5,11 @@ import { followZone } from "../../core/time-rules/localTime.ts";
 /** The computer's time zone, on macOS and Linux: a link that leads to its zone's file. */
 const ZONE_LINK = "/etc/localtime";
 
-/** A zone's name, at the end of where the link leads. */
-const ZONE_NAME = /\/zoneinfo\/(?:posix\/|right\/)?(.+)$/;
+/**
+ * A zone's name, at the end of where the link leads. On a Mac that still has
+ * the zones macOS came with, that is in `/usr/share/zoneinfo.default`.
+ */
+const ZONE_NAME = /\/zoneinfo(?:\.default)?\/(?:posix\/|right\/)?(.+)$/;
 
 /** How often the link is looked at, so a change is followed within a minute. */
 export const ZONE_LOOK_MS = 30_000;
@@ -21,10 +24,11 @@ export interface ZoneFollowerOptions {
 /**
  * Keeps quiet hours and the times in messages in the computer's time zone
  * while it changes: what this returns is called at each poll. It looks only
- * at where the link leads, with no file opened, and follows the zone it names
- * once that is another than when this was made. Where there is no such link,
- * as on Windows, or where it is a plain file, the zone stays the one Node
- * started in. So does one set through `TZ`, and then the link is not looked at.
+ * at where the link leads, with no file opened, and follows the zone it names,
+ * from the first look on, since the dev server can make a collector in a Node
+ * that started in another zone. Where there is no such link, as on Windows, or
+ * where it is a plain file, the zone stays the one Node started in. So does
+ * one set through `TZ`, and then the link is not looked at.
  *
  * Node can be made to read the zone again, by setting or deleting `TZ` in its
  * own environment, but then every local time is read in the new zone. A
@@ -46,8 +50,8 @@ export function createZoneFollower(options: ZoneFollowerOptions = {}): () => voi
     }
   }
 
-  let zone = look();
-  let lookedAt = now();
+  let zone: string | null = null;
+  let lookedAt = -Infinity;
   return () => {
     const at = now();
     // However the clock has been set since.
