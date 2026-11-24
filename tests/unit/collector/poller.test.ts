@@ -1128,7 +1128,7 @@ describe("a wait whose session leaves every listing", () => {
       onSightings: (sightings) => history.sightings.push(...sightings),
     });
     const held = history.events.list();
-    poller.resume([...unendedWaits(held), ...held], history.sightings);
+    poller.resume([...unendedWaits(held), ...held], history.sightings, history.runStarts.slice(1));
     history.runStarts.push(poller.startedAt);
     for (const [after] of steps) {
       vi.setSystemTime(T0 + after);
@@ -1761,6 +1761,30 @@ describe("a wait whose session leaves every listing", () => {
       await run(history, ...lost.slice(0, 3));
       await run(history, [HOUR, result([], "error")], [2 * HOUR, fallback()]);
       expect(history.sightings.at(-1)?.lastSeen).toBe(T0 + HOUR);
+    });
+
+    test("a wait a whole run could not read stops where that run began, whatever the next finds", async () => {
+      const away: [number, AdapterResult] = [HOUR, result([], "unavailable")];
+      const statusSince = T0 + 90 * MINUTE;
+      for (const back of [fallback(), main(moved), main(), main({ ...asking, statusSince })]) {
+        const history = kept();
+        await run(history, ...lost.slice(0, 3));
+        await run(history, away);
+        await run(history, [2 * HOUR, back]);
+        const measured = [
+          { from: T0, to: T0 + 2 * MINUTE },
+          { from: T0 + HOUR, to: T0 + 110 * MINUTE },
+          { from: T0 + 2 * HOUR, to: T0 + 3 * HOUR },
+        ];
+        // Still waiting, it waits since a time in the run that could not read it.
+        const waiting = back.sessions[0]?.status === "needs-you";
+        expect(totals(history, 3 * HOUR, waiting, measured)).toEqual(
+          waiting ? [81 * MINUTE, 80 * MINUTE, 2] : [MINUTE, 0, 1],
+        );
+        const newest = history.events.list()[0];
+        if (newest?.from === "needs-you") expect(newest.lastSeen).toBe(T0 + HOUR);
+        else if (!waiting) expect(history.sightings.at(-1)?.lastSeen).toBe(T0 + HOUR);
+      }
     });
 
     test("a wait listed as Agent Lookout stopped is not taken to have ended by a fallback that leaves it out", async () => {

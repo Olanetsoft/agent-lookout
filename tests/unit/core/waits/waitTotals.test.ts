@@ -506,6 +506,13 @@ describe("a wait whose session left every listing", () => {
       ]);
     });
 
+    test("not lost in this wait, it cuts nothing", () => {
+      const events = [into(1, at(6, 9, 30)), out(1, at(6, 11, 30)), into(1, at(6, 11, 45))];
+      for (const own of [[again(1, at(6, 13), at(6, 12))], sightings]) {
+        expect(spans({ events, sightings: own }).at(-1)).toEqual([at(6, 11, 45), NOW, false]);
+      }
+    });
+
     test("it is two waits, and the time between them counts for neither", () => {
       const { today } = waitTotals(
         input({
@@ -601,6 +608,72 @@ describe("a wait whose session left every listing", () => {
         runStarts: [START, at(6, 13)],
       }),
     ).toEqual([[at(6, 10), at(6, 11), false]]);
+  });
+
+  describe("across runs of Agent Lookout", () => {
+    /** Watched from 9:00 to 11:00, from 12:00 to 13:00 and from 14:00 on. */
+    const runs = {
+      events: [into(1, at(6, 10))],
+      runStarts: [START, at(6, 12), at(6, 14)],
+    };
+
+    test("it stops at the start of the run after the last that saw it, though later runs go on", () => {
+      expect(spans({ ...runs, sightings: [seen(1, at(6, 10))] })).toEqual([
+        [at(6, 10), at(6, 12), false],
+      ]);
+      expect(spans({ ...runs, sightings: [seen(1, at(6, 10)), seen(1, at(6, 12))] })).toEqual([
+        [at(6, 10), at(6, 14), false],
+      ]);
+    });
+
+    test("seen by this run, it goes on while the poll before now could not read its source", () => {
+      const sightings = [seen(1, at(6, 10)), seen(1, at(6, 12)), seen(1, at(6, 14))];
+      expect(spans({ ...runs, sightings })).toEqual([[at(6, 10), NOW, false]]);
+    });
+
+    test("an end a later run sees is of a wait that stopped at the start of the first run not to see it", () => {
+      const events = [...runs.events, out(1, at(6, 14, 30))];
+      expect(spans({ ...runs, events, sightings: [seen(1, at(6, 10))] })).toEqual([
+        [at(6, 10), at(6, 12), false],
+      ]);
+      const sightings = [seen(1, at(6, 10)), seen(1, at(6, 14))];
+      expect(spans({ ...runs, events, sightings })).toEqual([[at(6, 10), at(6, 14, 30), false]]);
+    });
+
+    test("an end in a file from before there were sightings is taken as it is", () => {
+      expect(spans({ ...runs, events: [...runs.events, out(1, at(6, 14, 30))] })).toEqual([
+        [at(6, 10), at(6, 14, 30), false],
+      ]);
+    });
+
+    test("found lost by a later run, as an earlier version kept it, it stops at the same start", () => {
+      const sightings = [seen(1, at(6, 10)), lost(1, at(6, 14), at(6, 14))];
+      expect(spans({ ...runs, sightings })).toEqual([[at(6, 10), at(6, 12), false]]);
+    });
+
+    test("waiting since a time no run saw it, it is a new wait from that time", () => {
+      const again = { ...seen(1, at(6, 14)), began: at(6, 12, 30) };
+      expect(
+        spans({
+          ...runs,
+          sightings: [seen(1, at(6, 10)), again],
+          waitingNow: [{ id: id(1), name: "project-1" }],
+        }),
+      ).toEqual([
+        [at(6, 10), at(6, 12), false],
+        [at(6, 12, 30), NOW, true],
+      ]);
+    });
+
+    test("seen waiting again after a run that did not see it, it is one wait", () => {
+      expect(
+        spans({
+          ...runs,
+          sightings: [seen(1, at(6, 10)), seen(1, at(6, 14))],
+          waitingNow: [{ id: id(1), name: "project-1" }],
+        }),
+      ).toEqual([[at(6, 10), NOW, true]]);
+    });
   });
 
   test("a sighting from the future of the moment asked about is not read", () => {

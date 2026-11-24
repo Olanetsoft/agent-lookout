@@ -173,9 +173,14 @@ export interface Poller {
    * leaves out, is not taken to have ended unless the way that last listed it
    * is the way that poll was read. Nor is a session of a part that poll did
    * not read (`notRead`), which is compared the same way at the first poll
-   * that reads its part.
+   * that reads its part. `restarts` are when the runs before this one began
+   * again, oldest first.
    */
-  resume(events: readonly SessionEvent[], sightings?: readonly WaitSighting[]): void;
+  resume(
+    events: readonly SessionEvent[],
+    sightings?: readonly WaitSighting[],
+    restarts?: readonly number[],
+  ): void;
   /** When the collector began. History before this was not measured. */
   readonly startedAt: number;
 }
@@ -219,6 +224,11 @@ interface LastSeen {
   status: SessionStatus | null;
   /** For one in a wait: how it was last seen, when the history says. */
   sighting?: WaitSighting;
+  /**
+   * With it: the last poll that listed the session, or when the run after the
+   * one that last did began. Left out when that run is this one.
+   */
+  lastListed?: number;
 }
 
 /** A session in a wait, as the poller follows it from one poll to the next. */
@@ -226,7 +236,7 @@ interface FollowedWait {
   name: string;
   /** The way of reading that last listed it, as `readWays` keys it. */
   way: string;
-  /** The last poll that listed it, or for one the last run still listed, when this run began. */
+  /** The last poll that listed it, or for one an earlier run still listed, when the run after that began. */
   lastListed: number;
   /** Whether a poll has left it out since. */
   unseen: boolean;
@@ -283,9 +293,9 @@ function againstHistory(
   );
   const after = sessions.filter((session) => known.has(session.id));
   for (const session of after) reported.set(session.id, session.status);
-  const sighted = new Map(before.map((session) => [session.id, session.sighting]));
+  const lastListed = new Map(before.map((session) => [session.id, session.lastListed]));
   return diffSessions(before, after, at).map((event) =>
-    withLastSeen(event, sighted.get(event.sessionId)?.lastSeen),
+    withLastSeen(event, lastListed.get(event.sessionId)),
   );
 }
 
@@ -384,19 +394,19 @@ function withLastSeen(event: SessionEvent, lastSeen: number | undefined): Sessio
 /**
  * Takes up a wait the history leaves open, of a session whose first good poll
  * of this run says nothing of it. Left out by a way other than the one that
- * last listed it, it goes on unseen until that way is read. One listed as the
- * last run stopped has not been seen by this run, so its count stops where this
- * run began. A session this poll lists is seen again, as `followWaits` says.
+ * last listed it, it goes on unseen until that way is read. One still listed as
+ * a run stopped has not been seen since, so its count stops where the next run
+ * began. A session this poll lists is seen again, as `followWaits` says.
  */
 function takeUpWait(
   memory: SourceMemory,
-  session: Pick<LastSeen, "id" | "name">,
+  session: Pick<LastSeen, "id" | "name" | "lastListed">,
   sighting: WaitSighting,
   runStart: number,
   at: number,
   listed: boolean,
 ): WaitSighting[] {
-  const lastListed = sighting.lastSeen ?? runStart;
+  const lastListed = session.lastListed ?? runStart;
   memory.reported.set(session.id, "needs-you");
   memory.waits.set(session.id, {
     name: session.name,
@@ -758,7 +768,7 @@ export function createPoller(options: PollerOptions): Poller {
       timer = null;
     },
     pollOnce,
-    resume(kept, sightings = []) {
+    resume(kept, sightings = [], restarts = []) {
       const sighted = sightingsBySession(sightings);
       const newest = new Map<string, SessionEvent>();
       for (const event of kept) {
@@ -781,12 +791,14 @@ export function createPoller(options: PollerOptions): Poller {
         // A sighting from before this wait's own event is of an earlier wait,
         // and says nothing of this one.
         const followed = status === "needs-you" && sighting && sighting.at >= event.at;
+        const lastListed =
+          sighting && (sighting.lastSeen ?? restarts.find((start) => start > sighting.at));
         const list = resumed.get(source) ?? [];
         list.push({
           id: event.sessionId,
           name: event.sessionName,
           status,
-          ...(followed && { sighting }),
+          ...(followed && { sighting, lastListed }),
         });
         resumed.set(source, list);
       }

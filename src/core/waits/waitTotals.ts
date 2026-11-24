@@ -19,12 +19,7 @@
 import type { SessionWaitTotal, WaitDay, WaitPeriod } from "../api.ts";
 import { isStatusEvent, type SessionEvent } from "../sessions/session.ts";
 import { coveredWithin, joined, POLL_GAP_MS, type Span } from "./measured.ts";
-import {
-  lastSeenWithin,
-  sightingsBySession,
-  waitStretches,
-  type WaitSighting,
-} from "./waitSightings.ts";
+import type { WaitSighting } from "./waitSightings.ts";
 
 /** The most sessions an answer names for each period, longest first. */
 export const MAX_WAIT_SESSIONS = 10;
@@ -74,7 +69,7 @@ export interface WaitTotalsInput {
   waitingNow: readonly { id: string; name: string }[];
   /**
    * The name of every session the latest poll found, waiting or not. A session
-   * is named by it first, then by its newest event.
+   * is named by it first, then by its newest event or sighting.
    */
   names?: ReadonlyMap<string, string>;
   /** Where the history held begins. Nothing before it is counted. */
@@ -119,14 +114,23 @@ function localDay(at: number): string {
   return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
 }
 
-/** The latest of `starts` at or before `at`, or `fallback` when none is. `starts` is in time order. */
-function latestAtOrBefore(starts: readonly number[], at: number, fallback: number): number {
-  let found = fallback;
-  for (const start of starts) {
-    if (start > at) break;
-    found = Math.max(found, start);
-  }
-  return found;
+/** A wait with no end yet, as the history is gone through. */
+interface Standing {
+  from: number;
+  /** The last poll that listed its session, while a sighting says it was lost. */
+  lost?: number;
+  /** The start of the first run since its newest mark. */
+  nextRun?: number;
+  /** Whether a sighting is of it. A file from before there were any has none. */
+  sighted?: boolean;
+}
+
+/** What the waits are worked out from, oldest first. At one moment a run starts, then a session moves, then it is seen. */
+function marksOf({ runStarts, events, sightings = [], now }: WaitTotalsInput) {
+  const starts = runStarts.map((at) => ({ run: at, at }));
+  return [...starts, ...events.filter(isWaitEvent), ...sightings]
+    .filter((mark) => mark.at <= now)
+    .sort((a, b) => a.at - b.at);
 }
 
 /**
@@ -135,107 +139,79 @@ function latestAtOrBefore(starts: readonly number[], at: number, fallback: numbe
  * history first saw the session, such as one Agent Lookout found as it
  * started, is counted from that run's start, or from the session's previous
  * event when that is later. A wait with no end runs to the present, and is
- * open while the session still needs the person. One that began before this
- * run, of a session that does not need the person now, ended unseen while
- * Agent Lookout was stopped: this run's polls never saw it waiting, so it runs
- * to this run's start and no further.
+ * open while the session still needs the person.
+ *
+ * Each run writes a sighting of a wait at the first poll that lists its
+ * session. So a wait is known up to the start of the run after the last that
+ * saw it, whether an end is seen later or not: its source may not have been
+ * read since. A wait in a file from before there were sightings, with an end,
+ * runs to that end.
  *
  * A wait whose session left every listing stops at the last poll that listed
  * it (`WaitSighting`), whether or not an end is seen later. An end seen once
  * the session is back says only that the wait ended somewhere in the time
  * nobody saw it, which is not counted. A session listed again with its wait not
  * ended is taken to have stood through that time, so it is one wait from when
- * it began, and nothing is lost. But a status time later than that last poll
- * shows the wait ended unseen: it stops at that poll, and a new wait starts at
- * that time (`waitStretches`).
+ * it began, and nothing is lost. But a status time later than where it was last
+ * known (`began`) shows the wait ended unseen: it stops there, and a new wait
+ * starts at that time.
  */
 export function waitsOf(input: WaitTotalsInput): { waits: Wait[]; names: Map<string, string> } {
   const { now, since } = input;
-  const starts = [...input.runStarts].sort((a, b) => a - b);
-  const runStart = (at: number) => latestAtOrBefore(starts, at, since);
-  const waitingNow = new Map(input.waitingNow.map((session) => [session.id, session.name]));
-  const thisRun = runStart(now);
-  const sighted = sightingsBySession(
-    (input.sightings ?? []).filter((sighting) => sighting.at <= now),
-  );
-  const lastSeen = (sessionId: string, from: number, until: number) =>
-    lastSeenWithin(sighted.get(sessionId) ?? [], from, until);
-
-  const bySession = new Map<string, SessionEvent[]>();
-  for (const event of input.events) {
-    if (!isWaitEvent(event) || event.at > now) continue;
-    const own = bySession.get(event.sessionId);
-    if (own) own.push(event);
-    else bySession.set(event.sessionId, [event]);
-  }
-
   const waits: Wait[] = [];
   const names = new Map<string, string>();
-  /** The sessions whose last wait has no end. */
-  const unended = new Set<string>();
-  for (const [sessionId, own] of bySession) {
-    own.sort((a, b) => a.at - b.at);
-    let began: number | null = null;
-    let previous: number | null = null;
-    for (const event of own) {
-      // A move out of needs-you with no move into it held: it was waiting
-      // already, for as long as this run of Agent Lookout had seen it.
-      if (began === null && event.from === "needs-you") {
-        began = Math.max(runStart(event.at), previous ?? -Infinity);
-      }
-      const waitsAfter = event.kind !== "ended" && event.to === "needs-you";
-      if (began !== null && !waitsAfter) {
-        const to = lastSeen(sessionId, began, event.at) ?? event.at;
-        waits.push({ sessionId, from: began, to, open: false });
-        began = null;
-      } else if (began === null && waitsAfter) {
-        began = event.at;
-      }
-      previous = event.at;
-      names.set(sessionId, event.sessionName);
+  const standing = new Map<string, Standing>();
+  /** Each session's newest move into needs-you or out of it. */
+  const moved = new Map<string, number>();
+  let run = since;
+  /** A wait no event says began: from this run's start, or from the session's previous event. */
+  const found = (id: string): Standing => ({ from: Math.max(run, moved.get(id) ?? run) });
+  const close = (sessionId: string, { from }: Standing, to: number, open = false) => {
+    waits.push({ sessionId, from, to, open });
+    standing.delete(sessionId);
+  };
+
+  for (const mark of marksOf(input)) {
+    if ("run" in mark) {
+      run = mark.run;
+      for (const wait of standing.values()) wait.nextRun ??= run;
+      continue;
     }
-    if (began !== null) {
-      const open = waitingNow.has(sessionId);
-      const unseen = open ? null : lastSeen(sessionId, began, Infinity);
-      const to = unseen ?? (open || began >= thisRun ? now : thisRun);
-      waits.push({ sessionId, from: began, to, open });
-      unended.add(sessionId);
+    const { sessionId, at } = mark;
+    names.set(sessionId, mark.sessionName);
+    let wait = standing.get(sessionId);
+    const gone = wait?.lost ?? wait?.nextRun;
+    if ("way" in mark) {
+      if (!wait) {
+        // Found waiting with no event, and lost: counted up to there.
+        if (mark.lastSeen === undefined) continue;
+        wait = found(sessionId);
+      } else if (mark.began !== undefined && gone !== undefined) {
+        waits.push({ sessionId, from: wait.from, to: gone, open: false });
+        wait.from = mark.began;
+      }
+      // An earlier version says a wait lost by this run's first poll was seen
+      // up to this run, whichever run last saw it.
+      const lost = mark.lastSeen && Math.min(mark.lastSeen, wait.nextRun ?? mark.lastSeen);
+      standing.set(sessionId, { from: wait.from, lost, sighted: true });
+      continue;
     }
+    if (mark.kind !== "ended" && mark.to === "needs-you") {
+      if (!wait) standing.set(sessionId, { from: at });
+    } else {
+      wait ??= found(sessionId);
+      close(sessionId, wait, (wait.sighted ? gone : undefined) ?? at);
+    }
+    moved.set(sessionId, at);
   }
   for (const [sessionId, name] of input.names ?? []) names.set(sessionId, name);
-
-  // A session waiting now that no event says began to wait was found waiting
-  // by this run: it is counted from when this run began.
-  for (const [sessionId, name] of waitingNow) {
-    names.set(sessionId, name);
-    if (unended.has(sessionId)) continue;
-    const own = bySession.get(sessionId);
-    const last = own?.[own.length - 1]?.at ?? -Infinity;
-    waits.push({ sessionId, from: Math.max(thisRun, last), to: now, open: true });
+  for (const { id, name } of input.waitingNow) {
+    names.set(id, name);
+    close(id, standing.get(id) ?? found(id), now, true);
   }
-
-  // A session out of sight that no event says began to wait was found waiting
-  // by the run that last saw it: it is counted from when that run began. One
-  // whose wait an event ended was lost before that event, and comes to nothing.
-  for (const [sessionId, own] of sighted) {
-    const { lastSeen: to, sessionName } = own[own.length - 1] as WaitSighting;
-    if (to === undefined || unended.has(sessionId) || waitingNow.has(sessionId)) continue;
-    const events = bySession.get(sessionId);
-    const last = events?.[events.length - 1]?.at ?? -Infinity;
-    if (!names.has(sessionId)) names.set(sessionId, sessionName);
-    waits.push({ sessionId, from: Math.max(runStart(to), last), to, open: false });
-  }
+  for (const [id, wait] of standing) close(id, wait, wait.lost ?? wait.nextRun ?? now);
 
   const kept = waits
-    .flatMap((wait) => {
-      const stretches = waitStretches(sighted.get(wait.sessionId) ?? [], wait.from, wait.to);
-      const newest = stretches.length - 1;
-      return stretches.map((stretch, index) => ({
-        ...wait,
-        ...stretch,
-        open: wait.open && index === newest,
-      }));
-    })
     .map((wait) => ({ ...wait, from: Math.max(wait.from, since) }))
     .filter((wait) => wait.to > wait.from);
   kept.sort((a, b) => a.from - b.from);

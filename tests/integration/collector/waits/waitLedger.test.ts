@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterAll, describe, expect, onTestFinished, test, vi } from "vitest";
 
-import type { Adapter } from "@collector/adapters/adapter";
+import type { Adapter, AdapterResult } from "@collector/adapters/adapter";
 import { createCollector } from "@collector/collector";
 import {
   dayOf,
@@ -14,7 +14,13 @@ import {
   type HistoryRecord,
 } from "@collector/history/historyFormat";
 import type { WaitsResponse } from "@core/api";
-import type { Session, SessionEvent, SessionStatus } from "@core/sessions/session";
+import type {
+  Session,
+  SessionEvent,
+  SessionStatus,
+  SourceId,
+  SourceState,
+} from "@core/sessions/session";
 import { readWaits } from "@dashboard/lib/api/readApi";
 import { makeSession } from "@tests/fixtures/session";
 import { fakeSystemNotifier } from "@tests/support/channels/systemNotifier";
@@ -115,29 +121,35 @@ function threeDays(): HistoryRecord[] {
 /**
  * A collector over a stand-in Claude Code, started as a host starts it, with
  * its history in `dir`, and polled once. The clock stands at `NOW` unless the
- * test moves it. `read` names the way the sessions are read, which a test can
- * change, and `sessions` is read at each poll.
+ * test moves it. `read` names the way the sessions are read and what the source
+ * answers, which a test can change, and `sessions` is read at each poll. A
+ * second source always answers, and lists none, so time is measured without
+ * the first.
  */
 async function startIn(
   dir: string,
   sessions: Session[],
   env: Record<string, string> = {},
   clock = { now: NOW },
-  read: { way?: string } = {},
+  read: { way?: string; state?: SourceState } = {},
 ) {
-  const adapter: Adapter = {
-    id: "claude-code",
-    label: "Claude Code",
+  const answering = (id: SourceId, answer: () => Omit<AdapterResult, "health">): Adapter => ({
+    id,
+    label: "A source",
     lookingIn: "Looking for sessions in a test.",
-    poll: async () => ({
-      health: { id: "claude-code", label: "Claude Code", state: "ok", checkedAt: clock.now },
-      sessions,
-      ...(read.way !== undefined && { basis: read.way }),
-    }),
-  };
+    poll: async () => {
+      const state = id === "claude-code" ? (read.state ?? "ok") : "ok";
+      const health = { id, label: "A source", state, checkedAt: clock.now };
+      return { health, ...(state === "ok" ? answer() : { sessions: [] }) };
+    },
+  });
+  const adapter = answering("claude-code", () => ({
+    sessions,
+    ...(read.way !== undefined && { basis: read.way }),
+  }));
   const collector = createCollector({
     version: "9.9.9-test",
-    adapters: [adapter],
+    adapters: [adapter, answering("opencode", () => ({ sessions: [] }))],
     env: { AGENT_LOOKOUT_HISTORY_DIR: dir, AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE, ...env },
     notifier: fakeSystemNotifier(),
     now: () => clock.now,
@@ -253,6 +265,65 @@ describe("a wait whose session a way of reading leaves out, over a history folde
     ]);
     const waits = await waitsFrom(second.port);
     expect(waits.today).toMatchObject({ waitedMs: 10 * MINUTE - 2 * SECOND, openMs: 0, waits: 1 });
+  });
+});
+
+describe("a wait whose source is away, over a history folder on disk", () => {
+  const waiting = makeSession({ id: id(5), name: "demo-project-5", status: "needs-you" });
+  const busy: Session = { ...waiting, status: "working" };
+
+  /** A minute at work and five of waiting, and then a run of two hours for each state. */
+  async function runs(...states: SourceState[]) {
+    const dir = await tempDir();
+    const clock = { now: at(6, 1) };
+    const read: { state?: SourceState } = {};
+    const sessions = [busy];
+    let run = await startIn(dir, sessions, {}, clock, read);
+    await run.pollFor(MINUTE);
+    sessions[0] = waiting;
+    await run.pollFor(5 * MINUTE + 2 * SECOND);
+    for (read.state of states) {
+      run.stop();
+      clock.now += MINUTE;
+      run = await startIn(dir, sessions, {}, clock, read);
+      await run.pollFor(2 * HOUR);
+    }
+    return { run, read, sessions };
+  }
+
+  test.each(["unavailable", "error"] as const)(
+    "it stays at what it counted over any number of restarts with its source %s, and once it is back and answered",
+    async (state) => {
+      const { run, read, sessions } = await runs(state, state, state);
+      const counted = { waitedMs: 5 * MINUTE, openMs: 0, waits: 1 };
+      const away = await waitsFrom(run.port);
+      expect(away.today).toMatchObject(counted);
+      expect(away.today.measuredMs).toBeGreaterThan(6 * HOUR);
+
+      read.state = "ok";
+      sessions[0] = busy;
+      await run.pollFor(MINUTE);
+      expect((await waitsFrom(run.port)).today).toMatchObject(counted);
+    },
+  );
+
+  test("a source in error in a later run takes nothing from what its waits have counted", async () => {
+    const { run, read } = await runs("ok");
+    const before = await waitsFrom(run.port);
+    expect(before.today).toMatchObject({ waitedMs: 2 * HOUR + 5 * MINUTE, waits: 1 });
+
+    read.state = "error";
+    await run.pollFor(MINUTE);
+    const during = await waitsFrom(run.port);
+    expect(during.today).toMatchObject({ waitedMs: before.today.waitedMs, openMs: 0, waits: 1 });
+
+    read.state = "ok";
+    await run.pollFor(2 * SECOND);
+    expect((await waitsFrom(run.port)).today).toMatchObject({
+      waitedMs: before.today.waitedMs,
+      openMs: before.today.waitedMs,
+      waits: 1,
+    });
   });
 });
 

@@ -815,7 +815,7 @@ export function createCollector(options: CollectorOptions): Collector {
         now: now(),
         snapshot: poller.getSnapshot(),
         since,
-        runStarts: [since.at, ...restartsHeld().map((restart) => restart.at), poller.startedAt],
+        runStarts: [...restartsHeld().map((restart) => restart.at), poller.startedAt],
         where: keeper ? "disk" : "memory",
       });
     },
@@ -877,6 +877,7 @@ export function createCollector(options: CollectorOptions): Collector {
           poller.resume(
             [...unendedWaits(kept.whole.waitEvents), ...kept.events],
             kept.whole.sightings,
+            kept.restarts.map((restart) => restart.at),
           );
           if (running) begin();
         })

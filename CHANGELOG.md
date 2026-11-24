@@ -41,6 +41,7 @@ Changes that a user of Agent Lookout would notice, newest first.
 - While an agent this version does not know is not read on another computer, as with a newer Agent Lookout there, its sessions no longer send Ended, and its waits are no longer sent again once it is read. (#471)
 - An ssh to another computer that hangs while it signs in, itself or in a `ProxyJump` or `ProxyCommand`, is ended after 3 minutes and started again, so the computer connects once it can be reached. Before, it stayed at Still connecting. (#470)
 - A computer whose ssh config names a `LocalForward`, `RemoteForward` or `DynamicForward` connects whichever ssh starts first, yours or Agent Lookout's, which takes none of those ports. It runs `ssh -W`, so it opens no port on this computer through which another program or account could reach the other computer's Agent Lookout. After this computer sleeps, ssh signs in again. (#469)
+- A session that waited on you as Agent Lookout stopped, and whose source has not been read since, as on another computer that stays off, no longer gains in Waits, at each restart, all the hours Agent Lookout has run. It stays at what was counted when it was last seen. A source in error no longer takes away what its waits have counted since the restart. (#464)
 
 ## 0.2.30 - 2026-11-24
 

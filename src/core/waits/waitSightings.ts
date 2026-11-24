@@ -18,7 +18,7 @@ export interface WaitSighting {
   way: string;
   /**
    * Present when a poll left the session out: the last poll that listed it, or
-   * for one the last run still listed, when this run began.
+   * for one an earlier run still listed, when the run after that began.
    */
   lastSeen?: number;
   /**
@@ -40,49 +40,4 @@ export function sightingsBySession(
     else bySession.set(sighting.sessionId, [sighting]);
   }
   return bySession;
-}
-
-/**
- * Where a wait from `from` up to `until` lost sight of a session and never saw
- * it again, or null when it did not: the `lastSeen` of its newest sighting.
- * `own` is oldest first.
- */
-export function lastSeenWithin(
-  own: readonly WaitSighting[],
-  from: number,
-  until: number,
-): number | null {
-  let lastSeen: number | null = null;
-  for (const sighting of own) {
-    if (sighting.at >= from && sighting.at < until) lastSeen = sighting.lastSeen ?? null;
-  }
-  return lastSeen;
-}
-
-/**
- * A stretch of waiting from `from` to `to`, cut wherever a sighting says a
- * wait ended unseen and a new one began (`began`): up to the last poll that
- * listed the session, then from that status time. Oldest first, and one
- * stretch when nothing cut it. `own` is oldest first.
- */
-export function waitStretches(
-  own: readonly WaitSighting[],
-  from: number,
-  to: number,
-): { from: number; to: number }[] {
-  const stretches: { from: number; to: number }[] = [];
-  let start = from;
-  let lastSeen: number | null = null;
-  for (const sighting of own) {
-    if (sighting.at < start || sighting.at > to) continue;
-    if (sighting.lastSeen !== undefined) {
-      lastSeen = sighting.lastSeen;
-    } else if (sighting.began !== undefined && lastSeen !== null) {
-      stretches.push({ from: start, to: lastSeen });
-      start = sighting.began;
-      lastSeen = null;
-    }
-  }
-  stretches.push({ from: start, to });
-  return stretches;
 }
