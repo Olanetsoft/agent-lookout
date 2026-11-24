@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { ChildProcess, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
 
@@ -92,6 +92,8 @@ describe("the tunnel to another machine", () => {
         "-o",
         "PermitLocalCommand=no",
         "-o",
+        "LogLevel=INFO",
+        "-o",
         "ServerAliveInterval=15",
         "-o",
         "ControlMaster=no",
@@ -164,6 +166,48 @@ describe("the tunnel to another machine", () => {
     expect(state.named).toBe(true);
     expect(state.retryAt).toBeGreaterThan(Date.now() - 1_000);
   });
+
+  test("an ssh that could not be started, with no file left to open, is tried again", async () => {
+    let tried = 0;
+    const tunnel = tunnelFor(
+      { name: "devbox", target: "devbox", port: NOWHERE },
+      {},
+      {
+        restartDelaysMs: [2_000],
+        findSsh: async () => ({ found: true, path: "ssh" }),
+        spawnSsh() {
+          tried += 1;
+          // As Node makes it: no process, no input and no output, and its error after.
+          const child = new ChildProcess();
+          process.nextTick(() => child.emit("error", new Error("spawn EMFILE")));
+          return child;
+        },
+      },
+    );
+    tunnel.start();
+    expect((await ended(tunnel, 1)).end).toMatchObject({
+      connected: false,
+      code: null,
+      said: "ssh could not be started.",
+    });
+    await vi.waitFor(() => expect(tried).toBe(2), WAIT);
+  });
+
+  posixTest(
+    "a running ssh does not keep this process going",
+    async () => {
+      const held = () =>
+        process.getActiveResourcesInfo().filter((kind) => /^(Pipe|Process)Wrap$/.test(kind));
+      const before = held().length;
+      const ssh = await makeStandInSsh(SIGNING_IN);
+      const tunnel = tunnelFor({ name: "devbox", target: "devbox", port: NOWHERE }, ssh.env);
+      tunnel.start();
+      await running(tunnel, 1);
+      await vi.waitFor(async () => expect(await ssh.runs()).toHaveLength(1), WAIT);
+      expect(held().length).toBeLessThanOrEqual(before);
+    },
+    STAND_IN_TIMEOUT_MS,
+  );
 
   posixTest(
     "a drop is told apart, and ssh is started again after the shortest wait",
@@ -287,6 +331,7 @@ describe("the tunnel to another machine", () => {
         },
       );
       tunnel.start();
+      const reading = (await running(tunnel, 1)).read();
       expect((await ended(tunnel, 1)).end.said).toBe(
         "dev@refuse.example: Permission denied (publickey).",
       );
@@ -294,6 +339,7 @@ describe("the tunnel to another machine", () => {
       expect(isRunning(proxy as number)).toBe(true);
       // What that program still holds open is not read any more.
       expect(children[0]?.stderr?.destroyed).toBe(true);
+      expect(await reading).toEqual({ kind: "closed" });
       await running(tunnel, 2);
     },
     STAND_IN_TIMEOUT_MS,

@@ -20,7 +20,14 @@ export const REMOTE_ANSWER_TIMEOUT_MS = 6_000;
  * closes one idle for 5 seconds, which ends ssh, and a poll here can wait
  * longer than that for a source of this computer's.
  */
-const IDLE_MS = 3_000;
+export const IDLE_MS = 3_000;
+
+/**
+ * How long an answer after the first is still waited for before the connection
+ * is ended, since nothing can be read past one that never comes. ssh itself ends
+ * one that has gone quiet in about that time, and says so.
+ */
+const LOST_MS = 60_000;
 
 /** More than any real answer holds. A larger one is not read. */
 const MAX_ANSWER_BYTES = 8 * 1024 * 1024;
@@ -52,6 +59,8 @@ export interface RemoteReaderOptions {
   timeoutMs?: number;
   /** Defaults to `IDLE_MS`. */
   idleMs?: number;
+  /** Defaults to `LOST_MS`. */
+  lostMs?: number;
   now?: () => number;
 }
 
@@ -64,7 +73,8 @@ export interface RemoteReaderOptions {
  *   in nothing comes back, and the tunnel limits how long that is. Each answer
  *   after it has its time limit.
  * - One request is on the way at a time. After a timeout the answer is still to
- *   come, so the next request waits for it, and it is not read.
+ *   come, so the next request waits for it, and it is not read. One that has not
+ *   come within a minute ends the connection.
  * - An answer that took longer than its limit by the clock is a timeout too:
  *   this computer slept while it was on its way, so the timer did not run, and
  *   it may be hours old.
@@ -76,7 +86,8 @@ export function createRemoteReader(
   port: number,
   options: RemoteReaderOptions = {},
 ): () => Promise<RemoteReading> {
-  const { timeoutMs = REMOTE_ANSWER_TIMEOUT_MS, idleMs = IDLE_MS, now = Date.now } = options;
+  const { timeoutMs = REMOTE_ANSWER_TIMEOUT_MS, idleMs = IDLE_MS, lostMs = LOST_MS } = options;
+  const { now = Date.now } = options;
   // Every request goes through the one stream. Node's own agent keeps it open
   // between them, and asks of a socket's methods only `ref`, which it has not.
   Object.assign(stream, { ref: () => stream });
@@ -87,7 +98,13 @@ export function createRemoteReader(
   let answered = false;
   /** The request whose answer is still to come. */
   let onTheWay: Promise<RemoteAnswer> | null = null;
-  let idle: ReturnType<typeof setTimeout> | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  function after(ms: number, work: () => void): void {
+    clearTimeout(timer);
+    timer = setTimeout(work, ms);
+    timer.unref?.();
+  }
 
   function send(route: string): Promise<RemoteAnswer> {
     return new Promise((resolve) => {
@@ -137,13 +154,12 @@ export function createRemoteReader(
 
   /** Sends a request, and the health's again once the connection has been idle. */
   function next(route: string): Promise<RemoteAnswer> {
-    clearTimeout(idle);
+    if (answered) after(lostMs, () => stream.destroy());
     onTheWay = send(route).then((answer) => {
       onTheWay = null;
       if (answer.kind === "closed") return answer;
       answered = true;
-      idle = setTimeout(() => void (onTheWay ?? next("/api/health")), idleMs);
-      idle.unref?.();
+      after(idleMs, () => void next("/api/health"));
       return answer;
     });
     return onTheWay;

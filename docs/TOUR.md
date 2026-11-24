@@ -977,6 +977,7 @@ Each tool is marked read-only (`READ_ONLY`). None can jump to, stop or answer a 
 - `-o BatchMode=yes`: never ask for a password, a passphrase or a host key. Your ssh config and agent sign in, or it fails and says why.
 - `-o ClearAllForwardings=yes`: take none of the forwards your ssh config names for the host, so it connects while your own ssh holds them (#469).
 - `-o PermitLocalCommand=no`: leave out the config's `LocalCommand`, which would write into what is read.
+- `-o LogLevel=INFO`: ssh's own default, so the reason it ends is there to show, whatever your config sets.
 - `-o ServerAliveInterval=15`: end rather than hang, so it can be started again.
 - `-o ControlMaster=no -o ControlPath=none`: a connection of its own, never one shared with an ssh you have open, so it ends when Agent Lookout stops.
 - `--` before the target, so the target is never read as an option.

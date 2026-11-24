@@ -191,10 +191,11 @@ function joined(readable: Readable, writable: Writable): Duplex {
 /**
  * The tunnel to one other machine. Each run is
  * `ssh -W 127.0.0.1:<port there> -o BatchMode=yes -o ClearAllForwardings=yes
- * -o PermitLocalCommand=no -o ServerAliveInterval=15 -o ControlMaster=no
- * -o ControlPath=none -- <target>`, as `sshArguments` makes it, with the program
- * found as `findSsh` finds it. No port is opened on this computer. The run ends
- * when its connection to Agent Lookout there does, and when there is none.
+ * -o PermitLocalCommand=no -o LogLevel=INFO -o ServerAliveInterval=15
+ * -o ControlMaster=no -o ControlPath=none -- <target>`, as `sshArguments` makes
+ * it, with the program found as `findSsh` finds it. No port is opened on this
+ * computer. The run ends when its connection to Agent Lookout there does, and
+ * when there is none.
  *
  * Agent Lookout never sees a key or a password. ssh signs in with the person's
  * own config and agent, or, since it is told never to ask, fails and says why.
@@ -300,6 +301,8 @@ export function createTunnel(options: TunnelOptions): Tunnel {
     let stream: Duplex;
     try {
       ssh = start(search.path, args, env);
+      // With no file left to open it has no input or output, and its error is still to come.
+      ssh.on("error", () => {});
       stream = joined(ssh.stdout as Readable, ssh.stdin as Writable);
     } catch {
       state = notStarted("ssh could not be started.");

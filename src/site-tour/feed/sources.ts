@@ -1355,6 +1355,8 @@ export const MACHINE_COMMAND = [
   "-o",
   "PermitLocalCommand=no",
   "-o",
+  "LogLevel=INFO",
+  "-o",
   "ServerAliveInterval=15",
   "-o",
   "ControlMaster=no",

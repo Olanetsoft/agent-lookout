@@ -819,7 +819,7 @@ describe("the card for status files", () => {
 
 describe("the card for another machine", () => {
   const COMMAND =
-    "/usr/bin/ssh -W 127.0.0.1:4777 -o BatchMode=yes -o ClearAllForwardings=yes -o PermitLocalCommand=no -o ServerAliveInterval=15 -o ControlMaster=no -o ControlPath=none -- dev@devbox.local";
+    "/usr/bin/ssh -W 127.0.0.1:4777 -o BatchMode=yes -o ClearAllForwardings=yes -o PermitLocalCommand=no -o LogLevel=INFO -o ServerAliveInterval=15 -o ControlMaster=no -o ControlPath=none -- dev@devbox.local";
 
   const machine = (overrides: Partial<SourceHealth>): SourceHealth => ({
     id: "remote:devbox",

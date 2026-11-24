@@ -82,6 +82,8 @@ export async function findSsh(
  *   nor holds one that theirs needs. `-W` implies it, but the config can say no.
  * - `-o PermitLocalCommand=no`: no `LocalCommand` from the config, since it
  *   writes into ssh's output.
+ * - `-o LogLevel=INFO`: ssh's own default, so the reason it ends is there to
+ *   read, whatever the config asks for.
  * - `-o ServerAliveInterval=15`: notice within a minute that the other machine
  *   has gone, and end.
  * - `-o ControlMaster=no -o ControlPath=none`: a connection of its own, never
@@ -102,6 +104,8 @@ export function sshArguments({ port, target }: Pick<Remote, "port" | "target">):
     "ClearAllForwardings=yes",
     "-o",
     "PermitLocalCommand=no",
+    "-o",
+    "LogLevel=INFO",
     "-o",
     `ServerAliveInterval=${SERVER_ALIVE_SECONDS}`,
     "-o",

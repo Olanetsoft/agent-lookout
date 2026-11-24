@@ -109,7 +109,7 @@ describe("a machine's card", () => {
       {
         label: "Command",
         value:
-          "/usr/bin/ssh -W 127.0.0.1:4777 -o BatchMode=yes -o ClearAllForwardings=yes -o PermitLocalCommand=no -o ServerAliveInterval=15 -o ControlMaster=no -o ControlPath=none -- dev@devbox.local",
+          "/usr/bin/ssh -W 127.0.0.1:4777 -o BatchMode=yes -o ClearAllForwardings=yes -o PermitLocalCommand=no -o LogLevel=INFO -o ServerAliveInterval=15 -o ControlMaster=no -o ControlPath=none -- dev@devbox.local",
       },
       { label: "Asks for", value: "/api/health and /api/sessions" },
       { label: "Read", value: "every 2 seconds" },
@@ -296,7 +296,6 @@ describe("a machine's card", () => {
       "what listens there never answered",
       { code: 0, said: "Nothing came back within 180 seconds." },
     ],
-    ["Agent Lookout there stopped", { code: 0, connected: true }],
   ])("no Agent Lookout answering there, as %s: says to start it there", async (_, end) => {
     const { adapter, set } = setUp();
     set(ended(end));
@@ -307,6 +306,26 @@ describe("a machine's card", () => {
       advice:
         "Start it there with npx agent-lookout, and leave it running. If it listens on another port, give it as devbox=dev@devbox.local:<port>.",
     });
+  });
+
+  test("its connection closed, as when this computer slept: says so, and that none answers there only once a new run finds none", async () => {
+    const { adapter, set, answer } = setUp();
+    await adapter.poll();
+    set(ended({ code: 0, connected: true }, 1_000));
+    expect((await adapter.poll()).health).toMatchObject({
+      state: "unavailable",
+      detail: "The connection to Agent Lookout on devbox closed. Trying again in 1 second.",
+      advice:
+        "It is made again on its own. It can close when Agent Lookout there stops or this computer sleeps.",
+    });
+    set({ ...RUNNING, run: 2 } as TunnelState);
+    answer({ kind: "closed" });
+    expect((await adapter.poll()).health.detail).toBe(
+      "The connection to Agent Lookout on devbox closed. Connecting again.",
+    );
+    const said = "channel 0: open failed: connect failed: Connection refused";
+    set({ ...ended({ said }), run: 2 } as TunnelState);
+    expect((await adapter.poll()).health.detail).toContain("no Agent Lookout answers on its port");
   });
 
   test("an ssh server that lets ssh reach no port there: says so, and what to check", async () => {
@@ -370,6 +389,7 @@ describe("a machine's card", () => {
     expect((await adapter.poll()).health).toMatchObject({
       state: "unavailable",
       detail: "devbox did not answer within 6 seconds.",
+      advice: "It keeps trying, and after a minute with no answer it connects again.",
     });
     expect(connected).toEqual([]);
   });

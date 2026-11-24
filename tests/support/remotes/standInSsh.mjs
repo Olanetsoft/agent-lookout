@@ -24,8 +24,8 @@
 // the signal, as JSON. SIGKILL cannot be caught, so it is never written down.
 //
 // With STAND_IN_SSH_PROXY naming a file, it first starts a program that never
-// ends and holds its error output, as a ProxyCommand that hangs, and adds its
-// process ID to the file. With STAND_IN_SSH_PROXY_APART set, that program is in a
+// ends and holds its output and error output, as a ProxyCommand that hangs, and
+// adds its process ID to the file. With STAND_IN_SSH_PROXY_APART set, that program is in a
 // process group of its own, so a signal to ssh's group does not reach it, and
 // with STAND_IN_SSH_PROXY_IGNORE_TERM set it does not end on SIGTERM.
 
@@ -65,7 +65,7 @@ process.on("SIGHUP", () => {
 const proxies = process.env.STAND_IN_SSH_PROXY;
 if (proxies) {
   const proxy = spawn(process.execPath, [fileURLToPath(import.meta.url), "proxy"], {
-    stdio: ["ignore", "ignore", "inherit"],
+    stdio: ["ignore", "inherit", "inherit"],
     detached: process.env.STAND_IN_SSH_PROXY_APART !== undefined,
   });
   appendFileSync(proxies, `${proxy.pid}\n`);

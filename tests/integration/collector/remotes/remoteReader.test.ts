@@ -2,9 +2,13 @@ import { createServer as createHttpServer, type RequestListener } from "node:htt
 import { connect, createServer, type Socket } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 
-import { describe, expect, onTestFinished, test } from "vitest";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
 
-import { createRemoteReader, type RemoteReaderOptions } from "@collector/remotes/remoteReader";
+import {
+  createRemoteReader,
+  IDLE_MS,
+  type RemoteReaderOptions,
+} from "@collector/remotes/remoteReader";
 import { snapshotThere } from "@tests/fixtures/remote";
 import { listen } from "@tests/support/node/http";
 import { startStandInLookout } from "@tests/support/remotes/standIns";
@@ -85,6 +89,59 @@ describe("reading another machine over one connection", () => {
     await delay(2_000);
     expect((await read()).kind).toBe("read");
     expect(sockets).toHaveLength(1);
+  });
+
+  test("that comes well before a server of Node's closes one", () => {
+    expect(IDLE_MS).toBeLessThanOrEqual(createHttpServer().keepAliveTimeout - 2_000);
+  });
+
+  test("it is not asked again while an answer is still to come, nor once the connection has ended", async () => {
+    const asked: string[] = [];
+    let held: (() => void) | null = null;
+    const { sockets, port } = await webServer((req, res) => {
+      asked.push(req.url ?? "");
+      if (asked.length === 3) held = () => void res.end(HEALTH);
+      else res.end(HEALTH);
+    });
+    const { stream, read } = readerOf(port, { idleMs: 211 });
+    await read();
+    const second = read();
+    await delay(600);
+    (held as unknown as () => void)();
+    expect((await second).kind).toBe("read");
+    expect(asked).toEqual(["/api/health", "/api/sessions", "/api/health", "/api/sessions"]);
+
+    for (const socket of sockets) socket.destroy();
+    await vi.waitFor(() => expect(stream.destroyed).toBe(true), 5_000);
+    expect(await read()).toEqual({ kind: "closed" });
+    const timers = vi.spyOn(globalThis, "setTimeout");
+    onTestFinished(() => timers.mockRestore());
+    await delay(600);
+    expect(timers.mock.calls.filter(([, ms]) => ms === 211)).toEqual([]);
+  });
+
+  test("an answer that never comes ends the connection, but not the first, which waits for ssh", async () => {
+    const asked: string[] = [];
+    let silent = true;
+    const { port } = await webServer((req, res) => {
+      asked.push(req.url ?? "");
+      if (!silent) res.end(HEALTH);
+    });
+    const options = { timeoutMs: 300, idleMs: 60_000, lostMs: 1_200 };
+    const first = readerOf(port, options);
+    void first.read();
+    await delay(1_600);
+    expect(first.stream.destroyed).toBe(false);
+
+    silent = false;
+    const { stream, read } = readerOf(port, options);
+    expect((await read()).kind).toBe("read");
+    silent = true;
+    expect(await read()).toEqual({ kind: "timeout" });
+    expect(stream.destroyed).toBe(false);
+    await vi.waitFor(() => expect(stream.destroyed).toBe(true), 5_000);
+    expect(await read()).toEqual({ kind: "closed" });
+    expect(asked).toHaveLength(4);
   });
 
   test("the first answer is waited for past the time limit, as ssh signs in, and each after it is not", async () => {

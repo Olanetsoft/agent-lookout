@@ -140,9 +140,9 @@ interface Read {
  * - connected, with the version of Agent Lookout there and the state of each
  *   source it watches;
  * - or why not: ssh is not found, the other machine turned ssh away, the
- *   connection dropped, no Agent Lookout answers on its port there, or what
- *   answers there is not Agent Lookout or sends a list this version cannot
- *   read. While ssh is started again, the card keeps the reason and says so.
+ *   connection dropped or closed, no Agent Lookout answers on its port there,
+ *   or what answers there is not Agent Lookout or sends a list this version
+ *   cannot read. While ssh is started again, the card keeps the reason and says so.
  *
  * A machine that is not connected is `unavailable`, for the reasons
  * `NOT_CONNECTED` gives, so while it is, nothing of its sessions is said to
@@ -255,16 +255,25 @@ export function createRemoteAdapter(options: RemoteAdapterOptions): Adapter {
   /** Why a run of ssh ended, in words. */
   function endProblem(end: TunnelEnd): Problem {
     const said = end.said === null ? null : sentence(end.said);
-    // It signed in, and its connection to the port there failed or was closed there.
-    if (end.code === 0 || (said !== null && /connect failed|stdio forwarding/i.test(said))) {
-      return NO_LOOKOUT;
-    }
     if (end.connected) {
+      // Agent Lookout there can have stopped, or closed a connection it took for
+      // idle while this computer slept. The next run finds which.
+      if (end.code === 0) {
+        return {
+          detail: `The connection to Agent Lookout on ${remote.name} closed.`,
+          advice:
+            "It is made again on its own. It can close when Agent Lookout there stops or this computer sleeps.",
+        };
+      }
       return {
         detail: `The SSH connection to ${remote.name} dropped${said ? `: ${said}` : "."}`,
         advice:
           "It is started again on its own. If it keeps dropping, check the network between the two machines.",
       };
+    }
+    // It signed in, and its connection to the port there failed or was closed there.
+    if (end.code === 0 || (said !== null && /connect failed|stdio forwarding/i.test(said))) {
+      return NO_LOOKOUT;
     }
     if (said !== null && /open failed/i.test(said)) {
       return {
@@ -296,7 +305,7 @@ export function createRemoteAdapter(options: RemoteAdapterOptions): Adapter {
       case "timeout":
         problem = {
           detail: `${remote.name} did not answer within ${REMOTE_ANSWER_TIMEOUT_MS / 1000} seconds.`,
-          advice: "It keeps trying. ssh notices within a minute when the connection has gone.",
+          advice: "It keeps trying, and after a minute with no answer it connects again.",
         };
         return result(NOT_CONNECTED, problem, done.at);
       case "unreadable":
