@@ -32,13 +32,19 @@ export type RemoteAnswer =
   /** An answer, but not one of Agent Lookout's: why, in words that follow "it". */
   | { kind: "unreadable"; why: string };
 
-/** Asks the tunnel at `port` for one route. Never rejects. */
+/**
+ * Asks the tunnel at `port` for one route. Never rejects. An answer that took
+ * longer than `timeoutMs` by the clock is a timeout too: this computer slept
+ * while it was on its way, so the timer did not run, and it may be hours old.
+ */
 export function askRemote(
   port: number,
   route: (typeof REMOTE_ROUTES)[number],
   timeoutMs = REMOTE_ANSWER_TIMEOUT_MS,
+  now: () => number = Date.now,
 ): Promise<RemoteAnswer> {
   return new Promise((resolve) => {
+    const asked = now();
     let connected = false;
     let settled = false;
     const finish = (answer: RemoteAnswer) => {
@@ -46,7 +52,8 @@ export function askRemote(
       settled = true;
       clearTimeout(timer);
       req.destroy();
-      resolve(answer);
+      const late = answer.kind === "json" && now() - asked > timeoutMs;
+      resolve(late ? { kind: "timeout" } : answer);
     };
 
     const req = request({

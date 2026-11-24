@@ -50,6 +50,13 @@ export const NOT_CONNECTED = "unavailable" satisfies SourceState;
 export const ANSWER_WAIT_MS = 500;
 
 /**
+ * How long a reading is used while the next one is under way: as long as that
+ * one can take, two answers, and two polls. An older one is from before this
+ * computer slept or stopped polling, and says nothing of now.
+ */
+export const READING_KEPT_MS = 2 * (REMOTE_ANSWER_TIMEOUT_MS + POLL_INTERVAL_MS);
+
+/**
  * How long the first connection is said to be under way before the card says
  * it is not connected yet. ssh can take a minute or more to give up on a
  * machine that is switched off, and until then nothing is known of its
@@ -120,9 +127,10 @@ interface Read {
  *
  * Every poll it reads that machine's `/api/health` and `/api/sessions`
  * through the tunnel, and waits half a second for the answer: a slower one is
- * used by the poll after. Its sessions are listed with the machine's name on
- * each, as `readRemoteSnapshot` makes them, with no Jump, no Stop and no
- * request to answer.
+ * used by the poll after, and the last one until then, for `READING_KEPT_MS`.
+ * Its sessions are listed with the machine's name on each, as
+ * `readRemoteSnapshot` makes them, with no Jump, no Stop and no request to
+ * answer.
  *
  * Its card says one of:
  *
@@ -370,7 +378,15 @@ export function createRemoteAdapter(options: RemoteAdapterOptions): Adapter {
         command = state.command.join(" ");
         if (latest && latest.run !== state.run) latest = null;
         await within(readThrough(state.run, state.port), answerWaitMs);
-        return latest && latest.run === state.run ? fromRead(latest) : connecting(at);
+        const asOf = now();
+        // One dated later than now is as old, by a clock that has been set back.
+        if (latest && (latest.at > asOf || asOf - latest.at > READING_KEPT_MS)) {
+          latest = null;
+          problem = {
+            detail: `The last answer from ${remote.name} is not recent enough to show, as after this computer slept.`,
+          };
+        }
+        return latest && latest.run === state.run ? fromRead(latest) : connecting(asOf);
       }
     }
   }

@@ -4,7 +4,12 @@ import { OPENCODE_CAPABILITIES } from "@collector/adapters/opencode/index";
 import { createEventStore } from "@collector/eventStore";
 import { createHistoryStore } from "@collector/historyStore";
 import { createPoller } from "@collector/poller";
-import { BASIS, createRemoteAdapter, STILL_CONNECTING_MS } from "@collector/remotes/remoteAdapter";
+import {
+  BASIS,
+  createRemoteAdapter,
+  READING_KEPT_MS,
+  STILL_CONNECTING_MS,
+} from "@collector/remotes/remoteAdapter";
 import type { RemoteReading } from "@collector/remotes/remoteReader";
 import type { Remote } from "@collector/remotes/remoteSettings";
 import type { TunnelEnd, TunnelState } from "@collector/remotes/tunnel";
@@ -353,6 +358,116 @@ describe("a machine's card", () => {
     release({ kind: "read", version: REMOTE_VERSION, snapshot: snapshotThere() });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect((await adapter.poll()).health.state).toBe("ok");
+  });
+});
+
+describe("the last reading, while the next one is under way", () => {
+  /** A machine read once, at NOW, whose next answer does not come until it is released. */
+  async function readOnce() {
+    let clock = NOW;
+    let release: (reading: RemoteReading) => void = () => {};
+    let held = false;
+    const reading: RemoteReading = {
+      kind: "read",
+      version: REMOTE_VERSION,
+      snapshot: snapshotThere(),
+    };
+    const adapter = createRemoteAdapter({
+      remote: REMOTE,
+      version: "0.2.3",
+      tunnel: { state: () => RUNNING, connected: () => {} },
+      read: () => (held ? new Promise((resolve) => (release = resolve)) : Promise.resolve(reading)),
+      now: () => clock,
+      answerWaitMs: 10,
+    });
+    expect((await adapter.poll()).health.state).toBe("ok");
+    held = true;
+    return {
+      /** Polls with the clock this long after that reading. */
+      pollAt(ms: number) {
+        clock = NOW + ms;
+        return adapter.poll();
+      },
+      async answer() {
+        release(reading);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      },
+    };
+  }
+
+  test("is used for as long as one can take", async () => {
+    const machine = await readOnce();
+    for (const ms of [2_000, 14_000, READING_KEPT_MS]) {
+      const { health, sessions } = await machine.pollAt(ms);
+      expect(health).toMatchObject({ state: "ok", checkedAt: NOW });
+      expect(sessions).toHaveLength(2);
+    }
+  });
+
+  test.each([
+    ["older, as after this computer slept", 11 * 60 * 60_000],
+    ["just older", READING_KEPT_MS + 1],
+    ["dated later than now, by a clock set back", -1],
+  ])("is not used once it is %s: the machine is not connected until the next", async (_, ms) => {
+    const machine = await readOnce();
+    const woken = await machine.pollAt(ms);
+    expect(woken.health).toMatchObject({
+      state: "unavailable",
+      detail:
+        "The last answer from devbox is not recent enough to show, as after this computer slept. Connecting again.",
+      checkedAt: NOW + ms,
+    });
+    expect(woken.sessions).toEqual([]);
+    expect((await machine.pollAt(ms + 2_000)).health).toEqual({
+      ...woken.health,
+      checkedAt: NOW + ms + 2_000,
+    });
+    await machine.answer();
+    expect((await machine.pollAt(ms + 2_500)).health).toMatchObject({
+      state: "ok",
+      checkedAt: NOW + ms + 2_000,
+    });
+  });
+
+  test("so a wait answered while this computer slept is not told on waking, and one still open is", async () => {
+    for (const answered of [true, false]) {
+      let clock = NOW;
+      let snapshot = snapshotThere([]);
+      let held = false;
+      let release: () => void = () => {};
+      const adapter = createRemoteAdapter({
+        remote: REMOTE,
+        version: "0.2.3",
+        tunnel: { state: () => RUNNING, connected: () => {} },
+        read: async () => {
+          if (held) await new Promise<void>((resolve) => (release = resolve));
+          return { kind: "read", version: REMOTE_VERSION, snapshot };
+        },
+        now: () => clock,
+        answerWaitMs: 10,
+      });
+      const poller = createPoller({
+        adapters: [adapter],
+        events: createEventStore(),
+        history: createHistoryStore(),
+        now: () => clock,
+      });
+      const told = async () => (await poller.pollOnce()).sessions.map((session) => session.status);
+      await told();
+      snapshot = snapshotThere();
+      clock += 2_000;
+      expect(await told()).toEqual(["needs-you", "working"]);
+
+      held = true;
+      clock += 8 * 60 * 60_000;
+      if (answered) snapshot = snapshotThere([]);
+      expect(await told()).toEqual([]);
+      release();
+      held = false;
+      clock += 2_000;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(await told()).toEqual(answered ? [] : ["needs-you", "working"]);
+    }
   });
 });
 

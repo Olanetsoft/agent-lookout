@@ -44,6 +44,15 @@ describe("readRemote", () => {
     expect(await readRemote(port, 200)).toEqual({ kind: "timeout" });
   });
 
+  test("an answer that took longer than its time by the clock, as while this computer slept, is a timeout", async () => {
+    const lookout = await startStandInLookout(snapshotThere(), "0.2.3");
+    let clock = 0;
+    /** The clock when the answer is asked for, then 8 hours after. */
+    const slept = () => (clock += 8 * 60 * 60_000);
+    expect(await askRemote(lookout.port, "/api/health", 6_000, slept)).toEqual({ kind: "timeout" });
+    expect((await askRemote(lookout.port, "/api/health", 6_000, () => clock)).kind).toBe("json");
+  });
+
   test("an answer that is not Agent Lookout's is not read, and the sessions are not asked for", async () => {
     const asked: string[] = [];
     const port = await listen(
