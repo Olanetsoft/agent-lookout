@@ -192,6 +192,43 @@ describe("readRemoteSnapshot", () => {
     expect(read(snapshotThere([waitingThere()])).sessions[0]).not.toHaveProperty("answered");
   });
 
+  test("a Hermes Agent scheduled run's title, which an older Agent Lookout there sends, is not taken, and the session takes its folder's name, or its id there", () => {
+    const prompt = "Read my inbox and say what matters";
+    const id = "hermes-agent:default/local-0a1b2c3d";
+    const run = (fields: Record<string, unknown> = {}) => {
+      const answer = read({
+        ...snapshotThere([]),
+        sessions: [
+          {
+            id,
+            source: "hermes-agent",
+            name: `${prompt} · Nov 24 10:00`,
+            status: "idle",
+            surface: "unknown",
+            project: "demo-api",
+            ...fields,
+          },
+        ],
+      });
+      return { name: answer.sessions[0]?.name, whole: JSON.stringify(answer) };
+    };
+    for (const name of [
+      `${prompt} · Nov 24 10:00`,
+      `${prompt} · Nov 24 10:00 #2`,
+      `${prompt} · Nov 24 10:00 fork`,
+    ]) {
+      const there = run({ name });
+      expect([name, there.name]).toEqual([name, "demo-api"]);
+      expect(there.whole).not.toContain(prompt);
+      // With no folder, as a run with none is named there by a newer one.
+      expect([name, run({ name, project: null }).name]).toEqual([name, id]);
+    }
+    // Any other name of its, and another agent's of the same form, is taken as it was sent.
+    expect(run({ name: "Rename the helper" }).name).toBe("Rename the helper");
+    const other = { id: "codex:0199", source: "codex" };
+    expect(run(other).name).toBe(`${prompt} · Nov 24 10:00`);
+  });
+
   test("what a waiting session asks is kept only while it waits", () => {
     const [idle] = read(
       snapshotThere([waitingThere({ status: "idle", waitingText: "Run: npm test" })]),

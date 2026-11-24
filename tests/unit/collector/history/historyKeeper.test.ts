@@ -371,6 +371,38 @@ describe("reading back", () => {
     expect(again.points).toEqual([]);
   });
 
+  test("a Hermes Agent run's title an earlier version kept is in nothing that comes back, and the file is left as it was", async () => {
+    const { fs, keeper } = setUp();
+    const prompt = "Read my inbox and say what matters";
+    const kept = {
+      ...event(T0 - 2_000),
+      sessionId: "hermes-agent:default/local-0a1b2c3d",
+      sessionName: `${prompt} · Oct 06 08:59`,
+    };
+    const before = lines(
+      { kind: "start", at: T0 - 4_000 },
+      { kind: "event", event: kept },
+      {
+        kind: "sighting",
+        sighting: {
+          sessionId: kept.sessionId,
+          sessionName: kept.sessionName,
+          at: T0 - 1_000,
+          way: "database",
+        },
+      },
+    );
+    fs.folders.add(DIR);
+    fs.put(file("v1-2026-10-06.jsonl"), before);
+
+    const restored = await keeper.restore(LIMITS);
+    expect(restored.events.map((each) => each.sessionName)).toEqual([kept.sessionId]);
+    expect(restored.whole.waitEvents.map((each) => each.sessionName)).toEqual([kept.sessionId]);
+    expect(restored.whole.sightings.map((each) => each.sessionName)).toEqual([kept.sessionId]);
+    expect(JSON.stringify(restored)).not.toContain(prompt);
+    expect(written(fs)).toBe(before);
+  });
+
   test("all of it comes back as well, however much memory takes: every event of a wait, and the stretches measured, broken at each start", async () => {
     const { fs, keeper } = setUp();
     fs.folders.add(DIR);

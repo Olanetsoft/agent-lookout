@@ -8,6 +8,7 @@
 // on another machine has no Jump, no Stop, no request to answer and no link
 // to open.
 
+import { canBeScheduledTitle } from "../../core/mapping/hermes-agent/scheduledRuns.ts";
 import {
   CAPABILITIES,
   isRemoteSource,
@@ -241,6 +242,11 @@ function readGit(value: unknown, machine: string): GitHead | undefined {
  * request held for it there and its link are left behind: each would act on
  * this machine.
  *
+ * A Hermes Agent session's name that can be the title of a scheduled run is not
+ * taken, since it can be the start of a prompt, and an Agent Lookout there from
+ * before those titles were left out sends it. The session takes its folder's
+ * name instead, or its id there, as it would with no title.
+ *
  * Null for one that cannot be told apart, and for one the other machine
  * itself read from yet another: only its own sessions are shown.
  */
@@ -258,6 +264,8 @@ function readSession(
   if (isRemoteSource(source) || value.machine !== undefined) return null;
 
   const project = sessionName(typeof value.project === "string" ? value.project : "") ?? null;
+  const name = sessionName(typeof value.name === "string" ? value.name : "");
+  const named = name !== undefined && !canBeScheduledTitle(id, name);
   const status = oneOf(SESSION_STATUSES, value.status) ?? "unknown";
   // The agent as the other machine names it, by the rule `agentName` keeps:
   // the session's own, or else its source's label there.
@@ -268,7 +276,7 @@ function readSession(
     agent,
     machine,
     surface: oneOf(SURFACES, value.surface) ?? "unknown",
-    name: sessionName(typeof value.name === "string" ? value.name : "") ?? project ?? id,
+    name: named ? name : (project ?? id),
     cwd: cut(value.cwd, MAX_PATH_LENGTH) ?? null,
     project,
     status,

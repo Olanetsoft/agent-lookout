@@ -33,6 +33,7 @@ import {
   SCENE,
   SCHEMA,
   sceneRows,
+  scheduledTitle,
   SECRET_WORDS,
   sessionId,
   sessionRow,
@@ -273,7 +274,7 @@ describe.skipIf(sqlite === null)("the Hermes Agent adapter, with the real sqlite
       [id(SCENE.failed)]: [id(SCENE.failed), null, "unknown", "failed", null, at(10)],
       [id(SCENE.finished)]: ["Read the logs", FOLDER, "terminal", "finished", null, at(20)],
       [id(SCENE.branch)]: ["Read the logs again", FOLDER, "terminal", "idle", null, at(6)],
-      [id(SCENE.cron)]: ["Nightly report", null, "unknown", "idle", null, at(7)],
+      [id(SCENE.cron)]: [id(SCENE.cron), null, "unknown", "idle", null, at(7)],
       [id(SCENE.resetParent)]: ["Morning chat", null, "unknown", "finished", null, at(30)],
       [id(SCENE.resetChild)]: ["Afternoon chat", null, "unknown", "idle", null, at(8)],
       [id(SCENE.filtered)]: ["Filtered reply", FOLDER, "terminal", "failed", null, at(9)],
@@ -380,6 +381,55 @@ describe.skipIf(sqlite === null)("the Hermes Agent adapter, with the real sqlite
       "Rename the helper",
       "demo",
     ]);
+    expect(JSON.stringify(polled)).not.toContain(PRIVATE_WORDS);
+    expect(printed).not.toHaveLength(0);
+    expect(printed.join("")).not.toContain(PRIVATE_WORDS);
+  });
+
+  test("a scheduled run's title reaches nothing it says, nor what sqlite3 prints, and the run takes its folder's name, or its ID with no folder", async () => {
+    const now = Date.now();
+    const root = path.join(await tempDir(), "hermes");
+    const title = scheduledTitle(PRIVATE_WORDS);
+    const run = { source: "cron", createdSource: "cron", titleSource: "user" };
+    await writeDatabase(path.join(root, "state.db"), "rollback", [
+      sessionRow({ ...run, id: "local-0a1b2c3d", title, startedAt: now - 5 * MINUTE }),
+      messageRow({ sessionId: "local-0a1b2c3d", role: "user", at: now - 4 * MINUTE }),
+      messageRow({ sessionId: "local-0a1b2c3d", role: "assistant", at: now - 3 * MINUTE }),
+      // A run that started no agent, as from v0.23.4: ended, with a title and no message.
+      sessionRow({
+        ...run,
+        id: "local-4e5f6a7b",
+        cwd: null,
+        title: `${title} #2`,
+        startedAt: now - 2 * MINUTE,
+        endedAt: now - MINUTE,
+        endReason: "cron_suppressed",
+      }),
+      // A terminal's session beside them, with a title a person typed.
+      sessionRow({ id: sessionId("dc"), titleSource: "user", startedAt: now - 5 * MINUTE }),
+    ]);
+    const printed: string[] = [];
+    const adapter = createHermesAgentAdapter({
+      env: { HERMES_HOME: root },
+      homeDir: "/Users/example",
+      now: () => now,
+      io: nodeIo,
+      platform: process.platform,
+      run: async (binary, args, timeoutMs) => {
+        const answer = await runSqlite(binary, args, timeoutMs);
+        if (answer.ok) printed.push(answer.stdout);
+        return answer;
+      },
+    });
+
+    const polled = await adapter.poll();
+    expect(
+      Object.fromEntries(polled.sessions.map((session) => [session.id, session.name])),
+    ).toEqual({
+      "hermes-agent:default/local-0a1b2c3d": "demo",
+      "hermes-agent:default/local-4e5f6a7b": "hermes-agent:default/local-4e5f6a7b",
+      [`hermes-agent:default/${sessionId("dc")}`]: "Rename the helper",
+    });
     expect(JSON.stringify(polled)).not.toContain(PRIVATE_WORDS);
     expect(printed).not.toHaveLength(0);
     expect(printed.join("")).not.toContain(PRIVATE_WORDS);

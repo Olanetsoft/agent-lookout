@@ -48,6 +48,9 @@ export const PRIVATE_WORDS = "demo-private-words-from-a-prompt";
 /** Words that stand for a secret, which the adapter must never read. */
 export const SECRET_WORDS = "demo-secret-value-that-must-stay-put";
 
+/** The title Hermes Agent's scheduler gives a run of a job of this name, which is cut to 60 characters first. */
+export const scheduledTitle = (name: string) => `${name.slice(0, 60)} · Oct 01 11:00`;
+
 /** A text as SQL writes one. */
 export function text(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
@@ -522,12 +525,16 @@ export function sceneRows(now: number, options: SceneOptions = {}): string[] {
       metadata: { interrupted: true },
     }),
 
-    // A scheduled run, idle on a turn stopped before any text: a failure row with no error.
+    // A scheduled run, idle on a turn stopped before any text: a failure row
+    // with no error. Its job was made with no name, so the title the scheduler
+    // gave it is the start of its prompt, and it takes its ID instead.
     sessionRow({
       id: SCENE.cron,
       source: "cron",
+      createdSource: "cron",
       cwd: null,
-      title: "Nightly report",
+      title: scheduledTitle(PRIVATE_WORDS),
+      titleSource: "user",
       startedAt: at(9),
     }),
     messageRow({ sessionId: SCENE.cron, role: "assistant", at: at(7), kind: "failed_turn" }),

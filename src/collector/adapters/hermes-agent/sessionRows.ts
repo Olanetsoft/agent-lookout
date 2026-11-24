@@ -1,5 +1,6 @@
 import path from "node:path";
 
+import { SCHEDULED_TITLE_GLOBS } from "../../../core/mapping/hermes-agent/scheduledRuns.ts";
 import { readArguments } from "../antigravity/app/summaries.ts";
 
 /**
@@ -22,15 +23,17 @@ import { readArguments } from "../antigravity/app/summaries.ts";
  * process of its turn lease. Its JSON columns, the activity label and a tool
  * call's name are only tested inside SQLite, as 0, 1 or a count: nothing of
  * their text is printed. `title_source` is only tested too, and a title it
- * does not let through is never printed. Never a message's text, a tool's
+ * does not let through is never printed, nor is one of a scheduled run, which
+ * can be the start of the run's prompt. Never a message's text, a tool's
  * input or output, a system prompt, a chat's or user's name or id, `SELECT *`
  * or any other table.
  *
  * Each answer is checked field by field as it is read, and a row whose id is
  * not one Hermes Agent makes is dropped.
  *
- * Built from Hermes Agent's source at v0.23.3, and not yet checked on a
- * computer running Hermes Agent.
+ * Built from Hermes Agent's source at v0.23.3, with what it titles a scheduled
+ * run read again at v0.23.4, and not yet checked on a computer running Hermes
+ * Agent.
  */
 
 /** The file each Hermes Agent profile keeps its sessions in. */
@@ -63,17 +66,59 @@ function marker(table: string, key: string): string {
 }
 
 /**
- * What goes before a row's title in the query, to leave the title out when
- * Hermes Agent ranks it with `derived`, the title it makes from the first line
- * of the first message, word for word. Text joined to nothing is nothing, so
- * `''` lets a title through and no value stops it, inside SQLite, and a title
- * stopped never reaches this program. The rule is Hermes Agent's `_title_rank`:
- * `llm` and `user` rank above `derived`, and so does a row with no
- * `title_source`, which it cannot tell from a title a person typed. Any other
- * value ranks with `derived`.
+ * Whether a row is a scheduled run's, as a test made inside SQLite, by any of
+ * the marks Hermes Agent leaves on one:
+ *
+ * - `source` is `cron`, as the scheduler makes it (`gateway/session_cron.py`;
+ *   `platform="cron"` in `cron/scheduler.py`).
+ * - `created_source` is `cron`. A chat that resumes a run has Hermes Agent
+ *   write the chat's platform over its `source`, and leaves this as it was
+ *   (`record_session_peer`, `persistence/sqlite/gateway/routing.py`).
+ * - Its id is `cron_<job>_<date>_<time>`, as a run's was before v0.22.1 gave
+ *   it one of the gateway's own (`legacy_cron_run_job`,
+ *   `persistence/authority/bindings.py`). It is the one mark left on a row
+ *   from before `created_source` that a chat has resumed.
  */
-function unlessDerived(table: string): string {
-  return `(CASE WHEN ${table}.title_source IS NULL OR ${table}.title_source IN ('llm', 'user') THEN '' END) || `;
+function scheduledRow(table: string): string {
+  const digits = (count: number) => "[0-9]".repeat(count);
+  return `(${table}.source = 'cron' OR ${table}.created_source = 'cron' OR ${table}.id GLOB 'cron_*_${digits(8)}_${digits(6)}')`;
+}
+
+/** The longest title printed, in characters, a little more than is ever kept. */
+const TITLE_CUT = 1000;
+
+/**
+ * A row's title in the query: cut, and left out unless it is one that can be
+ * shown. Text joined to nothing is nothing, so `''` before the title lets it
+ * through and no value stops it, inside SQLite, and a title stopped never
+ * reaches this program.
+ *
+ * - One marked `llm` is let through. A model wrote it: the scheduler marks no
+ *   title so.
+ * - One marked `user`, or with no mark, which Hermes Agent's `_title_rank`
+ *   ranks as one a person typed, is let through unless it is, or can be, the
+ *   one the scheduler gave a run, which it marks `user` too. That title is
+ *   `<job name> · <date>`, and a job made with no name takes the first 50
+ *   characters of its prompt as its name (`create_job`, `cron/jobs.py`).
+ *   Nothing in the database says which kind of name it is: the name stays as
+ *   it was when the prompt is changed, and the run's first message holds the
+ *   prompt inside text of the scheduler's own, or is not there. So none of a
+ *   run's is let through, nor of a conversation that came out of one
+ *   (`scheduled` below), which can be a copy of it, nor any of the form the
+ *   scheduler writes, as a branch keeps once its run is deleted.
+ * - Any other is left out: `derived`, the title Hermes Agent makes from the
+ *   first line of the first message, word for word, and any value it never
+ *   writes, which `_title_rank` ranks with `derived`.
+ */
+function shownTitle(table: string): string {
+  const title = `substr(${table}.title, 1, ${TITLE_CUT})`;
+  return [
+    `(CASE WHEN ${table}.title_source = 'llm'`,
+    `OR ((${table}.title_source IS NULL OR ${table}.title_source = 'user')`,
+    "AND h.root NOT IN (SELECT id FROM scheduled)",
+    ...SCHEDULED_TITLE_GLOBS.map((form) => `AND ${title} NOT GLOB '${form}'`),
+    `) THEN '' END) || ${title}`,
+  ].join(" ");
 }
 
 /**
@@ -91,6 +136,12 @@ function unlessDerived(table: string): string {
  *   hidden row, and the sources Hermes Agent hides from people, `kanban`,
  *   `tool` and `oneshot`, are not
  *   (`persistence/sqlite/conversation/_store/sessions.py`).
+ * - `scheduled`: each scheduled run (`scheduledRow`), and every row that came
+ *   out of one by `parent_session_id`, through branches and compressions. A
+ *   row marked as a reset is not followed into: it began a conversation that
+ *   took no title from the one before. Each row is taken once (`UNION`), so the
+ *   walk costs one look at each of them, however long a chain is and however
+ *   many of its rows are in the window, and rows that name each other end it.
  * - `n`, the newest row of the conversation that is not `session_meta` or
  *   `system`, as Hermes Agent's `latest_conversation_role` takes it.
  * - `refused_at`, when the newest row of the newest turn Hermes Agent took
@@ -111,7 +162,7 @@ function unlessDerived(table: string): string {
  *
  * A title and a folder are cut inside SQLite to a little more than is ever
  * kept, so long ones cannot fill the answer, and a title Hermes Agent marks
- * `derived` is left out there (`unlessDerived`).
+ * `derived`, or of a scheduled run, is left out there (`shownTitle`).
  */
 export const SESSIONS_QUERY = [
   "WITH RECURSIVE",
@@ -135,13 +186,20 @@ export const SESSIONS_QUERY = [
   `AND ${marker("c", "_reset_from")} IS NULL`,
   "AND coalesce(c.source, '') != 'tool'",
   "),",
-  "heads(id, root, depth) AS (SELECT id, root, max(depth) FROM up GROUP BY id)",
+  "heads(id, root, depth) AS (SELECT id, root, max(depth) FROM up GROUP BY id),",
+  "scheduled(id) AS (",
+  `SELECT s.id FROM sessions s WHERE ${scheduledRow("s")}`,
+  "UNION",
+  "SELECT s.id FROM scheduled",
+  "JOIN sessions s ON s.parent_session_id = scheduled.id",
+  `WHERE ${marker("s", "_reset_from")} IS NULL`,
+  ")",
   "SELECT h.root AS root_id, c.id,",
   "r.source AS root_source, r.created_source AS root_created_source, r.started_at AS root_started_at,",
-  `${unlessDerived("r")}substr(r.title, 1, 1000) AS root_title, substr(r.cwd, 1, 4097) AS root_cwd,`,
+  `${shownTitle("r")} AS root_title, substr(r.cwd, 1, 4097) AS root_cwd,`,
   "c.started_at, c.ended_at, c.end_reason, c.last_activity_at,",
   "(SELECT max(m.timestamp) FROM messages m WHERE m.session_id = c.id) AS last_message_at,",
-  `${unlessDerived("c")}substr(c.title, 1, 1000) AS title, substr(c.cwd, 1, 4097) AS cwd,`,
+  `${shownTitle("c")} AS title, substr(c.cwd, 1, 4097) AS cwd,`,
   "(c.last_activity_description LIKE 'waiting for user approval%'",
   "OR c.last_activity_description LIKE 'waiting for plugin approval transport%') AS approval_label,",
   "(c.last_activity_description LIKE 'waiting for user clarify response%'",
@@ -313,7 +371,7 @@ export const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const MAX_FOLDER_LENGTH = 4096;
 
 /** The longest title kept as it was read, which the query cuts it to. A name is cut shorter still. */
-const MAX_TITLE_LENGTH = 1000;
+const MAX_TITLE_LENGTH = TITLE_CUT;
 
 /** The longest role, kind, reason or source that is kept. */
 const MAX_WORD_LENGTH = 64;

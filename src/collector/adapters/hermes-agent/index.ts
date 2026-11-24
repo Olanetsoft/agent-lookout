@@ -113,7 +113,8 @@ export const WINDOWS_DETAIL =
  * - Failed is a turn Hermes Agent closed on an error, or took back after a
  *   safety refusal. One that overflows the context writes no such row.
  * - The name is a title from a model or a person, else the folder's name,
- *   else the id. A title Hermes Agent marks `derived` is left out.
+ *   else the id. A title Hermes Agent marks `derived` is left out, and so is
+ *   a scheduled run's, which can be the start of its prompt.
  * - No Jump, Stop or Answer: turns run in a gateway shared by every session,
  *   and approvals and questions are kept in its memory.
  * - No Quiet for: every session of a profile is in one file.
@@ -143,7 +144,7 @@ export const HERMES_AGENT_CAPABILITIES: SourceCapabilities = {
   names: {
     level: "partly",
     reason:
-      "The title a model or you give a session. Until it has one, or with Hermes Agent's model titles turned off, its folder's name.",
+      "A model's title or yours, but not a scheduled run's. Without one, or with Hermes Agent's model titles off, its folder's name.",
   },
   jump: {
     level: "no",

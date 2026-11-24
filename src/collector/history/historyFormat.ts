@@ -20,7 +20,12 @@
 // file. A file from before there were sightings has none, and a version from
 // before then passes over a line that holds one, as it does any record it does
 // not know.
+//
+// A session's name is read back as it was written, but for a Hermes Agent
+// session's that can be the title of a scheduled run, and so the start of a
+// prompt, as an earlier version kept one: `keptName` says which.
 
+import { keptName } from "../../core/mapping/hermes-agent/scheduledRuns.ts";
 import {
   ANSWER_DECISIONS,
   EVENT_ACTORS,
@@ -231,7 +236,7 @@ function readEvent(value: unknown): SessionEvent | null {
     id,
     at,
     sessionId,
-    sessionName,
+    sessionName: keptName(sessionId, sessionName),
     kind,
     ...(from && { from }),
     ...(to && { to }),
@@ -270,7 +275,7 @@ function readSighting(value: unknown): WaitSighting | null {
   if (value.began !== undefined && began === null) return null;
   return {
     sessionId,
-    sessionName,
+    sessionName: keptName(sessionId, sessionName),
     at,
     way,
     ...(lastSeen !== null && { lastSeen }),
