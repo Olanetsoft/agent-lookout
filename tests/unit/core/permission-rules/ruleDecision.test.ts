@@ -372,6 +372,27 @@ describe("an allow rule never reaches Agent Lookout's own files through a folder
     ).toMatchObject({ decision: "allow" });
   });
 
+  test("a path attached to an option, as it is left to you with a space before it", () => {
+    const folder = "/Users/example/code/shop";
+    const allowTar = rule({ decision: "allow", tool: "Bash", command: "tar:*" });
+    for (const option of ["-C /Users/example", "-C/Users/example", "-C ../..", "-C../.."]) {
+      expect(
+        decideByRules([allowTar], bash(`tar -xf a.tar ${option}`, { ownPaths, folder })),
+        option,
+      ).toBeNull();
+    }
+    expect(
+      decideByRules([allowTar], bash("tar -xf a.tar -Cbuild", { ownPaths, folder })),
+    ).toMatchObject({ decision: "allow" });
+    // What the shell would make such a path of is no plain command, so it never gets this far.
+    for (const option of ["-C~", "-C$HOME", "-C'/Users/example'", "-C/Users/exampl?", "-C\\/"]) {
+      expect(
+        decideByRules([allowTar], bash(`tar -xf a.tar ${option}`, { ownPaths, folder })),
+        option,
+      ).toBeNull();
+    }
+  });
+
   test("no command of a session whose folder is your home folder or above", () => {
     expect(
       decideByRules(
@@ -382,6 +403,36 @@ describe("an allow rule never reaches Agent Lookout's own files through a folder
     expect(
       decideByRules([ALLOW_RSYNC], bash("rsync -a src/ build/", { ownPaths, folder: "/" })),
     ).toBeNull();
+  });
+
+  test("a climb from a folder the command went down to, or runs in", () => {
+    const folder = "/Users/example/code/shop";
+    const allowTar = rule({ decision: "allow", tool: "Bash", command: "tar:*" });
+    for (const paths of [
+      "a.tar -C src -C ../../../../example",
+      "../a.tar -C ../../../../example",
+    ]) {
+      expect(
+        decideByRules([allowTar], bash(`tar -xf ${paths}`, { ownPaths, folder })),
+        paths,
+      ).toBeNull();
+    }
+    expect(
+      decideByRules([allowTar], bash("tar -xf a.tar -C src -C ..", { ownPaths, folder })),
+    ).toMatchObject({ decision: "allow" });
+  });
+
+  test("a long command is read once, however many rules there are", () => {
+    const folder = "/Users/example/code/shop";
+    const rules = Array.from({ length: 100 }, () =>
+      rule({ decision: "allow", tool: "Bash", command: "npm test:*" }),
+    );
+    const options = "--a=../x --b=../x --c=../x --d=../x --e=../x --f=../x";
+    const command = `npm test ${options} ${",../a".repeat(780)} ..`;
+    const start = performance.now();
+    expect(decideByRules(rules, bash(command, { ownPaths, folder }))).not.toBeNull();
+    expect(decideByRules(rules, bash(`${command} ../..`, { ownPaths, folder }))).toBeNull();
+    expect(performance.now() - start).toBeLessThan(1_000);
   });
 
   test("a path that reaches a file by its number", () => {

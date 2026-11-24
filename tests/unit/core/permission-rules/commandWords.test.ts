@@ -614,6 +614,191 @@ describe("Agent Lookout's own files and the folders above them", () => {
     );
   });
 
+  const shop = "/Users/example/code/shop";
+
+  test.each([
+    "tar -xf p.tar -C/Users/example",
+    "tar -xf p.tar -C../..",
+    "tar -xf p.tar -C./../..",
+    "tar -xf p.tar -Cbuild/../../..",
+    "tar -xC/Users/example -f p.tar",
+    "tar -xvC../.. -f p.tar",
+    "tar -xf p.tar -C//Users/./Example/",
+    "tar -xf p.tar -C/",
+    "unzip -o p.zip -d/Users/example",
+    "unzip -d../.. p.zip",
+    "7z x p.7z -o../..",
+    "cp -R payload/. -t/Users/example",
+    "patch -p1 -d../.. -i x.diff",
+    "make -C=../.. install",
+    "make DESTDIR=../.. install",
+    "cc -Wl,-C/Users/example x.c",
+    "tool -v/Users/example:/mnt",
+    "tool --mount=type=bind,src=/Users/example,dst=/mnt",
+    "rsync -a payload/ localhost:/Users/example",
+    "rsync -a payload/ file:///Users/example",
+    "cp -R payload/ -- -x/../../..",
+    "tar -xf p.tar -C .. -C ..",
+    "tar -C.. -xf ../other/p.tar -C..",
+    "git -C .. -C ../../example apply x.diff",
+    "git -C /Users/example/code -C .. apply x.diff",
+    "make DESTDIR=.. -C .. install",
+    "make DESTDIR=.. PREFIX=.. install",
+    "tool x%/Users/example",
+    "tool x+/Users/example",
+    "tool x@/Users/example",
+    "tool --mount=src=../a:b/../..,ro",
+    "tool --mount=src=../a:b:c/../..,ro",
+    "tool --dir=/tmp/a,b/../..",
+  ])("a folder above them in a part of a word, or by more than one: %s", (command) => {
+    expect(namesOwnFiles(command.split(" "), own, shop)).toBe(true);
+  });
+
+  test.each([
+    "tar -xf p.tar -C src -C ../../../../example",
+    "tar -xf p.tar -Csrc -C../../../../example",
+    "tar -xf p.tar --directory=src --directory=../../../../example",
+    "tar -xf p.tar -C ./src/ -C ../../../../example",
+    "tar -xf p.tar -C src/app -C ../../../../../example",
+    "tar -xf p.tar -C src -C ../../..",
+    "tar xfC p.tar src -C ../../../../example",
+    "tar xfC p.tar .. -C ..",
+    "tar xCf /Users/example/code p.tar -C ..",
+    "git -C src --work-tree=../../../../example checkout .",
+    "make -C src DESTDIR=../../../../example install",
+    "tar -xf p.tar -C src -C ../../../../example/code/other",
+    // Of a command that runs in a folder under the session's, as after `cd src`.
+    "tar -xf ../p.tar -C ../../../../example",
+    "cp -R ../payload/ ../../../../../example",
+    "cp -R ../payload/ ../../../..",
+    "tar -xf p.tar -C /tmp/a -C ../../Users/example",
+    "tar -xf p.tar -C /Users/example/code/other -C ../..",
+  ])("a folder above them by a climb from a folder gone down to: %s", (command) => {
+    expect(namesOwnFiles(command.split(" "), own, shop)).toBe(true);
+  });
+
+  test("a folder of a settings file a setting put elsewhere, by such a climb", () => {
+    const elsewhere = ["/Users/example/rules/al.json"];
+    const words = ["tar", "-C", "src", "-xf", "p.tar", "-C", "../../../rules"];
+    expect(namesOwnFiles(words, elsewhere, shop)).toBe(true);
+    expect(namesOwnFiles([...words.slice(0, -1), "../../../notes"], elsewhere, shop)).toBe(false);
+  });
+
+  test.each([
+    "tar -xf p.tar -Cbuild",
+    "tar -xf p.tar -C./build",
+    "tar -xf p.tar -C..",
+    "tar -xfp.tar -C../other",
+    "make -C../../code/other install",
+    "cc -I./include -I../include -L/usr/local/lib -Iinclude/sub x.c",
+    "go test -coverprofile=/tmp/c.out -coverpkg=./... ./...",
+    "npm test -- --outDir=build/ --ext=.ts src/",
+    "git log --format=%h:%s main..feature",
+    "git push origin HEAD:refs/heads/topic",
+    "git clone https://example.com/a/b.git ./b",
+    "sed -i.bak s/a/b/ src/notes.txt",
+    "cut -d, -f1 src/notes.txt",
+    "diff -u ../one ../two",
+    "cp -R ../one/notes.txt ../two",
+    "cc -I../one/include -I../two/include -I../three/include -c x.c",
+    "cat ../../notes.txt ../../code/other/x.txt",
+    "cp ../../notes.txt build",
+    "cp notes.txt src/../..",
+    "cp /Users/example/notes.txt ..",
+    "tar -xf p.tar -C src -C ..",
+    "tar -xf p.tar -C src -C ../../other",
+    "tar xf p.tar src",
+    "tar -xf p.tar -C /Users/example/code/other -C ..",
+    "vitest run src/proc/root.test.ts ../proc/lib/cwd.test.ts src/.resolve-x/a.ts src/.vol/a.ts",
+    "ls src/System/Volumes/Data ../proc /System/Library/Fonts",
+  ])("an option or a path that names neither: %s", (command) => {
+    expect(namesOwnFiles(command.split(" "), own, shop)).toBe(false);
+  });
+
+  test("a folder an option after the path takes it to", () => {
+    const words = ["make", "DESTDIR=../../../example", "-C", "../../other", "install"];
+    expect(namesOwnFiles(words, own, "/Users/example/code/packages/shop")).toBe(true);
+    expect(namesOwnFiles(words.slice(0, 2), own, "/Users/example/code/packages/shop")).toBe(false);
+    expect(namesOwnFiles(words.slice(2), own, "/Users/example/code/packages/shop")).toBe(false);
+  });
+
+  test("many options that each climb, only as far as they climb together", () => {
+    const climbing = Array.from({ length: 12 }, (_, at) => `-I../../code/o${at}/include`);
+    expect(namesOwnFiles(["cc", ...climbing], own, `${shop}/a/b/c/d/e/f`)).toBe(false);
+    expect(namesOwnFiles(["cc", ...climbing, "-I.."], own, `${shop}/a`)).toBe(false);
+    expect(namesOwnFiles(["cc", "-I../..", "-I.."], own, `${shop}/a`)).toBe(true);
+  });
+
+  test("a home folder with a mark in its name", () => {
+    const marked = ["/home/example@corp/.agent-lookout/settings.json"];
+    for (const word of [
+      "-C/home/example@corp",
+      "--directory=/home/example@corp",
+      "-v/home/example@corp:/mnt",
+      "x@/home/example@corp",
+      "x:/home",
+    ]) {
+      expect(namesOwnFiles(["tar", word], marked), word).toBe(true);
+    }
+    const climb = ["tar", "-Csrc", "-C../../../../example@corp"];
+    expect(namesOwnFiles(climb, marked, "/home/example@corp/code/shop")).toBe(true);
+    expect(namesOwnFiles(["tar", "-Cexample@corp"], marked, "/home/example@corp/code")).toBe(false);
+  });
+
+  test("the name of a settings file a setting put elsewhere, attached to an option", () => {
+    const elsewhere = ["/Users/example/rules/al.json"];
+    expect(namesOwnFiles(["sort", "-oal.json", "x"], elsewhere)).toBe(true);
+    expect(namesOwnFiles(["sort", "-ruoal.json", "x"], elsewhere)).toBe(true);
+    expect(namesOwnFiles(["sort", "-o../../rules/AL.json", "x"], elsewhere, shop)).toBe(true);
+    expect(namesOwnFiles(["tsc", "-p", "manual.json"], elsewhere, shop)).toBe(false);
+  });
+
+  test("the second path a Mac gives your home folder, and a path the system reads another way", () => {
+    for (const word of [
+      "/System/Volumes/Data/Users/example",
+      "-C/System/Volumes/Data/Users/example/code/..",
+      "/System/Volumes/Data/Users/../../Users/example",
+      "/System/Volumes/Data/Users/Shared/../../../Users/example",
+      "-C/System/Volumes/Data/private/../../../Users/example",
+      "/Users/../System/Volumes/Data/private/../../../../x",
+      "-C../../../../System/Volumes/Data/private/../../Users/example",
+      "/System/Volumes",
+      "-C/System",
+      "../../../../System",
+      "/.nofollow/Users/example",
+      "-C/.resolve/0/Users/example",
+      "/.//.vol/16777232/123/../../../example",
+      "/proc/self/cwd/../..",
+      "-C../../../../proc/./self/task/1/root/home",
+      "-C/proc/self",
+      "-C/proc",
+      "/proc/net/../root/home",
+    ]) {
+      expect(namesOwnFiles(["tar", word], own, shop), word).toBe(true);
+    }
+    const onward = ["tar", "-C/System/Library", "-C../Volumes/Data/Users/example"];
+    expect(namesOwnFiles(onward, own, shop)).toBe(true);
+    expect(folderReachesOwnFiles("/System/Volumes/Data/Users/example", own)).toBe(true);
+    expect(folderReachesOwnFiles("/System/Volumes/Data/Users/example/code", own)).toBe(false);
+    expect(folderReachesOwnFiles("/System/Volumes/Data", own)).toBe(true);
+    const onTheDisk = "/System/Volumes/Data/Users/example/code/shop";
+    expect(namesOwnFiles(["tar", "-C../.."], own, onTheDisk)).toBe(true);
+    expect(namesOwnFiles(["tar", "-C.."], own, onTheDisk)).toBe(false);
+  });
+
+  test("an accent written in two ways is the same folder", () => {
+    const accented = ["/Users/jos\u00e9/.agent-lookout/settings.json"];
+    expect(folderReachesOwnFiles("/Users/jose\u0301", accented)).toBe(true);
+    expect(namesOwnFiles(["tar", "-C.."], accented, "/Users/jose\u0301/code")).toBe(true);
+  });
+
+  test("their own folder, from a session in a folder of its", () => {
+    const inside = "/Users/example/.agent-lookout/history";
+    for (const word of ["..", "../settings.json", "../../.ssh/../.."]) {
+      expect(namesOwnFiles(["cp", "x", word], own, inside), word).toBe(true);
+    }
+  });
+
   test("a session in your home folder or above reaches them, one in a project does not", () => {
     expect(folderReachesOwnFiles("/Users/example", own)).toBe(true);
     expect(folderReachesOwnFiles("/Users/example/", own)).toBe(true);

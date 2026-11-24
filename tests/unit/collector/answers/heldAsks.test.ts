@@ -11,6 +11,7 @@ import {
   MAX_HELD,
   MISSED_AFTER_MS,
   readHookRequest,
+  TOGETHER_MS,
   type DropReason,
   type HookReply,
   type RegistryReading,
@@ -465,6 +466,16 @@ describe("whether the plugin's requests arrive", () => {
     );
     expect(asks.status().plugin).toBe("unknown");
   });
+
+  test("a wait that began while another copy of Agent Lookout had the socket says nothing", () => {
+    const { asks, clock } = standIns();
+    clock.now = T0 + 20_000;
+    asks.listensNow();
+    asks.observe(snapshot([waiting({ statusSince: T0 + 10_000 })], T0 + 60_000));
+    expect(asks.status().plugin).toBe("unknown");
+    asks.observe(snapshot([waiting({ statusSince: T0 + 30_000 })], T0 + 60_000));
+    expect(asks.status().plugin).toBe("missed");
+  });
 });
 
 describe("the permission rules", () => {
@@ -714,4 +725,759 @@ describe("the waits a poll is told were answered", () => {
     });
     return standIns("not-waiting", answers);
   }
+});
+
+const ALLOW_TESTS: PermissionRule = {
+  id: "aaaaaaaaaaaa",
+  decision: "allow",
+  tool: "Bash",
+  command: "npm test:*",
+};
+const DENY_RM: PermissionRule = {
+  id: "bbbbbbbbbbbb",
+  decision: "deny",
+  tool: "Bash",
+  command: "rm:*",
+};
+
+/** Held requests over these rules, which a test can change, with the registry not yet saying the session waits. */
+function parallel(rules: PermissionRule[] = [ALLOW_TESTS, DENY_RM]) {
+  const events: SessionEvent[] = [];
+  const answers = createRuleAnswers({
+    rules: () => rules,
+    poller: {
+      getSnapshot: () => snapshot([waiting()]),
+      pollOnce: async () => snapshot([waiting()]),
+    },
+    events: { add: (added) => events.push(...added) },
+    now: () => T0,
+  });
+  const parts = standIns("not-waiting", answers);
+  parts.registry.since = T0;
+  const receive = (command: string) => {
+    const hook = standInReply();
+    parts.asks.receive(bash(command), hook.reply);
+    return hook;
+  };
+  /** The registry says the session waits, and a check finds it. */
+  const waits = async () => {
+    parts.registry.status = "waiting";
+    await parts.asks.check();
+    // A rule's answer reads the registry once more after the check.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  };
+  /** The sessions a poll that reads the session as waiting is told are answered. */
+  const answered = (session = waiting({ statusSince: T0 })) => [
+    ...parts.asks.answeredIn({
+      sources: [{ id: "claude-code", label: "Claude Code", state: "ok", checkedAt: T0 }],
+      sessions: [session],
+    }),
+  ];
+  const shown = () => parts.asks.withAsks(snapshot([waiting()])).sessions[0]?.ask;
+  return { ...parts, rules, events, receive, waits, answered, shown };
+}
+
+describe("several requests of one session at once, as parallel tool calls make them", () => {
+  test("each a rule covers is answered, whichever came last, and none is shown", async () => {
+    const { asks, drops, events, receive, waits, answered, shown } = parallel();
+    const hooks = ["npm test a", "rm -rf build", "npm test b"].map(receive);
+    expect(asks.size).toBe(3);
+    // Taken as answered by a poll that reads the wait before they are.
+    expect(answered()).toEqual([ID]);
+    await waits();
+    expect(hooks.map(({ sent }) => sent)).toEqual([[ALLOW_OUTPUT], [DENY_OUTPUT], [ALLOW_OUTPUT]]);
+    expect(events.map((event) => event.kind === "answered" && event.decision)).toEqual(
+      expect.arrayContaining(["allow", "deny", "allow"]),
+    );
+    expect(shown()).toBeUndefined();
+    expect(answered()).toEqual([ID]);
+    expect([drops, asks.size]).toEqual([[], 0]);
+    // In their own wait, and in no other.
+    expect(answered(waiting({ statusSince: T0 - 500 }))).toEqual([]);
+  });
+
+  test("one a rule is answering as a newer one arrives is answered all the same", async () => {
+    let reads = 0;
+    let readAgain = (_: RegistryReading) => {};
+    const asks = createHeldAsks({
+      status: {
+        // The second read, right before the first request's answer is written, takes its time.
+        statusOf: async () =>
+          (reads += 1) === 2
+            ? new Promise<RegistryReading>((resolve) => (readAgain = resolve))
+            : reading("waiting"),
+      },
+      holdMs: HOLD_MS,
+      now: () => T0,
+      every: () => () => {},
+      rules: { verdictFor: () => ({ decision: "allow", rule: ALLOW_TESTS }), answered: () => {} },
+    });
+    const [first, second] = [standInReply(), standInReply()];
+    asks.receive(bash("npm test a"), first.reply);
+    await vi.waitFor(() => expect(reads).toBe(2));
+    asks.receive(bash("npm test b"), second.reply);
+    await vi.waitFor(() => expect(second.sent).toEqual([ALLOW_OUTPUT]));
+    expect(first.sent).toEqual([]);
+    readAgain(reading("waiting"));
+    await vi.waitFor(() => expect(first.sent).toEqual([ALLOW_OUTPUT]));
+  });
+
+  test("one a rule covers is answered, and a newer one for the person is shown, its session not taken as answered", async () => {
+    const { receive, waits, answered, shown, asks } = parallel();
+    const first = receive("npm test");
+    const second = receive("npm run build");
+    expect(answered()).toEqual([]);
+    await waits();
+    expect([first.sent, second.sent]).toEqual([[ALLOW_OUTPUT], []]);
+    expect(shown()?.command).toBe("npm run build");
+    expect(answered()).toEqual([]);
+    // Once the person has answered that one too, the wait is over.
+    expect(await asks.answer(ID, shown()?.requestId ?? "", "deny")).toBe("answered");
+    expect(answered()).toEqual([ID]);
+  });
+
+  test("one let go for a newer one that a rule answers leaves its session waiting, not answered", async () => {
+    for (const confirmed of [false, true]) {
+      const { receive, waits, answered, registry } = parallel();
+      const first = receive("npm run build");
+      if (confirmed) await waits();
+      const second = receive("npm test");
+      expect(first.sent).toEqual([""]);
+      expect(answered()).toEqual([]);
+      await waits();
+      expect(second.sent).toEqual([ALLOW_OUTPUT]);
+      expect(answered()).toEqual([]);
+
+      // In a later wait, with nothing let go in it, an answer ends the wait as ever.
+      registry.wait = "1700000005000|permission prompt";
+      registry.since = T0 + 5_000;
+      const third = receive("npm test");
+      await waits();
+      expect(third.sent).toEqual([ALLOW_OUTPUT]);
+      expect(answered(waiting({ statusSince: T0 + 5_000 }))).toEqual([ID]);
+    }
+  });
+
+  test("a press for the newer one leaves the session waiting too, while the one let go is open in the session", async () => {
+    const { receive, waits, answered, shown, asks } = parallel([]);
+    receive("npm run build");
+    await waits();
+    receive("npm run lint");
+    await waits();
+    expect(await asks.answer(ID, shown()?.requestId ?? "", "allow")).toBe("answered");
+    expect(answered()).toEqual([]);
+  });
+
+  test("a request let go for want of room, or past its hold, leaves its session waiting too", async () => {
+    const full = parallel();
+    for (let index = 0; index < MAX_HELD; index += 1) {
+      full.asks.receive({ ...bash(), sessionId: `claude-code:s${index}` }, standInReply().reply);
+    }
+    expect(full.receive("npm run build").sent).toEqual([""]);
+    full.asks.dropAll();
+    full.receive("npm test");
+    await full.waits();
+    expect(full.answered()).toEqual([]);
+
+    const late = parallel();
+    late.receive("npm run build");
+    await late.waits();
+    late.clock.now = T0 + HOLD_MS;
+    await late.asks.check();
+    const next = late.receive("npm test");
+    await late.waits();
+    expect(next.sent).toEqual([ALLOW_OUTPUT]);
+    // It may have been answered in the session since, so the wait is taken as answered for a moment.
+    expect(late.answered()).toEqual([ID]);
+    late.clock.now += GRACE_MS;
+    expect(late.answered()).toEqual([]);
+  });
+
+  test("a newer one that did not arrive with the one let go ends the wait for a moment, and its own wait for good", async () => {
+    for (const rules of [[ALLOW_TESTS], []]) {
+      const { asks, clock, receive, waits, answered, shown } = parallel(rules);
+      receive("npm run build");
+      await waits();
+      clock.now = T0 + TOGETHER_MS;
+      const second = receive("npm test");
+      await waits();
+      if (rules.length === 0) {
+        expect(await asks.answer(ID, shown()?.requestId ?? "", "allow")).toBe("answered");
+      }
+      expect(second.sent).toEqual([ALLOW_OUTPUT]);
+      // The first may have been answered in the session, where the file has yet to say so.
+      expect(answered()).toEqual([ID]);
+      clock.now += GRACE_MS - 1;
+      expect(answered()).toEqual([ID]);
+      // The file would have said so by now, so it is the first one's wait.
+      clock.now += 1;
+      expect(answered()).toEqual([]);
+      // A wait that began since the first arrived, and not since the answer, is the second's own.
+      expect(answered(waiting({ statusSince: T0 + TOGETHER_MS }))).toEqual([ID]);
+      expect(answered(waiting({ statusSince: T0 - 1 }))).toEqual([]);
+      expect(answered(waiting({ statusSince: T0 + TOGETHER_MS + 1 }))).toEqual([]);
+    }
+  });
+
+  test("a newer one that arrived with the one let go does not end the wait", async () => {
+    const { clock, receive, waits, answered } = parallel();
+    receive("npm run build");
+    await waits();
+    clock.now = T0 + TOGETHER_MS - 1;
+    receive("npm test");
+    await waits();
+    expect(answered()).toEqual([]);
+    expect(answered(waiting({ statusSince: T0 + TOGETHER_MS - 1 }))).toEqual([]);
+  });
+
+  test("one let go keeps a later wait from being taken as answered for more than a moment, until a poll finds none", async () => {
+    for (const polled of [false, true]) {
+      const { asks, clock, registry, receive, waits, answered } = parallel();
+      receive("npm run build");
+      await waits();
+      clock.now = T0 + HOLD_MS;
+      await asks.check();
+      clock.now += GRACE_MS;
+      if (polled) answered(waiting({ status: "working" }));
+      const statusSince = clock.now;
+      registry.wait = `${statusSince}|permission prompt`;
+      registry.since = statusSince;
+      receive("npm test");
+      await waits();
+      expect(answered(waiting({ statusSince }))).toEqual([ID]);
+      clock.now += GRACE_MS;
+      expect(answered(waiting({ statusSince })), `${polled}`).toEqual(polled ? [ID] : []);
+    }
+  });
+
+  test("a newer one in a later wait than the one let go was in is answered in that wait alone", async () => {
+    const { asks, clock, registry, receive, waits, answered } = parallel();
+    receive("npm run build");
+    await waits();
+    clock.now = T0 + HOLD_MS;
+    await asks.check();
+    registry.wait = "1700000300000|permission prompt";
+    registry.since = T0 + HOLD_MS;
+    receive("npm test");
+    await waits();
+    expect(answered(waiting({ statusSince: T0 + HOLD_MS }))).toEqual([ID]);
+    expect(answered(waiting({ statusSince: T0 + HOLD_MS - 500 }))).toEqual([]);
+  });
+
+  test("one let go before the file says its wait is remembered past a poll that reads none", async () => {
+    const { receive, waits, answered } = parallel();
+    receive("npm run build");
+    receive("npm test");
+    expect(answered(waiting({ status: "working" }))).toEqual([]);
+    await waits();
+    expect(answered()).toEqual([]);
+  });
+
+  test("one let go is forgotten with its session", async () => {
+    const { asks, clock, receive, waits, answered } = parallel();
+    receive("npm run build");
+    receive("npm run lint");
+    clock.now = T0 + GRACE_MS;
+    await asks.check();
+    asks.answeredIn({ sources: [], sessions: [] });
+    receive("npm test");
+    await waits();
+    clock.now += GRACE_MS;
+    expect(answered()).toEqual([ID]);
+  });
+
+  test("one whose hook had closed, as its answer was written, leaves no prompt open", async () => {
+    let reads = 0;
+    let readAgain = (_: RegistryReading) => {};
+    const asks = createHeldAsks({
+      status: {
+        // The second read, right before the first request's answer is written, takes its time.
+        statusOf: async () =>
+          (reads += 1) === 2
+            ? new Promise<RegistryReading>((resolve) => (readAgain = resolve))
+            : reading("waiting", undefined, T0),
+      },
+      holdMs: HOLD_MS,
+      now: () => T0,
+      every: () => () => {},
+      rules: {
+        verdictFor: ({ shown }) =>
+          shown.command === "npm test" ? { decision: "allow", rule: ALLOW_TESTS } : null,
+        answered: () => {},
+      },
+    });
+    const [first, second] = [standInReply(), standInReply()];
+    asks.receive(bash("npm run build"), first.reply);
+    const shown = () => asks.withAsks(snapshot([waiting()])).sessions[0]?.ask;
+    await vi.waitFor(() => expect(shown()).toBeDefined());
+    const pressed = asks.answer(ID, shown()?.requestId ?? "", "allow");
+    first.close();
+    asks.receive(bash("npm test"), second.reply);
+    readAgain(reading("waiting", undefined, T0));
+    expect(await pressed).toBe("gone");
+    await vi.waitFor(() => expect(second.sent).toEqual([ALLOW_OUTPUT]));
+    const sources = [
+      { id: "claude-code", label: "Claude Code", state: "ok", checkedAt: T0 },
+    ] as const;
+    const sessions = [waiting({ statusSince: T0 })];
+    expect([...asks.answeredIn({ sources: [...sources], sessions })]).toEqual([ID]);
+  });
+
+  test("one kept for a rule that is gone by its check is open, and ends the answer given to the newer one", async () => {
+    const reads: ((read: RegistryReading) => void)[] = [];
+    let covered = true;
+    const asks = createHeldAsks({
+      status: { statusOf: () => new Promise((resolve) => reads.push(resolve)) },
+      holdMs: HOLD_MS,
+      now: () => T0,
+      every: () => () => {},
+      rules: {
+        verdictFor: ({ shown }) =>
+          covered || shown.command === "npm test b"
+            ? { decision: "allow", rule: ALLOW_TESTS }
+            : null,
+        answered: () => {},
+      },
+    });
+    const [first, second] = [standInReply(), standInReply()];
+    const read = async (index: number, reading: RegistryReading) => {
+      await vi.waitFor(() => expect(reads.length).toBeGreaterThan(index));
+      reads[index]?.(reading);
+    };
+    asks.receive(bash("npm test a"), first.reply);
+    asks.receive(bash("npm test b"), second.reply);
+    await read(0, reading("not-waiting"));
+    // The newer one is read first, and answered, while the older one's read takes its time.
+    await read(1, reading("waiting", undefined, T0));
+    await read(3, reading("waiting", undefined, T0));
+    await vi.waitFor(() => expect(second.sent).toEqual([ALLOW_OUTPUT]));
+    covered = false;
+    await read(2, reading("waiting", undefined, T0));
+    await vi.waitFor(() => expect(first.sent).toEqual([""]));
+    const sources = [
+      { id: "claude-code", label: "Claude Code", state: "ok", checkedAt: T0 },
+    ] as const;
+    const sessions = [waiting({ statusSince: T0 })];
+    expect([...asks.answeredIn({ sources: [...sources], sessions })]).toEqual([]);
+  });
+
+  test("the most held at once counts those kept for their rule", () => {
+    const { receive } = parallel();
+    for (let index = 0; index < MAX_HELD; index += 1) {
+      expect(receive(`npm test ${index}`).sent).toEqual([]);
+    }
+    expect(receive("npm test").sent).toEqual([""]);
+  });
+
+  test("the registry is read again while any request is held, shown or kept for its rule", () => {
+    let reading = 0;
+    const asks = createHeldAsks({
+      status: { statusOf: () => new Promise(() => {}) },
+      holdMs: HOLD_MS,
+      now: () => T0,
+      every: () => {
+        reading += 1;
+        return () => (reading -= 1);
+      },
+      rules: { verdictFor: () => ({ decision: "allow", rule: ALLOW_TESTS }), answered: () => {} },
+    });
+    for (const order of [
+      [0, 1],
+      [1, 0],
+    ]) {
+      const hooks = [standInReply(), standInReply()];
+      for (const { reply } of hooks) asks.receive(bash(), reply);
+      expect([asks.size, reading]).toEqual([2, 1]);
+      hooks[order[0] as number]?.close();
+      expect([asks.size, reading]).toEqual([1, 1]);
+      hooks[order[1] as number]?.close();
+      expect([asks.size, reading]).toEqual([0, 0]);
+    }
+  });
+
+  test("one let go in a session that never waited says nothing of a later wait", async () => {
+    const { asks, clock, receive, waits, answered } = parallel();
+    receive("npm run build");
+    receive("npm run lint");
+    clock.now = T0 + GRACE_MS;
+    await asks.check();
+    expect(answered(waiting({ status: "working" }))).toEqual([]);
+    receive("npm test");
+    await waits();
+    expect(answered()).toEqual([ID]);
+  });
+
+  test("one a rule covered when the newer arrived, and no more, is let go unanswered", async () => {
+    const { rules, receive, waits, answered, drops, shown } = parallel();
+    const first = receive("npm test");
+    const second = receive("npm run build");
+    rules.length = 0;
+    await waits();
+    expect([first.sent, second.sent]).toEqual([[""], []]);
+    expect(drops).toEqual([["newer", ID]]);
+    expect(shown()?.command).toBe("npm run build");
+    expect(answered()).toEqual([]);
+  });
+
+  test("one kept for its rule is let go as any other: past the grace, as its hook closes, and as Agent Lookout stops", async () => {
+    const { asks, clock, receive } = parallel();
+    const late = receive("npm test a");
+    receive("npm test b");
+    clock.now = T0 + GRACE_MS;
+    await asks.check();
+    expect(late.sent).toEqual([""]);
+    expect(asks.size).toBe(0);
+
+    const closed = receive("npm test c");
+    const stopped = receive("npm test d");
+    receive("npm test e");
+    closed.close();
+    expect(asks.size).toBe(2);
+    asks.dropAll();
+    expect(stopped.sent).toEqual([""]);
+    expect(asks.size).toBe(0);
+  });
+
+  test("only the newest is ever answered by a press", async () => {
+    const { asks, receive, registry } = parallel();
+    const first = receive("npm test");
+    receive("npm run build");
+    registry.status = "waiting";
+    expect(await asks.answer(ID, "1".padStart(32, "0"), "deny")).toBe("no-ask");
+    expect(first.sent).toEqual([]);
+  });
+});
+
+describe("the request that comes right after an answer, while the file still says the wait before", () => {
+  /** How long after the wait before began the next request arrives, and when its own wait begins. */
+  const LATER = 5_000;
+  const ARRIVED = T0 + LATER;
+  const OWN = `${ARRIVED}|permission prompt`;
+
+  /** A request answered by a press in a wait that began at `began`, and the next one, arrived since, in the same reading. */
+  async function next(command = "npm run build", rules: PermissionRule[] = [], began = T0) {
+    const parts = parallel(rules);
+    parts.registry.since = began;
+    parts.registry.wait = `${began}|permission prompt`;
+    parts.clock.now = began;
+    parts.receive("npm run lint");
+    await parts.waits();
+    expect(await parts.asks.answer(ID, parts.shown()?.requestId ?? "", "allow")).toBe("answered");
+    parts.clock.now = ARRIVED;
+    const hook = parts.receive(command);
+    await parts.waits();
+    /** The file says the session waits in another wait, one that began at `since`. */
+    const ownWait = (since: number | undefined = ARRIVED) => {
+      parts.registry.status = "waiting";
+      parts.registry.wait = `${since ?? ""}|permission prompt`;
+      parts.registry.since = since;
+    };
+    return { ...parts, hook, ownWait };
+  }
+
+  test("moves to its own wait once the file says it, and is answered there", async () => {
+    const { asks, hook, ownWait, shown, drops, answered, clock } = await next();
+    const requestId = shown()?.requestId ?? "";
+    ownWait();
+    clock.now = ARRIVED + 1_500;
+    await asks.check();
+    expect(shown()?.requestId).toBe(requestId);
+    // A wait of its own now, past which it is let go as ever.
+    expect(await asks.answer(ID, requestId, "deny")).toBe("answered");
+    expect(hook.sent).toEqual([DENY_OUTPUT]);
+    expect(drops).toEqual([]);
+    expect(answered(waiting({ statusSince: ARRIVED }))).toEqual([ID]);
+  });
+
+  test("a wait answered within a second of beginning is known by its answer", async () => {
+    const asked = await next("npm run build", [], ARRIVED - 400);
+    const requestId = asked.shown()?.requestId ?? "";
+    asked.ownWait(ARRIVED - 100);
+    await asked.asks.check();
+    expect(asked.shown()?.requestId).toBe(requestId);
+    expect(asked.hook.sent).toEqual([]);
+
+    // So is the one before a request that takes another's place there.
+    const twice = await next("npm run build", [], ARRIVED - 400);
+    const last = twice.receive("npm run check");
+    await twice.waits();
+    twice.ownWait(ARRIVED - 100);
+    await twice.asks.check();
+    expect(twice.shown()?.command).toBe("npm run check");
+    expect(last.sent).toEqual([]);
+
+    const ruled = await next("npm test", [ALLOW_TESTS], ARRIVED - 400);
+    expect(ruled.hook.sent).toEqual([ALLOW_OUTPUT]);
+    expect(ruled.answered(waiting({ statusSince: ARRIVED - 100 }))).toEqual([ID]);
+    expect(ruled.answered(waiting({ statusSince: ARRIVED + 1 }))).toEqual([]);
+  });
+
+  test("is held, not shown, while the file says the session works between the two, and offered afresh after", async () => {
+    const { asks, hook, registry, ownWait, shown, drops, clock } = await next();
+    const requestId = shown()?.requestId ?? "";
+    registry.status = "not-waiting";
+    clock.now = ARRIVED + 1_000;
+    await asks.check();
+    expect(shown()).toBeUndefined();
+    expect(await asks.answer(ID, requestId, "allow")).toBe("no-ask");
+    ownWait();
+    clock.now = ARRIVED + 2_000;
+    await asks.check();
+    // Under another id, so a page that said the press came to nothing has its buttons again.
+    expect(shown()?.requestId).toMatch(/^[0-9a-f]{32}$/);
+    expect(shown()?.requestId).not.toBe(requestId);
+    expect(await asks.answer(ID, requestId, "allow")).toBe("no-ask");
+    expect([hook.sent, drops]).toEqual([[], []]);
+
+    // Its own wait is left as any other is.
+    registry.status = "not-waiting";
+    await asks.check();
+    expect([hook.sent, drops]).toEqual([[""], [["left-waiting", ID]]]);
+  });
+
+  test("is let go past the grace, when the file still says no wait of its own", async () => {
+    const { asks, hook, registry, clock } = await next();
+    registry.status = "not-waiting";
+    clock.now = ARRIVED + GRACE_MS - 1;
+    await asks.check();
+    expect(hook.sent).toEqual([]);
+    clock.now = ARRIVED + GRACE_MS;
+    await asks.check();
+    expect(hook.sent).toEqual([""]);
+  });
+
+  test("is let go for a wait that began too early to be its own, has no time, or comes past the grace", async () => {
+    for (const [since, at] of [
+      [ARRIVED - 1_001, ARRIVED + 500],
+      [undefined, ARRIVED + 500],
+      [ARRIVED, ARRIVED + GRACE_MS],
+    ] as const) {
+      const { asks, hook, registry, clock } = await next();
+      registry.wait = OWN;
+      registry.since = since;
+      clock.now = at;
+      await asks.check();
+      expect(hook.sent, `${since}`).toEqual([""]);
+    }
+  });
+
+  test("a request confirmed in its own wait is never moved to another", async () => {
+    const { asks, hook, ownWait, shown, clock } = await next();
+    ownWait();
+    await asks.check();
+    ownWait(ARRIVED + 200);
+    clock.now = ARRIVED + 400;
+    expect(await asks.answer(ID, shown()?.requestId ?? "", "allow")).toBe("gone");
+    expect(hook.sent).toEqual([""]);
+  });
+
+  test("a press as the file moves on is answered in its own wait, and sends nothing between the two", async () => {
+    const own = await next();
+    own.ownWait();
+    expect(await own.asks.answer(ID, own.shown()?.requestId ?? "", "allow")).toBe("answered");
+    expect(own.hook.sent).toEqual([ALLOW_OUTPUT]);
+
+    const between = await next();
+    const requestId = between.shown()?.requestId ?? "";
+    between.registry.status = "not-waiting";
+    expect(await between.asks.answer(ID, requestId, "allow")).toBe("gone");
+    expect(between.hook.sent).toEqual([]);
+    between.ownWait();
+    await between.asks.check();
+    const again = between.shown()?.requestId ?? "";
+    expect(again).not.toBe(requestId);
+    expect(await between.asks.answer(ID, again, "allow")).toBe("answered");
+  });
+
+  test("the third of three inside one lag stays held through the wait of the second, answered already", async () => {
+    for (const rules of [[], [ALLOW_TESTS]]) {
+      for (const after of [500, 1_200]) {
+        const { asks, hook, ownWait, receive, waits, shown, clock, drops } = await next(
+          "npm test",
+          rules,
+        );
+        if (rules.length === 0) {
+          expect(await asks.answer(ID, shown()?.requestId ?? "", "allow")).toBe("answered");
+        }
+        expect(hook.sent).toEqual([ALLOW_OUTPUT]);
+        const third = ARRIVED + after;
+        clock.now = third;
+        const last = receive("npm run check");
+        await waits();
+        ownWait(ARRIVED);
+        clock.now = third + 800;
+        await asks.check();
+        expect(shown()?.command, `${after}`).toBe("npm run check");
+        ownWait(third);
+        clock.now = third + 1_600;
+        await asks.check();
+        expect(shown()?.command, `${after}`).toBe("npm run check");
+        expect([last.sent, drops]).toEqual([[], []]);
+
+        // That one is its own.
+        ownWait(third + 2_000);
+        await asks.check();
+        expect(last.sent).toEqual([""]);
+      }
+    }
+  });
+
+  test("is not held through a wait that began before the one answered in between", async () => {
+    const { asks, ownWait, receive, waits, clock } = await next("npm test", [ALLOW_TESTS]);
+    clock.now = ARRIVED + 1_200;
+    const last = receive("npm run check");
+    await waits();
+    ownWait(ARRIVED - 1_001);
+    await asks.check();
+    expect(last.sent).toEqual([""]);
+  });
+
+  test("moves with the file once a rule has answered an older one of its wait", async () => {
+    for (const between of [false, true]) {
+      const { asks, registry, receive, waits, shown, clock, drops } = parallel();
+      const first = receive("npm test");
+      const second = receive("npm run build");
+      // The wait is confirmed, and the older one answered, at the last check of the grace.
+      clock.now = T0 + GRACE_MS - 1;
+      await waits();
+      expect([first.sent, shown()?.command]).toEqual([[ALLOW_OUTPUT], "npm run build"]);
+      clock.now += 1_500;
+      if (between) {
+        registry.status = "not-waiting";
+        await asks.check();
+        expect(shown()).toBeUndefined();
+      }
+      registry.wait = OWN;
+      registry.since = clock.now;
+      await waits();
+      expect(shown()?.command).toBe("npm run build");
+      expect([second.sent, drops]).toEqual([[], []]);
+      expect(await asks.answer(ID, shown()?.requestId ?? "", "deny")).toBe("answered");
+
+      // Past the grace since that answer, another wait is another prompt's.
+      const late = parallel();
+      late.receive("npm test");
+      const held = late.receive("npm run build");
+      await late.waits();
+      late.clock.now = T0 + GRACE_MS;
+      late.registry.wait = OWN;
+      late.registry.since = late.clock.now;
+      await late.asks.check();
+      expect(held.sent).toEqual([""]);
+    }
+  });
+
+  test("an answer in one session says nothing of another's request", async () => {
+    const { asks, registry, receive, waits, shown } = parallel();
+    const other = standInReply();
+    asks.receive({ ...bash("npm run lint"), sessionId: "claude-code:other" }, other.reply);
+    receive("npm run build");
+    await waits();
+    expect(await asks.answer(ID, shown()?.requestId ?? "", "allow")).toBe("answered");
+    registry.wait = OWN;
+    registry.since = T0 + 1;
+    await asks.check();
+    expect(other.sent).toEqual([""]);
+  });
+
+  test("one a rule covered before the two, and no more, is the person's: its press is not a rule's", async () => {
+    const reads: ((read: RegistryReading) => void)[] = [];
+    let covered = true;
+    const asks = createHeldAsks({
+      status: { statusOf: () => new Promise((resolve) => reads.push(resolve)) },
+      holdMs: HOLD_MS,
+      now: () => ARRIVED,
+      every: () => () => {},
+      rules: {
+        verdictFor: () => (covered ? { decision: "allow", rule: ALLOW_TESTS } : null),
+        answered: () => {},
+      },
+    });
+    const read = async (index: number, reading: RegistryReading) => {
+      await vi.waitFor(() => expect(reads.length).toBeGreaterThan(index));
+      reads[index]?.(reading);
+    };
+    asks.receive(bash("npm test"), standInReply().reply);
+    await read(0, reading("waiting", undefined, T0));
+    // Its rule's answer finds the file between the two.
+    await read(1, reading("not-waiting"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    covered = false;
+    const check = asks.check();
+    await read(2, reading("waiting", OWN, ARRIVED));
+    await check;
+    const ask = asks.withAsks(snapshot([waiting()])).sessions[0]?.ask;
+    expect(ask).toBeDefined();
+    const pressed = asks.answer(ID, ask?.requestId ?? "", "allow");
+    const sources = [
+      { id: "claude-code", label: "Claude Code", state: "ok", checkedAt: T0 },
+    ] as const;
+    const sessions = [waiting({ statusSince: ARRIVED })];
+    expect([...asks.answeredIn({ sources: [...sources], sessions })]).toEqual([]);
+    await read(3, reading("waiting", OWN, ARRIVED));
+    expect(await pressed).toBe("answered");
+  });
+
+  test("one a rule answers there is answered in its own wait too, whatever polls read between, and no later wait is", async () => {
+    const { asks, hook, answered, clock } = await next("npm test", [ALLOW_TESTS]);
+    expect(hook.sent).toEqual([ALLOW_OUTPUT]);
+    expect(answered()).toEqual([ID]);
+    clock.now = ARRIVED + 1_000;
+    expect(answered(waiting({ status: "working" }))).toEqual([]);
+    expect(answered(waiting({ statusSince: ARRIVED - 400 }))).toEqual([ID]);
+    // It began after the answer, so it is not the prompt that was answered.
+    expect(answered(waiting({ statusSince: ARRIVED + 1 }))).toEqual([]);
+    expect(answered(waiting({ statusSince: ARRIVED - 1_001 }))).toEqual([]);
+    expect(asks.size).toBe(0);
+    clock.now = ARRIVED + ANSWER_HOLDS_MS;
+    expect(answered(waiting({ statusSince: ARRIVED }))).toEqual([]);
+  });
+
+  test("of two a rule answers there, the wait of each is answered", async () => {
+    const { receive, waits, answered, clock } = await next("npm test", [ALLOW_TESTS]);
+    clock.now = ARRIVED + 1_500;
+    expect(receive("npm test b").sent).toEqual([]);
+    await waits();
+    expect(answered(waiting({ statusSince: ARRIVED }))).toEqual([ID]);
+    expect(answered(waiting({ statusSince: ARRIVED + 1_500 }))).toEqual([ID]);
+  });
+
+  test("a rule's answer waits for its own wait, when the file says none as it is written", async () => {
+    const { asks, registry, receive, waits, clock, events } = parallel();
+    registry.since = T0;
+    clock.now = ARRIVED;
+    let reads = 0;
+    Object.defineProperty(registry, "status", {
+      get: () => ((reads += 1) === 2 ? "not-waiting" : "waiting"),
+      set: () => {},
+      configurable: true,
+    });
+    const hook = receive("npm test");
+    await vi.waitFor(() => expect(reads).toBe(2));
+    expect([hook.sent, events, asks.size]).toEqual([[], [], 1]);
+    registry.wait = OWN;
+    registry.since = ARRIVED;
+    await waits();
+    expect(hook.sent).toEqual([ALLOW_OUTPUT]);
+    expect(events).toHaveLength(1);
+  });
+
+  test("one let go there for a newer one that a rule answers leaves its session waiting in either wait", async () => {
+    const { receive, waits, answered } = await next("npm run build", [ALLOW_TESTS]);
+    const last = receive("npm test");
+    await waits();
+    expect(last.sent).toEqual([ALLOW_OUTPUT]);
+    expect(answered()).toEqual([]);
+    expect(answered(waiting({ statusSince: ARRIVED }))).toEqual([]);
+  });
+
+  test("one let go there for a newer one leaves its session waiting, once that one is answered in the wait of both", async () => {
+    const { asks, receive, waits, ownWait, shown, answered } = await next();
+    receive("npm run check");
+    await waits();
+    ownWait();
+    await asks.check();
+    expect(await asks.answer(ID, shown()?.requestId ?? "", "allow")).toBe("answered");
+    expect(answered(waiting({ statusSince: ARRIVED }))).toEqual([]);
+  });
 });

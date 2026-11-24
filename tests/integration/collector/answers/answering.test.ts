@@ -1,9 +1,10 @@
-import { chmod, mkdir, rename, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
 
 import { describe, expect, onTestFinished, test as anyTest, vi } from "vitest";
 
+import { createAnswering, TRY_AGAIN_MS } from "@collector/answers/answering";
 import { ALLOW_OUTPUT, DENY_OUTPUT, type StatusReader } from "@collector/answers/heldAsks";
 import { createRegistryStatus } from "@collector/answers/registryStatus";
 import { createCollector, type CollectorOptions } from "@collector/collector";
@@ -39,7 +40,11 @@ const test = anyTest.skipIf(process.platform === "win32");
 const SESSION_ID = `claude-code:${ids.busy}`;
 const COMMAND = "npm test\nnpm run build";
 
-function entryFor(standIn: Pick<StandIn, "pid" | "procStart">, status: string) {
+function entryFor(
+  standIn: Pick<StandIn, "pid" | "procStart">,
+  status: string,
+  since = Date.now() - 1_000,
+) {
   const now = Date.now();
   return registryFile({
     pid: standIn.pid,
@@ -51,7 +56,7 @@ function entryFor(standIn: Pick<StandIn, "pid" | "procStart">, status: string) {
     status,
     ...(status === "waiting" && { waitingFor: "permission prompt" }),
     startedAt: now - 60_000,
-    statusUpdatedAt: now - 1_000,
+    statusUpdatedAt: since,
   });
 }
 
@@ -174,9 +179,9 @@ async function serve(
   // Written whole and then renamed into place, as a poll on the collector's
   // own beat can read the folder at any moment: a file it caught half written
   // would be skipped, and the session missing from that poll.
-  const rewrite = async (status: string) => {
+  const rewrite = async (status: string, since?: number) => {
     const target = path.join(claudeHome, "sessions", file);
-    await writeFile(`${target}.tmp`, entryFor(standIn, status));
+    await writeFile(`${target}.tmp`, entryFor(standIn, status, since));
     await rename(`${target}.tmp`, target);
   };
   const waits = async () => (await request(port, "/api/waits")).json<WaitsResponse>();
@@ -234,6 +239,29 @@ test("Deny reaches the hook too", async () => {
   const requestId = (await server.session())?.ask?.requestId ?? "";
   expect((await server.answer(requestId, "deny")).status).toBe(200);
   expect(await answered).toEqual({ code: 0, stdout: `${DENY_OUTPUT}\n` });
+});
+
+test("a request that arrives right after an answer stays held as the file moves on to its wait", async () => {
+  const server = await serve();
+  const ask = async () => (await server.session())?.ask;
+  const offered = () =>
+    vi.waitFor(async () => expect(await ask()).toBeDefined(), { timeout: 5_000 });
+  const first = hook(server.socketPath);
+  await offered();
+  expect((await server.answer((await ask())?.requestId ?? "", "allow")).status).toBe(200);
+  expect((await first).stdout).toBe(`${ALLOW_OUTPUT}\n`);
+
+  // The file still says the wait that was answered as the next request arrives.
+  const second = hook(server.socketPath, "Bash", { command: "npm run lint" });
+  await offered();
+  await server.rewrite("busy");
+  await vi.waitFor(async () => expect(await ask()).toBeUndefined(), { timeout: 2_000 });
+  await server.rewrite("waiting", Date.now());
+  await offered();
+  const again = await ask();
+  expect(again?.command).toBe("npm run lint");
+  expect((await server.answer(again?.requestId ?? "", "deny")).status).toBe(200);
+  expect((await second).stdout).toBe(`${DENY_OUTPUT}\n`);
 });
 
 test("answered in the session: the request is let go, the hook prints nothing, and the page is told it is gone", async () => {
@@ -307,6 +335,150 @@ function clock() {
     },
   };
 }
+
+describe("a second copy of Agent Lookout on the same socket", () => {
+  const PROBLEM = "Another copy of Agent Lookout answers permission prompts on this computer.";
+
+  /** A copy that answers, and a second one on its socket, whose clock the test moves. */
+  async function twoCopies() {
+    const time = clock();
+    const warned: string[] = [];
+    const first = await serve();
+    const second = await serve(
+      { AGENT_LOOKOUT_ANSWER_SOCKET: first.socketPath },
+      { now: time.now, warn: (line) => warned.push(line) },
+    );
+    /** Long enough on for the second to try again, at its next poll. */
+    const later = async () => {
+      time.forward(TRY_AGAIN_MS);
+      await second.collector.poller.pollOnce();
+    };
+    return { first, second, later, warned };
+  }
+
+  test("answers in its place once the first has quit, and not before", async () => {
+    const { first, second, later, warned } = await twoCopies();
+    const answering = async () => (await second.snapshot()).answering;
+    expect(await answering()).toMatchObject({ state: "unavailable", problem: PROBLEM });
+    await later();
+    await later();
+    expect(await answering()).toMatchObject({ state: "unavailable", problem: PROBLEM });
+    expect((await second.answer("0".repeat(32), "allow")).status).toBe(405);
+    // The first still has every request.
+    const asked = hook(first.socketPath);
+    await vi.waitFor(async () => expect((await first.session())?.ask).toBeDefined(), {
+      timeout: 5_000,
+    });
+    expect((await second.session())?.ask).toBeUndefined();
+    const { requestId = "" } = (await first.session())?.ask ?? {};
+    expect((await first.answer(requestId, "deny")).status).toBe(200);
+    expect((await asked).stdout).toBe(`${DENY_OUTPUT}\n`);
+
+    // A wait that began while the first copy answered does not read as missed.
+    await second.rewrite("waiting", Date.now() + 2_000);
+    await first.collector.answering.stop();
+    await vi.waitFor(
+      async () => {
+        await later();
+        expect(await answering()).toMatchObject({ state: "on" });
+      },
+      { timeout: 5_000 },
+    );
+    await later();
+    expect(await answering()).toEqual({ state: "on", plugin: "unknown", holdMs: 300_000 });
+    const next = hook(first.socketPath);
+    await vi.waitFor(async () => expect((await second.session())?.ask).toBeDefined(), {
+      timeout: 5_000,
+    });
+    const held = (await second.session())?.ask?.requestId ?? "";
+    expect((await second.answer(held, "allow")).status).toBe(200);
+    expect((await next).stdout).toBe(`${ALLOW_OUTPUT}\n`);
+    // Said once, however often it tried.
+    expect(warned).toEqual([PROBLEM]);
+  });
+
+  test("stopped before the first, it opens no socket when that one quits", async () => {
+    const { first, second, later } = await twoCopies();
+    await second.collector.answering.stop();
+    await first.collector.answering.stop();
+    await later();
+    await later();
+    await expect(lstat(first.socketPath)).rejects.toThrow();
+    expect(await hook(first.socketPath)).toEqual({ code: 0, stdout: "" });
+  });
+
+  /** Two copies on one socket path, with no collector around them, and one clock that only the test moves. */
+  async function bareCopies() {
+    const folder = await tempDir();
+    const socketPath = path.join(folder, "answer.sock");
+    await chmod(folder, 0o700);
+    const time = { at: 1_700_000_000_000 };
+    const snapshot: SessionsSnapshot = { generatedAt: time.at, sources: [], sessions: [] };
+    const copy = () =>
+      createAnswering({
+        env: { AGENT_LOOKOUT_ANSWER_SOCKET: socketPath },
+        poller: { getSnapshot: () => snapshot, pollOnce: async () => snapshot },
+        events: { add: () => {} },
+        now: () => time.at,
+      });
+    const [first, second] = [copy(), copy()];
+    onTestFinished(async () => {
+      await first.stop();
+      await second.stop();
+    });
+    const state = () => second.serve(snapshot).answering?.state;
+    /** A poll of the second's, and the time a try at the socket would take. */
+    const poll = async () => {
+      second.observe(snapshot);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      return state();
+    };
+    return { first, second, socketPath, snapshot, time, poll, state };
+  }
+
+  test("tries 10 seconds after it last did, and not before, whichever way the clock was set", async () => {
+    const { first, second, snapshot, time, poll, state } = await bareCopies();
+    await first.start();
+    await second.start();
+    time.at += TRY_AGAIN_MS;
+    expect(await poll()).toBe("unavailable");
+    await first.stop();
+    time.at += TRY_AGAIN_MS - 1;
+    expect(await poll()).toBe("unavailable");
+    time.at += 1;
+    second.observe(snapshot);
+    await vi.waitFor(() => expect(state()).toBe("on"));
+
+    const back = await bareCopies();
+    await back.first.start();
+    await back.second.start();
+    await back.first.stop();
+    back.time.at -= TRY_AGAIN_MS;
+    back.second.observe(back.snapshot);
+    await vi.waitFor(() => expect(back.state()).toBe("on"));
+  });
+
+  test("for any other problem it does not try again", async () => {
+    const { second, socketPath, time, poll } = await bareCopies();
+    await writeFile(socketPath, "a file of the person's");
+    await second.start();
+    await rm(socketPath);
+    time.at += TRY_AGAIN_MS;
+    expect(await poll()).toBe("unavailable");
+  });
+
+  test("stopped as it opens the socket, it closes it again", async () => {
+    const { first, second, socketPath, snapshot, time } = await bareCopies();
+    await first.start();
+    await second.start();
+    await first.stop();
+    time.at += TRY_AGAIN_MS;
+    second.observe(snapshot);
+    await second.stop();
+    expect(second.serve(snapshot).answering).toMatchObject({ state: "on" });
+    await expect(lstat(socketPath)).rejects.toThrow();
+  });
+});
 
 const REMIND_AFTER_A_MINUTE: TimeRules = {
   ...DEFAULT_TIME_RULES,
@@ -595,6 +767,72 @@ describe("a wait whose request was answered is over at once, on every channel", 
     expect(await server.session()).toMatchObject({ status: "needs-you", answered: true });
     await server.movesOn();
     await toldOfNowhere(server);
+  });
+
+  test("a prompt a rule answers while the file still says the one answered before it is told of on no channel", async () => {
+    const server = await everyChannel("busy", [ALLOW_TESTS]);
+    await server.rewrite("waiting");
+    const command = { command: "npm test" };
+    expect((await hook(server.socketPath, "Bash", command)).stdout).toBe(`${ALLOW_OUTPUT}\n`);
+    // The next request, before Claude Code has rewritten its file.
+    expect((await hook(server.socketPath, "Bash", command)).stdout).toBe(`${ALLOW_OUTPUT}\n`);
+    await server.pollAgain();
+    // The file catches up: it works on the first, then waits since a moment before the second was answered.
+    await server.movesOn();
+    const answers = (await server.events()).filter((event) => event.kind === "answered");
+    expect(answers).toHaveLength(2);
+    await server.rewrite("waiting", Math.max(...answers.map(({ at }) => at)) - 50);
+    await server.pollAgain();
+    expect(await server.session()).toMatchObject({ status: "needs-you", answered: true });
+    await server.movesOn();
+    expect(server.notifier.shown).toEqual([]);
+    expect(server.subjects()).toEqual([]);
+    expect(server.posts()).toEqual([]);
+    expect(server.pushes()).toEqual([[], []]);
+    expect((await server.waits()).today.waits).toBe(0);
+  });
+
+  test("requests of one session that arrive together are each put to the rules, and told of on no channel", async () => {
+    const denyRm: RuleWords = { decision: "deny", tool: "Bash", command: "rm:*" };
+    const server = await everyChannel("busy", [ALLOW_TESTS, denyRm]);
+    // As parallel tool calls ask: each hook runs a moment before Claude Code's file says the session waits.
+    const asked: ReturnType<typeof hook>[] = [];
+    for (const command of ["rm -rf build", "npm test a", "npm test b"]) {
+      const reads = server.reads();
+      asked.push(hook(server.socketPath, "Bash", { command }));
+      await vi.waitFor(() => expect(server.reads()).toBeGreaterThan(reads), { timeout: 5_000 });
+    }
+    await server.rewrite("waiting");
+    await server.pollAgain();
+    server.beat();
+    expect((await Promise.all(asked)).map(({ stdout }) => stdout)).toEqual([
+      `${DENY_OUTPUT}\n`,
+      `${ALLOW_OUTPUT}\n`,
+      `${ALLOW_OUTPUT}\n`,
+    ]);
+    await server.pollAgain();
+    expect(await server.session()).toMatchObject({ status: "needs-you", answered: true });
+    await server.movesOn();
+    expect(server.notifier.shown).toEqual([]);
+    expect((await server.waits()).today.waits).toBe(0);
+  });
+
+  test("a prompt let go for a newer one that a rule answers is still told of, on every channel", async () => {
+    const server = await everyChannel("busy", [ALLOW_TESTS]);
+    const open = hook(server.socketPath, "Bash", { command: "npm run build" });
+    await vi.waitFor(() => expect(server.reads()).toBeGreaterThan(0), { timeout: 5_000 });
+    const asked = hook(server.socketPath, "Bash", { command: "npm test" });
+    expect(await open).toEqual({ code: 0, stdout: "" });
+    await server.rewrite("waiting");
+    await server.pollAgain();
+    server.beat();
+    expect(await asked).toEqual({ code: 0, stdout: `${ALLOW_OUTPUT}\n` });
+    await server.pollAgain();
+    expect((await server.session())?.status).toBe("needs-you");
+    expect((await server.session())?.answered).toBeUndefined();
+    expect(server.notifier.shown).toHaveLength(1);
+    expect(server.subjects()).toHaveLength(1);
+    expect((await server.waits()).today.waits).toBe(1);
   });
 
   test.each(["allow", "deny"] as const)(

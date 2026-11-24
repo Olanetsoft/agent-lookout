@@ -349,25 +349,78 @@ export function runsAProgramByOption(words: readonly string[]): boolean {
 /** Agent Lookout's own folder, as any word that names it holds it. */
 const OWN_FOLDER_NAME = ".agent-lookout";
 
-/** The path macOS reaches any file by, by its disk's and its own numbers, with no name. */
-const BY_NUMBER = "/.vol";
+/** Whether any word names Agent Lookout's own folder, in any capitals. */
+export function namesOwnFolder(words: readonly string[]): boolean {
+  return words.some((word) => word.toLowerCase().includes(OWN_FOLDER_NAME));
+}
+
+/**
+ * The folders under which a path reaches any other folder by another way than
+ * its names, so that no `..` in it can be read: on a Mac, `/.vol`, by number,
+ * `/.nofollow`, `/.resolve`, and `/System/Volumes`, whose `Data` has every
+ * folder of the disk a second time, and on Linux `/proc`, through the `cwd` or
+ * `root` of a process.
+ */
+const WAYS_AROUND: readonly string[] = [
+  "/.vol",
+  "/.nofollow",
+  "/.resolve",
+  "/proc",
+  "/system/volumes",
+];
+
+/** The second name a Mac has for a folder of its disk, before the name it goes by. */
+const DATA_VOLUME = /^\/system\/volumes\/data(?=\/|$)/;
+
+/** The marks in a word that a path can come after: `--directory=…`, `host:…`, `a,b`. */
+const MARKS = "=:,@+%";
+
+const A_MARK = new RegExp(`[${MARKS}]`);
+
+/** An option's letters, or a mark kept in a part of a word, and straight after them the start of a path. */
+const ATTACHED_PATH = new RegExp(`(?:^-[^/.${MARKS}]*|[${MARKS}])([/.].*)$`);
+
+/** The first name of a part of a word, which may only be the end of one begun before the mark. */
+const FIRST_NAME = /^(?!\.\.(?:\/|$))[^/]+/;
+
+/** The letters an old `tar` takes as options with no `-`, as in `tar xfC a.tar src`. */
+const TAR_LETTERS = /^\w*C\w*$/;
+
+/** A path made plain: how many folders it steps back, then the names it goes down by. */
+interface Steps {
+  back: number;
+  names: string[];
+  /** Whether, read from `/`, it goes through one of `WAYS_AROUND`. */
+  around: boolean;
+}
+
+function stepsOf(path: string): Steps {
+  const names: string[] = [];
+  let back = 0;
+  let around = false;
+  for (const part of path.split("/")) {
+    if (part === "" || part === ".") continue;
+    if (part !== "..") names.push(part);
+    else if (names.pop() === undefined) back += 1;
+    if (names.length <= 2) around ||= WAYS_AROUND.includes(`/${names.join("/")}`);
+  }
+  return { back, names, around };
+}
 
 /**
  * A path written in a word, made plain from its words alone, with no disk:
- * in small letters, as a Mac's disk compares names, with `//` and `/./` as
- * `/`, `..` stepping back a folder, and no `/` at the end. A word that does
- * not begin with `/` is left as it is.
+ * in small letters and one form of each accent, as a Mac's disk compares
+ * names, with `//` and `/./` as `/`, `..` stepping back a folder, and no `/`
+ * at the end. Of a word that does not begin with `/`, only the letters change.
  */
 export function plainPath(word: string): string {
-  const lower = word.toLowerCase();
-  if (!lower.startsWith("/")) return lower;
-  const parts: string[] = [];
-  for (const part of lower.split("/")) {
-    if (part === "" || part === ".") continue;
-    if (part === "..") parts.pop();
-    else parts.push(part);
-  }
-  return `/${parts.join("/")}`;
+  const lower = word.normalize().toLowerCase();
+  return lower.startsWith("/") ? `/${stepsOf(lower).names.join("/")}` : lower;
+}
+
+/** A folder's or a file's own path made plain, by the name it goes by on a Mac's disk. */
+function placeOf(path: string): string {
+  return plainPath(path).replace(DATA_VOLUME, "") || "/";
 }
 
 /** Every folder above a path, up to `/`: `/a/b/c` gives `/a/b`, `/a` and `/`. */
@@ -381,47 +434,109 @@ function foldersAbove(file: string): string[] {
   return folders;
 }
 
+/** Agent Lookout's own files, by their paths, with the ways around and every folder above any of them. */
+function placesToKeep(own: readonly string[]): Set<string> {
+  return new Set([...own, ...WAYS_AROUND].flatMap((file) => [file, ...foldersAbove(file)]));
+}
+
+function ownPlaces(ownPaths: readonly string[]): string[] {
+  return ownPaths.filter((name) => name.startsWith("/")).map(placeOf);
+}
+
 /**
  * Whether any word names Agent Lookout's own files, or a folder that holds
- * them: a word with `.agent-lookout` in it, in any capitals; a path, or the
- * value of an option such as `--directory=…`, that is the settings file, the
- * socket, or any folder above them, up to your home folder and `/`, written
- * with `..`, `//` or `/./` as well; a word that ends in the settings file's
- * own name where a setting put it outside `.agent-lookout`; and any path
- * under `/.vol`, which reaches a file by number. With the session's folder
- * known, each word is also read as a path from there, so `../..` from a
- * project is your home folder. A command that names them could change the
- * rules or answer prompts, through the file or by writing into a folder
- * above it, so an allow rule never answers it.
+ * them: a word with `.agent-lookout` in it, in any capitals; a path that is
+ * the settings file, the socket, or any folder above them, up to your home
+ * folder and `/`, written with `..`, `//` or `/./` as well, as a word of its
+ * own, after a mark such as the `=` of `--directory=…`, or attached to an
+ * option, as in `-C…`; the settings file's own name where a setting put it
+ * outside `.agent-lookout`, at the end of a path or attached to an option; and
+ * any path through one of `WAYS_AROUND`. A command that names them could change
+ * the rules or answer prompts, through the file or by writing into a folder
+ * above it, so an allow rule never answers it. An option that is no path can
+ * read as one, as `-d/` in `cut -d/` does, which refuses more than it must. A
+ * link is followed by the program, not here.
+ *
+ * With the session's folder known, a path that climbs is read too. The folder
+ * it is read from is not known: an option before it can go down a folder or
+ * up one, and the command may run in a folder under the session's, from where
+ * the same steps back reach less far up. So it is read with every number of
+ * steps back, from the session's folder and from each whole path an option
+ * names, up to its own and those the other options climb together, and is
+ * refused where it stops at, or goes on to name, one of their folders:
+ * `-C src -C ../../../../example` is `/Users/example` with three of its four.
  */
 export function namesOwnFiles(
   words: readonly string[],
   ownPaths: readonly string[] = [],
   folder?: string,
 ): boolean {
-  const own = ownPaths.filter((name) => name.startsWith("/")).map(plainPath);
-  const above = new Set(own.flatMap(foldersAbove));
+  if (namesOwnFolder(words)) return true;
+  const own = ownPlaces(ownPaths);
+  const kept = placesToKeep(own);
   const ownNames = own
     .filter((name) => !name.includes(OWN_FOLDER_NAME))
     .map((name) => name.slice(name.lastIndexOf("/") + 1));
-  const from = folder?.startsWith("/") ? folder : undefined;
-  return words.some((word) => {
-    const lower = word.toLowerCase();
-    if (lower.includes(OWN_FOLDER_NAME)) return true;
-    const parts = [lower, ...lower.split("=").slice(1)];
-    const read = parts.flatMap((part) =>
-      from !== undefined && !part.startsWith("/") && !part.startsWith("-")
-        ? [part, `${from}/${part}`]
-        : [part],
+  const tar = TAR_LETTERS.test(words[1] ?? "");
+
+  /** The same, with each word read in the parts these marks make of it. */
+  const readWith = (marks: string): boolean => {
+    const between = new RegExp(`[${marks}]`);
+    const from = folder?.startsWith("/") ? [placeOf(folder)] : [];
+    const climbing: Steps[] = [];
+    /** How many folders the options climb, all together. */
+    let climbs = 0;
+    for (const [index, whole] of words.entries()) {
+      const word = whole.toLowerCase();
+      const ofOption =
+        tar || word.startsWith("-") || words[index - 1]?.startsWith("-") || A_MARK.test(word);
+      let carried = false;
+      for (const part of word.split(between)) {
+        const last = stepsOf(part).names.at(-1) ?? "";
+        if (ownNames.some((name) => last === name || (last[0] === "-" && last.endsWith(name)))) {
+          return true;
+        }
+        // A path can go on past a mark in one of its names, which is counted before the mark.
+        const paths = [carried ? part.replace(FIRST_NAME, ".") : part];
+        carried ||= part.includes("..");
+        const attached = ATTACHED_PATH.exec(part)?.[1];
+        if (attached !== undefined) paths.push(attached);
+        let most = 0;
+        for (const path of paths) {
+          const steps = stepsOf(path);
+          if (path.startsWith("/")) {
+            const at = `/${steps.names.join("/")}`;
+            if (steps.around || kept.has(at)) return true;
+            if (ofOption) from.push(at);
+            carried = true;
+          } else if (steps.back > 0) {
+            const climb = ofOption ? Math.max(0, steps.back - steps.names.length) : 0;
+            most = Math.max(most, climb);
+            // Its own climb is in the sum of them all.
+            climbing.push({ ...steps, back: steps.back - climb });
+          }
+        }
+        climbs += most;
+      }
+    }
+    /** The fewest folders back from one of these to each of the folders above. */
+    const levels = new Map<string, number>();
+    for (const base of from) {
+      for (const [index, at] of foldersAbove(base).entries()) {
+        if (kept.has(at)) levels.set(at, Math.min(index + 1, levels.get(at) ?? Infinity));
+      }
+    }
+    return climbing.some(({ back, names: [first] }) =>
+      [...levels].some(
+        ([at, level]) =>
+          level <= back + climbs &&
+          (first === undefined || kept.has(`${at === "/" ? "" : at}/${first}`)),
+      ),
     );
-    return read.some((part) => {
-      const path = plainPath(part);
-      if (path === BY_NUMBER || path.startsWith(`${BY_NUMBER}/`)) return true;
-      if (own.some((name) => path === name || path.startsWith(`${name}/`))) return true;
-      if (above.has(path)) return true;
-      return ownNames.some((name) => path === name || path.endsWith(`/${name}`));
-    });
-  });
+  };
+  // Where one of their own paths holds a mark, a word is read with that mark as a letter too.
+  const others = [...MARKS].filter((mark) => !own.some((name) => name.includes(mark)));
+  return [...new Set([MARKS, others.join("")])].some(readWith);
 }
 
 /**
@@ -431,9 +546,7 @@ export function namesOwnFiles(
  * so an allow rule answers no command of a session there.
  */
 export function folderReachesOwnFiles(folder: string, ownPaths: readonly string[] = []): boolean {
-  const own = ownPaths.filter((name) => name.startsWith("/")).map(plainPath);
-  const path = plainPath(folder);
-  return own.some((name) => name === path || name.startsWith(`${path === "/" ? "" : path}/`));
+  return placesToKeep(ownPlaces(ownPaths)).has(placeOf(folder));
 }
 
 /** A character a word of a plain command may hold: nothing any shell gives a meaning to. */

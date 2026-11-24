@@ -5,10 +5,7 @@ import type { SessionsSnapshot } from "../../core/sessions/session.ts";
 import { mapClaudeCodeWaitingFor } from "../../core/mapping/claudeCodeMapping.ts";
 import { claudeHomeFor } from "../adapters/claude-code/index.ts";
 import { parseRegistryEntry, readRegularFile } from "../adapters/claude-code/registry.ts";
-import { GRACE_MS, type RegistryReading, type StatusReader } from "./heldAsks.ts";
-
-/** How long before its request arrives a prompt's own wait can have begun. */
-const OWN_WAIT_MS = 1_000;
+import { GRACE_MS, OWN_WAIT_MS, type RegistryReading, type StatusReader } from "./heldAsks.ts";
 
 /**
  * Whether a Claude Code session is still waiting for permission, and which
