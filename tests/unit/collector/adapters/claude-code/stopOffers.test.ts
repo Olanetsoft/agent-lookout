@@ -60,12 +60,25 @@ describe("which sessions can be stopped", () => {
   test.each([
     ["finished", "done"],
     ["failed", "failed"],
-  ])("a background job that has %s has nothing left to stop", (status, state) => {
-    const one = entry({ entrypoint: "cli", kind: "bg", status: "idle", state });
-    const { sessions, targets } = offers([one], [{ sessionId: ids.busy, id: "7c5dcf5d" }]);
-    expect(sessions[0]?.status).toBe(status);
-    expect(sessions[0]).not.toHaveProperty("stop");
-    expect(targets.size).toBe(0);
+  ])("a background job that has %s keeps Stop while its process runs", (status, state) => {
+    const one = entry({ entrypoint: "cli", kind: "bg", status: "idle" });
+    const answer: FeedEntry[] = [
+      { pid: one.pid, sessionId: ids.busy, id: "7c5dcf5d", status: "idle", state },
+    ];
+    const stopOf = (alive: boolean) => {
+      const session = sessionFromRegistry(
+        one,
+        { now: NOW, isAlive: () => alive },
+        { askedAt: NOW, entries: answer },
+      );
+      expect(session.status).toBe(status);
+      return withStopOffers([session], [one], answer, {
+        sessionsDir: SESSIONS_DIR,
+        background: true,
+      }).targets.get(`claude-code:${ids.busy}`);
+    };
+    expect(stopOf(true)).toMatchObject({ how: "background", jobId: "7c5dcf5d" });
+    expect(stopOf(false)).toBeUndefined();
   });
 
   test("a session whose process has gone has no Stop", () => {

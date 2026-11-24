@@ -975,15 +975,18 @@ describe("background jobs, which the registry cannot hold once their process has
     async function working() {
       const home = await makeClaudeHome({ [`${jobPid}.json`]: jobFile("busy", now - 50_000) });
       const clock = handClock();
-      const command: { status: string; state: string; fails: boolean } = {
-        status: "busy",
-        state: "working",
-        fails: false,
-      };
+      const command: {
+        status: string;
+        state: string;
+        fails: boolean;
+        /** What happens while it runs. */
+        during?: () => Promise<void>;
+      } = { status: "busy", state: "working", fails: false };
       const adapter = adapterFor(home, {
         now: clock.now,
-        run: async () =>
-          command.fails
+        run: async () => {
+          await command.during?.();
+          return command.fails
             ? { ok: false, problem: "did not answer within 5 seconds" }
             : {
                 ok: true,
@@ -995,7 +998,8 @@ describe("background jobs, which the registry cannot hold once their process has
                     startedAt: now - 60_000,
                   }),
                 ]),
-              },
+              };
+        },
       });
       let memory = EMPTY_CHANGE_MEMORY;
       /** One poll at this time: how it was read, the job's status, and what is told of it. */
@@ -1013,7 +1017,7 @@ describe("background jobs, which the registry cannot hold once their process has
       const writes = (status: string, at: number) =>
         writeFile(registryPath(home, `${jobPid}.json`), jobFile(status, now + at));
       expect(await poll(0)).toEqual(["registry+feed", "working"]);
-      return { adapter, command, poll, writes };
+      return { adapter, clock, command, poll, writes };
     }
 
     test.each([
@@ -1050,6 +1054,18 @@ describe("background jobs, which the registry cannot hold once their process has
       expect(await poll(38_000)).toEqual(["registry+feed", "idle"]);
       command.state = "done";
       expect(await poll(60_000)).toEqual(["registry+feed", "finished", "finished"]);
+    });
+
+    test("nor is a state from before a turn made while the command ran", async () => {
+      const { clock, command, poll, writes } = await working();
+      await writes("idle", 4_000);
+      Object.assign(command, { status: "idle", state: "blocked" });
+      command.during = async () => {
+        await writes("idle", 31_000);
+        clock.moveTo(32_000);
+      };
+      expect(await poll(30_000)).toEqual(["registry+feed", "idle"]);
+      expect(await poll(34_000)).toEqual(["registry+feed", "idle"]);
     });
 
     test("a run that fails does not end its wait and begin it anew", async () => {

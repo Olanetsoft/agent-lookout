@@ -78,8 +78,8 @@ function targetFor(
  * Says which of a poll's sessions can be stopped, and finds what each is
  * stopped by. A session that can be is given `stop`, which names the way and
  * nothing else, and its target goes into the map, by the session's id. Only a
- * live session that is still running something is offered: one that has
- * finished or failed has nothing left to stop.
+ * session whose process runs is offered, a job that has finished or failed
+ * included: its process can stay for days.
  */
 export function withStopOffers(
   sessions: readonly Session[],
@@ -92,7 +92,6 @@ export function withStopOffers(
   const targets = new Map<string, StopTarget>();
   const offered = sessions.map((session) => {
     if (session.source !== SOURCE_ID || session.alive !== true) return session;
-    if (session.status === "finished" || session.status === "failed") return session;
     const entry = session.pid === undefined ? undefined : byPid.get(session.pid);
     if (entry === undefined || session.id !== `${SOURCE_ID}:${entry.sessionId}`) return session;
     const target = targetFor(entry, answer, options);

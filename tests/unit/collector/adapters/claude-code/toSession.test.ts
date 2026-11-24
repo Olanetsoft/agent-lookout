@@ -651,6 +651,21 @@ describe("a live background job", () => {
     expect(shown({}, { state: "working" }).status).toBe("idle");
   });
 
+  test("takes its state whichever of the process's entries comes first", () => {
+    const entries = [{ ...listed, id: undefined, state: undefined }, listed];
+    for (const both of [entries, [...entries].reverse()]) {
+      const job = sessionFromRegistry(file, context, { askedAt, entries: both });
+      expect(job.status).toBe("needs-you");
+    }
+  });
+
+  test("that waits keeps the reason its own file gives", () => {
+    expect(shown({ status: "waiting" }, { waitingFor: "input needed" })).toMatchObject({
+      status: "needs-you",
+      waitingReason: "permission",
+    });
+  });
+
   test.each<[string, Record<string, unknown>, Record<string, unknown>, string]>([
     ["went idle after the command was asked", { statusUpdatedAt: askedAt + 1 }, {}, "idle"],
     ["does not say when it went idle", { statusUpdatedAt: undefined }, {}, "idle"],

@@ -205,12 +205,12 @@ function jobStateOf(
   if (entry.status !== "idle" || entry.state !== undefined) return undefined;
   const since = plausibleTime(entry.statusUpdatedAt, now);
   if (since === null || since > answer.askedAt) return undefined;
+  // The command can list one process twice, and only the job's entry has a state.
   const job = answer.entries.find(
-    (listed) => listed.pid === entry.pid && describesSameSession(listed, entry),
+    (listed) =>
+      listed.pid === entry.pid && listed.state !== undefined && describesSameSession(listed, entry),
   );
-  return job?.status === "idle" && job.state !== undefined
-    ? { state: job.state, waitingFor: job.waitingFor }
-    : undefined;
+  return job?.status === "idle" ? { state: job.state, waitingFor: job.waitingFor } : undefined;
 }
 
 /**

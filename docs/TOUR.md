@@ -1699,7 +1699,7 @@ Thirteen files call `actionRefusalFor`:
 
 **Why it works this way.**
 
-- **Only some sessions can be stopped.** A session needs a registry file that names its kind and records a start time.
+- **Only some sessions can be stopped.** A session needs a process that runs, and a registry file that names its kind and records a start time. A job that has finished or failed keeps Stop while its process runs.
   - An `interactive` session in a terminal or in VS Code is sent SIGTERM.
   - A `bg` background job is stopped with `claude stop <jobId>`, and the job ID must match `JOB_ID`. Claude Code's supervisor would restart a job whose process was simply ended.
   - A session in the desktop app is not stopped. That app looks after its own process, and nothing says how it handles an outside stop. A session whose app is unknown might be in the desktop app, so it is not stopped either.

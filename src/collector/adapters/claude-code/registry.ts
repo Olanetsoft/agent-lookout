@@ -34,7 +34,8 @@ import { validPid } from "../../processes/pids.ts";
  *   the moment the file itself was last written, hours or days earlier for a
  *   session that had stayed in one status. The rule that tells one wait from
  *   the next relies on this (`src/core/notices/sessionChanges.ts`): were the time to move
- *   during a wait, every move would be taken for a new wait. Whether it moves
+ *   during a wait, every move would be taken for a new wait. Nor would a job's
+ *   state be used past a move until the command is run again. Whether it moves
  *   when only `waitingFor` changes has not been seen either way.
  * - So the file is not rewritten as the session works: a session busy on one
  *   task for an hour keeps a file an hour old. Its modified time says nothing
