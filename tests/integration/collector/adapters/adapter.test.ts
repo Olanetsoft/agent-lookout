@@ -871,11 +871,19 @@ test("PRIVACY.md and the Oh My Pi notes name what is read and from which version
   const line = (start: string) => privacy.split("\n").find((one) => one.startsWith(start)) ?? "";
 
   const omp = line("For Oh My Pi, Agent Lookout reads");
-  for (const words of ["built from Oh My Pi's source at v19.0.0", "`ps`", "no lock"]) {
+  for (const words of [
+    "built from Oh My Pi's source at v19.0.0",
+    "from 19.1.0",
+    "v19.1.1",
+    "an approval's reason",
+    "`ps`",
+    "no lock",
+  ]) {
     expect(omp, words).toContain(words);
   }
   expect(omp).not.toContain("Grok Build");
   expect(OH_MY_PI_UNCHECKED_NOTE).toContain("v19.0.0");
+  expect(OH_MY_PI_UNCHECKED_NOTE).toContain("v19.1.1");
   expect(notes).toContain("MIT");
 
   const start = privacy.indexOf("### Oh My Pi's files");
@@ -893,6 +901,8 @@ test("PRIVACY.md and the Oh My Pi notes name what is read and from which version
       "XDG_DATA_HOME",
       "session_exit",
       "tool_execution_start",
+      "tool_approval_requested",
+      "tool_approval_resolved",
       "provider_refusal",
       "session-owners",
       "agent.db",
@@ -906,7 +916,14 @@ test("PRIVACY.md and the Oh My Pi notes name what is read and from which version
       expect(text, field).toContain(field);
     }
   }
-  for (const field of ["57771ae", "v19.0.0", "session-title-slot.ts", "agent-session.ts"]) {
+  for (const field of [
+    "57771ae",
+    "v19.0.0",
+    "31ffee5",
+    "v19.1.1",
+    "session-title-slot.ts",
+    "agent-session.ts",
+  ]) {
     expect(notes, field).toContain(field);
   }
 });

@@ -17,11 +17,12 @@ import {
   SESSION_DIR_NOTE,
   STATUS_NOTE,
   TOO_FAR_NOTE,
+  TOO_MANY_NOTE,
   UNCHECKED_NOTE,
   UNREAD_NOTE,
   WINDOWS_NOTE,
 } from "@collector/adapters/oh-my-pi/index";
-import { MAX_TAIL_BYTES } from "@collector/adapters/oh-my-pi/tail";
+import { MAX_OPEN_APPROVALS, MAX_TAIL_BYTES } from "@collector/adapters/oh-my-pi/tail";
 import {
   DSH_TABLE_ARGS,
   dshInTable,
@@ -32,6 +33,8 @@ import type { ReadOnlyIo } from "@collector/files/readOnlyIo";
 import { EMPTY_CHANGE_MEMORY, sessionChanges } from "@core/notices/sessionChanges";
 import { CLOCK_SLACK_MS, WRITE_TIME_STEP_MS } from "@core/time";
 import {
+  approvalEnd,
+  approvalRequest,
   codexLines,
   CWD,
   DAY,
@@ -86,7 +89,7 @@ function watching(read: string, folder = "~/.omp/agent/sessions", processCheckRu
     {
       label: "Files read",
       value:
-        "Line 1 and line 2 of each .jsonl, the start of line 3, and its newest lines back to the one that decides, at most 8 MiB, as bytes. Only the title, line 2 and three times become text",
+        "Line 1 and line 2 of each .jsonl, the start of line 3, and its newest lines back to the newest exit, at most 8 MiB, as bytes. Only the title, line 2 and four times become text",
     },
     { label: "Process check", value: "ps -A -o pid=,lstart=,comm=" },
     { label: "Process check run", value: processCheckRun },
@@ -548,6 +551,410 @@ describe("a session's status", () => {
     expect(dshInTable(nix, OWN_PID, ompNamesFor("linux"))).toMatchObject({
       programs: [{ desktop: true }],
     });
+  });
+});
+
+describe("a session that waits for an approval", () => {
+  const askedAt = NOW - 2 * MINUTE;
+  /** A turn whose reply named two calls, the first asked about. */
+  const turn =
+    message("user", { at: askedAt - MINUTE }) +
+    message("assistant", { at: askedAt - SECOND }) +
+    toolStart("bash", askedAt) +
+    approvalRequest(askedAt);
+
+  /** Polls an adapter, adding these lines before each poll but the first, and what each showed and announced. */
+  async function follow(text: string, steps: readonly string[]) {
+    const files = filesWith(text);
+    const clock = handClock();
+    const adapter = ohMyPiAdapterFor(files, { now: clock.now });
+    let memory = EMPTY_CHANGE_MEMORY;
+    const shown: (string | number | null | undefined)[][] = [];
+    const events: string[] = [];
+    for (const step of ["", ...steps]) {
+      if (step !== "") appendSession(files, FILE, step, clock.now());
+      const result = await adapter.poll();
+      const session = result.sessions[0];
+      shown.push([session?.status, session?.statusSince, session?.waitingReason]);
+      const next = sessionChanges(memory, {
+        generatedAt: clock.now(),
+        sources: [{ ...result.health, basis: result.basis }],
+        sessions: result.sessions,
+      });
+      memory = next.memory;
+      events.push(...next.changes.map(({ event }) => event));
+      clock.advance(2 * SECOND);
+    }
+    return { shown, events };
+  }
+
+  test("needs you for permission, since it was asked, until it is answered or its result is written", async () => {
+    const needs = ["needs-you", askedAt, "permission"];
+    const working = ["working", null, undefined];
+    for (const approved of [true, false]) {
+      const answered = await follow(sessionText(turn), [
+        passedLines(),
+        approvalEnd(NOW, { approved }),
+        message("toolResult", { at: NOW }),
+      ]);
+      expect(answered.shown).toEqual([needs, needs, working, working]);
+    }
+    const closed = await follow(sessionText(turn), [message("toolResult", { at: NOW })]);
+    expect(closed.shown).toEqual([needs, working]);
+  });
+
+  test("is announced once, and once more for another asked for after it was answered", async () => {
+    const { shown, events } = await follow(sessionText(message("user", { at: askedAt - MINUTE })), [
+      message("assistant", { at: askedAt }) + toolStart("bash", askedAt),
+      approvalRequest(askedAt),
+      passedLines(),
+      approvalEnd(NOW),
+      message("toolResult", { at: NOW }) + message("assistant", { at: NOW }),
+      toolStart("bash", NOW, { callId: "call-2" }) +
+        approvalRequest(NOW + SECOND, { callId: "call-2" }),
+    ]);
+    expect(shown.map(([status]) => status)).toEqual([
+      "working",
+      "working",
+      "needs-you",
+      "needs-you",
+      "working",
+      "unknown",
+      "needs-you",
+    ]);
+    expect(events.filter((event) => event === "needs-you")).toHaveLength(2);
+  });
+
+  test("keeps the time its wait began while another asked for meanwhile still waits, and is announced once", async () => {
+    const { shown, events } = await follow(sessionText(message("user", { at: askedAt - MINUTE })), [
+      turn,
+      toolStart("bash", NOW, { callId: "call-2" }) + approvalRequest(NOW, { callId: "call-2" }),
+      approvalEnd(NOW),
+      message("toolResult", { at: NOW }),
+      approvalEnd(NOW, { callId: "call-2" }),
+    ]);
+    expect(shown.map(([status, since]) => [status, since])).toEqual([
+      ["working", null],
+      ["needs-you", askedAt],
+      ["needs-you", askedAt],
+      ["needs-you", askedAt],
+      ["needs-you", askedAt],
+      ["working", null],
+    ]);
+    expect(events.filter((event) => event === "needs-you")).toHaveLength(1);
+  });
+
+  test("a nested call's, until the result of the call that dispatched it, and a command's of its bash call past that", async () => {
+    const inEval = (callId: string) =>
+      sessionText(
+        message("assistant", { at: askedAt }) +
+          toolStart("eval", askedAt) +
+          approvalRequest(askedAt, { callId, parentId: "call-1" }),
+      );
+    const steps = [message("toolResult", { at: NOW }), message("assistant", { at: NOW })];
+    const nested = await follow(inEval("js-read-1"), steps);
+    expect(nested.shown.map(([status]) => status)).toEqual(["needs-you", "working", "unknown"]);
+    const command = await follow(inEval("js-bash-1:cmd:0"), [
+      ...steps,
+      toolStart("read", NOW, { callId: "call-2" }),
+      approvalEnd(NOW, { callId: "js-bash-1:cmd:0" }),
+    ]);
+    const needs = ["needs-you", askedAt, "permission"];
+    expect(command.shown).toEqual([needs, needs, needs, needs, ["working", null, undefined]]);
+  });
+
+  /** A turn whose bash call runs a tool as a command, which asks, and the result that call gets meanwhile. */
+  const command =
+    message("user", { at: askedAt - MINUTE }) +
+    message("assistant", { at: askedAt - SECOND }) +
+    toolStart("bash", askedAt) +
+    approvalRequest(askedAt, { callId: "call-1:cmd:0", toolName: "mcp__x" });
+  const backgrounded = message("toolResult", { at: askedAt + SECOND });
+
+  test("needs you while a command in the background waits, whatever the session goes on to write, until its own end", async () => {
+    const { shown, events } = await follow(sessionText(message("user", { at: askedAt - MINUTE })), [
+      command,
+      backgrounded,
+      message("assistant", { at: NOW }),
+      toolStart("read", NOW, { callId: "call-2" }),
+      message("toolResult", { at: NOW, callId: "call-2" }),
+      message("developer", { at: NOW }),
+      message("assistant", { at: NOW }),
+      message("user", { at: NOW }),
+      approvalEnd(NOW, { callId: "call-1:cmd:0" }),
+    ]);
+    const needs = ["needs-you", askedAt, "permission"];
+    const working = ["working", null, undefined];
+    expect(shown).toEqual([working, ...Array<unknown>(8).fill(needs), working]);
+    expect(events.filter((event) => event === "needs-you")).toHaveLength(1);
+    // One asked for after its call's result, as with async, or by an eval in the background, waits on too.
+    for (const asked of [
+      approvalRequest(askedAt, { callId: "call-1:cmd:0" }),
+      approvalRequest(askedAt, { callId: "call-9", parentId: "call-1" }),
+    ]) {
+      const later = await follow(
+        sessionText(
+          message("assistant", { at: askedAt }) + toolStart("bash", askedAt) + backgrounded,
+        ),
+        [asked, message("assistant", { at: NOW })],
+      );
+      expect(later.shown).toEqual([working, needs, needs]);
+    }
+  });
+
+  test("an exit after it ends the wait, and so does a reply after one whose call has no result, as a crash leaves it", async () => {
+    for (const [step, status] of [
+      [message("assistant", { at: NOW }), "unknown"],
+      [sessionExit("normal", NOW), "finished"],
+      [sessionExit("fatal", NOW), "failed"],
+    ] as const) {
+      const { shown } = await follow(sessionText(turn), [step]);
+      expect(shown.map(([shownStatus]) => shownStatus)).toEqual(["needs-you", status]);
+    }
+    const resumed = await follow(sessionText(turn), [
+      message("user", { at: NOW }),
+      message("assistant", { at: NOW }) + toolStart("bash", NOW, { callId: "call-2" }),
+    ]);
+    expect(resumed.shown.map(([status]) => status)).toEqual(["needs-you", "needs-you", "working"]);
+    const command2 = await follow(sessionText(command + backgrounded), [sessionExit("fatal", NOW)]);
+    expect(command2.shown.map(([status]) => status)).toEqual(["needs-you", "failed"]);
+  });
+
+  test("one asked for after an exit needs you, not finished, while an omp that could have asked runs", async () => {
+    const exitAt = askedAt - 5 * MINUTE;
+    // A session resumed after it ended, in which code the person runs calls a tool, before any prompt.
+    const resumed =
+      message("user", { at: exitAt - MINUTE }) +
+      message("assistant", { at: exitAt - MINUTE }) +
+      sessionExit("normal", exitAt) +
+      approvalRequest(askedAt, { callId: "js-mcp-1" });
+    // --restore within 15 seconds of a quit.
+    const restored =
+      message("user", { at: askedAt - MINUTE }) +
+      sessionExit("signal", askedAt - 5 * SECOND) +
+      message("assistant", { at: askedAt - 2 * SECOND }) +
+      toolStart("bash", askedAt) +
+      toolStart("read", askedAt, { callId: "call-3" }) +
+      approvalRequest(askedAt) +
+      message("toolResult", { at: askedAt + SECOND, callId: "call-3" });
+    for (const text of [resumed, restored]) {
+      const { shown } = await follow(sessionText(text), [passedLines()]);
+      const needs = ["needs-you", askedAt, "permission"];
+      expect(shown).toEqual([needs, needs]);
+      const gone = await statusOf(sessionText(text), { ps: standInPs([]) });
+      expect(gone).toMatchObject({ status: "finished" });
+      expect(gone?.statusSince).toBeGreaterThanOrEqual(askedAt);
+    }
+    const { shown } = await follow(sessionText(resumed), [
+      approvalEnd(NOW, { callId: "js-mcp-1", approved: false }),
+    ]);
+    expect(shown[1]).toEqual(["finished", exitAt, undefined]);
+  });
+
+  test("one a crash left is not backed by an omp that opened the file since, and wrote more", async () => {
+    // Killed with its command's approval open, after the call's result.
+    const files = filesWith(sessionText(command + backgrounded), askedAt + SECOND);
+    const clock = handClock();
+    const ps = standInPs([psLine(7001, askedAt - HOUR, "omp")]);
+    const adapter = ohMyPiAdapterFor(files, { now: clock.now, ps });
+    const shown = async () => (await adapter.poll()).sessions[0];
+    expect(await shown()).toMatchObject({ status: "needs-you" });
+    ps.set([]);
+    clock.advance(PROCESS_CHECK_MS);
+    expect(await shown()).toMatchObject({ status: "finished", statusSince: askedAt + SECOND });
+    // Resumed two minutes after it was asked, by another omp.
+    clock.advance(PROCESS_CHECK_MS);
+    ps.set([psLine(7003, clock.now() - 8 * SECOND, "omp")]);
+    for (const [step, status] of [
+      [message("user", { at: clock.now() }), "working"],
+      [message("assistant", { at: clock.now() }), "unknown"],
+      [toolStart("bash", clock.now(), { callId: "call-2" }), "working"],
+      [message("toolResult", { at: clock.now(), callId: "call-2" }), "working"],
+    ] as const) {
+      appendSession(files, FILE, step, clock.now());
+      expect((await shown())?.status).toBe(status);
+      clock.advance(2 * SECOND);
+    }
+    // On a Mac, a bun that ran then may be the omp that asked, so it is not said to work.
+    ps.set([psLine(7002, askedAt - HOUR, "bun"), psLine(7003, clock.now() - 20 * SECOND, "omp")]);
+    clock.advance(PROCESS_CHECK_MS);
+    appendSession(files, FILE, toolStart("bash", clock.now()), clock.now());
+    expect((await shown())?.status).toBe("unknown");
+  });
+
+  test("a file from before Oh My Pi 19.1.0, with neither line, shows as working, as before", async () => {
+    const { shown } = await follow(
+      sessionText(message("user") + message("assistant") + toolStart("bash", askedAt)),
+      [message("toolResult", { at: NOW }), toolStart("bash", NOW)],
+    );
+    expect(shown.map(([status]) => status)).toEqual(["working", "working", "working"]);
+  });
+
+  test("a subagent's approval, in its own file, does not count for its parent", async () => {
+    const files = filesWith(
+      sessionText(message("user") + message("assistant") + toolStart("task", askedAt)),
+    );
+    writeSession(
+      files,
+      `${PROJECT_FOLDER}/2026-10-01T11-00-00-000Z_${SESSION_ID}/agent-1.jsonl`,
+      sessionText(turn, { header: { id: sessionIdOf(2) } }),
+      NOW - MINUTE,
+    );
+    const { sessions } = await ohMyPiAdapterFor(files).poll();
+    expect(sessions.map(({ id, status }) => [id, status])).toEqual([
+      [`oh-my-pi:${SESSION_ID}`, "working"],
+    ]);
+  });
+
+  test("does not outlive the omp that asked, whatever another writes after it", async () => {
+    const files = filesWith(sessionText(turn), askedAt);
+    const clock = handClock();
+    const ps = standInPs([psLine(7001, askedAt - HOUR, "omp")]);
+    const adapter = ohMyPiAdapterFor(files, { now: clock.now, ps });
+    expect((await adapter.poll()).sessions[0]).toMatchObject({ status: "needs-you" });
+    // It is killed: nothing is written.
+    ps.set([]);
+    clock.advance(PROCESS_CHECK_MS);
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "finished",
+      statusSince: askedAt,
+    });
+    // Another, started since, opens it and writes a line that decides nothing.
+    clock.advance(PROCESS_CHECK_MS);
+    ps.set([psLine(7003, clock.now() - 8 * SECOND, "omp")]);
+    appendSession(files, FILE, passedLines(clock.now() - 4 * SECOND), clock.now() - 4 * SECOND);
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "finished",
+      statusSince: askedAt,
+    });
+  });
+
+  test("one asked after the file's last write, as by another computer's clock, is judged by that write", async () => {
+    const files = filesWith(sessionText(turn), askedAt - 5 * MINUTE);
+    // An omp that started after that write did not ask.
+    const ps = standInPs([psLine(7003, askedAt - 2 * MINUTE, "omp")]);
+    const { sessions } = await ohMyPiAdapterFor(files, { ps }).poll();
+    expect(sessions[0]).toMatchObject({
+      status: "finished",
+      statusSince: askedAt - 5 * MINUTE,
+    });
+  });
+
+  test("with no omp known to back it, or a file quiet for 30 minutes, is unknown", async () => {
+    const bun = standInPs([psLine(7002, NOW - HOUR, "/Users/example/.bun/bin/bun")]);
+    expect(await statusOf(sessionText(turn), { ps: bun })).toMatchObject({ status: "unknown" });
+    const quiet = ohMyPiAdapterFor(
+      filesWith(
+        sessionText(toolStart("bash", NOW - 31 * MINUTE) + approvalRequest(NOW - 31 * MINUTE)),
+        NOW - 30 * MINUTE,
+      ),
+    );
+    expect((await quiet.poll()).sessions[0]?.status).toBe("unknown");
+    const ps = standInPs([]);
+    const windows = ohMyPiAdapterFor(filesWith(sessionText(turn)), { platform: "win32", ps });
+    expect((await windows.poll()).sessions[0]).toMatchObject({
+      status: "unknown",
+      statusSince: null,
+    });
+    expect(ps.runs).toHaveLength(0);
+  });
+
+  test("a copy's, asked before its header, waits in the session copied and not in the copy", async () => {
+    const copy = await statusOf(sessionText(turn, { header: { at: askedAt + SECOND } }));
+    expect(copy).toMatchObject({ status: "working" });
+    expect(copy).not.toHaveProperty("waitingReason");
+  });
+
+  test("a file with no line that decides is listed while one waits in it, and not after", async () => {
+    const { shown } = await follow(sessionText(approvalRequest(askedAt)), [approvalEnd(NOW)]);
+    expect(shown).toEqual([
+      ["needs-you", askedAt, "permission"],
+      [undefined, undefined, undefined],
+    ]);
+  });
+
+  const big = `{"type":"model_usage","pad":"${"x".repeat(MAX_TAIL_BYTES)}"}\n`;
+  const other = message("toolResult", { callId: "call-2" });
+  /** A turn with more approvals at once than are kept, all ended. */
+  const many =
+    Array.from({ length: MAX_OPEN_APPROVALS + 1 }, (_, index) =>
+      approvalRequest(askedAt, { callId: `many-${index}` }),
+    ).join("") +
+    Array.from({ length: MAX_OPEN_APPROVALS + 1 }, (_, index) =>
+      approvalEnd(askedAt, { callId: `many-${index}` }),
+    ).join("");
+
+  test("one that could wait unseen leaves the session unknown, and the card says why", async () => {
+    for (const [text, note] of [
+      [turn + "garbage\n" + message("toolResult"), UNREAD_NOTE],
+      [turn + big + other, TOO_FAR_NOTE],
+      [message("assistant") + toolStart("bash") + many, TOO_MANY_NOTE],
+    ] as const) {
+      const { sessions, health } = await ohMyPiAdapterFor(filesWith(sessionText(text))).poll();
+      expect(sessions[0]).toMatchObject({ status: "unknown" });
+      expect(health.detail).toBe(`${READ_DETAIL} ${note}`);
+      expect(note.length).toBeLessThanOrEqual(130);
+    }
+  });
+
+  test("the card gives no such reason for a session that is unknown for another, or that needs you", async () => {
+    const bad = approvalRequest(askedAt).replace('"toolName"', '"name"');
+    const ask = toolStart("ask", askedAt, { callId: "call-3" });
+    const open = message("assistant") + toolStart("bash", askedAt);
+    const waits = [
+      message("assistant") + big + toolStart("bash", askedAt) + approvalRequest(askedAt),
+      message("assistant") + big + ask,
+      open + bad + approvalRequest(askedAt),
+      open + bad + ask,
+      open + many + approvalRequest(askedAt),
+    ];
+    const unseen = [open + bad, open + big + other, open + many];
+    const detailOf = async (
+      text: string,
+      status: string,
+      mtimeMs = NOW - MINUTE,
+      options: Parameters<typeof ohMyPiAdapterFor>[1] = {},
+    ) => {
+      const files = filesWith(sessionText(text), mtimeMs);
+      const { sessions, health } = await ohMyPiAdapterFor(files, options).poll();
+      expect(sessions[0]?.status).toBe(status);
+      return health.detail;
+    };
+    for (const text of waits) expect(await detailOf(text, "needs-you")).toBe(READ_DETAIL);
+    // Nor for one whose newest line cannot be read, while one it cannot end waits.
+    const long = toolStart("bash", askedAt, { callId: "c".repeat(600) });
+    expect(await detailOf(open + approvalRequest(askedAt) + long, "needs-you")).toBe(READ_DETAIL);
+    for (const text of [...waits, ...unseen]) {
+      // Quiet for 31 minutes, with only a bun running, and on Windows.
+      expect(await detailOf(text, "unknown", NOW - 31 * MINUTE)).toBe(READ_DETAIL);
+      const ps = standInPs([psLine(7002, NOW - HOUR, "/Users/example/.bun/bin/bun")]);
+      expect(await detailOf(text, "unknown", undefined, { ps })).toBe(READ_DETAIL);
+      const windows = await detailOf(text, "unknown", undefined, { platform: "win32" });
+      for (const note of [UNREAD_NOTE, TOO_FAR_NOTE, TOO_MANY_NOTE]) {
+        expect(windows).not.toContain(note);
+      }
+    }
+  });
+
+  test("its reason, its tool's name and its calls' IDs reach nothing shown or announced", async () => {
+    const result = await ohMyPiAdapterFor(
+      filesWith(
+        sessionText(
+          turn +
+            approvalRequest(askedAt, {
+              callId: "PRIVATE_CALL",
+              parentId: "PRIVATE_PARENT",
+              toolName: "PRIVATE_TOOL",
+            }) +
+            approvalEnd(askedAt, { approved: false }),
+        ),
+      ),
+    ).poll();
+    expect(result.sessions[0]).toMatchObject({ status: "needs-you", waitingReason: "permission" });
+    expect(result.sessions[0]).not.toHaveProperty("waitingDetail");
+    expect(result.sessions[0]).not.toHaveProperty("waitingText");
+    const text = JSON.stringify(result);
+    for (const word of [...PRIVATE_WORDS, "PRIVATE_", "call-1"]) expect(text).not.toContain(word);
   });
 });
 

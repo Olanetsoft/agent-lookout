@@ -4,6 +4,14 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 ## Unreleased
 
+### Added
+
+- An Oh My Pi session waiting for your approval of a tool shows in Needs you, since it was asked, until it is answered, its result is written or Oh My Pi stops, for up to 30 minutes after the file's last write, while an `omp` that could have asked runs, on macOS and Linux. One that a command in the background asks for shows while the session goes on to other prompts and replies. Oh My Pi writes these waits from 19.1.0, so an older one's still show as working, and so does one an editor that runs Oh My Pi over ACP asks for, which is not written. Of their lines the calls' IDs are compared as bytes and when the approval was asked is read. Its reason is stepped over as bytes and never turned into text, kept or shown, and a subagent's approval does not count for its parent. This was checked in Oh My Pi's source at v19.1.1, and not yet on a computer running it. (#435)
+
+### Changed
+
+- An Oh My Pi session whose open turn goes back more than 8 MiB, past where an approval could wait unseen, shows as unknown instead of working until its next reply or prompt. (#435)
+
 ### Fixed
 
 - An Antigravity CLI conversation opened with `agy -r <id>` or `agy --resume <id>`, as agy 1.5.16 also spells `--conversation`, is taken as open from the start. Before, it could show as finished while it was open, once another agy wrote to a conversation of its own. An agy started with `--remote-agent` as its first option, whose conversations are kept with a remote project, no longer keeps conversations on this computer from showing as finished. (#437)

@@ -1,8 +1,9 @@
 // Test fixtures only. Every ID, name, path and word here is invented and
 // generic. A session file follows the shape Oh My Pi's source at v19.0.0
-// writes, as written up in docs/adapters/oh-my-pi.md: a title slot of 256
-// bytes, the header, then one entry a line, each `JSON.stringify` of its
-// fields in the order Oh My Pi builds them. Nothing in it is copied from a
+// writes, with its approval lines as v19.1.1 writes them, as written up in
+// docs/adapters/oh-my-pi.md: a title slot of 256 bytes, the header, then one
+// entry a line, each `JSON.stringify` of its fields in the order Oh My Pi
+// builds them. Nothing in it is copied from a
 // real machine or from Oh My Pi's code: Oh My Pi was not run to make it.
 // Product code never imports this file.
 
@@ -46,6 +47,7 @@ export const PRIVATE_SUMMARY = "PRIVATE_SUMMARY placeholder summary that must ne
 export const PRIVATE_BRANCH = "PRIVATE_BRANCH-placeholder";
 export const PRIVATE_LABEL = "PRIVATE_LABEL placeholder";
 export const PRIVATE_PATH = "/Users/example/PRIVATE_PATH/placeholder.jsonl";
+export const PRIVATE_REASON = "PRIVATE_REASON placeholder reason that must never leave the file";
 export const PRIVATE_GOAL = "PRIVATE_GOAL placeholder goal that must never leave the file";
 /** Written where the header's own copy of the title goes, and in a slot with no source. */
 export const PRIVATE_TITLE = "PRIVATE_TITLE placeholder title";
@@ -62,6 +64,7 @@ export const PRIVATE_WORDS = [
   "PRIVATE_BRANCH",
   "PRIVATE_LABEL",
   "PRIVATE_PATH",
+  "PRIVATE_REASON",
   "PRIVATE_GOAL",
   "PRIVATE_TITLE",
   "PRIVATE_CODEX_TITLE",
@@ -136,10 +139,10 @@ function base(type: string, at: number, options: { id?: string; runtime?: boolea
   };
 }
 
-/** A message entry of a role, whose message holds a private word. */
+/** A message entry of a role, whose message holds a private word, and for a tool's result its call after its role. */
 export function message(
   role: string,
-  options: { at?: number; id?: string; runtime?: boolean } = {},
+  options: { at?: number; id?: string; runtime?: boolean; callId?: string } = {},
 ): string {
   const at = options.at ?? NOW - MINUTE;
   const text = role === "assistant" ? PRIVATE_REPLY : PRIVATE_PROMPT;
@@ -147,11 +150,13 @@ export function message(
     ...base("message", at, options),
     message: {
       role,
+      ...(role === "toolResult"
+        ? { toolCallId: options.callId ?? "call-1", toolName: "bash" }
+        : {}),
       content: [{ type: "text", text }],
       ...(role === "assistant"
         ? { stopReason: "stop", errorMessage: PRIVATE_REPLY }
         : { timestamp: at }),
-      ...(role === "toolResult" ? { toolCallId: "call-1", toolName: "bash" } : {}),
     },
   });
 }
@@ -183,6 +188,45 @@ export function toolStart(
       intent: PRIVATE_INTENT,
     },
     { at: options.at ?? startedAt },
+  );
+}
+
+/** The line written before a tool's approval prompt opens, with a private reason unless none is given. */
+export function approvalRequest(
+  requestedAt: number = NOW - MINUTE,
+  options: { callId?: string; parentId?: string; reason?: string | null; toolName?: string } = {},
+): string {
+  const reason = options.reason === undefined ? PRIVATE_REASON : options.reason;
+  return custom(
+    "tool_approval_requested",
+    {
+      toolCallId: options.callId ?? "call-1",
+      ...(options.parentId === undefined ? {} : { parentToolCallId: options.parentId }),
+      toolName: options.toolName ?? "bash",
+      approvalMode: "always-ask",
+      ...(reason === null ? {} : { reason }),
+      requestedAt: iso(requestedAt),
+    },
+    { at: requestedAt },
+  );
+}
+
+/** The line written when that wait ends, with a private reason when it was not approved. */
+export function approvalEnd(
+  resolvedAt: number = NOW - MINUTE,
+  options: { callId?: string; approved?: boolean } = {},
+): string {
+  const approved = options.approved ?? true;
+  return custom(
+    "tool_approval_resolved",
+    {
+      toolCallId: options.callId ?? "call-1",
+      toolName: "bash",
+      approved,
+      ...(approved ? {} : { reason: PRIVATE_REASON }),
+      resolvedAt: iso(resolvedAt),
+    },
+    { at: resolvedAt },
   );
 }
 
