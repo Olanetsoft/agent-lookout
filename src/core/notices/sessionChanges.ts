@@ -97,7 +97,7 @@ function laterOf(a: number | null, b: number | null): number | null {
  *   no sessions, so a wait in a folder of status files made later has started.
  * - So is the first answer that reads a part its source's answers have named
  *   as not read until then (`notRead`), for that part: a Hermes Agent profile,
- *   or each source on another machine whose Agent Lookout had only just begun.
+ *   or each source on another computer whose Agent Lookout had only just begun.
  * - After that, a session that needs the person and is not remembered has
  *   started. A remembered one that is now in any other status, or gone from
  *   the list, has stopped.

@@ -686,34 +686,34 @@ describe("a source read in parts", () => {
       expect(read.changes).toEqual([]);
     });
 
-    test("of a machine whose Agent Lookout has just begun is each source there, however that answer names them", () => {
+    test("of a computer whose Agent Lookout has just begun is each source there, however that answer names them", () => {
       const OPENCODE = "remote:devbox:opencode:ses_000000000000000000000000a1";
       const THERE = "remote:devbox:hermes-agent:coder/20261001_110000_0000b1";
-      const machine = (sessions: Session[], notRead: string[]) =>
+      const computer = (sessions: Session[], notRead: string[]) =>
         snapshot(
           sessions.map((session) => ({ ...session, source: "remote:devbox" })),
           [{ ...source("remote:devbox"), basis: "api", notRead }],
         );
       const memory = memoryAfter(
-        machine([], ["remote:devbox:opencode:", "remote:devbox:hermes-agent:"]),
+        computer([], ["remote:devbox:opencode:", "remote:devbox:hermes-agent:"]),
       );
       // Only some profiles of the source named whole are read, and then it fails whole again.
       const some = waitChanges(
         memory,
-        machine([waiting(OPENCODE)], ["remote:devbox:hermes-agent:coder/"]),
+        computer([waiting(OPENCODE)], ["remote:devbox:hermes-agent:coder/"]),
       );
       expect(some.started).toEqual([]);
       const none = waitChanges(
         some.memory,
-        machine([waiting(OPENCODE)], ["remote:devbox:hermes-agent:"]),
+        computer([waiting(OPENCODE)], ["remote:devbox:hermes-agent:"]),
       );
-      const all = waitChanges(none.memory, machine([waiting(OPENCODE), waiting(THERE)], []));
+      const all = waitChanges(none.memory, computer([waiting(OPENCODE), waiting(THERE)], []));
       expect(all.started).toEqual([]);
       // Both have been read, so the next wait of each is news.
       const asked = { statusSince: at + 1 };
       const next = waitChanges(
         all.memory,
-        machine([waiting(OPENCODE, asked), waiting(THERE, asked)], []),
+        computer([waiting(OPENCODE, asked), waiting(THERE, asked)], []),
       );
       expect(next.started.map((session) => session.id)).toEqual([OPENCODE, THERE]);
     });
