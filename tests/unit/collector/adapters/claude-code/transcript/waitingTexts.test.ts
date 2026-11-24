@@ -56,6 +56,15 @@ describe("AGENT_LOOKOUT_WAITING_TEXT", () => {
   });
 });
 
+/** An agent the session started earlier, which could ask again. */
+function agentRan(): string {
+  const id = toolUseId();
+  return transcript([
+    toolUse(id, "Agent", { description: "Look into it" }),
+    toolResult(id, { result: { status: "completed" } }),
+  ]);
+}
+
 describe("what a waiting session is asking", () => {
   test("is read from the end of its transcript and given as waitingText", async () => {
     const { files, reader } = setUp();
@@ -68,7 +77,7 @@ describe("what a waiting session is asking", () => {
     const { files, reader } = setUp();
     const ran = (at: number) =>
       transcript([toolUse(toolUseId(), "Bash", { command: "npm test" }, { at })]);
-    files.write(FILE, ran(SINCE - 60_000));
+    files.write(FILE, agentRan() + ran(SINCE - 60_000));
     expect((await reader.annotate([waiting()]))[0]).not.toHaveProperty("waitingText");
     files.append(FILE, ran(SINCE - 500));
     expect((await reader.annotate([waiting()]))[0]?.waitingText).toBe("Run: npm test");
@@ -78,14 +87,15 @@ describe("what a waiting session is asking", () => {
     const { files, reader } = setUp();
     files.write(
       FILE,
-      transcript([
-        toolUse(
-          toolUseId(),
-          "AskUserQuestion",
-          { questions: [{ question: "Which port?" }] },
-          { at: SINCE - 60_000 },
-        ),
-      ]),
+      agentRan() +
+        transcript([
+          toolUse(
+            toolUseId(),
+            "AskUserQuestion",
+            { questions: [{ question: "Which port?" }] },
+            { at: SINCE - 60_000 },
+          ),
+        ]),
     );
     const said = async (waitingReason: Session["waitingReason"]) =>
       (await reader.annotate([waiting({ waitingReason })]))[0]?.waitingText;
