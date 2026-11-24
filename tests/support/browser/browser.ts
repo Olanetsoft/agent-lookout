@@ -69,14 +69,14 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * Presses the pointer at a point of the window, whatever is there, so many
  * times, about a fifth of a second apart. It scrolls nothing to get there.
  */
-export async function pressAt(x: number, y: number, times = 1): Promise<void> {
+export async function pressAt(x: number, y: number, times = 1, heldMs = 100): Promise<void> {
   const mouse = (type: string, more: object = {}) =>
     send("Input.dispatchMouseEvent", { type, ...inBrowser(x, y), ...more });
   await mouse("mouseMoved");
   for (let clickCount = 1; clickCount <= times; clickCount += 1) {
     if (clickCount > 1) await wait(100);
     await mouse("mousePressed", { button: "left", clickCount });
-    await wait(100);
+    await wait(heldMs);
     await mouse("mouseReleased", { button: "left", clickCount });
   }
 }

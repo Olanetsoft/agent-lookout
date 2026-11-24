@@ -205,6 +205,26 @@ describe("where the next one comes up and takes focus as one is pressed", () => 
     expect(pressed()).toEqual(["First", "Second"]);
   });
 
+  test("one held for more than a second is the rest of the first still, and one on its own is taken", async () => {
+    const { button, pressed } = await drawn();
+    const [x, y] = middleOf(button("First"));
+    await pressAt(x, y);
+    await pressAt(x, y, 1, 1_200);
+    expect(pressed()).toEqual(["First"]);
+    await pressAt(x, y, 1, 1_200);
+    expect(pressed()).toEqual(["First", "Second"]);
+  });
+
+  test("Space held for more than a second, and let go, is the rest of the first still", async () => {
+    const { button, pressed } = await drawn();
+    button("First").focus();
+    await userEvent.keyboard("{Enter}");
+    await holdKey(" ", 0, 1_200);
+    expect(pressed()).toEqual(["First"]);
+    await holdKey(" ", 0, 1_200);
+    expect(pressed()).toEqual(["First", "Second"]);
+  });
+
   test("the same goes for a key", async () => {
     const { button, pressed } = await drawn();
     button("First").focus();
@@ -341,7 +361,10 @@ describe("a press soon after another, with nothing in the first one's place", ()
     expect(press).toHaveBeenCalledOnce();
   });
 
-  test("a wheel that moves a little between the halves of a double click does not part them", async () => {
+  test.each([
+    ["a little", 3],
+    ["where there is nothing more to scroll", 120],
+  ])("a wheel turned %s between the halves of a double click does not part them", async (_, y) => {
     const press = vi.fn();
     function Two() {
       const [gone, setGone] = useState(false);
@@ -362,11 +385,41 @@ describe("a press soon after another, with nothing in the first one's place", ()
     const point = middleOf(screen.getByRole("button", { name: "One" }).element());
     await pressAt(...point);
     await userEvent.wheel(screen.getByRole("button", { name: "Two" }).element(), {
-      delta: { y: 3 },
+      delta: { y },
     });
     await pressAt(...point);
     expect(press).not.toHaveBeenCalled();
   });
+});
+
+test("the second half of a double click presses nothing that came down as the page got shorter at its end", async () => {
+  await page.viewport(1280, 900);
+  const press = vi.fn();
+  function Rows() {
+    const [gone, setGone] = useState(false);
+    return (
+      <div style={{ paddingTop: 3000 }}>
+        <div style={{ height: 100 }}>
+          <Button onClick={press}>One</Button>
+        </div>
+        {!gone && (
+          <div style={{ height: 100 }}>
+            <Button onClick={() => setGone(true)}>Two</Button>
+          </div>
+        )}
+      </div>
+    );
+  }
+  const screen = await render(<Rows />);
+  onTestFinished(() => window.scrollTo({ top: 0 }));
+  window.scrollTo({ top: document.documentElement.scrollHeight });
+  const point = middleOf(screen.getByRole("button", { name: "Two" }).element());
+  await pressAt(...point);
+  expect(document.elementFromPoint(...point)).toBe(
+    screen.getByRole("button", { name: "One" }).element(),
+  );
+  await pressAt(...point);
+  expect(press).not.toHaveBeenCalled();
 });
 
 test.each(["link", "button"])(

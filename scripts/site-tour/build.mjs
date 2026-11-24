@@ -84,17 +84,19 @@ logger.warnOnce = (message, options) => fontNote(message) || warnOnce(message, o
  * the tour shows. From 0.2.9 to 0.2.14 a release added between 0 and 4 KB to
  * it. CI builds the tour on every pull request and fails one that would put it
  * over either budget, so raising one is decided there, with the change that
- * needs it.
+ * needs it. From 0.2.30 the rules that keep a double click to one press took it
+ * to 255.5 KB, so both were raised by 8 KB, for the fixes to the notifications
+ * and the waits of the page that came with them.
  */
 const BUDGET = {
   /** Built from main after #203, the tour's JavaScript is 246.4 KB, and 278.9 KB with its fonts. */
-  tourJs: 256 * 1024,
+  tourJs: 264 * 1024,
   tourCss: 14 * 1024,
   tourHtml: 2 * 1024,
   /** The page's own script that puts the dashboard in its frame. */
   pageScript: 8 * 1024,
   /** Everything the frame fetches, its two fonts the page does not use included. */
-  tourAll: 288 * 1024,
+  tourAll: 296 * 1024,
 };
 
 /** The fonts the dashboard uses that the page does not, so the tour fetches them on its own. */

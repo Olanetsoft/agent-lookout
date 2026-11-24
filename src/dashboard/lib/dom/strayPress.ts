@@ -9,10 +9,23 @@ interface Press {
   on: Element | null;
   at: number;
   restAt: number;
+  /** Whether the newest press is the rest of it. */
+  rest: boolean;
+}
+
+/** How far across and down an element was scrolled. */
+type Scrolled = [holder: Element, left: number, top: number];
+
+interface Pointed extends Press {
+  x: number;
+  y: number;
+  /** What holds it, as it was scrolled then, and whether a wheel has turned since. */
+  scrolled: Scrolled[];
+  wheeled: boolean;
 }
 
 /** The pointer's last press that was not the rest of another, and where that was. */
-let pointed: (Press & { x: number; y: number }) | null = null;
+let pointed: Pointed | null = null;
 /** The same of Enter and Space, with no other key since. */
 let keyed: Press | null = null;
 
@@ -27,7 +40,30 @@ function soonAfter(at: number, event: Event): boolean {
 
 /** A press that is not the rest of another. */
 function first(on: Element | null, event: Event): Press {
-  return { on, at: event.timeStamp, restAt: -Infinity };
+  return { on, at: event.timeStamp, restAt: -Infinity, rest: false };
+}
+
+function restOf(press: Press, event: Event): void {
+  press.restAt = event.timeStamp;
+  press.rest = true;
+}
+
+/** What holds an element, and how far each is scrolled. */
+function scrolledOf(on: Element | null): Scrolled[] {
+  const holders: Scrolled[] = [];
+  for (let at = on; at; at = at.parentElement) holders.push([at, at.scrollLeft, at.scrollTop]);
+  return holders;
+}
+
+/** Where a press was, gone with the page as far as the person has scrolled that since. */
+function placeNow({ x, y, scrolled, wheeled }: Pointed): [x: number, y: number] {
+  // What was not scrolled by a wheel came there itself, as when the page gets shorter.
+  if (!wheeled) return [x, y];
+  for (const [holder, left, top] of scrolled) {
+    x -= holder.scrollLeft - left;
+    y -= holder.scrollTop - top;
+  }
+  return [x, y];
 }
 
 // A press is the rest of one less than a second before it, and near it, when it
@@ -37,30 +73,25 @@ document.addEventListener(
   (event) => {
     const { clientX: x, clientY: y } = event;
     const on = controlOf(event.target);
+    const [wasX, wasY] = pointed ? placeNow(pointed) : [x, y];
     if (
       pointed !== null &&
       on !== pointed.on &&
       soonAfter(pointed.at, event) &&
-      Math.hypot(x - pointed.x, y - pointed.y) <= NEAR_PX &&
-      controlOf(document.elementFromPoint(pointed.x, pointed.y)) !== pointed.on
+      Math.hypot(x - wasX, y - wasY) <= NEAR_PX &&
+      controlOf(document.elementFromPoint(wasX, wasY)) !== pointed.on
     ) {
-      pointed.restAt = event.timeStamp;
+      restOf(pointed, event);
     } else {
-      pointed = { ...first(on, event), x, y };
+      pointed = { ...first(on, event), x, y, scrolled: scrolledOf(on), wheeled: false };
     }
   },
   true,
 );
-// What was pressed goes with the page as the person scrolls it.
-document.addEventListener(
-  "wheel",
-  ({ deltaX, deltaY }) => {
-    if (pointed === null) return;
-    pointed.x -= deltaX;
-    pointed.y -= deltaY;
-  },
-  { capture: true, passive: true },
-);
+document.addEventListener("wheel", () => pointed && (pointed.wheeled = true), {
+  capture: true,
+  passive: true,
+});
 // A touch that became a scroll was no press.
 document.addEventListener("pointercancel", () => (pointed = null), true);
 // A key that repeats is still down, however long a keyboard waits before it
@@ -71,11 +102,14 @@ document.addEventListener(
     const on = controlOf(event.target);
     if (event.key !== "Enter" && event.key !== " ") keyed = null;
     else if (keyed !== null && on !== keyed.on && (event.repeat || soonAfter(keyed.at, event)))
-      keyed.restAt = event.timeStamp;
+      restOf(keyed, event);
     else keyed = first(on, event);
   },
   true,
 );
+// Held, it is the same press as it is let go, which is when the click comes.
+document.addEventListener("pointerup", (event) => pointed?.rest && restOf(pointed, event), true);
+document.addEventListener("keyup", (event) => keyed?.rest && restOf(keyed, event), true);
 
 /**
  * Whether a click on a control is the rest of a press meant for another: the

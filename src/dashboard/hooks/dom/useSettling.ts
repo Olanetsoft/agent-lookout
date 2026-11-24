@@ -3,10 +3,12 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 /** A move of no more than this is not one a press could land on something else by. */
 const SLACK_PX = 4;
 
-/** Where something is laid out, and how far down each thing that holds it was scrolled then. */
+/** Where something is laid out, how tall, and how far down each thing that holds it was scrolled then. */
 interface Place {
   x: number;
   y: number;
+  /** Taller, what is in it has come onto another line. */
+  height: number;
   scrolled: [holder: Element, top: number][];
 }
 
@@ -22,7 +24,7 @@ function room(holder: Element): number {
  */
 function placeOf(element: HTMLElement | null): Place | null {
   if (element === null || element.closest("[aria-hidden='true']")) return null;
-  const place: Place = { x: 0, y: 0, scrolled: [] };
+  const place: Place = { x: 0, y: 0, height: element.offsetHeight, scrolled: [] };
   for (let at: Element | null = element; at instanceof HTMLElement; at = at.offsetParent) {
     place.x += at.offsetLeft;
     place.y += at.offsetTop;
@@ -36,11 +38,12 @@ function placeOf(element: HTMLElement | null): Place | null {
   return place;
 }
 
-/** Whether what was at one place came to another, other than by the person scrolling. */
+/** Whether what was at one place came to another, or is laid out anew in it, other than by the person scrolling. */
 function isMove(was: Place | null, is: Place | null): boolean {
   if (was === null || is === null) return was !== is;
   return (
     Math.abs(is.x - was.x) + Math.abs(is.y - was.y) > SLACK_PX ||
+    Math.abs(is.height - was.height) > SLACK_PX ||
     // What is now too short to be scrolled that far has come down under the pointer.
     was.scrolled.some(([holder, top]) => top > room(holder) + SLACK_PX)
   );

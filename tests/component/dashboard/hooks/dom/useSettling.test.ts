@@ -91,6 +91,16 @@ test("moved by something else on the page, with nothing of its own drawn again, 
   expect(take).toHaveBeenCalledOnce();
 });
 
+test("grown taller where it is, as when what it holds comes onto another line, it takes no press", async () => {
+  const { take } = await drawn();
+  box().style.height = "60px";
+  box().click();
+  expect(take).not.toHaveBeenCalled();
+  await settled();
+  box().click();
+  expect(take).toHaveBeenCalledOnce();
+});
+
 test.each<[string, () => void]>([
   ["sideways", () => (box().style.marginLeft = "60px")],
   ["with what holds it", () => (part("within").style.marginTop = "60px")],
