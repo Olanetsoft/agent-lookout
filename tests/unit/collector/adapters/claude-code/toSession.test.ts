@@ -676,4 +676,30 @@ describe("uniqueById", () => {
     expect(uniqueById([alive, dead, other])).toEqual([alive, other]);
     expect(uniqueById([dead, { ...dead, pid: 9 }])).toEqual([dead]);
   });
+
+  const copy = (pid: number, status: Session["status"], statusSince: number | null) =>
+    makeSession({ id: "claude-code:a", pid, alive: true, status, statusSince });
+
+  test.each<[string, Session, Session]>([
+    ["that waits, before one that works", copy(1, "needs-you", now - 9), copy(2, "working", now)],
+    ["that waits, before an idle one", copy(1, "needs-you", now - 9), copy(2, "idle", now)],
+    ["that works, before an idle one", copy(1, "working", now - 9), copy(2, "idle", now)],
+    ["that works, before a finished one", copy(1, "working", now - 9), copy(2, "finished", now)],
+    ["whose wait began last", copy(1, "needs-you", now), copy(2, "needs-you", now - 9)],
+    ["that went idle last", copy(1, "idle", now), copy(2, "idle", now - 9)],
+    ["that finished after the other went idle", copy(1, "finished", now), copy(2, "idle", now - 9)],
+    ["whose time is known", copy(1, "working", now - 9), copy(2, "working", null)],
+  ])("of two live copies keeps the one %s, in either order", (_which, shown, hidden) => {
+    expect(uniqueById([shown, hidden])).toEqual([shown]);
+    expect(uniqueById([hidden, shown])).toEqual([shown]);
+  });
+
+  test("a copy that waits but has no process is not kept over one that has", () => {
+    const gone = { ...copy(1, "needs-you", now), alive: false };
+    const listed = makeSession({ id: "claude-code:a", status: "needs-you", statusSince: now });
+    const idle = copy(2, "idle", now - 9);
+    expect(uniqueById([gone, idle])).toEqual([idle]);
+    expect(uniqueById([idle, gone])).toEqual([idle]);
+    expect(uniqueById([listed, idle])).toEqual([idle]);
+  });
 });

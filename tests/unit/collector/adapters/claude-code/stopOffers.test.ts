@@ -103,6 +103,44 @@ describe("which sessions can be stopped", () => {
     expect(targets.get(`claude-code:${ids.background}`)).toMatchObject({ jobId: "7c5dcf5d" });
   });
 
+  test("of two processes with one session open, the one the session is shown from is stopped", () => {
+    const shown = entry({ pid: 5001, entrypoint: "cli" });
+    const other = entry({ pid: 5002, entrypoint: "cli", procStart: "Tue Nov 14 23:00:00 2023" });
+    for (const live of [
+      [shown, other],
+      [other, shown],
+    ]) {
+      const { sessions, targets } = withStopOffers(
+        [sessionFromRegistry(shown, context)],
+        live,
+        null,
+        { sessionsDir: SESSIONS_DIR, background: true },
+      );
+      expect(sessions[0]?.stop).toEqual({ how: "signal" });
+      expect(targets.get(`claude-code:${ids.busy}`)).toMatchObject({
+        pid: 5001,
+        procStart: shown.procStart,
+        registryFile: path.join(SESSIONS_DIR, "5001.json"),
+      });
+    }
+  });
+
+  test("of two jobs of one session, the one of the same process is stopped, or none", () => {
+    const job = entry({ pid: 5001, sessionId: ids.background, kind: "bg", entrypoint: "sdk-cli" });
+    const jobs = (...listed: FeedEntry[]) =>
+      offers(
+        [job],
+        listed.map((one) => ({ sessionId: ids.background, ...one })),
+      ).targets.get(`claude-code:${ids.background}`);
+    expect(jobs({ pid: 5002, id: "aaaa1111" }, { pid: 5001, id: "bbbb2222" })).toMatchObject({
+      jobId: "bbbb2222",
+    });
+    expect(jobs({ pid: 5002, id: "aaaa1111" }, { pid: 5003, id: "bbbb2222" })).toBeUndefined();
+    // One job, whose process has been started anew since, or listed twice.
+    expect(jobs({ pid: 5002, id: "aaaa1111" })).toMatchObject({ jobId: "aaaa1111" });
+    expect(jobs({ id: "aaaa1111" }, { id: "aaaa1111" })).toMatchObject({ jobId: "aaaa1111" });
+  });
+
   test.each<[string, FeedEntry[] | null, boolean]>([
     ["with no answer from the command", null, true],
     ["when the answer does not list it", [{ sessionId: ids.idle, id: "7c5dcf5d" }], true],

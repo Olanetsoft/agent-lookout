@@ -226,16 +226,34 @@ export function sessionFromRegistry(
   return build({ ...entry, ...state }, "registry", context);
 }
 
+/** How much a status says of which copy of a session to show. */
+const COPY_RANK = new Map<Session["status"], number>([
+  ["needs-you", 2],
+  ["working", 1],
+]);
+
+/** Whether one copy of a session is shown in place of another. */
+function shownBefore(copy: Session, kept: Session): boolean {
+  if (copy.alive !== true || kept.alive !== true) return copy.alive === true;
+  const rank = (session: Session) => COPY_RANK.get(session.status) ?? 0;
+  return rank(copy) === rank(kept)
+    ? (copy.statusSince ?? 0) > (kept.statusSince ?? 0)
+    : rank(copy) > rank(kept);
+}
+
 /**
- * Removes sessions that share an id, which Claude Code has been seen to produce
- * by listing one session twice. The copy with a live process is kept; failing
- * that, the first.
+ * Keeps one copy of each session. Two Claude Code processes can have one
+ * session open, as when it is resumed in a second terminal, and Claude Code has
+ * been seen to list one session twice. A copy with a live process comes first.
+ * Of those, the one that needs the person, then one that works, then the rest,
+ * and of two alike the one whose status began last. Its process is the one Jump,
+ * Stop and an answer act on. Failing all that, the first is kept.
  */
 export function uniqueById(sessions: Session[]): Session[] {
   const byId = new Map<string, Session>();
   for (const session of sessions) {
     const kept = byId.get(session.id);
-    if (!kept || (kept.alive === false && session.alive === true)) byId.set(session.id, session);
+    if (!kept || shownBefore(session, kept)) byId.set(session.id, session);
   }
   return [...byId.values()];
 }

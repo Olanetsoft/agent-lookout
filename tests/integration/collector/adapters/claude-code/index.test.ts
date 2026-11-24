@@ -16,12 +16,14 @@ import {
 } from "@collector/adapters/claude-code/index";
 import { readProcessStartsWithPs } from "@collector/processes/processStart";
 import type { RegistryIo } from "@collector/adapters/claude-code/registry";
+import { createStopTargets } from "@collector/actions/stopTargets";
+import { createRegistryStatus } from "@collector/answers/registryStatus";
 import { createEventStore } from "@collector/eventStore";
 import { createHistoryStore } from "@collector/historyStore";
 import { createPoller } from "@collector/poller";
 import { FINISHED_RETENTION_MS } from "@core/sessions/retention";
 import { EMPTY_CHANGE_MEMORY, sessionChanges } from "@core/notices/sessionChanges";
-import type { SourceFact } from "@core/sessions/session";
+import type { SessionsSnapshot, SourceFact } from "@core/sessions/session";
 import {
   feedEntries,
   feedJson,
@@ -572,6 +574,105 @@ describe("the registry is read on every poll", () => {
       "nightly-report",
     ]);
     expect(sessions.map((session) => session.alive)).toEqual([true, true, true, undefined]);
+  });
+});
+
+describe("two processes with one session open", () => {
+  // Its file comes first by name, as 12000.json comes before 9100.json.
+  const [first, second] = [12_000, 9_100];
+  const file = (pid: number, overrides: Record<string, unknown>) =>
+    registryFile({ pid, entrypoint: "cli", startedAt: now - 60_000, ...overrides });
+  const listed = (pid: number) => ({
+    pid,
+    cwd: "/Users/example/code/demo",
+    kind: "interactive",
+    startedAt: now - 60_000,
+    sessionId: ids.busy,
+    name: "demo-project",
+    status: "idle",
+  });
+
+  test("the one that needs the person is shown, told of, stopped and answered, whatever its file is called", async () => {
+    const home = await makeClaudeHome({
+      [`${first}.json`]: file(first, { status: "idle", statusUpdatedAt: now - 50_000 }),
+      [`${second}.json`]: file(second, { status: "idle", statusUpdatedAt: now - 55_000 }),
+    });
+    const clock = handClock();
+    const alive = new Set<number>([first, second]);
+    const stops = createStopTargets();
+    const adapter = adapterFor(home, {
+      now: clock.now,
+      run: prints(JSON.stringify([listed(first), listed(second)])),
+      isAlive: (pid) => alive.has(pid),
+      stops,
+    });
+    let memory = EMPTY_CHANGE_MEMORY;
+    let snapshot: SessionsSnapshot = { generatedAt: now, sources: [], sessions: [] };
+    const answers = createRegistryStatus({
+      snapshot: () => snapshot,
+      env: { AGENT_LOOKOUT_CLAUDE_HOME: home },
+    });
+    const id = `claude-code:${ids.busy}`;
+    const poll = async (at: number) => {
+      clock.moveTo(at);
+      const { health, basis, sessions } = await adapter.poll();
+      snapshot = { generatedAt: clock.now(), sources: [{ ...health, basis }], sessions };
+      const { memory: next, changes } = sessionChanges(memory, snapshot);
+      memory = next;
+      expect(sessions).toHaveLength(1);
+      const reading = await answers.statusOf(id);
+      // On Windows nothing is stopped.
+      if (process.platform !== "win32") expect(stops.targetOf(id)?.pid).toBe(sessions[0]?.pid);
+      return [
+        sessions[0]?.pid,
+        sessions[0]?.status,
+        reading.status,
+        ...changes.map((change) => change.event),
+      ];
+    };
+    const writes = (pid: number, status: string, at: number, waitingFor?: string) =>
+      writeFile(
+        registryPath(home, `${pid}.json`),
+        file(pid, { status, waitingFor, statusUpdatedAt: now + at }),
+      );
+
+    // Both idle: the one that went idle last.
+    expect(await poll(0)).toEqual([first, "idle", "not-waiting"]);
+    await writes(second, "busy", 1_000);
+    expect(await poll(2_000)).toEqual([second, "working", "not-waiting"]);
+    await writes(second, "waiting", 3_000, "permission prompt");
+    expect(await poll(4_000)).toEqual([second, "needs-you", "waiting", "needs-you"]);
+    // The other works, and then waits too: the newest wait, which is told of as well.
+    await writes(first, "busy", 5_000);
+    expect(await poll(6_000)).toEqual([second, "needs-you", "waiting"]);
+    await writes(first, "waiting", 7_000, "permission prompt");
+    expect(await poll(8_000)).toEqual([first, "needs-you", "waiting", "needs-you"]);
+    // It is answered, and the older wait is no news.
+    await writes(first, "busy", 9_000);
+    expect(await poll(10_000)).toEqual([second, "needs-you", "waiting"]);
+    // That one ends, and the session goes on in the other.
+    alive.delete(second);
+    await rm(registryPath(home, `${second}.json`));
+    expect(await poll(12_000)).toEqual([first, "working", "not-waiting"]);
+  });
+
+  test("so it is when sessions come from the command", async () => {
+    const home = await makeClaudeHome({
+      [`${first}.json`]: file(first, { status: "idle", statusUpdatedAt: now - 50_000 }),
+      [`${second}.json`]: file(second, { status: "pondering", statusUpdatedAt: now - 55_000 }),
+    });
+    const { basis, sessions } = await adapterFor(home, {
+      run: prints(
+        JSON.stringify([
+          listed(first),
+          { ...listed(second), status: "waiting", waitingFor: "permission prompt" },
+        ]),
+      ),
+    }).poll();
+    expect(basis).toBe("feed");
+    expect(sessions.map((session) => [session.pid, session.status])).toEqual([
+      [second, "needs-you"],
+    ]);
   });
 });
 

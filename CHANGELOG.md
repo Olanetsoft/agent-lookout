@@ -25,6 +25,7 @@ Changes that a user of Agent Lookout would notice, newest first.
 - A page left open while Agent Lookout restarts keeps the Events log, the Timeline, the waits and Last wait, unless `AGENT_LOOKOUT_HISTORY=off` keeps them in memory only. Before, it lost everything from before the restart, until it was loaded again, when a session had changed meanwhile. (#449)
 - In the search, the session lit at the top stays lit when another moves above it, as when one starts waiting, so Enter goes to the session you saw. (#451)
 - A Claude Code background job that stops to ask you something, finishes or fails shows as needing you, finished or failed, and is announced, while its process still runs, at the next run of the `claude` command, at most about 30 seconds later. Before, it showed as idle until its process ended. (#455)
+- When two Claude Code processes have one session open, its row follows the one that needs you, then one that works, then the rest, the newest first, and Jump, Stop, Allow and Deny act on that process. Before, it followed the one whose file came first by name, so a wait in the other could go unseen, unannounced and without Allow and Deny. (#456)
 
 ## 0.2.30 - 2026-11-24
 

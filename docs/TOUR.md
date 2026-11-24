@@ -244,6 +244,8 @@ Those are the adapter's three bases: `registry+feed`, `feed` and `registry`.
 
 **Leftover files.** A registry file can outlive a crashed session. The adapter checks that the process exists (`isProcessAlive`). It also asks `ps` when the process started, to catch a process ID that has since gone to another program (`createProcessStartCheck` in `src/collector/processes/processStart.ts`). This is not done on Windows, where Claude Code records no start time.
 
+**Two processes on one session.** Each has a registry file. `uniqueById` makes them one row: the copy that needs you, then one that works, then the rest, the newest first. Jump, Stop and an answer act on that copy's process.
+
 **Statuses.**
 
 - `busy`, and the registry's `shell`, are working. `waiting` is needs-you. `idle` is idle.

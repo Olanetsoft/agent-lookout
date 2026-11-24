@@ -17,14 +17,21 @@ export interface StopOfferOptions {
   background: boolean;
 }
 
-/** The background job's id for a registry entry, from the command's answer: the entry for the same session, or the same process. */
+/**
+ * The background job's id for a registry entry, from the command's answer: the
+ * entry for the same session, or the same process. Of two jobs of one session,
+ * only the one for the same process is its own.
+ */
 function jobIdOf(entry: RegistryEntry, answer: readonly FeedEntry[]): string | undefined {
-  const listed = answer.find(
+  const jobs = answer.filter(
     (candidate) =>
       candidate.id !== undefined &&
       (candidate.sessionId === entry.sessionId ||
         (candidate.sessionId === undefined && candidate.pid === entry.pid)),
   );
+  const listed =
+    jobs.find((job) => job.pid === entry.pid) ??
+    (jobs.every((job) => job.id === jobs[0]?.id) ? jobs[0] : undefined);
   return listed?.id !== undefined && JOB_ID.test(listed.id) ? listed.id : undefined;
 }
 
@@ -80,16 +87,14 @@ export function withStopOffers(
   answer: readonly FeedEntry[] | null,
   options: StopOfferOptions,
 ): { sessions: Session[]; targets: Map<string, StopTarget> } {
-  const byId = new Map<string, RegistryEntry>();
-  for (const entry of live) {
-    if (entry.sessionId !== undefined) byId.set(`${SOURCE_ID}:${entry.sessionId}`, entry);
-  }
+  // Two processes can have one session open, so its own is found by its pid.
+  const byPid = new Map(live.map((entry) => [entry.pid, entry]));
   const targets = new Map<string, StopTarget>();
   const offered = sessions.map((session) => {
     if (session.source !== SOURCE_ID || session.alive !== true) return session;
     if (session.status === "finished" || session.status === "failed") return session;
-    const entry = byId.get(session.id);
-    if (entry === undefined || entry.pid !== session.pid) return session;
+    const entry = session.pid === undefined ? undefined : byPid.get(session.pid);
+    if (entry === undefined || session.id !== `${SOURCE_ID}:${entry.sessionId}`) return session;
     const target = targetFor(entry, answer, options);
     if (target === null) return session;
     targets.set(session.id, target);
