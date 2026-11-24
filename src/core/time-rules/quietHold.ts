@@ -15,8 +15,8 @@ import { needsYou } from "../waits/answeredWaits.ts";
  * that finished, failed or ended. A session that waited and then finished,
  * failed or ended is one item. With nothing to say, there is no summary.
  *
- * A wait is still open when its session waits now with the status time the
- * wait began at, even one that was seen to end: a session that reads as
+ * A wait is still open when its session waits now with the status time it was
+ * held with, even one that was seen to end: a session that reads as
  * another status for one poll, or that a poll misses, comes back so. It is
  * told of once, and is not in the summary. A wait Agent Lookout answered is
  * not open, whatever its source still says (`needsYou` in `answeredWaits.ts`).
@@ -122,6 +122,11 @@ export interface QuietHold {
 
 interface HeldWait {
   session: Session;
+  /**
+   * What tells it from another wait of its session: its status time, or, with
+   * none, when it began. A clock set back can move the second, not the first.
+   */
+  key: number;
   begunAt: number;
   endedAt: number | null;
   /** Held for its reminder alone: told of before quiet hours, so not told of again as a wait. */
@@ -159,8 +164,9 @@ export function createQuietHold(): QuietHold {
     holdWait(session, begunAt) {
       // The same wait seen again, as after a poll its source missed or one in
       // which it read as another status, is held once, and is open again.
+      const key = session.statusSince ?? begunAt;
       const last = lastWaitOf(session.id);
-      if (last?.begunAt === begunAt) {
+      if (last?.key === key) {
         last.endedAt = null;
         last.reminderOnly = false;
         return;
@@ -168,6 +174,7 @@ export function createQuietHold(): QuietHold {
       if (last && last.endedAt === null) last.endedAt = begunAt;
       waits.push({
         session: withoutWaitingText(session),
+        key,
         begunAt,
         endedAt: null,
         reminderOnly: false,
@@ -176,15 +183,17 @@ export function createQuietHold(): QuietHold {
     },
 
     holdReminder(session, begunAt) {
-      // Each reminder that comes due is the same wait, held once.
+      // Each reminder that comes due is the same wait, held once: one that has
+      // not ended, or one that has and is back.
+      const key = session.statusSince ?? begunAt;
       const last = lastWaitOf(session.id);
-      if (last?.begunAt === begunAt) {
+      if (last && (last.endedAt === null || last.key === key)) {
         last.endedAt = null;
         return;
       }
-      if (last && last.endedAt === null) last.endedAt = begunAt;
       waits.push({
         session: withoutWaitingText(session),
+        key,
         begunAt,
         endedAt: null,
         reminderOnly: true,
@@ -211,7 +220,7 @@ export function createQuietHold(): QuietHold {
       for (const wait of waits) {
         const now = listed.get(wait.session.id);
         if (now === undefined || !needsYou(now)) continue;
-        if (wait.endedAt === null || now.statusSince === wait.begunAt) {
+        if (wait.endedAt === null || now.statusSince === wait.key) {
           stillOpen.set(wait.session.id, wait);
         }
       }
@@ -230,11 +239,11 @@ export function createQuietHold(): QuietHold {
       for (const wait of waits) {
         const { session } = wait;
         // Told of as usual, however many times it was held.
-        if (stillOpen.get(session.id)?.begunAt === wait.begunAt) continue;
+        if (stillOpen.get(session.id)?.key === wait.key) continue;
         if (
           !listed.has(session.id) &&
           lastWaitOf(session.id) === wait &&
-          mayStillWait(memory, session, wait.endedAt === null ? null : wait.begunAt)
+          mayStillWait(memory, session, wait.endedAt === null ? null : wait.key)
         ) {
           wait.past = true;
           unread.push(wait);

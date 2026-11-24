@@ -230,6 +230,7 @@ export function createServerNotifications(
     handle(snapshot) {
       const at = now();
       pages = pagesAt(pages, at);
+      for (const [opened, fetched] of fetches) fetches.set(opened, Math.min(fetched, at));
       const rules = rulesOf(snapshot);
       // As the snapshot says, which the page that reads it goes by too.
       const quietNow = quietOf(snapshot);
@@ -352,7 +353,7 @@ export function createServerNotifications(
       }
       // Read above, however long ago the last poll was.
       for (const [opened, fetched] of fetches) {
-        if (Math.abs(at - fetched) > PAGE_GONE_AFTER_MS) fetches.delete(opened);
+        if (at - fetched > PAGE_GONE_AFTER_MS) fetches.delete(opened);
       }
     },
   };

@@ -172,6 +172,11 @@ export function createReminderWatch(): ReminderWatch {
         const wait = watched.get(session.id);
         if (!wait || !eligible(session.id)) continue;
         const waitedMs = at - wait.begunAt;
+        // With the clock set back, what was seen or told later than now counts
+        // as now, though not as before the threshold when it was past it.
+        const atMost = Math.max(waitedMs, schedule.thresholdMs);
+        wait.seenAfterMs = Math.min(wait.seenAfterMs, atMost);
+        if (wait.toldAfterMs !== null) wait.toldAfterMs = Math.min(wait.toldAfterMs, atMost);
         const repeat = reminderNumber(waitedMs, schedule);
         // By the schedule in force now, so a threshold or a repeat changed
         // while the wait goes on counts from what was last told, and never

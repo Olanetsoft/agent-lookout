@@ -55,10 +55,11 @@ export function noPageReports(on: boolean): PageReports {
 
 /**
  * The reports as they count at `now`. A time later than that is from before
- * the clock was set back, so no page is known to have asked since.
+ * the clock was set back, and counts as now: a page that is open has asked in
+ * the last poll, and one that is not is soon known to be gone.
  */
 export function pagesAt({ on, lastOnAt, lastOnSessionsAt }: PageReports, now: number): PageReports {
-  const heard = (at: number | null) => (at !== null && at > now ? null : at);
+  const heard = (at: number | null) => at && Math.min(at, now);
   return { on, lastOnAt: heard(lastOnAt), lastOnSessionsAt: heard(lastOnSessionsAt) };
 }
 

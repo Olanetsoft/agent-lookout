@@ -369,7 +369,10 @@ describe("the clock set back an hour", () => {
     poll(0, [working(1, "checkout-flow"), working(2, "docs-site")]);
     page(1_000, "on");
 
+    // The page may be open, and is given its few seconds.
     poll(2_000 - HOUR, [waiting(1, "checkout-flow"), working(2, "docs-site")]);
+    expect(notifier.shown).toEqual([]);
+    poll(2_000 - HOUR + HANDOVER_GRACE_MS, [waiting(1, "checkout-flow"), working(2, "docs-site")]);
     expect(notifier.shown.map(({ title }) => title)).toEqual(["checkout-flow"]);
     // Nor once the clock has come to that time again.
     poll(500, [waiting(1, "checkout-flow"), waiting(2, "docs-site")]);
@@ -391,6 +394,22 @@ describe("the clock set back an hour", () => {
     poll(60_000 - HOUR, [waiting(1, "checkout-flow")]);
     expect(notifier.shown).toEqual([]);
   });
+
+  test.each([1_500, HOUR])(
+    "one a page has fetched since it was seen is the page's, with the clock set back %d ms before the next poll",
+    (back) => {
+      const { notifier, poll, page } = setUp(false);
+      poll(0, [working(1, "checkout-flow")]);
+      page(1_000, "on");
+      poll(2_000, [waiting(1, "checkout-flow")]);
+      page(3_000, "on");
+      for (let at = 4_000; at < 20_000; at += 2_000) {
+        poll(at - back, [waiting(1, "checkout-flow")]);
+        page(at + 1_000 - back, "on");
+      }
+      expect(notifier.shown).toEqual([]);
+    },
+  );
 
   test("one no page takes is shown when its grace period is over", () => {
     const { notifier, poll, page } = setUp(false);
@@ -931,6 +950,17 @@ describe("the time rules", () => {
       expect(notifier.shown).toEqual([]);
     });
 
+    test("is not taken by a page that fetched before they ended, when the clock is set back in between", () => {
+      const { notifier, poll, page } = ruled(QUIET);
+      poll(EVENING, [working(1, "checkout-flow")]);
+      poll(BEGAN, [wait]);
+      // 08:02:01, and the clock is set back two minutes.
+      page(MORNING + 121_000, ON, true, EVENING - MINUTE);
+      poll(MORNING + 1_000, [wait]);
+      poll(MORNING + 1_000 + HANDOVER_GRACE_MS, [wait]);
+      expect(notifier.shown).toEqual(shown);
+    });
+
     test("is not shown when the page's notifications are off", () => {
       const { notifier, poll, page } = ruled(QUIET);
       poll(EVENING, [working(1, "checkout-flow")]);
@@ -941,6 +971,21 @@ describe("the time rules", () => {
       poll(MORNING + 20_000, [wait]);
       expect(notifier.shown).toEqual([]);
     });
+  });
+
+  test("a held wait that a reminder comes due for after the clock is set back past its start is shown once when they end, and in no summary", () => {
+    const { notifier, poll } = ruled(QUIET);
+    const began = EVENING + 90 * MINUTE;
+    const wait = since(1, began, "checkout-flow");
+    poll(EVENING, [working(1, "checkout-flow")]);
+    poll(began, [wait]);
+    poll(began + 5 * MINUTE, [wait]);
+    // The clock is set back an hour, and the reminder is due 10 minutes on.
+    poll(began - 55 * MINUTE, [wait]);
+    poll(began - 45 * MINUTE, [wait]);
+    poll(MORNING, [wait]);
+    poll(MORNING + 2_000, [wait]);
+    expect(notifier.shown).toEqual([{ title: "checkout-flow", body: "Waiting for permission" }]);
   });
 
   test("with notifications off, nothing is held and there is no summary", () => {

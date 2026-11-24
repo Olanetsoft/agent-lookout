@@ -333,6 +333,31 @@ describe("a reminder that comes due in quiet hours", () => {
     ]);
   });
 
+  test("is of the wait held, though it counts that from another moment, as after the clock is set back, whatever its source gives as its time", () => {
+    for (const time of [T0 + 90 * MINUTE, null]) {
+      const wait = { ...waiting(1, "checkout-flow", T0), statusSince: time };
+      const hold = createQuietHold();
+      hold.begin(T0);
+      hold.holdWait(wait, T0 + 90 * MINUTE);
+      hold.holdReminder(wait, T0 + 35 * MINUTE);
+      const end = hold.end(snapshot([wait]), T0 + 300 * MINUTE, false, READ);
+      expect(end).toEqual({ summary: null, open: [{ session: wait, begunAt: T0 + 90 * MINUTE }] });
+    }
+  });
+
+  test("of a wait seen to end, and back with its status time, is of the same wait, to be told of as it was held", () => {
+    const hold = createQuietHold();
+    hold.begin(T0);
+    const wait = waiting(1, "checkout-flow", T0 + MINUTE);
+    hold.holdWait(wait, T0 + MINUTE);
+    hold.waitEnded(id(1), T0 + 5 * MINUTE);
+    // The clock has been set back meanwhile, so it is counted from another moment.
+    hold.holdReminder(wait, T0);
+    expect(hold.holdsWait(id(1))).toBe(true);
+    const end = hold.end(snapshot([wait]), T0 + 60 * MINUTE, false, READ);
+    expect(end).toEqual({ summary: null, open: [{ session: wait, begunAt: T0 + MINUTE }] });
+  });
+
   test("leaving answered waits out leaves it out too", () => {
     const hold = createQuietHold();
     hold.begin(T0);
@@ -511,6 +536,20 @@ describe("a held wait that cannot be read as quiet hours end", () => {
       expect.objectContaining({ at: T0, waitedMs: 10 * MINUTE, times: 1 }),
     ]);
     expect(hold.holding()).toBe(false);
+  });
+
+  test("that began, by its source, later than the clock said, is told of once it is back all the same", () => {
+    const ahead = waiting(1, "checkout-flow", T0 + 5 * MINUTE);
+    const hold = createQuietHold();
+    hold.begin(T0);
+    hold.holdWait(ahead, T0);
+    hold.waitEnded(id(1), T0 + 60 * MINUTE);
+    const main = snapshot([ahead], { basis: "feed" });
+    const fallback = snapshot([], { basis: "registry" });
+    const missed = remembered(main, snapshot([], { basis: "feed" }), main, unread);
+    expect(hold.end(unread, T0 + 60 * MINUTE, false, missed).summary).toBeNull();
+    const end = hold.end(main, T0 + 61 * MINUTE, false, remembered(main, fallback, main));
+    expect(end).toEqual({ summary: null, open: [{ session: ahead, begunAt: T0 }] });
   });
 
   test("the waits it had before that one are in the summary", () => {

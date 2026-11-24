@@ -168,6 +168,43 @@ describe("when a long wait's reminder is due", () => {
     expect(poll(T0 + 41 * MINUTE, [waiting(1, T0 + 31 * MINUTE)])).toEqual([[id(1), TEN_MINUTES]]);
   });
 
+  test("a wait reminded of before the clock is set back is not reminded of again, nor is one that was older than that when first seen", () => {
+    const { poll } = setUp();
+    poll(T0, [waiting(1, T0), waiting(2, T0 - 45 * MINUTE)]);
+    const both = [waiting(1, T0), waiting(2, T0 - 45 * MINUTE)];
+    expect(poll(T0 + 10 * MINUTE, both)).toEqual([[id(1), TEN_MINUTES]]);
+    const back = T0 - 120 * MINUTE;
+    for (let minutes = 0; minutes <= 300; minutes += 5) {
+      expect(poll(back + minutes * MINUTE, both)).toEqual([]);
+    }
+  });
+
+  test("with the repeat on, the next comes by the clock as it is after it is set back, not once it has passed the last", () => {
+    const { pollRepeats } = setUp();
+    const every: ReminderSchedule = { thresholdMs: TEN_MINUTES, everyMs: 30 * MINUTE };
+    const began = [waiting(1, T0)];
+    // The same for a wait first seen later than that moment.
+    const older = setUp();
+    expect(older.pollRepeats(T0 + 185 * MINUTE, began, every)).toEqual([]);
+    expect(older.pollRepeats(T0 + 65 * MINUTE, began, every)).toEqual([]);
+    expect(older.pollRepeats(T0 + 70 * MINUTE, began, every)).toEqual([[id(1), 70, 2]]);
+
+    const told: number[] = [];
+    const run = (from: number, to: number) => {
+      for (let minutes = from; minutes <= to; minutes += 1) {
+        told.push(...pollRepeats(T0 + minutes * MINUTE, began, every).map(() => minutes));
+      }
+    };
+    run(0, 185);
+    expect(told.splice(0)).toEqual([10, 40, 70, 100, 130, 160]);
+    // Set back two hours, to 65 minutes into the wait: 70 is within half an interval of that.
+    run(65, 140);
+    expect(told.splice(0)).toEqual([100, 130]);
+    // And then to before it began: counted from there, with the first moment passed already.
+    run(-60, 0);
+    expect(told).toEqual([-60 + 40]);
+  });
+
   test("the reminders come in the snapshot's order, and a wait a channel has not told of is left out", () => {
     const { watch } = setUp();
     const shot = snapshot(T0 + 10 * MINUTE, [waiting(2, T0), waiting(1, T0)]);
