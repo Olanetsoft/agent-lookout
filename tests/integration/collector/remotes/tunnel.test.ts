@@ -60,6 +60,14 @@ async function running(tunnel: Tunnel, run?: number) {
   }, WAIT);
 }
 
+/** Waits for the run after the first, which can have ended in its turn by now. */
+async function startedAgain(tunnel: Tunnel) {
+  await vi.waitFor(() => {
+    const state = tunnel.state();
+    expect("run" in state ? state.run : 0).toBeGreaterThanOrEqual(2);
+  }, WAIT);
+}
+
 async function ended(tunnel: Tunnel, run: number) {
   return vi.waitFor(() => {
     const state = tunnel.state();
@@ -292,7 +300,7 @@ describe("the tunnel to another machine", () => {
         return started;
       }, WAIT);
       await vi.waitFor(() => expect(isRunning(proxy as number)).toBe(false), WAIT);
-      await running(tunnel, 2);
+      await startedAgain(tunnel);
     },
     STAND_IN_TIMEOUT_MS,
   );
@@ -340,7 +348,7 @@ describe("the tunnel to another machine", () => {
       // What that program still holds open is not read any more.
       expect(children[0]?.stderr?.destroyed).toBe(true);
       expect(await reading).toEqual({ kind: "closed" });
-      await running(tunnel, 2);
+      await startedAgain(tunnel);
     },
     STAND_IN_TIMEOUT_MS,
   );
