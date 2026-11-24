@@ -2,9 +2,9 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
-## 0.2.30 - 2026-11-23
+## 0.2.30 - 2026-11-24
 
-Copilot CLI and Kiro CLI sessions show, Kilo Code, MiMo Code and Mistral Vibe sessions give their last message, Mistral Vibe 3.1.4, Qwen Code and Hermes Agent sessions keep the right status, and a Codex side chat no longer shows as a session, or a Codex session's first prompt as its name.
+Copilot CLI and Kiro CLI sessions show, Kilo Code, MiMo Code and Mistral Vibe sessions give their last message, Mistral Vibe 3.1.4, Qwen Code and Hermes Agent sessions keep the right status, a Codex side chat no longer shows as a session, and most names Codex makes from a session's first prompt give way to its folder's name.
 
 ### Added
 
@@ -20,7 +20,7 @@ Copilot CLI and Kiro CLI sessions show, Kilo Code, MiMo Code and Mistral Vibe se
 - A Hermes Agent session whose turn the model's provider refused for safety shows as failed, since the refusal, after any tools that turn ran, not as idle on the reply before it. From v0.23.1 Hermes Agent takes such a turn out of the conversation and writes no failure row for it. (#412)
 - A Hermes Agent session waiting for a one-time code in a chat, or for an approval a plugin asks for, needs you, as one waiting for your approval does, instead of showing as working. (#412)
 - A Mistral Vibe 3.1.4 session, which Vibe runs on its Session API by default, shows as working or needing you while a turn runs, with its token counts, instead of unknown. Vibe 3.1 writes the Session API's facts after the state in its journal, and Agent Lookout now finds the state by its place in the record, so a tool's arguments shaped like one are never taken for it. (#413)
-- A Codex session that Codex 0.170 or later named with its first prompt, whole or cut with `…`, as it does when its model gives no title, now takes its folder's name, so the prompt no longer shows as the name or goes out in notifications and the history. A name you set that matches the prompt once Markdown, punctuation and spacing are left out is passed over too, and some names made from a prompt can still show, as [docs/adapters/codex.md](docs/adapters/codex.md#a-title-made-from-the-first-prompt) explains. (#410)
+- A Codex session that Codex 0.170 or later named with its first prompt, whole or cut with `…`, as it does when its model gives no title, now takes its folder's name, so the prompt no longer shows as the name or goes out in notifications and the history. A name you set that matches the prompt once Markdown, punctuation, numbers and spacing are left out is passed over too, and some names made from a prompt can still show, as [docs/adapters/codex.md](docs/adapters/codex.md#a-title-made-from-the-first-prompt) explains. (#410)
 - A Mistral Vibe 3.1.4 session that Vibe takes up again after a restart, while it still waits for your approval or an answer, shows as needing you instead of working. Vibe 3.1.4 asks again under the old callback and journals nothing new for it, but it first marks in the history that it took the turn up, and Agent Lookout now counts the wait from that mark. An approval Vibe then lets through without asking, as when its approval mode changed meanwhile, still shows as needing you until the call has run. Sessions from Vibe 3.1.0 to 3.1.3, which write no such mark, show as before. (#423)
 
 ## 0.2.29 - 2026-11-22
