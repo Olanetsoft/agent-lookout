@@ -15,11 +15,13 @@ import { runPs, type PsAnswer } from "../../../processes/ps.ts";
  * 2. Only when an agy program is found that was not seen before,
  *    `ps -o pid=,args= -p <their ids>`: the command lines of those programs
  *    alone, to leave out agy's own commands, such as `agy remote-control`,
- *    which are not sessions, and to find a conversation named with
- *    `--conversation <id>`. A command line can hold a prompt, given with `-p`:
- *    each is read for those two things and dropped at once. Only whether the
- *    program is a session and the conversation's id are kept, for as long as
- *    the program runs.
+ *    which are not sessions, to tell the programs started with
+ *    `--remote-agent`, which hold no conversation kept on this computer, and to
+ *    find a conversation named with `--conversation <id>`, `--resume <id>` or
+ *    `-r <id>`. A command line can hold a prompt, given with `-p`: each is
+ *    read for those three things and dropped at once. Only whether the program
+ *    is a session, whether it was started with `--remote-agent` and the
+ *    conversation's id are kept, for as long as the program runs.
  *
  * An agy program started by another that runs a session belongs to that
  * session, and is left out. One started by an agy that is not a session, such
@@ -57,14 +59,45 @@ export const AGY_COMMANDS: ReadonlySet<string> = new Set([
   "update",
 ]);
 
-/** Options that print something and end, which are not sessions either. */
+/** The option that runs a session's conversations on remote agents, kept with a remote project. */
+const REMOTE_AGENT_OPTIONS: ReadonlySet<string> = new Set(["-remote-agent", "--remote-agent"]);
+
+/**
+ * Options that, as the first word after the program, start no session on this
+ * computer: those that print something and end, and `--remote-agent`, which
+ * opens only conversations kept with a remote project, not on this computer.
+ * Nowhere else in the line is one looked for: there it could be a prompt's
+ * word.
+ */
 const NOT_A_SESSION_OPTIONS: ReadonlySet<string> = new Set([
   "-h",
   "-help",
   "--help",
   "-version",
   "--version",
+  ...REMOTE_AGENT_OPTIONS,
 ]);
+
+/**
+ * The options that name the conversation to open, each with its id as the next
+ * word. `-r` and `--resume` are other spellings of `--conversation`, from agy
+ * 1.5.16.
+ */
+const CONVERSATION_OPTIONS: ReadonlySet<string> = new Set([
+  "-conversation",
+  "--conversation",
+  "-resume",
+  "--resume",
+  "-r",
+]);
+
+/** The same options with their id after a `=`. Nothing agy publishes writes `-r` that way. */
+const CONVERSATION_OPTIONS_WITH_ID = [
+  "-conversation=",
+  "--conversation=",
+  "-resume=",
+  "--resume=",
+] as const;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -107,22 +140,36 @@ export function parseAgyTable(stdout: string): AgyRow[] {
 
 /** What is kept of an agy program's command line. */
 export interface AgyCommandLine {
-  /** False for one of agy's own commands, or an option that prints something and ends. */
+  /** False for one of agy's own commands, or an option that starts no session on this computer. */
   session: boolean;
-  /** The conversation named with `--conversation <id>`, in lower case. */
+  /** True for a program started with `--remote-agent` as its first option, which may write a log all the same. */
+  remoteAgent?: true;
+  /** The conversation named with `--conversation <id>`, `--resume <id>` or `-r <id>`, in lower case. */
   conversation?: string;
 }
 
 /** Where the program's own name ends in a command line: `agy`, or a path ending in it. */
 const PROGRAM_IN_LINE = /(?:^|[\\/])agy(?:\.exe)?(?=\s|$)/i;
 
+/** What a word says is the conversation's id, when it is one of the options that name it. */
+function conversationNamedBy(word: string, next: string | undefined): string | undefined {
+  if (CONVERSATION_OPTIONS.has(word)) return next;
+  const option = CONVERSATION_OPTIONS_WITH_ID.find((start) => word.startsWith(start));
+  return option === undefined ? undefined : word.slice(option.length);
+}
+
 /**
- * Reads an agy command line, as `ps -o args=` prints it, for the two things
+ * Reads an agy command line, as `ps -o args=` prints it, for the three things
  * kept. `ps` joins the arguments with spaces, so one that holds spaces cannot
  * be told apart: a line is a session unless its first word after the program
- * is one of agy's commands, which a prompt given with `-p` never is, since `-p`
- * comes first. A line that does not show the program is taken as a session
- * that names no conversation.
+ * is one of agy's commands or of `NOT_A_SESSION_OPTIONS`, which a prompt given
+ * with `-p` never is, since `-p` comes first. A line that does not show the
+ * program is taken as a session that names no conversation.
+ *
+ * The conversation is the first of `CONVERSATION_OPTIONS` that a whole id
+ * follows, anywhere in the line, since agy takes one after a prompt too. So
+ * `rm -r build` in a prompt names none, and a prompt that holds one of these
+ * options with an id after it cannot be told from the option.
  */
 export function readAgyCommandLine(line: string): AgyCommandLine {
   const program = PROGRAM_IN_LINE.exec(line);
@@ -133,14 +180,12 @@ export function readAgyCommandLine(line: string): AgyCommandLine {
     .filter((word) => word !== "");
   const first = words[0];
   if (first !== undefined && (AGY_COMMANDS.has(first) || NOT_A_SESSION_OPTIONS.has(first))) {
-    return { session: false };
+    return REMOTE_AGENT_OPTIONS.has(first)
+      ? { session: false, remoteAgent: true }
+      : { session: false };
   }
   for (const [index, word] of words.entries()) {
-    let value: string | undefined;
-    if (word === "--conversation" || word === "-conversation") value = words[index + 1];
-    else if (word.startsWith("--conversation=")) value = word.slice("--conversation=".length);
-    else if (word.startsWith("-conversation=")) value = word.slice("-conversation=".length);
-    else continue;
+    const value = conversationNamedBy(word, words[index + 1]);
     if (value !== undefined && UUID.test(value)) {
       return { session: true, conversation: value.toLowerCase() };
     }
@@ -158,8 +203,16 @@ export function parseCommandLines(stdout: string): Map<number, string> {
   return lines;
 }
 
-/** The agy programs that run sessions, or `ok: false` when `ps` could not say. */
-export type AgyProcessList = { ok: true; sessions: AgySessionProcess[] } | { ok: false };
+/** A program started with `--remote-agent`, which holds no conversation kept on this computer. */
+export type AgyRemoteAgent = Pick<AgySessionProcess, "startedAt">;
+
+/**
+ * The agy programs that run sessions and, apart, those started with
+ * `--remote-agent`, which only count when a log is tied to the program that
+ * wrote it (`agyLogs.ts`), or `ok: false` when `ps` could not say.
+ */
+export type AgyProcessList =
+  { ok: true; sessions: AgySessionProcess[]; remoteAgents: AgyRemoteAgent[] } | { ok: false };
 
 /** Runs `ps` with these arguments. Tests pass their own. */
 export type RunPs = (args: readonly string[], options?: { utc?: boolean }) => Promise<PsAnswer>;
@@ -208,7 +261,7 @@ export function createAgyProcessReader(
       if (!ended.has(row.pid)) running.set(row.pid, row);
     }
     // A program whose command line could not be read is taken as a session that names nothing.
-    const lineOf = (row: AgyRow) => known.get(keyOf(row)) ?? { session: true };
+    const lineOf = (row: AgyRow): AgyCommandLine => known.get(keyOf(row)) ?? { session: true };
     /** Whether an agy program that runs a session started this one, directly or through other agy programs. */
     const underSession = (row: AgyRow) => {
       const seen = new Set<number>([row.pid]);
@@ -222,8 +275,11 @@ export function createAgyProcessReader(
     };
 
     const sessions: AgySessionProcess[] = [];
+    const remoteAgents: AgyRemoteAgent[] = [];
     for (const row of running.values()) {
       const line = lineOf(row);
+      // One that a session started counts too: it may write a log of its own.
+      if (line.remoteAgent) remoteAgents.push({ startedAt: row.startedAt });
       if (!line.session || underSession(row)) continue;
       sessions.push(
         line.conversation === undefined
@@ -231,7 +287,7 @@ export function createAgyProcessReader(
           : { startedAt: row.startedAt, conversation: line.conversation },
       );
     }
-    return { ok: true, sessions };
+    return { ok: true, sessions, remoteAgents };
   }
 
   return {

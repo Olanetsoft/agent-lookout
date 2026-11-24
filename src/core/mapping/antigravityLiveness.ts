@@ -4,9 +4,10 @@
 // The adapter does not read the lock agy keeps of an open conversation
 // (docs/adapters/antigravity.md). What it knows is which agy programs run,
 // when each started, and which conversation each names: the one its log says
-// it opened last, else the one it was started with, `--conversation <id>`. A
-// program writes to the conversation it has open, so a conversation written
-// since a program started may be that program's.
+// it opened last, else the one it was started with, `--conversation <id>`, or
+// `--resume <id>` or `-r <id>`. A program writes to the conversation it has
+// open, so a conversation written since a program started may be that
+// program's.
 
 import { WRITE_TIME_STEP_MS } from "../time.ts";
 import type { AntigravityLiveness } from "./antigravityMapping.ts";
@@ -15,7 +16,7 @@ import type { AntigravityLiveness } from "./antigravityMapping.ts";
 export interface AgySessionProcess {
   /** When it started, in epoch milliseconds, to the second. Null when not known. */
   startedAt: number | null;
-  /** The conversation it was started with, `--conversation <id>`, in lower case. */
+  /** The conversation it was started with, `--conversation <id>`, `--resume <id>` or `-r <id>`, in lower case. */
   conversation?: string;
 }
 
@@ -42,7 +43,8 @@ export interface Holding {
 /**
  * Works out which conversations agy programs may have open.
  *
- * - A program started with `--conversation <id>` may have that one open.
+ * - A program started with `--conversation <id>`, or `--resume <id>` or
+ *   `-r <id>`, may have that one open.
  * - A program may have open any conversation written since it started: the
  *   one it began, one it moved on to with `/new` or `/resume`, or, as far as
  *   the files can tell, one another agy program wrote to and closed meanwhile.

@@ -83,6 +83,24 @@ describe("which log each program wrote", () => {
     ]);
   });
 
+  test("none when a program whose own log is not read could have written it, whichever started first", () => {
+    for (const other of [START - 5 * SECOND, START - SECOND, START, START + 2 * SECOND]) {
+      expect(
+        matchLogs([{ startedAt: START }], logs(START + SECOND), [{ startedAt: other }]),
+        String(other - START),
+      ).toEqual([null]);
+    }
+    // One started too early, too late, or at a time that is not known, could not have.
+    for (const other of [START - MINUTE, START + 4 * SECOND, null]) {
+      expect(
+        matchLogs([{ startedAt: START }], logs(START + SECOND), [{ startedAt: other }]),
+        String(other),
+      ).toEqual([logName(START + SECOND)]);
+    }
+    // It is given no log itself.
+    expect(matchLogs([], logs(START + SECOND), [{ startedAt: START }])).toEqual([]);
+  });
+
   test("none for a program whose start is not known", () => {
     expect(matchLogs([{ startedAt: null }], logs(START + SECOND))).toEqual([null]);
   });
@@ -110,6 +128,25 @@ describe("the log reader", () => {
     expect(JSON.stringify({ ...state, opened: [...(state?.opened ?? [])] })).not.toContain(
       PRIVATE_WORDS,
     );
+  });
+
+  test("opens no log that a program whose own is not read could have written", async () => {
+    const { files, reader } = setUp(askingLog(START, ID, 2));
+    expect(await reader.read([{ startedAt: START }], [{ startedAt: START }])).toEqual([null]);
+    expect(await reader.read([], [{ startedAt: START }])).toEqual([]);
+    expect(files.opened()).not.toContain(file);
+    // Once that program is gone, the log can only be the other's.
+    expect((await reader.read([{ startedAt: START }]))[0]).toMatchObject({ current: ID });
+  });
+
+  test("lists the folder again as soon as a program whose own log is not read starts", async () => {
+    const { files, reader, wait } = setUp(askingLog(START, ID, 2));
+    expect((await reader.read([{ startedAt: START }]))[0]).toMatchObject({ current: ID });
+    // A second log the first program could be, named since the folder was listed.
+    files.write(logPath(AGY_HOME, logName(START + 3 * SECOND)), "");
+    wait(SECOND);
+    expect((await reader.read([{ startedAt: START }]))[0]).toMatchObject({ current: ID });
+    expect(await reader.read([{ startedAt: START }], [{ startedAt: NOW }])).toEqual([null]);
   });
 
   test("reads only what was added, and sees the answer", async () => {

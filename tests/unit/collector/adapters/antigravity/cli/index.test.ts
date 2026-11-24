@@ -687,6 +687,51 @@ describe("an agy program's own log and a conversation's title", () => {
     expect(find((await adapter.poll()).sessions, ASKING)).toMatchObject({ status: "finished" });
   });
 
+  test("a log a --remote-agent program may have written is not read, so a conversation a program named is not taken for closed", async () => {
+    // Both started in the same second, or the local one a moment later: its own log is not named yet.
+    for (const apart of [0, 2 * SECOND]) {
+      const { adapter, processes, files } = setUp();
+      const started = NOW - 5 * SECOND;
+      const log = logPath(AGY_HOME, logName(started + SECOND));
+      files.write(log, streamingLine(started + 2 * SECOND, conversationId("f6")));
+      processes.set([{ startedAt: started + apart, conversation: IDLE }], [{ startedAt: started }]);
+      const result = await adapter.poll();
+      expect(statuses(result.sessions), String(apart)).toEqual({
+        [WORKING]: "finished",
+        [IDLE]: "idle",
+        [FAILED]: "failed",
+      });
+      expect(files.opened(), String(apart)).not.toContain(log);
+
+      // A program that names none, as after `-c`, may have any of them open.
+      processes.set([{ startedAt: started + apart }], [{ startedAt: started }]);
+      const other = antigravityAdapterFor(files, processes);
+      const unmatched = await other.poll();
+      expect(unmatched.basis, String(apart)).toBe(BASIS_UNMATCHED);
+      expect(statuses(unmatched.sessions), String(apart)).toMatchObject({
+        [WORKING]: "working",
+        [IDLE]: "idle",
+      });
+      expect(files.opened(), String(apart)).not.toContain(log);
+    }
+  });
+
+  test("a --remote-agent program holds no conversation open, and its own log is not read", async () => {
+    const { adapter, processes, files } = setUp();
+    const started = NOW - 5 * SECOND;
+    const log = logPath(AGY_HOME, logName(started + SECOND));
+    files.write(log, streamingLine(started + 2 * SECOND, IDLE));
+    processes.set([], [{ startedAt: started }]);
+    const result = await adapter.poll();
+    expect(result.basis).toBe(BASIS);
+    expect(statuses(result.sessions)).toEqual({
+      [WORKING]: "finished",
+      [IDLE]: "finished",
+      [FAILED]: "failed",
+    });
+    expect(files.opened()).not.toContain(log);
+  });
+
   test("a log that cannot be tied to one running program is not read", async () => {
     const { adapter, processes, files } = waiting();
     processes.set([{ startedAt: STARTED }, { startedAt: STARTED + SECOND }]);
@@ -833,7 +878,7 @@ describe("what a conversation last said", () => {
       processes: {
         read: async () => {
           if (broken) throw new Error("ps broke");
-          return { ok: true, sessions: [] };
+          return { ok: true, sessions: [], remoteAgents: [] };
         },
       },
     });
