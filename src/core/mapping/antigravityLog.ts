@@ -145,7 +145,7 @@ export interface AgyLogState {
   folder: string | null;
   /** Whether that line has been read, so no later line can name another. */
   folderNamed: boolean;
-  /** Every conversation the program has opened, in lower case. */
+  /** Every conversation the program has opened, in lower case, the one it opened last at the end. */
   opened: Set<string>;
   /** The one it opened last, which it has open now. Null before it opens one. */
   current: string | null;
@@ -172,6 +172,7 @@ export function addAgyLogLine(state: AgyLogState, line: AgyLogLine): void {
       state.folderNamed = true;
       return;
     case "opened":
+      state.opened.delete(line.conversation);
       state.opened.add(line.conversation);
       if (state.current !== line.conversation) state.ask = null;
       state.current = line.conversation;

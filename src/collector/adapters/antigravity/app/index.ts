@@ -20,6 +20,7 @@ import { createTitleReader } from "../shared/annotations.ts";
 import {
   BRAIN_DIR,
   createConversationFinder,
+  rowsOf,
   writtenRecently,
   type ConversationFiles,
 } from "../shared/conversations.ts";
@@ -233,7 +234,11 @@ export function writtenJustNow(lastWriteAt: number | null, now: number): boolean
  *
  * - The folder names under `brain` and `conversations`, and the modified
  *   times of each chat's transcript, database and database log.
- * - The end of each transcript written in the last 24 hours, for the last step.
+ * - The names of the records each chat keeps of the subagents it started, as
+ *   the CLI's do, so one another chat started is not listed.
+ * - The end of each listed chat's transcript, for the last step. A chat is
+ *   listed for 24 hours after its transcript was last written, or that of one
+ *   it started.
  * - Each listed chat's title, from `annotations/<id>.pbtxt`.
  * - Each chat's folder, from `conversation_summaries.db`, with `sqlite3`
  *   (`summaries.ts`).
@@ -491,12 +496,12 @@ export function createAntigravityAppAdapter(
       );
     }
 
-    const { conversations } = listing;
-    const shown = conversations.filter(
+    const rows = rowsOf(listing.conversations);
+    const shown = rows.filter(
       (files) => files.transcriptInfo !== null && writtenRecently(files, checkedAt),
     );
     // Null only when no chat is to be shown.
-    const answer = await hubFor(conversations, checkedAt);
+    const answer = await hubFor(rows, checkedAt);
     const read = shown.length > 0 ? await summaries.read(checkedAt) : null;
 
     /** The transcripts read this poll, whose cache is worth keeping. */

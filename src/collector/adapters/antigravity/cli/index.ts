@@ -38,6 +38,7 @@ import {
 import {
   BRAIN_DIR,
   createConversationFinder,
+  rowsOf,
   writtenRecently,
   type ConversationFiles,
 } from "../shared/conversations.ts";
@@ -222,14 +223,20 @@ type HomeFrom = "agent-lookout" | "default";
  * The programs as `ps` gave them, each with the conversation its log says it
  * has open now, which is surer than the one its command line named before
  * any `/new` or `/resume`.
+ *
+ * A child, a conversation another one started that has no row of its own, is
+ * passed over for the one opened before it: whether agy logs that it opens a
+ * child is not known, and if it does, the conversation that started the child
+ * is still the one open.
  */
 export function withLoggedConversations(
   programs: readonly AgySessionProcess[],
   logStates: readonly (AgyLogState | null)[],
+  children: ReadonlySet<string>,
 ): AgySessionProcess[] {
   return programs.map((program, index) => {
-    const current = logStates[index]?.current ?? null;
-    return current === null ? program : { ...program, conversation: current };
+    const conversation = [...(logStates[index]?.opened ?? [])].findLast((id) => !children.has(id));
+    return conversation === undefined ? program : { ...program, conversation };
   });
 }
 
@@ -254,9 +261,10 @@ export function folderOf(id: string, logs: readonly AgyLogState[]): string | nul
  * - The folder names under `<agy folder>/brain` and `<agy folder>/conversations`,
  *   and the modified times of each conversation's transcript, database and
  *   database log. See `conversations.ts`.
- * - The end of each transcript written in the last 24 hours, or that an agy
- *   program may have open, for the last step.
- *   See `transcriptFile.ts`.
+ * - The names of the records each conversation keeps of the subagents and swarm
+ *   workers it started. See `../shared/subagents.ts`.
+ * - The end of each listed conversation's transcript, for the last step. See
+ *   `transcriptFile.ts`.
  * - `ps`, for which agy programs run, to tell an open conversation from one
  *   that has ended. See `agyProcesses.ts`.
  * - Each running agy program's own log, `<agy folder>/log/cli-*.log`, for the
@@ -266,9 +274,10 @@ export function folderOf(id: string, logs: readonly AgyLogState[]): string | nul
  *   `../shared/annotations.ts`.
  *
  * A conversation is listed while an agy program may have it open, and for 24
- * hours after its transcript was last written. Its status is working, idle,
- * needs-you while its program's log says agy waits for approval of a tool,
- * failed or finished.
+ * hours after its transcript was last written, or that of one it started. One
+ * another conversation started is not listed, unless an agy program running was
+ * started with it. The status is working, idle, needs-you while the program's
+ * log says agy waits for approval of a tool, failed or finished.
  *
  * What a conversation last said is read from the end of the transcript the
  * last poll read it from, but only when `lastMessage` is asked for it, which
@@ -343,6 +352,12 @@ export function createAntigravityAdapter(
   let processesAt: number | null = null;
   /** The conversations an agy program may have open, as last worked out. */
   let lastHolding: Holding | null = null;
+  /**
+   * The conversations that the command lines of the agy programs running name,
+   * when `ps` last could say. Each has a row, whether or not another one
+   * started it: a person opened it.
+   */
+  let named: ReadonlySet<string> = new Set();
   /** What the card says of the Antigravity IDE's folder, as last looked at. Null while it is not there. */
   let othersNote: string | null = null;
   /** What Sources says of the last-message read: when it reads the end of a transcript, or Off. */
@@ -504,16 +519,20 @@ export function createAntigravityAdapter(
 
     const { conversations } = listing;
     // Null only when no conversation is to be shown, and so none is listed below.
-    const list = await processesFor(conversations, checkedAt);
+    const list = await processesFor(rowsOf(conversations, named), checkedAt);
+    if (list?.ok) named = new Set(list.sessions.flatMap((program) => program.conversation ?? []));
+    const rows = rowsOf(conversations, named);
+    const children = new Set(conversations.map((files) => files.id));
+    for (const files of rows) children.delete(files.id);
     // Each running program's log, read on every poll, so a wait shows at once.
     // A `--remote-agent` program's could be taken for one of theirs, so it counts too.
     const logStates = list?.ok ? await logs.read(list.sessions, list.remoteAgents) : [];
-    const programs = list?.ok ? withLoggedConversations(list.sessions, logStates) : [];
+    const programs = list?.ok ? withLoggedConversations(list.sessions, logStates, children) : [];
     // A conversation written since `ps` was last asked, or up to 2 seconds
     // before, as a disk can keep a write's time rounded down, may be open in an
     // agy program started since, which `ps` did not show. That holds on a poll
     // that asked too, for a write just before it.
-    const holding = list?.ok ? holdConversations(programs, conversations, processesAt) : null;
+    const holding = list?.ok ? holdConversations(programs, rows, processesAt) : null;
     lastHolding = holding;
     const logged = logStates.filter((state): state is AgyLogState => state !== null);
 
@@ -523,7 +542,7 @@ export function createAntigravityAdapter(
     /** The transcript each conversation was read from, by its id, for its last message. */
     const transcripts = new Map<string, string>();
     let unknownStep = false;
-    for (const files of conversations) {
+    for (const files of rows) {
       const open = holding?.held.has(files.id) ?? false;
       if (files.transcriptInfo === null || !(open || writtenRecently(files, checkedAt))) continue;
       let state: TranscriptState;

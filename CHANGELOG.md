@@ -11,6 +11,7 @@ Changes that a user of Agent Lookout would notice, newest first.
 ### Changed
 
 - An Oh My Pi session whose open turn goes back more than 8 MiB, past where an approval could wait unseen, shows as unknown instead of working until its next reply or prompt. (#435)
+- The Antigravity CLI's subagents and swarm workers no longer show as sessions of their own, nor do Antigravity's where the app keeps the same records of them. They are told by those records' names alone, and none is opened. A wait of one for your approval has no row of its own any more. While one works, the conversation it comes from stays listed as open, with the status of its own last step. One you start an agy with, by `--conversation`, `--resume` or `-r`, shows as any other session does while that agy runs, on macOS and Linux, and an agent `/run-workflow` starts may still show. Events shows each one that was listed as ended, once, after the update. Built from agy's changelog and open-source readers of its files, and not yet checked on a computer running agy. (#440)
 
 ### Fixed
 

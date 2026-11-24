@@ -33,9 +33,11 @@ import {
   streamingLine,
   MINUTE,
   NOW,
+  PRIVATE_WORDS,
   replyStep,
   SECOND,
   step,
+  subagentsPath,
   textStep,
   transcriptPath,
   workingTurn,
@@ -818,6 +820,285 @@ describe("an agy program's own log and a conversation's title", () => {
       );
     }
     expect(opened).not.toContain(logPath(AGY_HOME, logName(NOW - 3 * 60 * MINUTE)));
+  });
+});
+
+describe("a conversation another one started, as a subagent or a swarm worker", () => {
+  const WORKER = conversationId("e5");
+  const NESTED = conversationId("f6");
+
+  /** The agy folder of the other tests, whose idle conversation has started a worker that still works. */
+  function withWorker() {
+    const set = setUp();
+    const record = (parent: string, child: string) => {
+      const file = subagentsPath(AGY_HOME, parent, `${child}.json`);
+      set.files.write(file, `{"role":"Swarm Worker","prompt":"${PRIVATE_WORDS}"}`);
+      set.files.touch(subagentsPath(AGY_HOME, parent));
+      return file;
+    };
+    set.write(WORKER, workingTurn(0, NOW - MINUTE), NOW - 5 * SECOND);
+    set.files.write(annotationPath(AGY_HOME, WORKER), 'title:"Check the links"');
+    const file = record(IDLE, WORKER);
+    return { ...set, record, file };
+  }
+
+  const LISTED = { [WORKING]: "working", [IDLE]: "idle", [FAILED]: "failed" };
+
+  test("has no row, and nothing of it is opened, while the one that started it keeps its own", async () => {
+    const { adapter, files, processes, record, write } = withWorker();
+    // One the worker started, and one whose record is in another's folder too.
+    write(NESTED, workingTurn(0, NOW - MINUTE), NOW - 5 * SECOND);
+    record(WORKER, NESTED);
+    // What a swarm keeps beside the records marks its coordinator, which is the person's own.
+    for (const name of ["swarm/members.json", "swarm/board.jsonl", "tasks/task-1.log"]) {
+      files.write(`${AGY_HOME}/brain/${IDLE}/.system_generated/${name}`, `${WORKING} ${IDLE}`);
+    }
+    processes.set([{ startedAt: NOW - 60 * MINUTE }]);
+    const result = await adapter.poll();
+    expect(statuses(result.sessions)).toEqual(LISTED);
+    expect(JSON.stringify(result)).not.toContain(PRIVATE_WORDS);
+    for (const id of [WORKER, NESTED]) {
+      expect(files.opened().filter((file) => file.includes(id))).toEqual([]);
+      expect(await adapter.lastMessage(`antigravity-cli:${id}`)).toBeNull();
+    }
+    expect(files.count(undefined, (target) => /swarm|tasks/.test(target))).toBe(0);
+    expect(files.opened().every((file) => file.endsWith("/transcript.jsonl"))).toBe(true);
+  });
+
+  test("has none while no agy program runs, nor where ps cannot say", async () => {
+    const { adapter, processes } = withWorker();
+    expect(statuses((await adapter.poll()).sessions)).toEqual({
+      [WORKING]: "finished",
+      [IDLE]: "finished",
+      [FAILED]: "failed",
+    });
+    processes.fail();
+    const blind = antigravityAdapterFor(withWorker().files, processes, { platform: "win32" });
+    expect(statuses((await blind.poll()).sessions)).toEqual(LISTED);
+  });
+
+  test("is listed as before when its record is a link, a folder or not there, or the records' folder cannot be listed", async () => {
+    const places: ((set: ReturnType<typeof withWorker>) => void)[] = [
+      ({ files, file }) => files.special(file),
+      ({ files, file }) => {
+        files.remove(file);
+        files.mkdir(file);
+      },
+      ({ files, file }) => files.remove(file),
+      ({ files, file }) => {
+        files.remove(subagentsPath(AGY_HOME, IDLE));
+        files.special(subagentsPath(AGY_HOME, IDLE));
+        files.write(file, "{}");
+        files.remove(file);
+      },
+      ({ files }) => files.fail(subagentsPath(AGY_HOME, IDLE)),
+    ];
+    for (const [index, change] of places.entries()) {
+      const set = withWorker();
+      set.processes.set([{ startedAt: NOW - 60 * MINUTE }]);
+      change(set);
+      const { sessions, health } = await set.adapter.poll();
+      expect(statuses(sessions), String(index)).toEqual({ ...LISTED, [WORKER]: "working" });
+      expect(health.state).toBe("ok");
+    }
+  });
+
+  test("says nothing on the card with a step Agent Lookout does not know", async () => {
+    const { adapter, write } = withWorker();
+    write(WORKER, [step({ index: 0, type: "A_STEP_FROM_A_LATER_AGY", at: NOW })], NOW);
+    expect((await adapter.poll()).health.detail).not.toContain(UNKNOWN_STEP_NOTE);
+  });
+
+  test("what it writes leaves open the one that started it, and says which program has written", async () => {
+    const { adapter, processes } = withWorker();
+    // Started after everything but the worker was last written.
+    processes.set([{ startedAt: NOW - 8 * SECOND }]);
+    const result = await adapter.poll();
+    expect(result.basis).toBe(BASIS);
+    expect(statuses(result.sessions)).toEqual({
+      [WORKING]: "finished",
+      [IDLE]: "idle",
+      [FAILED]: "failed",
+    });
+  });
+
+  test("two swarms at work leave both coordinators open, though no log can be tied to either program", async () => {
+    const { adapter, files, processes, record, write } = withWorker();
+    write(WORKING, workingTurn(0, NOW - 3 * MINUTE), NOW - MINUTE);
+    write(FAILED, finishedTurn(0, NOW - 40 * MINUTE), NOW - 39 * MINUTE);
+    // Its worker, quiet itself, has started the one at work.
+    write(OLD, workingTurn(0, NOW - 40 * MINUTE), NOW - 39 * MINUTE);
+    record(FAILED, OLD);
+    write(NESTED, workingTurn(0, NOW - MINUTE), NOW - 3 * SECOND);
+    record(OLD, NESTED);
+    const programs = [IDLE, FAILED].map((id, index) => {
+      const startedAt = NOW - (12 - 3 * index) * SECOND;
+      files.write(
+        logPath(AGY_HOME, logName(startedAt + SECOND)),
+        streamingLine(startedAt + 2 * SECOND, id),
+      );
+      return { startedAt };
+    });
+    processes.set(programs);
+    const result = await adapter.poll();
+    expect(result.basis).toBe(BASIS);
+    expect(statuses(result.sessions)).toEqual({
+      [WORKING]: "finished",
+      [IDLE]: "idle",
+      [FAILED]: "idle",
+    });
+  });
+
+  test("the one that started it is listed for a day after either was written, whatever its own age", async () => {
+    const { adapter, clock, processes, record, write } = withWorker();
+    write(NESTED, workingTurn(0, NOW - MINUTE), NOW - MINUTE);
+    record(OLD, NESTED);
+    expect(statuses((await adapter.poll()).sessions)).toMatchObject({ [OLD]: "finished" });
+
+    // Open while an agy program runs that could have written it, and as it is where ps cannot say.
+    processes.set([{ startedAt: NOW - 2 * MINUTE }]);
+    clock.advance(PROCESS_CHECK_MS);
+    expect(statuses((await adapter.poll()).sessions)).toMatchObject({
+      [OLD]: "idle",
+      [IDLE]: "idle",
+    });
+    processes.fail();
+    clock.advance(PROCESS_CHECK_MS);
+    expect(statuses((await adapter.poll()).sessions)).toMatchObject({ [OLD]: "idle" });
+
+    processes.set([]);
+    clock.set(NOW - MINUTE + DAY - SECOND);
+    expect(statuses((await adapter.poll()).sessions)).toEqual({
+      [WORKING]: "finished",
+      [IDLE]: "finished",
+      [OLD]: "finished",
+    });
+    clock.advance(SECOND);
+    expect(statuses((await adapter.poll()).sessions)).toEqual({
+      [WORKING]: "finished",
+      [IDLE]: "finished",
+    });
+  });
+
+  test("with no transcript of the one that started it there is nothing to show, and ps is not asked", async () => {
+    const { adapter, files, processes } = withWorker();
+    for (const id of [WORKING, FAILED]) files.remove(`${AGY_HOME}/brain/${id}`);
+    files.remove(transcriptPath(AGY_HOME, IDLE));
+    expect((await adapter.poll()).sessions).toEqual([]);
+    expect(processes.asked()).toBe(0);
+  });
+
+  test("two with a record of each other are listed as any other", async () => {
+    const { adapter, processes, record } = withWorker();
+    record(WORKER, IDLE);
+    processes.set([{ startedAt: NOW - 60 * MINUTE }]);
+    expect(statuses((await adapter.poll()).sessions)).toEqual({ ...LISTED, [WORKER]: "working" });
+  });
+
+  test("a write of it that no known program could have made has ps asked again", async () => {
+    const { adapter, clock, processes, write } = withWorker();
+    await adapter.poll();
+    clock.advance(2 * SECOND);
+    write(WORKER, workingTurn(0, NOW), clock.now());
+    processes.set([{ startedAt: NOW + SECOND }]);
+    clock.advance(2 * SECOND);
+    await adapter.poll();
+    expect(processes.asked()).toBe(2);
+  });
+
+  test("is listed while an agy program its command line names it with runs, whatever its age", async () => {
+    const { adapter, clock, processes, record, write } = withWorker();
+    processes.set([
+      { startedAt: NOW - 60 * MINUTE },
+      { startedAt: NOW - MINUTE, conversation: WORKER },
+    ]);
+    expect(statuses((await adapter.poll()).sessions)).toEqual({ ...LISTED, [WORKER]: "working" });
+
+    // One not written for days is held, as any conversation a program names is.
+    write(NESTED, finishedTurn(0, NOW - 2 * DAY), NOW - 2 * DAY);
+    record(WORKER, NESTED);
+    processes.set([
+      { startedAt: NOW - 60 * MINUTE },
+      { startedAt: NOW - MINUTE, conversation: NESTED },
+    ]);
+    clock.advance(PROCESS_CHECK_MS);
+    await adapter.poll();
+    const held = statuses((await adapter.poll()).sessions);
+    expect(held).toEqual({ ...LISTED, [NESTED]: "idle" });
+
+    processes.set([{ startedAt: NOW - 60 * MINUTE }]);
+    clock.advance(PROCESS_CHECK_MS);
+    expect(statuses((await adapter.poll()).sessions)).toEqual(LISTED);
+  });
+
+  test("named so, it holds itself and not the one that started it, and stays listed while ps fails", async () => {
+    const { adapter, clock, processes, write } = withWorker();
+    processes.set([{ startedAt: NOW - 8 * SECOND, conversation: WORKER }]);
+    expect(statuses((await adapter.poll()).sessions)).toEqual({
+      [WORKING]: "finished",
+      [IDLE]: "finished",
+      [FAILED]: "failed",
+      [WORKER]: "working",
+    });
+    processes.fail();
+    clock.advance(PROCESS_CHECK_MS);
+    write(WORKER, workingTurn(0, NOW), clock.now());
+    expect(statuses((await adapter.poll()).sessions)).toEqual({ ...LISTED, [WORKER]: "working" });
+    processes.set([]);
+    clock.advance(PROCESS_CHECK_MS);
+    expect(Object.keys(statuses((await adapter.poll()).sessions))).toEqual(Object.keys(LISTED));
+  });
+
+  test("stays listed while a program started with it runs, though that has opened another since", async () => {
+    const { adapter, files, processes } = withWorker();
+    const started = NOW - 8 * SECOND;
+    files.write(
+      logPath(AGY_HOME, logName(started + SECOND)),
+      [WORKER, IDLE].map((id, index) => streamingLine(started + (2 + index) * SECOND, id)).join(""),
+    );
+    processes.set([{ startedAt: started, conversation: WORKER }]);
+    expect(statuses((await adapter.poll()).sessions)).toEqual({
+      [WORKING]: "finished",
+      [IDLE]: "idle",
+      [FAILED]: "failed",
+      [WORKER]: "working",
+    });
+  });
+
+  test("a program's log that opens it does not list it, and leaves open the conversation opened before it", async () => {
+    const { adapter, files, processes } = withWorker();
+    // Started after the idle conversation and the worker were last written, and opened it last but for the worker.
+    const started = NOW - 3 * SECOND;
+    files.write(
+      logPath(AGY_HOME, logName(started + SECOND)),
+      [IDLE, FAILED, IDLE, WORKER]
+        .map((id, index) => streamingLine(started + (2 + index / 10) * SECOND, id))
+        .join(""),
+    );
+    processes.set([{ startedAt: started }]);
+    const result = await adapter.poll();
+    expect(result.basis).toBe(BASIS);
+    expect(statuses(result.sessions)).toEqual({
+      [WORKING]: "finished",
+      [IDLE]: "idle",
+      [FAILED]: "failed",
+    });
+  });
+
+  test("a program started with it that its log says it opened holds it, not another", async () => {
+    const { adapter, files, processes } = withWorker();
+    const started = NOW - 3 * SECOND;
+    files.write(
+      logPath(AGY_HOME, logName(started + SECOND)),
+      [IDLE, WORKER].map((id) => streamingLine(started + 2 * SECOND, id)).join(""),
+    );
+    processes.set([{ startedAt: started, conversation: WORKER }]);
+    expect(statuses((await adapter.poll()).sessions)).toEqual({
+      [WORKING]: "finished",
+      [IDLE]: "finished",
+      [FAILED]: "failed",
+      [WORKER]: "working",
+    });
   });
 });
 
