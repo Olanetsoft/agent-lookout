@@ -634,6 +634,14 @@ export const MAX_EVENTS_PER_RESPONSE = 200;
 export const NOTIFICATIONS_HEADER = "X-Agent-Lookout-Notifications";
 
 /**
+ * The request header in which a dashboard page says, on every request, when it
+ * was opened, in milliseconds. What already waited then is that page's
+ * baseline, so a wait held in quiet hours since before then is not the page's
+ * to show, and the collector shows it.
+ */
+export const OPENED_HEADER = "X-Agent-Lookout-Opened";
+
+/**
  * What a page says in `NOTIFICATIONS_HEADER`: the events its notifications are
  * on for, which a page in a browser shows a notification of. None is off.
  */

@@ -434,6 +434,65 @@ describe("the time rules", () => {
     });
   });
 
+  test.each<[string, boolean]>([
+    ["found over in the next quiet hours is in no summary", false],
+    [
+      "found still waiting in the next quiet hours, and over later in them, is in their summary",
+      true,
+    ],
+  ])("a wait held past quiet hours and %s", async (_what, found) => {
+    const DAY = 24 * 60 * MINUTE;
+    const { poll, sent } = ruled(["needs-you"]);
+    const began = EVENING + 10 * MINUTE;
+    await poll(EVENING, QUIET, [working(1)]);
+    await poll(began, QUIET, [waitingSince(1, began)]);
+    await poll(began + MINUTE, QUIET, [waitingSince(1, began)]);
+    await poll(MORNING, QUIET, [], { state: "unavailable" });
+    await poll(began + DAY, QUIET, [], { state: "unavailable" });
+    if (found) await poll(began + DAY + 10 * MINUTE, QUIET, [waitingSince(1, began)]);
+    await poll(began + DAY + 20 * MINUTE, QUIET, [working(1)]);
+    expect(sent).toEqual([]);
+    await poll(MORNING + DAY, QUIET, [working(1)]);
+    expect(sent).toEqual(found ? ["summary session-1 waited 1460m"] : []);
+  });
+
+  describe("a wait sent before quiet hours, held for a reminder that came due in them", () => {
+    const REMINDED: TimeRules = { ...QUIET, longWait: { on: true, minutes: 15 } };
+    const began = EVENING - 8 * MINUTE;
+    const wait = waitingSince(1, began);
+
+    /** Sent at 21:49, and its reminder comes due at 22:02. */
+    async function reminded() {
+      const made = ruled(["needs-you"]);
+      await made.poll(began - MINUTE, REMINDED, [working(1)], { basis: "feed" });
+      await made.poll(began, REMINDED, [wait], { basis: "feed" });
+      await made.poll(began + 2 * MINUTE, REMINDED, [wait], { basis: "feed" });
+      expect(made.sent.splice(0)).toEqual(["wait session-1 2m"]);
+      await made.poll(EVENING + 7 * MINUTE, REMINDED, [wait], { basis: "feed" });
+      return made;
+    }
+
+    test("is reminded of once its source is back, when that was away as they ended", async () => {
+      const { poll, sent } = await reminded();
+      await poll(MORNING, REMINDED, [], { state: "error" });
+      await poll(MORNING + MINUTE, REMINDED, [wait], { basis: "feed" });
+      await poll(MORNING + 2 * MINUTE, REMINDED, [wait], { basis: "feed" });
+      expect(sent).toEqual(["reminder session-1 614m of 15m"]);
+    });
+
+    test.each<[string, number]>([
+      ["as they ended", MORNING],
+      ["in them", EVENING + 30 * MINUTE],
+    ])("is sent once more when another way of reading left it out %s", async (_when, at) => {
+      const { poll, sent } = await reminded();
+      await poll(at, REMINDED, [], { basis: "registry" });
+      await poll(at + MINUTE, REMINDED, [wait], { basis: "feed" });
+      await poll(MORNING + MINUTE, REMINDED, [wait], { basis: "feed" });
+      await poll(MORNING + 60 * MINUTE, REMINDED, [wait], { basis: "feed" });
+      expect(sent).toEqual(["wait session-1 614m"]);
+    });
+  });
+
   test("a held wait the poll that ends quiet hours missed is sent when it is listed again", async () => {
     const { poll, sent } = ruled(["needs-you"]);
     const since = EVENING + 10 * MINUTE;

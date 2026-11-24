@@ -1078,6 +1078,20 @@ describe("the time rules", () => {
       expect(host.shown).toEqual([]);
     });
 
+    test.each<[string, boolean]>([
+      ["over in the next quiet hours, is in no summary", false],
+      ["still waiting in the next quiet hours, and over later in them, is in their summary", true],
+    ])("found %s", (_what, found) => {
+      const { host, notifier, working } = away({ state: "unavailable" });
+      const DAY = 24 * 60 * MINUTE;
+      notifier.handle(made(night + DAY, QUIET, [], { state: "unavailable" }), T0);
+      if (found) notifier.handle(made(night + DAY + MINUTE, QUIET, [waits], { basis: "feed" }), T0);
+      notifier.handle(made(night + DAY + 2 * MINUTE, QUIET, [working], { basis: "feed" }), T0);
+      expect(host.shown).toEqual([]);
+      notifier.handle(made(morning + DAY, QUIET, [working], { basis: "feed" }), T0);
+      expect(shown(host)).toEqual(found ? [["While quiet", "api waited 1 day", SUMMARY_TAG]] : []);
+    });
+
     test("is shown, or not, as its source says it, when a new collector begins meanwhile", () => {
       const still = away({ state: "unavailable" });
       still.notifier.handle(made(morning + MINUTE, QUIET, [], { state: "searching" }), T0 + 1);

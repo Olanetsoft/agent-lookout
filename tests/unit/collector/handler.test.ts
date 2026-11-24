@@ -7,6 +7,7 @@ import {
   isLoopbackHostHeader,
   isLoopbackOrigin,
   notificationsSaid,
+  pageOpenedAt,
 } from "@collector/handler";
 
 describe("the helpers", () => {
@@ -58,5 +59,16 @@ describe("the helpers", () => {
     // A header sent twice arrives joined by a comma, and says nothing.
     expect(said("on; events=finished, off")).toBeNull();
     expect(said("on; events=finished, on; events=failed")).toBeNull();
+  });
+
+  test("pageOpenedAt reads when a page was opened from its header, and nothing else", () => {
+    const opened = (value?: string | string[]) =>
+      pageOpenedAt({
+        headers: value === undefined ? {} : { "x-agent-lookout-opened": value },
+      } as unknown as IncomingMessage);
+    expect(opened("1700000000000")).toBe(1_700_000_000_000);
+    for (const value of [undefined, "", "-1", "1.5", "soon", "1, 2", "9".repeat(16), ["1", "2"]]) {
+      expect(opened(value)).toBeUndefined();
+    }
   });
 });

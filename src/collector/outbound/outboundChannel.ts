@@ -272,7 +272,7 @@ export function createOutboundChannel<Content>(
           // A wait still open is sent as any other wait is, below.
           for (const { session, begunAt } of end.open) open.set(session.id, begunAt);
         }
-        if (quiet) hold.begin(at);
+        if (quiet) hold.begin(at, snapshot.sessions);
 
         for (const { event, session } of result.changes) {
           if (!wanted.has(event)) continue;

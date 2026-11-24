@@ -261,7 +261,7 @@ export function createWaitNotifier({ host, isOn }: WaitNotifierOptions): WaitNot
           }
         }
       }
-      if (quietNow) quiet.begin(at);
+      if (quietNow) quiet.begin(at, snapshot.sessions);
 
       for (const change of result.changes) {
         // A held wait that is back in the list at this snapshot has started too.

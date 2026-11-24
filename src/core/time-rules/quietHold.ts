@@ -25,13 +25,16 @@ import { needsYou } from "../waits/answeredWaits.ts";
  * not read as the quiet hours end, or is read another way that leaves it out
  * (`mayStillWait` in `sessionChanges.ts`), is neither told of then nor in the
  * summary. It is held on until it is read, and is then told of if its session
- * still waits. If not, nothing is said of it: there is one summary.
+ * still waits. If not, nothing is said of it: there is one summary, and the
+ * next quiet hours' has it only when they found it still waiting.
  *
  * A long wait's reminder that comes due in quiet hours, for a wait told of
  * before them, holds that wait too, once however many come due. Answered or
  * ended before they end, it is in the summary as one item, as any wait held.
  * Still open, it is left to its reminder, which says how long it has waited
- * by then, and is not told of again as a wait.
+ * by then, and is not told of again as a wait. One seen to end and back since
+ * has no reminder to come, as that counts it from when it was back, and is
+ * told of again.
  *
  * Nothing held keeps what a waiting session was asking. A wait still open at
  * the end is told of from the session as it is then.
@@ -84,8 +87,12 @@ export interface QuietEnd {
 export interface QuietHold {
   /** Whether anything is held: quiet hours are under way, as this channel has seen them, or a wait is held past them. */
   holding(): boolean;
-  /** Notes that this moment is in quiet hours. The first such moment begins them. */
-  begin(at: number): void;
+  /**
+   * Notes that this moment is in quiet hours, with the sessions listed at it.
+   * The first such moment begins them. A wait held past earlier ones that is
+   * listed still waiting is held in these as any other.
+   */
+  begin(at: number, sessions?: readonly Session[]): void;
   /** Holds back a wait, which began at `begunAt`. */
   holdWait(session: Session, begunAt: number): void;
   /**
@@ -119,6 +126,8 @@ interface HeldWait {
   endedAt: number | null;
   /** Held for its reminder alone: told of before quiet hours, so not told of again as a wait. */
   reminderOnly: boolean;
+  /** Held past the quiet hours it was held in, and not seen waiting in any since. */
+  past: boolean;
 }
 
 export function createQuietHold(): QuietHold {
@@ -139,8 +148,12 @@ export function createQuietHold(): QuietHold {
   return {
     holding: () => since !== null || waits.length > 0,
 
-    begin(at) {
+    begin(at, sessions = []) {
       since ??= at;
+      for (const session of sessions) {
+        const held = needsYou(session) ? openWaitOf(session.id) : undefined;
+        if (held) held.past = false;
+      }
     },
 
     holdWait(session, begunAt) {
@@ -158,6 +171,7 @@ export function createQuietHold(): QuietHold {
         begunAt,
         endedAt: null,
         reminderOnly: false,
+        past: false,
       });
     },
 
@@ -174,6 +188,7 @@ export function createQuietHold(): QuietHold {
         begunAt,
         endedAt: null,
         reminderOnly: true,
+        past: false,
       });
     },
 
@@ -203,7 +218,7 @@ export function createQuietHold(): QuietHold {
       const open: QuietEnd["open"] = [];
       for (const [id, wait] of stillOpen) {
         // Its reminder tells of it, as one held for a reminder alone.
-        if (wait.reminderOnly) continue;
+        if (wait.reminderOnly && wait.endedAt === null) continue;
         open.push({ session: listed.get(id) as Session, begunAt: wait.begunAt });
       }
 
@@ -221,10 +236,11 @@ export function createQuietHold(): QuietHold {
           lastWaitOf(session.id) === wait &&
           mayStillWait(memory, session, wait.endedAt === null ? null : wait.begunAt)
         ) {
+          wait.past = true;
           unread.push(wait);
           continue;
         }
-        if (leaveOutAnswered) continue;
+        if (leaveOutAnswered || wait.past) continue;
         // A wait whose end nobody saw is counted to now.
         const waitedMs = Math.max(0, (wait.endedAt ?? at) - wait.begunAt);
         lastBegun.set(wait.session.id, wait.begunAt);

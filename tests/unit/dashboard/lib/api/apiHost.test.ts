@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from "vitest";
 
-import { NOTIFICATIONS_HEADER } from "@core/api";
+import { NOTIFICATIONS_HEADER, OPENED_HEADER } from "@core/api";
 import { apiRequest, setApiHost, type ApiHost } from "@dashboard/lib/api/apiHost";
 
 afterEach(() => {
@@ -36,17 +36,33 @@ test("every request says whether this page's notifications are on, beside the ca
   expect(NOTIFICATIONS_HEADER).toBe("X-Agent-Lookout-Notifications");
 
   await apiRequest("/api/health");
-  expect([...headersOf(host)]).toEqual([["x-agent-lookout-notifications", "off"]]);
+  const opened = ["x-agent-lookout-opened", expect.any(String)];
+  expect([...headersOf(host)]).toEqual([["x-agent-lookout-notifications", "off"], opened]);
 
   await apiRequest("/api/sessions", { headers: { accept: "application/json" } });
   expect([...headersOf(host)]).toEqual([
     ["accept", "application/json"],
     ["x-agent-lookout-notifications", "off"],
+    opened,
   ]);
 
   await apiRequest("/api/events", { headers: new Headers({ accept: "application/json" }) });
   expect(headersOf(host).get("accept")).toBe("application/json");
   expect(headersOf(host).get(NOTIFICATIONS_HEADER)).toBe("off");
+});
+
+test("every request says when this page was opened, and the same each time", async () => {
+  const host = vi.fn<ApiHost>(async () => new Response("{}"));
+  setApiHost(host);
+  expect(OPENED_HEADER).toBe("X-Agent-Lookout-Opened");
+
+  await apiRequest("/api/sessions");
+  const opened = Number(headersOf(host).get(OPENED_HEADER));
+  expect(opened).toBeLessThanOrEqual(Date.now());
+  expect(opened).toBeGreaterThan(Date.now() - 60_000);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await apiRequest("/api/events");
+  expect(Number(headersOf(host).get(OPENED_HEADER))).toBe(opened);
 });
 
 test("a caller cannot say otherwise for the page", async () => {

@@ -405,6 +405,53 @@ describe("a held wait that cannot be read as quiet hours end", () => {
     expect(end.summary?.items).toHaveLength(1);
   });
 
+  test("found over in the next quiet hours, is in no summary of theirs, nor is what it would have waited", () => {
+    const answered = heldPast();
+    answered.begin(T0 + 900 * MINUTE);
+    answered.waitEnded(id(1), T0 + 930 * MINUTE);
+    answered.holdOver("finished", session(1, "checkout-flow"), T0 + 940 * MINUTE);
+    const read = snapshot([session(1, "checkout-flow")]);
+    const end = answered.end(read, T0 + 960 * MINUTE, false, remembered(read));
+    expect(end.open).toEqual([]);
+    expect(end.summary?.items).toEqual([
+      { event: "finished", session: session(1, "checkout-flow"), at: T0 + 940 * MINUTE },
+    ]);
+    expect(answered.holding()).toBe(false);
+
+    // Nor one gone from the list, whose end nobody saw.
+    const gone = heldPast();
+    gone.begin(T0 + 900 * MINUTE);
+    expect(gone.end(snapshot([]), T0 + 960 * MINUTE, false, READ)).toEqual({
+      summary: null,
+      open: [],
+    });
+  });
+
+  test("found still waiting in the next quiet hours and answered in them, is in their summary", () => {
+    const hold = heldPast();
+    hold.begin(T0 + 900 * MINUTE, []);
+    hold.begin(T0 + 930 * MINUTE, [wait]);
+    hold.waitEnded(id(1), T0 + 940 * MINUTE);
+    hold.begin(T0 + 940 * MINUTE, [session(1, "checkout-flow")]);
+    const read = snapshot([session(1, "checkout-flow")]);
+    expect(hold.end(read, T0 + 960 * MINUTE, false, remembered(read)).summary?.items).toEqual([
+      expect.objectContaining({ at: T0, waitedMs: 940 * MINUTE, times: 1 }),
+    ]);
+  });
+
+  test("found over in the next quiet hours, leaves a later wait held in them to their summary", () => {
+    const hold = heldPast();
+    hold.begin(T0 + 900 * MINUTE);
+    hold.waitEnded(id(1), T0 + 930 * MINUTE);
+    const next = waiting(1, "checkout-flow", T0 + 940 * MINUTE);
+    hold.holdWait(next, T0 + 940 * MINUTE);
+    hold.waitEnded(id(1), T0 + 945 * MINUTE);
+    const end = hold.end(snapshot([]), T0 + 960 * MINUTE, false, READ);
+    expect(end.summary?.items).toEqual([
+      expect.objectContaining({ at: T0 + 940 * MINUTE, waitedMs: 5 * MINUTE, times: 1 }),
+    ]);
+  });
+
   test("held for its reminder alone, is left to its reminder", () => {
     const hold = createQuietHold();
     hold.begin(T0);
@@ -415,6 +462,54 @@ describe("a held wait that cannot be read as quiet hours end", () => {
       summary: null,
       open: [],
     });
+    expect(hold.holding()).toBe(false);
+  });
+
+  test("held for its reminder alone, and hidden by another way of reading, is told of again once it is back, as no reminder is to come", () => {
+    const main = snapshot([wait], { basis: "feed" });
+    const fallback = snapshot([], { basis: "registry" });
+    const hold = createQuietHold();
+    hold.begin(T0);
+    hold.holdReminder(wait, T0);
+    hold.waitEnded(id(1), T0 + 60 * MINUTE);
+    const hidden = remembered(main, fallback);
+    expect(hold.end(fallback, T0 + 60 * MINUTE, false, hidden)).toEqual({
+      summary: null,
+      open: [],
+    });
+    expect(hold.end(main, T0 + 61 * MINUTE, false, remembered(main, fallback, main))).toEqual({
+      summary: null,
+      open: [{ session: wait, begunAt: T0 }],
+    });
+    expect(hold.holding()).toBe(false);
+  });
+
+  test("hidden by another way of reading, leaves the waits it had before that one to the summary", () => {
+    const hold = createQuietHold();
+    hold.begin(T0 - 60 * MINUTE);
+    hold.holdWait(waiting(1, "checkout-flow", T0 - 60 * MINUTE), T0 - 60 * MINUTE);
+    hold.waitEnded(id(1), T0 - 50 * MINUTE);
+    hold.holdWait(wait, T0);
+    hold.waitEnded(id(1), T0 + 60 * MINUTE);
+    const fallback = snapshot([], { basis: "registry" });
+    const hidden = remembered(snapshot([wait], { basis: "feed" }), fallback);
+    const end = hold.end(fallback, T0 + 60 * MINUTE, false, hidden);
+    expect(end.summary?.items).toEqual([
+      expect.objectContaining({ at: T0 - 60 * MINUTE, waitedMs: 10 * MINUTE, times: 1 }),
+    ]);
+    expect(hold.holding()).toBe(true);
+  });
+
+  test("answered, with a later wait of its session open and not held yet, is in the summary", () => {
+    const hold = createQuietHold();
+    hold.begin(T0);
+    hold.holdWait(wait, T0);
+    hold.waitEnded(id(1), T0 + 10 * MINUTE);
+    const later = snapshot([waiting(1, "checkout-flow", T0 + 59 * MINUTE)]);
+    const end = hold.end(unread, T0 + 60 * MINUTE, false, remembered(later, unread));
+    expect(end.summary?.items).toEqual([
+      expect.objectContaining({ at: T0, waitedMs: 10 * MINUTE, times: 1 }),
+    ]);
     expect(hold.holding()).toBe(false);
   });
 

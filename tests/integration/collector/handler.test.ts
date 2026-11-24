@@ -14,6 +14,7 @@ import { createLastMessageRoute } from "@collector/messages/lastMessageRoute";
 import {
   LAST_MESSAGE_PATH,
   NOTIFICATIONS_HEADER,
+  OPENED_HEADER,
   type EventsResponse,
   type HistoryResponse,
   type NtfyStatusResponse,
@@ -999,6 +1000,30 @@ describe("the notifications header", () => {
     // Had it been listened to, this wait would be shown.
     await server.poll(60_000, [waiting]);
     expect(server.notifier.shown).toEqual([]);
+  });
+
+  test("is passed on with whether the sessions were asked for, and when the page was opened", async () => {
+    const said: unknown[][] = [];
+    const handler = createApiHandler({
+      version: "9.9.9-test",
+      poller: {
+        getSnapshot: () => ({ generatedAt: T0, sources: [], sessions: [] }),
+        startedAt: T0,
+      },
+      events: createEventStore(),
+      history: createHistoryStore(),
+      notifications: { pageSaid: (...args) => said.push(args) },
+    });
+    const port = await listen(createServer(handler));
+    const headers = { [NOTIFICATIONS_HEADER]: "on", [OPENED_HEADER]: String(T0) };
+    await request(port, "/api/sessions", { headers });
+    await request(port, "/api/health", { headers: { [NOTIFICATIONS_HEADER]: "off" } });
+    // When it was opened says nothing on its own.
+    await request(port, "/api/sessions", { headers: { [OPENED_HEADER]: String(T0) } });
+    expect(said).toEqual([
+      [["needs-you"], true, T0],
+      [[], false, undefined],
+    ]);
   });
 
   test("a refused request cannot turn them off either", async () => {

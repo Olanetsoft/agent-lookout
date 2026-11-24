@@ -4,6 +4,7 @@ import {
   ACTION_HEADER,
   LAST_MESSAGE_PATH,
   NOTIFICATIONS_HEADER,
+  OPENED_HEADER,
   PERMISSION_RULES_PATH,
   PHONE_TEST_PATH,
   readNotificationsHeader,
@@ -69,8 +70,8 @@ export interface ApiHandlerOptions {
   events: EventStore;
   history: HistoryStore;
   /**
-   * Told what each dashboard page says about its notifications, in the header
-   * on its requests. Left out, the header is ignored.
+   * Told what each dashboard page says about its notifications, in the headers
+   * on its requests. Left out, they are ignored.
    */
   notifications?: Pick<ServerNotifications, "pageSaid">;
   /**
@@ -411,6 +412,12 @@ export function notificationsSaid(req: IncomingMessage): NotificationsSaid | nul
   return readNotificationsHeader(value);
 }
 
+/** When the page that made a request was opened, when it says so in a header that can be read. */
+export function pageOpenedAt(req: IncomingMessage): number | undefined {
+  const value = req.headers[OPENED_HEADER.toLowerCase()];
+  return typeof value === "string" && /^\d{1,15}$/.test(value) ? Number(value) : undefined;
+}
+
 /** Reads a query value that must be a plain non-negative number. */
 function numberParam(value: string | null): number | undefined | "invalid" {
   if (value === null) return undefined;
@@ -468,7 +475,9 @@ export function createApiHandler(options: ApiHandlerOptions): ApiHandler {
     // Only a request that passed every check above is listened to, so a page
     // at another address can no more steer the notifications than read a session.
     const said = notificationsSaid(req);
-    if (said !== null) notifications?.pageSaid(said, url.pathname === "/api/sessions");
+    if (said !== null) {
+      notifications?.pageSaid(said, url.pathname === "/api/sessions", pageOpenedAt(req));
+    }
 
     switch (url.pathname) {
       case "/api/health": {

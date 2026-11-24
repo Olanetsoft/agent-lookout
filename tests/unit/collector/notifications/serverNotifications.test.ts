@@ -623,9 +623,9 @@ describe("the time rules", () => {
           timeRules: rules,
         });
       },
-      page(at: number, said: NoticeEvent[], fetchedSessions = true) {
+      page(at: number, said: NoticeEvent[], fetchedSessions = true, openedAt?: number) {
         clock.now = at;
-        notifications.pageSaid(said, fetchedSessions);
+        notifications.pageSaid(said, fetchedSessions, openedAt);
       },
     };
   }
@@ -835,6 +835,112 @@ describe("the time rules", () => {
     poll(MORNING, [], { state: "unavailable" });
     poll(MORNING + 2_000, [working(1, "checkout-flow")]);
     expect(notifier.shown).toEqual([]);
+  });
+
+  test.each<[string, boolean]>([
+    ["found over in the next quiet hours is in no summary", false],
+    [
+      "found still waiting in the next quiet hours, and over later in them, is in their summary",
+      true,
+    ],
+  ])("a wait held past quiet hours and %s", (_what, found) => {
+    const DAY = 24 * 60 * MINUTE;
+    const { notifier, poll } = ruled(QUIET);
+    const wait = since(1, EVENING + 10 * MINUTE, "checkout-flow");
+    poll(EVENING, [working(1, "checkout-flow")]);
+    poll(EVENING + 10 * MINUTE, [wait]);
+    poll(MORNING, [], { state: "unavailable" });
+    poll(EVENING + DAY + 10 * MINUTE, [], { state: "unavailable" });
+    if (found) poll(EVENING + DAY + 20 * MINUTE, [wait]);
+    poll(EVENING + DAY + 30 * MINUTE, [working(1, "checkout-flow")]);
+    expect(notifier.shown).toEqual([]);
+    poll(MORNING + DAY, [working(1, "checkout-flow")]);
+    expect(notifier.shown).toEqual(
+      found ? [{ title: "While quiet", body: "checkout-flow waited 1 day" }] : [],
+    );
+  });
+
+  describe("a held wait, and a page opened since it began, whose first answer of it is a baseline", () => {
+    const BEGAN = EVENING + 10 * MINUTE;
+    const wait = since(1, BEGAN, "checkout-flow");
+    const shown = [{ title: "checkout-flow", body: "Waiting for permission" }];
+    const ON: NoticeEvent[] = ["needs-you"];
+
+    /** The wait is held, and its source away from 06:00, until `back`, with a page asking on time, opened at `opened`. */
+    function night(back: number, opened: number, reloaded = opened) {
+      const made = ruled(QUIET, false);
+      const { poll, page } = made;
+      page(EVENING - 1_000, ON, true, EVENING - MINUTE);
+      poll(EVENING, [working(1, "checkout-flow")]);
+      poll(BEGAN, [wait]);
+      poll(MORNING - 120 * MINUTE, [], { state: "unavailable" });
+      for (let at = MORNING - 10_000; at < back; at += 2_000) {
+        poll(at, [], { state: "unavailable" });
+        if (at >= opened) page(at + 1_000, ON, true, at >= reloaded ? reloaded : opened);
+      }
+      for (let at = back; at < back + 20_000; at += 2_000) {
+        poll(at, [wait]);
+        page(at + 1_000, ON, true, reloaded);
+      }
+      return made;
+    }
+
+    test("is shown by the collector, once, when it is told of", () => {
+      expect(night(MORNING + 60_000, MORNING + 30_000).notifier.shown).toEqual(shown);
+    });
+
+    test("also when the page was open all night and reloaded while it was held", () => {
+      const { notifier } = night(MORNING + 60_000, EVENING - MINUTE, MORNING + 30_000);
+      expect(notifier.shown).toEqual(shown);
+    });
+
+    test("also when the page was opened in the quiet hours, with its source read all the while", () => {
+      const { notifier, poll, page } = ruled(QUIET);
+      poll(EVENING, [working(1, "checkout-flow")]);
+      poll(BEGAN, [wait]);
+      for (let at = MORNING - 10_000; at < MORNING + 20_000; at += 2_000) {
+        poll(at, [wait]);
+        page(at + 1_000, ON, true, BEGAN + MINUTE);
+      }
+      expect(notifier.shown).toEqual(shown);
+    });
+
+    test("is left to a page opened before it began, or one that does not say when", () => {
+      expect(night(MORNING + 60_000, EVENING - MINUTE).notifier.shown).toEqual([]);
+      const { notifier, poll, page } = ruled(QUIET);
+      poll(EVENING, [working(1, "checkout-flow")]);
+      poll(BEGAN, [wait]);
+      page(MORNING - 1_000, ON);
+      poll(MORNING, [wait]);
+      page(MORNING + 1_000, ON);
+      poll(MORNING + 10_000, [wait]);
+      expect(notifier.shown).toEqual([]);
+    });
+
+    test("is left to the page opened before it began, when another is opened since, however late the next poll", () => {
+      const { notifier, poll, page } = ruled(QUIET);
+      poll(EVENING, [working(1, "checkout-flow")]);
+      poll(BEGAN, [wait]);
+      page(MORNING - 1_000, ON, true, EVENING - MINUTE);
+      poll(MORNING, [wait]);
+      page(MORNING + 1_000, ON, true, EVENING - MINUTE);
+      page(MORNING + 1_500, ON, true, MORNING - MINUTE);
+      page(MORNING + 8_000, ON, true, MORNING - MINUTE);
+      poll(MORNING + 9_000, [wait]);
+      poll(MORNING + 11_000, [wait]);
+      expect(notifier.shown).toEqual([]);
+    });
+
+    test("is not shown when the page's notifications are off", () => {
+      const { notifier, poll, page } = ruled(QUIET);
+      poll(EVENING, [working(1, "checkout-flow")]);
+      poll(BEGAN, [wait]);
+      poll(MORNING, [], { state: "error" });
+      page(MORNING + 1_000, [], true, MORNING);
+      poll(MORNING + 2_000, [wait]);
+      poll(MORNING + 20_000, [wait]);
+      expect(notifier.shown).toEqual([]);
+    });
   });
 
   test("with notifications off, nothing is held and there is no summary", () => {

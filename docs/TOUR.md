@@ -883,7 +883,7 @@ No answer ever has a CORS header. `send` even removes any `Access-Control-*` hea
 Two more things live in the handler:
 
 - `ready`: while the collector reads its history back from disk at start, requests wait. No page is told of an empty history that is about to fill.
-- The `X-Agent-Lookout-Notifications` header: the dashboard sends it to say which events its notifications are on for, so the collector knows whether to show its own (see [The collector's own notifications](#the-collectors-own-notifications)). In the Mac app the page shows none, and the header says which events the app shows. A program that only reads should not send it. `status`, `mcp` and the SSH reader never do.
+- The `X-Agent-Lookout-Notifications` header: the dashboard sends it to say which events its notifications are on for, so the collector knows whether to show its own (see [The collector's own notifications](#the-collectors-own-notifications)). In the Mac app the page shows none, and the header says which events the app shows. A program that only reads should not send it. `status`, `mcp` and the SSH reader never do. `X-Agent-Lookout-Opened` goes with it and says when the page was opened (#460).
 
 **When.** The handler is in the first commit. It was documented for outside readers in docs/API.md on 6 October (c2d3f9b), for #13. Each feature since added its route there.
 
@@ -1097,7 +1097,7 @@ In this part, a bare path such as `lib/shell/view.ts` is under `src/dashboard/`.
 Every request the dashboard makes goes through `apiRequest(path, init)` in `lib/api/apiHost.ts`. It has the shape of `fetch`, and by default it is a same-origin `fetch`.
 
 - It accepts only a root-relative path. It rejects any path that a browser would resolve to another host, such as one with a tab or a backslash in it. So no code in the dashboard can call another machine.
-- It adds one header to every request, `X-Agent-Lookout-Notifications`, which names the events this page's notifications are on for, which a browser tab shows itself and the Mac app shows for its window, or says none. The header is added at the seam so that no request can go out without it (#28).
+- It adds two headers to every request: `X-Agent-Lookout-Notifications`, which names the events this page's notifications are on for, which a browser tab shows itself and the Mac app shows for its window, or says none, and `X-Agent-Lookout-Opened`, when the page was opened (#460). They are added at the seam so that no request can go out without them (#28).
 - `setApiHost` swaps the transport. It was built for a Mac app (#2) and a browser extension (#19). In the end the Mac app did not need it, because its page and its API share one origin. Today only the landing page's tour calls it.
 
 Two more seams work the same way. `setNotificationHost` in `lib/notifications/notificationHost.ts` defaults to the browser's Notifications API. `setAddressHost` in `lib/shell/addressHost.ts` defaults to setting `location.hash`.
@@ -1444,7 +1444,7 @@ This was asked for in #28 (abc93e6, 5 October).
 
 **Held waits.** The page learns of a change from the collector, so the collector always sees it first. To avoid a second notification, the collector holds its own back. At each poll, `heldWaitOutcome` decides what happens to it:
 
-- **drop:** notifications or that event are off, or, where pages show their own, a page that said `on` has fetched `/api/sessions` since the change was seen. That page has it and shows it.
+- **drop:** notifications or that event are off, or, where pages show their own, a page that said `on` has fetched `/api/sessions` since the change was seen. That page has it and shows it. A wait that quiet hours held is dropped only for a page opened before it began, as one opened since has it in its baseline (#460).
 - **show:** the host's pages show none of their own, as in the Mac app (`pagesNotify: false`), or no page that said `on` has asked for anything in the last 5 seconds (`PAGE_GONE_AFTER_MS`).
 - **hold:** anything else. After 3 seconds (`HANDOVER_GRACE_MS`) it is shown.
 
@@ -1532,7 +1532,7 @@ Each channel also reads its own `_EVENTS`, `_AFTER` (in seconds, 60 by default) 
 
 - Each channel holds back its own notices.
 - When quiet hours end, a wait that is still open is announced as usual. Everything else goes in one summary, "While quiet".
-- A wait that cannot be read when they end is neither. It is held until it can be read, and announced then if it is still open (#460).
+- A wait that cannot be read when they end is neither. It is held until it can be read, and announced then if it is still open. If it is over, no summary has it (#460).
 - What is held is kept in memory only. Restart Agent Lookout during quiet hours and it is lost.
 
 ### History, the Events log and Waits
