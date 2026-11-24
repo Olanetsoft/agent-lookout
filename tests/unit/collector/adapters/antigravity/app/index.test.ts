@@ -26,6 +26,7 @@ import {
   APP_HOME,
   appStep,
   appTurn,
+  checkpoint,
   conversationId,
   databasePath,
   DAY,
@@ -198,6 +199,44 @@ describe("with Antigravity 2.0's folder there", () => {
     expect(statuses((await adapter.poll()).sessions)).toMatchObject({ [IDLE]: "working" });
     clock.advance(1);
     expect(statuses((await adapter.poll()).sessions)).toMatchObject({ [IDLE]: "idle" });
+  });
+
+  test("a finished checkpoint leaves a chat with no counts until its next reply, and its status as it was", async () => {
+    const { adapter, clock, files } = setUp();
+    const chat = async () =>
+      (await adapter.poll()).sessions.find((session) => session.id.endsWith(IDLE));
+    const before = await chat();
+    expect(before).toMatchObject({
+      status: "idle",
+      tokens: { input: 2_000, cached: 800, output: 64 },
+    });
+
+    clock.advance(MINUTE);
+    files.append(transcriptPath(APP_HOME, IDLE), checkpoint(2, NOW + 30 * SECOND), {
+      mtimeMs: NOW + 30 * SECOND,
+    });
+    const after = await chat();
+    expect(after).not.toHaveProperty("tokens");
+    expect(after).toMatchObject({ status: "idle", statusSince: before?.statusSince });
+
+    clock.advance(MINUTE);
+    files.append(
+      transcriptPath(APP_HOME, IDLE),
+      [
+        appStep({ index: 3, type: "USER_INPUT", at: NOW + 80 * SECOND }),
+        appStep({
+          index: 4,
+          type: "PLANNER_RESPONSE",
+          at: NOW + 82 * SECOND,
+          counts: { input_tokens: 700, cache_read_tokens: 0, output_tokens: 30 },
+        }),
+      ].join(""),
+      { mtimeMs: NOW + 90 * SECOND },
+    );
+    expect(await chat()).toMatchObject({
+      status: "idle",
+      tokens: { input: 700, cached: 0, output: 30 },
+    });
   });
 
   test("writes change nothing for a chat that failed, or one the app has closed", async () => {

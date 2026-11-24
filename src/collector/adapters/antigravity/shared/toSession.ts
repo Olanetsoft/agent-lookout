@@ -94,7 +94,9 @@ export interface AntigravitySessionInput {
  * - The last write is the newest modified time of its transcript, its
  *   database and its database's log.
  * - Its token counts are those of the newest reply that names them, from the
- *   end of its transcript (`transcriptFile.ts`), as a Codex session's are.
+ *   end of its transcript (`transcriptFile.ts`), as a Codex session's are, and
+ *   it has none from a finished checkpoint, as `/compact` ends in, until the
+ *   next reply.
  * - There is no pid, no `alive`, no link and no Stop: no program is tied to
  *   one conversation surely enough, and Antigravity 2.0 runs all its chats in
  *   one.
