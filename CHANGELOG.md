@@ -39,6 +39,7 @@ Changes that a user of Agent Lookout would notice, newest first.
 - Quiet hours and the times in emails and pushes follow the computer to another time zone within a minute while Agent Lookout runs, on macOS, and on Linux where `/etc/localtime` is a link, instead of keeping the zone it started in. A zone set with `TZ` is kept, and on Windows a restart is still needed. (#461)
 - After this computer sleeps, the sessions of another computer read over SSH are no longer shown, notified or emailed from the last answer before the sleep. It shows as not connected until a new answer comes. (#468)
 - While an agent this version does not know is not read on another computer, as with a newer Agent Lookout there, its sessions no longer send Ended, and its waits are no longer sent again once it is read. (#471)
+- An ssh to another computer that hangs while it signs in, itself or in a `ProxyJump` or `ProxyCommand`, is ended after 90 seconds and started again, so the computer connects once it can be reached. Before, it stayed at Still connecting. (#470)
 
 ## 0.2.30 - 2026-11-24
 

@@ -231,6 +231,67 @@ describe("the tunnel to another machine", () => {
   );
 
   posixTest(
+    "an ssh that hangs while it signs in is ended, with the ProxyCommand it hangs in, and started again",
+    async () => {
+      const ssh = await makeStandInSsh({ STAND_IN_SSH_DELAY_MS: "600000" });
+      const tunnel = tunnelFor(
+        { name: "devbox", target: "devbox", port: 4777 },
+        { ...ssh.env, STAND_IN_SSH_PROXY: ssh.proxyLog },
+        { firstReadingMs: 2_000 },
+      );
+      tunnel.start();
+      expect((await ended(tunnel, 1)).end).toMatchObject({
+        connected: false,
+        said: "No answer within 2 seconds.",
+      });
+      const [proxy] = await vi.waitFor(async () => {
+        const started = await ssh.proxies();
+        if (started.length === 0) throw new Error("no ProxyCommand yet");
+        return started;
+      }, WAIT);
+      await vi.waitFor(() => expect(isRunning(proxy as number)).toBe(false), WAIT);
+      await running(tunnel, 2);
+    },
+    STAND_IN_TIMEOUT_MS,
+  );
+
+  posixTest(
+    "a run through which a reading has come back is not ended for its time",
+    async () => {
+      const ssh = await makeStandInSsh();
+      const tunnel = tunnelFor({ name: "devbox", target: "devbox", port: 4777 }, ssh.env, {
+        firstReadingMs: 1_500,
+      });
+      tunnel.start();
+      await running(tunnel, 1);
+      tunnel.connected(1);
+      await new Promise((resolve) => setTimeout(resolve, 2_500));
+      expect(tunnel.state()).toMatchObject({ kind: "running", run: 1 });
+      expect(await ssh.signals()).toEqual([]);
+    },
+    STAND_IN_TIMEOUT_MS,
+  );
+
+  posixTest(
+    "a program ssh started that outlives it does not hold up the next run",
+    async () => {
+      const ssh = await makeStandInSsh({ STAND_IN_SSH_PROXY_APART: "1" });
+      const tunnel = tunnelFor(
+        { name: "devbox", target: "dev@refuse.example", port: 4777 },
+        { ...ssh.env, STAND_IN_SSH_PROXY: ssh.proxyLog },
+      );
+      tunnel.start();
+      expect((await ended(tunnel, 1)).end.said).toBe(
+        "dev@refuse.example: Permission denied (publickey).",
+      );
+      const [proxy] = await ssh.proxies();
+      expect(isRunning(proxy as number)).toBe(true);
+      await running(tunnel, 2);
+    },
+    STAND_IN_TIMEOUT_MS,
+  );
+
+  posixTest(
     "a port taken on this computer ends ssh, which says why",
     async () => {
       const taken = createServer();

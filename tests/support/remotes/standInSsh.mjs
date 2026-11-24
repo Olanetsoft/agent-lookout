@@ -23,11 +23,19 @@
 // end on SIGTERM and only SIGKILL ends it. With STAND_IN_SSH_SIGNALS naming a
 // file, each SIGTERM or SIGHUP it is sent adds a line to it: its process ID and
 // the signal, as JSON. SIGKILL cannot be caught, so it is never written down.
+//
+// With STAND_IN_SSH_PROXY naming a file, it first starts a program that never
+// ends and holds its error output, as a ProxyCommand that hangs, and adds its
+// process ID to the file. With STAND_IN_SSH_PROXY_APART set, that program is in a
+// process group of its own, so a signal to ssh's group does not reach it.
 
+import { spawn } from "node:child_process";
 import { appendFileSync } from "node:fs";
 import { connect, createServer } from "node:net";
+import { fileURLToPath } from "node:url";
 
 const args = process.argv.slice(2);
+if (args[0] === "proxy") await new Promise(() => setInterval(() => {}, 1_000));
 const separator = args.indexOf("--");
 const target = separator >= 0 ? args[separator + 1] : undefined;
 const forward = args[args.indexOf("-L") + 1] ?? "";
@@ -51,6 +59,15 @@ process.on("SIGHUP", () => {
   noted("SIGHUP");
   end(`Connection to ${(target ?? "").split("@").pop()} closed by remote host.`, 255);
 });
+
+const proxies = process.env.STAND_IN_SSH_PROXY;
+if (proxies) {
+  const proxy = spawn(process.execPath, [fileURLToPath(import.meta.url), "proxy"], {
+    stdio: ["ignore", "ignore", "inherit"],
+    detached: process.env.STAND_IN_SSH_PROXY_APART !== undefined,
+  });
+  appendFileSync(proxies, `${proxy.pid}\n`);
+}
 
 // The run is written down only now, with both handlers set: a test signals
 // the stand-in as soon as it reads the run, and a signal sent any sooner

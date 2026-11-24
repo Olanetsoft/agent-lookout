@@ -44,6 +44,9 @@ export interface StandInSsh {
   runs(): Promise<SshRun[]>;
   /** Each SIGTERM and SIGHUP a run was sent, oldest first. SIGKILL is never among them. */
   signals(): Promise<SshSignal[]>;
+  /** The file to name in `STAND_IN_SSH_PROXY`, and each program that wrote itself there. */
+  proxyLog: string;
+  proxies(): Promise<number[]>;
 }
 
 /**
@@ -57,10 +60,12 @@ export async function makeStandInSsh(settings: Record<string, string> = {}): Pro
   const bin = path.join(dir, "ssh");
   const log = path.join(dir, "runs.jsonl");
   const signalLog = path.join(dir, "signals.jsonl");
+  const proxyLog = path.join(dir, "proxies.txt");
   await writeFile(bin, `#!/bin/sh\nexec "${process.execPath}" "${STAND_IN_SSH}" "$@"\n`);
   await chmod(bin, 0o755);
   await writeFile(log, "");
   await writeFile(signalLog, "");
+  await writeFile(proxyLog, "");
 
   const lines = async <T>(file: string): Promise<T[]> =>
     (await readFile(file, "utf8"))
@@ -68,14 +73,13 @@ export async function makeStandInSsh(settings: Record<string, string> = {}): Pro
       .filter((line) => line !== "")
       .map((line) => JSON.parse(line) as T);
   const runs = () => lines<SshRun>(log);
+  const proxies = () => lines<number>(proxyLog);
 
   // A run the test left going is ended, and only one that is still this
   // stand-in: a process ID that has been given to another program is left alone.
   onTestFinished(async () => {
-    for (const run of await runs()) {
-      if (isRunning(run.pid) && commandOf(run.pid).includes(STAND_IN_SSH)) {
-        process.kill(run.pid, "SIGKILL");
-      }
+    for (const pid of [...(await runs()).map((run) => run.pid), ...(await proxies())]) {
+      if (isRunning(pid) && commandOf(pid).includes(STAND_IN_SSH)) process.kill(pid, "SIGKILL");
     }
   });
 
@@ -90,6 +94,8 @@ export async function makeStandInSsh(settings: Record<string, string> = {}): Pro
     },
     runs,
     signals: () => lines<SshSignal>(signalLog),
+    proxyLog,
+    proxies,
   };
 }
 

@@ -262,6 +262,10 @@ describe("a machine's card", () => {
     expect((await adapter.poll()).health.detail).toBe(
       "ssh could not connect to dev@devbox.local: ssh: Could not resolve hostname devbox.local: nodename nor servname provided, or not known. Trying again in 1 second.",
     );
+    set(ended({ said: "No answer within 90 seconds.", code: null }, 1_000));
+    expect((await adapter.poll()).health.detail).toBe(
+      "ssh could not connect to dev@devbox.local: No answer within 90 seconds. Trying again in 1 second.",
+    );
     set(ended({ said: null, code: 1 }));
     expect((await adapter.poll()).health.detail).toBe(
       "ssh could not connect to dev@devbox.local, and ended with code 1. Trying again in 5 seconds.",
