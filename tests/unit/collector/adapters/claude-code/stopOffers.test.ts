@@ -27,9 +27,11 @@ describe("which sessions can be stopped", () => {
   test("a session in a terminal is stopped by a signal to its process, and the page is told only that", () => {
     const { sessions, targets } = offers([entry({ entrypoint: "cli" })]);
 
-    expect(sessions[0]?.stop).toEqual({ how: "signal" });
+    const key = sessions[0]?.stop?.key;
+    expect(sessions[0]?.stop).toEqual({ how: "signal", key });
     expect(targets.get(`claude-code:${ids.busy}`)).toEqual({
       how: "signal",
+      key,
       sessionId: ids.busy,
       pid: pids.busy,
       procStart: "Tue Nov 14 22:13:20 2023",
@@ -42,7 +44,7 @@ describe("which sessions can be stopped", () => {
 
   test("a session in VS Code is stopped the same way", () => {
     const { sessions } = offers([entry({ entrypoint: "claude-vscode" })]);
-    expect(sessions[0]?.stop).toEqual({ how: "signal" });
+    expect(sessions[0]?.stop).toMatchObject({ how: "signal" });
   });
 
   test.each([
@@ -102,7 +104,7 @@ describe("which sessions can be stopped", () => {
     const answer: FeedEntry[] = [{ sessionId: ids.background, id: "7c5dcf5d", kind: "background" }];
     const { sessions, targets } = offers([job], answer);
 
-    expect(sessions[0]?.stop).toEqual({ how: "background" });
+    expect(sessions[0]?.stop).toMatchObject({ how: "background" });
     expect(targets.get(`claude-code:${ids.background}`)).toMatchObject({
       how: "background",
       jobId: "7c5dcf5d",
@@ -129,13 +131,24 @@ describe("which sessions can be stopped", () => {
         null,
         { sessionsDir: SESSIONS_DIR, background: true },
       );
-      expect(sessions[0]?.stop).toEqual({ how: "signal" });
+      expect(sessions[0]?.stop).toMatchObject({ how: "signal" });
       expect(targets.get(`claude-code:${ids.busy}`)).toMatchObject({
         pid: 5001,
         procStart: shown.procStart,
         registryFile: path.join(SESSIONS_DIR, "5001.json"),
       });
     }
+  });
+
+  test("the key says which process it is, at every poll, and nothing else of it", () => {
+    const keyOf = (overrides: Record<string, unknown>) =>
+      offers([entry({ entrypoint: "cli", ...overrides })]).sessions[0]?.stop?.key;
+    const key = keyOf({ status: "busy" });
+    expect(key).toMatch(/^[0-9a-f]{16}$/);
+    expect(keyOf({ status: "idle", statusUpdatedAt: NOW })).toBe(key);
+    // Another process with the session open, or a pid given to another one since.
+    expect(keyOf({ pid: 5002 })).not.toBe(key);
+    expect(keyOf({ procStart: "Tue Nov 14 23:00:00 2023" })).not.toBe(key);
   });
 
   test("of two jobs of one session, the one of the same process is stopped, or none", () => {
@@ -179,12 +192,14 @@ describe("which sessions can be stopped", () => {
       [
         { ...session, source: "codex", id: `codex:${ids.busy}` },
         { ...session, pid: pids.busy + 1 },
+        // Its pid's file names another session.
+        { ...session, id: `claude-code:${ids.idle}` },
       ],
       [one],
       null,
       { sessionsDir: SESSIONS_DIR, background: true },
     );
-    expect(sessions.map((candidate) => candidate.stop)).toEqual([undefined, undefined]);
+    expect(sessions.map((candidate) => candidate.stop)).toEqual([undefined, undefined, undefined]);
   });
 });
 

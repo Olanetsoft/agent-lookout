@@ -37,11 +37,14 @@ const status = (req: Pick<IncomingMessage, "method" | "headers">) => stopRefusal
 
 const ID = "claude-code:00000000-0000-4000-8000-000000000001";
 
+/** The key the page showed for the session's process. */
+const KEY = "0123456789abcdef";
+
 /** A request with a body, as Node hands one over. A header set to undefined is not sent. */
 function request(
   options: { method?: string; headers?: Record<string, string | undefined>; body?: string } = {},
 ): IncomingMessage {
-  const text = options.body ?? JSON.stringify({ sessionId: ID });
+  const text = options.body ?? JSON.stringify({ sessionId: ID, key: KEY });
   const body = Readable.from(text === "" ? [] : [Buffer.from(text)]);
   const headers = Object.fromEntries(
     Object.entries({
@@ -58,6 +61,7 @@ function request(
 
 const TARGET: StopTarget = {
   how: "signal",
+  key: KEY,
   sessionId: "00000000-0000-4000-8000-000000000001",
   pid: 4241,
   procStart: "Tue Nov 14 22:13:20 2023",
@@ -75,7 +79,7 @@ function listed(overrides: Partial<Session> = {}): Session {
     status: "working",
     pid: 4241,
     alive: true,
-    stop: { how: "signal" },
+    stop: { how: "signal", key: KEY },
     ...overrides,
   });
 }
@@ -318,6 +322,20 @@ describe("POST /api/sessions/stop", () => {
     expect(stopper.act).not.toHaveBeenCalled();
   });
 
+  test("a session now listed from another process than the one that was confirmed is not stopped", async () => {
+    const { route, stopper, added } = routeOver(undefined, {
+      target: { ...TARGET, pid: 4242, key: "fedcba9876543210" },
+    });
+
+    expect(await route(request())).toMatchObject({
+      status: 409,
+      body: { reason: "cannot-confirm" },
+    });
+    expect(stopper.confirm).not.toHaveBeenCalled();
+    expect(stopper.act).not.toHaveBeenCalled();
+    expect(added).toEqual([]);
+  });
+
   test.each([
     ["gone", 404],
     ["unsupported", 409],
@@ -370,15 +388,18 @@ describe("POST /api/sessions/stop", () => {
   test("a refused request does not use up the second a stop is given", async () => {
     const { route } = routeOver();
     await route(request({ headers: { origin: undefined } }));
-    await route(request({ body: JSON.stringify({ sessionId: "claude-code:nobody" }) }));
+    await route(request({ body: JSON.stringify({ sessionId: "claude-code:nobody", key: KEY }) }));
     expect((await route(request())).status).toBe(200);
   });
 
   test.each([
     ["is not JSON", "sessionId=claude-code"],
     ["is empty", ""],
-    ["names a process beside the session", JSON.stringify({ sessionId: ID, pid: 1 })],
-    ["names a signal beside the session", JSON.stringify({ sessionId: ID, signal: "SIGKILL" })],
+    ["names no key", JSON.stringify({ sessionId: ID })],
+    ["names a key that is not text", JSON.stringify({ sessionId: ID, key: 1 })],
+    ["names an empty key", JSON.stringify({ sessionId: ID, key: "" })],
+    ["names a process beside them", JSON.stringify({ sessionId: ID, key: KEY, pid: 1 })],
+    ["names a signal beside them", JSON.stringify({ sessionId: ID, key: KEY, signal: "SIGKILL" })],
     ["is a list", JSON.stringify([ID])],
   ])("a body that %s is a 400, and nothing is checked", async (_what, body) => {
     const { route, stopper } = routeOver();

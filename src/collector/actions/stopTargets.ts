@@ -4,7 +4,8 @@
  * process, the start time `ps` gave it and, for a background job, the job's
  * id. The Claude Code adapter finds them as it reads the registry, and the two
  * routes that stop sessions read them. None of it is ever sent to the page,
- * which is told only that a session can be stopped, and how: `StopOffer`.
+ * which is told only that a session can be stopped, how, and a key that stands
+ * for what would be: `StopOffer`.
  */
 
 /** The variable that, set to `off`, takes Stop and the clean-up away altogether. */
@@ -24,6 +25,8 @@ export function stopOff(env: NodeJS.ProcessEnv): boolean {
 export const JOB_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{3,63}$/;
 
 interface Process {
+  /** Stands for the process on the page. Made anew at each start of Agent Lookout, it says nothing of it. */
+  key: string;
   /** The session's own id, as its registry file gives it, without the source in front. */
   sessionId: string;
   pid: number;

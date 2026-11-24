@@ -796,14 +796,18 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
 
     if (answer !== null && read !== null && problem === null) {
       // The registry's sessions, checked against the answer. One the answer did
-      // not list is believed only if it started too recently to be in it.
+      // not list is believed only if it started too recently to be in it, and so
+      // is another process of one it did list, as a file left by a crash can be.
       const listedPids = new Set(answer.map((entry) => entry.pid));
       const listedSessionIds = new Set(answer.map((entry) => entry.sessionId));
       const tooNewSince = read.askedAt - NEW_SESSION_GRACE_MS;
+      const listedLive = new Set(
+        live.filter((entry) => listedPids.has(entry.pid)).map((entry) => entry.sessionId),
+      );
       const fromRegistry = live.filter(
         (entry) =>
           listedPids.has(entry.pid) ||
-          listedSessionIds.has(entry.sessionId) ||
+          (listedSessionIds.has(entry.sessionId) && !listedLive.has(entry.sessionId)) ||
           startedAfter(entry, tooNewSince, checkedAt),
       );
 

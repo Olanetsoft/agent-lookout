@@ -44,20 +44,22 @@ async function answerOf(response: Response): Promise<Record<string, unknown>> {
 
 /**
  * Asks the collector to stop a session, once the person has confirmed it. The
- * request names the session and nothing else: the collector decides what that
- * comes to from what it found itself, and checks it all again first. It never
+ * request names the session, with the key its Stop had when it was pressed, and
+ * nothing else: the collector decides what that comes to from what it found
+ * itself, and checks it all again first. It never
  * rejects. An answer this page does not know is a failure, and none at all is
  * `no-answer`, since the session may have stopped all the same.
  */
 export async function requestStop(
   sessionId: string,
+  key: string,
   timeoutMs: number = STOP_REQUEST_TIMEOUT_MS,
 ): Promise<StopOutcome> {
   try {
     const response = await apiRequest("/api/sessions/stop", {
       method: "POST",
       headers: { "Content-Type": "application/json", [ACTION_HEADER]: STOP_ACTION },
-      body: JSON.stringify({ sessionId } satisfies StopRequest),
+      body: JSON.stringify({ sessionId, key } satisfies StopRequest),
       signal: AbortSignal.timeout(timeoutMs),
     });
     const answer = await answerOf(response);

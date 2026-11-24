@@ -43,6 +43,7 @@ describe("createStopTargets", () => {
       how: "signal" as const,
       sessionId: "1",
       pid: 4241,
+      key: "0123456789abcdef",
       procStart: "Tue Nov 14 22:13:20 2023",
       registryFile: "/Users/example/.claude/sessions/4241.json",
     };

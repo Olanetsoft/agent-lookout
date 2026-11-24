@@ -252,10 +252,14 @@ export type StopWay = (typeof STOP_WAYS)[number];
  *   background job runs under Claude Code's own supervisor.
  *
  * It holds nothing a command could be made of. What the collector acts on,
- * the process, its start time and the job's id, never leaves it.
+ * the process, its start time and the job's id, never leaves it. Two processes
+ * can have one session open, and its row can move from one to the other, so
+ * `key` stands for the one that would be stopped: the page sends it back, and
+ * the collector only compares it.
  */
 export interface StopOffer {
   how: StopWay;
+  key?: string;
 }
 
 /** The two answers Agent Lookout can give a permission prompt, when the person presses Allow or Deny. */

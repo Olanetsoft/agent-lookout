@@ -9,7 +9,7 @@ import {
 import type { Session, SessionsSnapshot } from "../../core/sessions/session.ts";
 import type { EventStore } from "../eventStore.ts";
 import { actionRefusalFor, readRequestBody, refusal, type ApiAnswer } from "../handler.ts";
-import { sessionIdIn } from "../jumpRoute.ts";
+import { textsIn } from "../jumpRoute.ts";
 import type { Poller } from "../poller.ts";
 import {
   stoppedEvent,
@@ -120,9 +120,10 @@ export async function lookAgain(
  * Answers `POST /api/sessions/stop`: ends one Claude Code session's process,
  * when the person has pressed Stop and confirmed it.
  *
- * The request names a session and nothing else. It is looked up in the
- * collector's own list, and stopped by what the Claude Code adapter found for
- * it: its process, or its background job. Then, at this moment and with
+ * The request names a session, with the key the page showed for it, and nothing
+ * else. It is looked up in the collector's own list, and stopped by what the
+ * Claude Code adapter found for it: its process, or its background job, if the
+ * key still stands for that. Then, at this moment and with
  * nothing remembered, its registry file is read again and must still be that
  * session's and of a kind that is stopped, `ps` must give the same start time
  * for its process, and the process must not be Agent Lookout's own, the one it
@@ -136,9 +137,11 @@ export async function lookAgain(
 export function createStopRoute(options: StopRouteOptions) {
   const { poller, events, targets, stopper, limiter } = options;
 
-  async function stop(session: Session): Promise<ApiAnswer> {
+  async function stop(session: Session, key: string): Promise<ApiAnswer> {
     const target = targets.targetOf(session.id);
     if (!target || !session.stop) return stopFailed("unsupported");
+    // Another process of the session's is listed now than the one that was confirmed.
+    if (target.key !== key) return stopFailed("cannot-confirm");
     if (!limiter.begin()) return stopFailed("too-soon");
     try {
       const confirmed = await stopper.confirm(target);
@@ -178,13 +181,17 @@ export function createStopRoute(options: StopRouteOptions) {
         ? refusal(413, `The body must be no more than ${MAX_STOP_BODY_BYTES} bytes.`)
         : refusal(400, "The body could not be read.");
     }
-    const sessionId = sessionIdIn(body.text);
-    if (sessionId === null) {
-      return refusal(400, 'The body must name one session and nothing else: {"sessionId": "..."}.');
+    const asked = textsIn(body.text, ["sessionId", "key"]);
+    if (asked === null) {
+      return refusal(
+        400,
+        'The body must name one session and its key, and nothing else: {"sessionId": "...", "key": "..."}.',
+      );
     }
 
-    const session = poller.getSnapshot().sessions.find((candidate) => candidate.id === sessionId);
+    const { sessions } = poller.getSnapshot();
+    const session = sessions.find((candidate) => candidate.id === asked.sessionId);
     if (!session) return stopFailed("gone");
-    return stop(session);
+    return stop(session, asked.key);
   };
 }

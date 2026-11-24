@@ -1,3 +1,4 @@
+import { createHmac, randomBytes } from "node:crypto";
 import path from "node:path";
 
 import { mapClaudeCodeSurface } from "../../../core/mapping/claudeCodeMapping.ts";
@@ -16,6 +17,8 @@ export interface StopOfferOptions {
    */
   background: boolean;
 }
+
+const KEY_SECRET = randomBytes(16);
 
 /**
  * The background job's id for a registry entry, from the command's answer: the
@@ -58,7 +61,9 @@ function targetFor(
 ): StopTarget | null {
   if (entry.sessionId === undefined || entry.procStart === undefined) return null;
   const surface = mapClaudeCodeSurface(entry.entrypoint);
+  const key = createHmac("sha256", KEY_SECRET).update(`${entry.pid} ${entry.procStart}`);
   const found = {
+    key: key.digest("hex").slice(0, 16),
     sessionId: entry.sessionId,
     pid: entry.pid,
     procStart: entry.procStart,
@@ -77,7 +82,7 @@ function targetFor(
 /**
  * Says which of a poll's sessions can be stopped, and finds what each is
  * stopped by. A session that can be is given `stop`, which names the way and
- * nothing else, and its target goes into the map, by the session's id. Only a
+ * the key that stands for its process, and its target goes into the map, by the session's id. Only a
  * session whose process runs is offered, a job that has finished or failed
  * included: its process can stay for days.
  */
@@ -97,7 +102,7 @@ export function withStopOffers(
     const target = targetFor(entry, answer, options);
     if (target === null) return session;
     targets.set(session.id, target);
-    return { ...session, stop: { how: target.how } };
+    return { ...session, stop: { how: target.how, key: target.key } };
   });
   return { sessions: offered, targets };
 }

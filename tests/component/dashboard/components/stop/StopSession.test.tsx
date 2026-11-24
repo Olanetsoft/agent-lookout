@@ -24,7 +24,7 @@ function working(overrides: Partial<Session> = {}): Session {
     surface: "terminal",
     pid: 4241,
     alive: true,
-    stop: { how: "signal" },
+    stop: { how: "signal", key: "0123456789abcdef" },
     ...overrides,
   });
 }
@@ -48,10 +48,10 @@ function Harness({
   onStopped,
 }: {
   session: Session;
-  request: (id: string) => Promise<StopOutcome>;
+  request: (id: string, key: string) => Promise<StopOutcome>;
   onStopped?: () => void;
 }) {
-  const stop = useStop(session.id, { request, onStopped });
+  const stop = useStop(session.id, { request, onStopped, stopKey: session.stop?.key });
   return (
     <div style={{ width: "100%" }} data-testid='details'>
       <header className='flex items-start justify-between gap-4'>
@@ -66,7 +66,7 @@ function Harness({
 async function renderAt(
   width: 375 | 1280,
   session: Session = working(),
-  request: (id: string) => Promise<StopOutcome> = heldStop().request,
+  request: (id: string, key: string) => Promise<StopOutcome> = heldStop().request,
   onStopped?: () => void,
 ) {
   await page.viewport(width, 800);
@@ -158,7 +158,7 @@ test("Stop session sends one request, says it is under way, and then what it cam
   (confirm.element() as HTMLButtonElement).click();
 
   expect(request).toHaveBeenCalledTimes(1);
-  expect(request).toHaveBeenCalledWith(`claude-code:${UUID}`);
+  expect(request).toHaveBeenCalledWith(`claude-code:${UUID}`, "0123456789abcdef");
   expect(note("question")?.textContent).toBe("Stopping checkout-flow…");
   expect(confirm.element().getAttribute("aria-disabled")).toBe("true");
 
@@ -168,6 +168,17 @@ test("Stop session sends one request, says it is under way, and then what it cam
     .toHaveTextContent("Stopped. Its process has ended, and its conversation is kept.");
   expect(document.activeElement).toBe(note("stop-outcome"));
   expect(stopped).toHaveBeenCalledOnce();
+});
+
+test("Stop session stops what Stop was pressed for, not a process the session has moved to since", async () => {
+  const { request } = heldStop();
+  const moved = working({ pid: 4242, stop: { how: "signal", key: "fedcba9876543210" } });
+  const screen = await render(<Harness session={working()} request={request} />);
+  await userEvent.click(stopButton());
+  await screen.rerender(<Harness session={moved} request={request} />);
+  await userEvent.click(page.getByRole("button", { name: "Stop session" }));
+
+  expect(request).toHaveBeenCalledWith(`claude-code:${UUID}`, "0123456789abcdef");
 });
 
 test.each<[StopOutcome, string]>([

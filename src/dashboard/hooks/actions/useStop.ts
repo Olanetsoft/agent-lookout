@@ -37,7 +37,8 @@ export interface StopPress {
  *
  * Stop always asks first. Its confirmation takes focus to Cancel, so a key
  * held from pressing Stop, or Enter, never stops the session. Stop session
- * sends one request, and a second press while it is under way does nothing.
+ * sends one request, for what Stop would have stopped when it was pressed, and
+ * a second press while it is under way does nothing.
  * What it came to stays said until Stop is pressed again, or the details close.
  *
  * Closing the details puts it back as it was, so opening them again, a moment
@@ -52,11 +53,13 @@ export function useStop(
     open?: boolean;
     /** Told once a session has stopped, so the page reads the sessions again at once. */
     onStopped?: () => void;
+    /** The `key` of the session's `stop`, as the page has it now. */
+    stopKey?: string;
     /** What stops it. Defaults to asking the app. */
-    request?: (sessionId: string) => Promise<StopOutcome>;
+    request?: (sessionId: string, key: string) => Promise<StopOutcome>;
   } = {},
 ): StopPress {
-  const { open = true, onStopped, request = requestStop } = options;
+  const { open = true, onStopped, stopKey = "", request = requestStop } = options;
   const [step, setStep] = useState<StopStep>({ kind: "idle" });
   // The details closing puts it back, unless a request is under way.
   const [wasOpen, setWasOpen] = useState(open);
@@ -76,6 +79,7 @@ export function useStop(
   }));
   const focusNext = useRef<keyof StopPress["ids"] | null>(null);
   const underWay = useRef(false);
+  const askedFor = useRef("");
   const drawn = useRef(true);
 
   useEffect(() => {
@@ -93,9 +97,10 @@ export function useStop(
 
   const ask = useCallback(() => {
     if (underWay.current) return;
+    askedFor.current = stopKey;
     focusNext.current = "cancel";
     setStep({ kind: "confirming", busy: false });
-  }, []);
+  }, [stopKey]);
 
   const cancel = useCallback(() => {
     if (underWay.current) return;
@@ -107,7 +112,7 @@ export function useStop(
     if (underWay.current) return;
     underWay.current = true;
     setStep({ kind: "confirming", busy: true });
-    void request(sessionId).then((result) => {
+    void request(sessionId, askedFor.current).then((result) => {
       underWay.current = false;
       if (!drawn.current) return;
       if (result === "stopped") onStopped?.();

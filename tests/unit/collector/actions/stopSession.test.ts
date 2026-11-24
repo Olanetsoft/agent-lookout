@@ -23,6 +23,7 @@ const SIGNAL: StopTarget = {
   how: "signal",
   sessionId: ids.busy,
   pid: PID,
+  key: "0123456789abcdef",
   procStart: STARTED,
   registryFile: FILE,
 };
@@ -31,6 +32,7 @@ const JOB: StopTarget = {
   how: "background",
   sessionId: ids.background,
   pid: PID,
+  key: "0123456789abcdef",
   procStart: STARTED,
   registryFile: FILE,
   jobId: "7c5dcf5d",

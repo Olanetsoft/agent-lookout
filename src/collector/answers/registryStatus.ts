@@ -5,7 +5,10 @@ import type { SessionsSnapshot } from "../../core/sessions/session.ts";
 import { mapClaudeCodeWaitingFor } from "../../core/mapping/claudeCodeMapping.ts";
 import { claudeHomeFor } from "../adapters/claude-code/index.ts";
 import { parseRegistryEntry, readRegularFile } from "../adapters/claude-code/registry.ts";
-import type { RegistryReading, StatusReader } from "./heldAsks.ts";
+import { GRACE_MS, type RegistryReading, type StatusReader } from "./heldAsks.ts";
+
+/** How long before its request arrives a prompt's own wait can have begun. */
+const OWN_WAIT_MS = 1_000;
 
 /**
  * Whether a Claude Code session is still waiting for permission, and which
@@ -20,6 +23,12 @@ import type { RegistryReading, StatusReader } from "./heldAsks.ts";
  * told from the next by `statusUpdatedAt` and `waitingFor` together, so a
  * prompt answered in the session and followed by another between two reads
  * is not taken for the same wait.
+ *
+ * Two processes can have one session open, and the collector lists one of them
+ * at a time. A request stays with the process it was confirmed in the wait of,
+ * so it is not let go for what the other does. One that arrives before the
+ * collector lists its process is confirmed in the other's wait, and is read in
+ * its own once that is listed: a wait that began as the request arrived.
  */
 export interface RegistryStatusOptions {
   /** The collector's own latest list of sessions. */
@@ -33,32 +42,44 @@ export function createRegistryStatus(options: RegistryStatusOptions): StatusRead
   const homeDir = options.homeDir ?? os.homedir();
   const readFile = options.readFile ?? readRegularFile;
   const sessionsDir = path.join(claudeHomeFor(options.env, homeDir), "sessions");
+  const unknown: RegistryReading = { status: "unknown" };
+
+  async function readingOf(sessionId: string, pid: number): Promise<RegistryReading> {
+    let content: string;
+    try {
+      content = await readFile(path.join(sessionsDir, `${pid}.json`));
+    } catch {
+      return unknown;
+    }
+    const entry = parseRegistryEntry(content);
+    const ownId = sessionId.slice("claude-code:".length);
+    if (entry === null || entry.pid !== pid || entry.sessionId !== ownId) return unknown;
+    const forPermission =
+      entry.status === "waiting" &&
+      mapClaudeCodeWaitingFor(entry.waitingFor).waitingReason === "permission";
+    if (!forPermission) return { status: "not-waiting" };
+    return {
+      status: "waiting",
+      wait: `${entry.statusUpdatedAt ?? ""}|${entry.waitingFor ?? ""}`,
+      ...(entry.statusUpdatedAt !== undefined && { since: entry.statusUpdatedAt }),
+      pid,
+    };
+  }
 
   return {
-    async statusOf(sessionId): Promise<RegistryReading> {
-      const unknown: RegistryReading = { status: "unknown" };
+    async statusOf(sessionId, request) {
       const session = options.snapshot().sessions.find((candidate) => candidate.id === sessionId);
       if (!session || session.source !== "claude-code" || session.alive === false) return unknown;
       const pid = session.pid;
       if (pid === undefined || !Number.isSafeInteger(pid) || pid <= 1) return unknown;
-      const ownId = sessionId.slice("claude-code:".length);
-      let content: string;
-      try {
-        content = await readFile(path.join(sessionsDir, `${pid}.json`));
-      } catch {
-        return unknown;
-      }
-      const entry = parseRegistryEntry(content);
-      if (entry === null || entry.pid !== pid || entry.sessionId !== ownId) return unknown;
-      const forPermission =
-        entry.status === "waiting" &&
-        mapClaudeCodeWaitingFor(entry.waitingFor).waitingReason === "permission";
-      if (!forPermission) return { status: "not-waiting" };
-      return {
-        status: "waiting",
-        wait: `${entry.statusUpdatedAt ?? ""}|${entry.waitingFor ?? ""}`,
-        ...(entry.statusUpdatedAt !== undefined && { since: entry.statusUpdatedAt }),
-      };
+      const listed = await readingOf(sessionId, pid);
+      if (request?.pid === undefined || request.pid === pid) return listed;
+      const own = (since: number | null | undefined) =>
+        since != null &&
+        since >= request.arrivedAt - OWN_WAIT_MS &&
+        since <= request.arrivedAt + GRACE_MS;
+      if (listed.status === "waiting" && own(listed.since) && !own(request.since)) return listed;
+      return readingOf(sessionId, request.pid);
     },
   };
 }

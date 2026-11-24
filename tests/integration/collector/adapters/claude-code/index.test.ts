@@ -17,7 +17,9 @@ import {
 import { readProcessStartsWithPs } from "@collector/processes/processStart";
 import type { RegistryIo } from "@collector/adapters/claude-code/registry";
 import { createStopTargets } from "@collector/actions/stopTargets";
+import { ALLOW_OUTPUT, createHeldAsks, DENY_OUTPUT } from "@collector/answers/heldAsks";
 import { createRegistryStatus } from "@collector/answers/registryStatus";
+import { shownAsk, type ShownAsk } from "@collector/answers/shownAsk";
 import { createEventStore } from "@collector/eventStore";
 import { nodeIo } from "@collector/files/readOnlyIo";
 import { createHistoryStore } from "@collector/historyStore";
@@ -656,6 +658,214 @@ describe("two processes with one session open", () => {
     alive.delete(second);
     await rm(registryPath(home, `${second}.json`));
     expect(await poll(12_000)).toEqual([first, "working", "not-waiting"]);
+  });
+
+  describe("whose permission requests are held", () => {
+    const id = `claude-code:${ids.busy}`;
+    const PROMPT = "permission prompt";
+
+    /** Two processes at work, the requests held for them, and what the page is shown. */
+    async function held([one, two]: readonly [number, number]) {
+      const home = await makeClaudeHome({
+        [`${one}.json`]: file(one, { status: "busy", statusUpdatedAt: now - 50_000 }),
+        [`${two}.json`]: file(two, { status: "busy", statusUpdatedAt: now - 55_000 }),
+      });
+      const clock = handClock();
+      const adapter = adapterFor(home, {
+        now: clock.now,
+        run: prints(JSON.stringify([listed(one), listed(two)])),
+      });
+      let snapshot: SessionsSnapshot = { generatedAt: now, sources: [], sessions: [] };
+      const drops: string[] = [];
+      const asks = createHeldAsks({
+        status: createRegistryStatus({
+          snapshot: () => snapshot,
+          env: { AGENT_LOOKOUT_CLAUDE_HOME: home },
+        }),
+        holdMs: 600_000,
+        now: clock.now,
+        every: () => () => {},
+        onDrop: (reason) => drops.push(reason),
+      });
+      const poll = async (at: number) => {
+        clock.moveTo(at);
+        const { health, basis, sessions } = await adapter.poll();
+        snapshot = { generatedAt: clock.now(), sources: [{ ...health, basis }], sessions };
+      };
+      const writes = (pid: number, status: string, at: number, waitingFor?: string) =>
+        writeFile(
+          registryPath(home, `${pid}.json`),
+          file(pid, { status, waitingFor, statusUpdatedAt: now + at }),
+        );
+      /** A hook's request for this command, and what it is answered with. */
+      const asksFor = (command: string) => {
+        const sent: string[] = [];
+        asks.receive(
+          { sessionId: id, shown: shownAsk("Bash", { command }) as ShownAsk },
+          { send: (body) => sent.push(body), isOpen: () => sent.length === 0, onClose: () => {} },
+        );
+        return sent;
+      };
+      const shown = async () => {
+        await asks.check();
+        const [session] = asks.withAsks(snapshot).sessions;
+        return [session?.pid, session?.status, session?.ask?.command];
+      };
+      const requestId = () => asks.withAsks(snapshot).sessions[0]?.ask?.requestId ?? "";
+      const answer = (decision: "allow" | "deny", request = requestId()) =>
+        asks.answer(id, request, decision);
+      await poll(0);
+      return { clock, poll, writes, asksFor, shown, requestId, answer, drops };
+    }
+
+    test.each([[[first, second]], [[second, first]]] as const)(
+      "the newest wait's is shown and answered, though it came before its process was listed: %j",
+      async ([older, newer]) => {
+        const { clock, poll, writes, asksFor, shown, answer, drops } = await held([older, newer]);
+        await writes(older, "waiting", 1_000, PROMPT);
+        const before = asksFor("npm run deploy");
+        await poll(2_000);
+        expect(await shown()).toEqual([older, "needs-you", "npm run deploy"]);
+        await poll(60_000);
+        expect(await shown()).toEqual([older, "needs-you", "npm run deploy"]);
+
+        // The other asks between two polls, and its request is checked twice before the next.
+        clock.moveTo(61_000);
+        await writes(newer, "waiting", 61_000, PROMPT);
+        const asked = asksFor("npm test");
+        await shown();
+        clock.moveTo(61_500);
+        await shown();
+        for (const at of [62_000, 64_000, 120_000]) {
+          await poll(at);
+          expect(await shown()).toEqual([newer, "needs-you", "npm test"]);
+        }
+        expect(drops).toEqual(["newer"]);
+        expect(before).toEqual([""]);
+        expect(await answer("allow")).toBe("answered");
+        expect(asked).toEqual([ALLOW_OUTPUT]);
+      },
+    );
+
+    test("one answered just as its process is listed is answered in its own wait", async () => {
+      const { clock, poll, writes, asksFor, shown, requestId, answer } = await held([
+        first,
+        second,
+      ]);
+      await writes(first, "waiting", 1_000, PROMPT);
+      await poll(60_000);
+      clock.moveTo(61_000);
+      const asked = asksFor("npm test");
+      expect(await shown()).toEqual([first, "needs-you", "npm test"]);
+      const seen = requestId();
+      await writes(second, "waiting", 61_500, PROMPT);
+      await poll(62_000);
+      expect(await answer("deny", seen)).toBe("answered");
+      expect(asked).toEqual([DENY_OUTPUT]);
+    });
+
+    test("the older wait's stays held while the other waits for something newer", async () => {
+      const { poll, writes, asksFor, shown, answer, drops } = await held([first, second]);
+      await writes(first, "waiting", 1_000, PROMPT);
+      const asked = asksFor("npm run deploy");
+      await poll(2_000);
+      expect(await shown()).toEqual([first, "needs-you", "npm run deploy"]);
+      await writes(second, "waiting", 60_000, "input needed");
+      await poll(62_000);
+      // It is not the one listed, so it is not shown there.
+      expect(await shown()).toEqual([second, "needs-you", undefined]);
+      await writes(second, "busy", 70_000);
+      await poll(72_000);
+      expect(await shown()).toEqual([first, "needs-you", "npm run deploy"]);
+      expect(await answer("allow")).toBe("answered");
+      expect(asked).toEqual([ALLOW_OUTPUT]);
+      expect(drops).toEqual([]);
+    });
+
+    test("and is let go once its own process has been answered, though the other still waits", async () => {
+      const { poll, writes, asksFor, shown, drops } = await held([first, second]);
+      await writes(first, "waiting", 1_000, PROMPT);
+      const asked = asksFor("npm run deploy");
+      await poll(2_000);
+      await shown();
+      await writes(second, "waiting", 60_000, PROMPT);
+      await poll(62_000);
+      expect(await shown()).toEqual([second, "needs-you", undefined]);
+      expect(drops).toEqual([]);
+      await writes(first, "busy", 63_000);
+      await shown();
+      expect(drops).toEqual(["left-waiting"]);
+      expect(asked).toEqual([""]);
+    });
+  });
+
+  test("a file the command did not list is not shown over the process it listed", async () => {
+    const leftover = (startedAt: number) =>
+      file(second, {
+        status: "waiting",
+        waitingFor: "permission prompt",
+        statusUpdatedAt: now - 20_000,
+        startedAt,
+        procStart: undefined,
+      });
+    const home = await makeClaudeHome({
+      [`${first}.json`]: file(first, { status: "idle", statusUpdatedAt: now - 50_000 }),
+      [`${second}.json`]: leftover(now - 60_000),
+    });
+    const shown = async (...pids: number[]) => {
+      const { basis, sessions } = await adapterFor(home, {
+        run: prints(JSON.stringify(pids.map(listed))),
+      }).poll();
+      expect(basis).toBe("registry+feed");
+      return sessions.map((session) => [session.pid, session.status]);
+    };
+    expect(await shown(first)).toEqual([[first, "idle"]]);
+    expect(await shown(first, second)).toEqual([[second, "needs-you"]]);
+    // One that started too recently for the answer to have it is shown.
+    await writeFile(registryPath(home, `${second}.json`), leftover(now - 5_000));
+    expect(await shown(first)).toEqual([[second, "needs-you"]]);
+  });
+
+  test("a session resumed in another process is shown, though the command listed the one before", async () => {
+    const home = await makeClaudeHome({
+      [`${second}.json`]: file(second, { status: "busy", statusUpdatedAt: now - 20_000 }),
+    });
+    const { basis, sessions } = await adapterFor(home, {
+      run: prints(JSON.stringify([listed(first)])),
+      isAlive: (pid) => pid === second,
+    }).poll();
+    expect(basis).toBe("registry+feed");
+    expect(sessions.map((session) => [session.pid, session.status])).toEqual([[second, "working"]]);
+  });
+
+  test.each<[string, string, string]>([
+    ["registry+feed", "idle", "registry+feed"],
+    ["feed", "pondering", "feed"],
+  ])("what it asks is not said when sessions are read from %s", async (_which, status, from) => {
+    const copies = {
+      [`${first}.json`]: file(first, { status: "waiting", waitingFor: "permission prompt" }),
+      [`${second}.json`]: file(second, { status }),
+    };
+    const home = await makeClaudeHome(copies);
+    const folder = path.join(home, "projects", "-Users-example-code-demo");
+    await mkdir(folder, { recursive: true });
+    await writeFile(path.join(folder, `${ids.busy}.jsonl`), waitingToRun("npm test"));
+    const alive = new Set<number>([first, second]);
+    const adapter = adapterFor(home, {
+      run: prints(
+        JSON.stringify([
+          { ...listed(first), status: "waiting", waitingFor: "permission prompt" },
+          listed(second),
+        ]),
+      ),
+      isAlive: (pid) => alive.has(pid),
+    });
+    const both = await adapter.poll();
+    expect(both.basis).toBe(from);
+    expect(both.sessions).toMatchObject([{ pid: first, status: "needs-you" }]);
+    expect(both.sessions[0]).not.toHaveProperty("waitingText");
+    alive.delete(second);
+    expect((await adapter.poll()).sessions[0]?.waitingText).toBe("Run: npm test");
   });
 
   test("so it is when sessions come from the command", async () => {

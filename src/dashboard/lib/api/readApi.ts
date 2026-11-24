@@ -182,7 +182,10 @@ export function readSession(value: unknown): Session | null {
   if (jump) session.jump = jump;
   // That it can be stopped, and how. Anything else is read as not.
   const how = here && isRecord(value.stop) ? oneOf(STOP_WAYS, value.stop.how) : null;
-  if (how) session.stop = { how };
+  if (how) {
+    const key = text((value.stop as Record<string, unknown>).key);
+    session.stop = { how, ...(key && { key }) };
+  }
   const git = readGit(value.git);
   if (git) session.git = git;
   return session;

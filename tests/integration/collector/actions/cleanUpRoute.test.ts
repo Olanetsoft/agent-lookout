@@ -119,10 +119,10 @@ describe.skipIf(process.platform === "win32")("POST /api/sessions/clean-up", () 
       [`${second.pid}.json`]: leftRunning(second, ids.busy, "checkout-flow"),
     });
     const shown = await server.sessions();
-    expect(shown.map((session) => [session.name, session.stale, session.stop])).toEqual(
+    expect(shown.map((session) => [session.name, session.stale, session.stop?.how])).toEqual(
       expect.arrayContaining([
-        ["docs-site", true, { how: "signal" }],
-        ["checkout-flow", true, { how: "signal" }],
+        ["docs-site", true, "signal"],
+        ["checkout-flow", true, "signal"],
       ]),
     );
 
