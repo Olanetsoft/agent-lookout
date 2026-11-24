@@ -25,7 +25,9 @@ import { GRACE_MS, OWN_WAIT_MS, type RegistryReading, type StatusReader } from "
  * at a time. A request stays with the process it was confirmed in the wait of,
  * so it is not let go for what the other does. One that arrives before the
  * collector lists its process is confirmed in the other's wait, and is read in
- * its own once that is listed: a wait that began as the request arrived.
+ * its own once that is listed: a wait that began as the request arrived. Should
+ * the other begin a new wait in that time, as with a second prompt of its own,
+ * the request is taken for that one's, and shows on its row while it lasts.
  */
 export interface RegistryStatusOptions {
   /** The collector's own latest list of sessions. */

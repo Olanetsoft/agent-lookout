@@ -17,6 +17,7 @@ import {
   type RegistryReading,
   type RegistryStatus,
 } from "@collector/answers/heldAsks";
+import { createRegistryStatus } from "@collector/answers/registryStatus";
 import { createRuleAnswers, type RuleAnswers } from "@collector/answers/ruleAnswers";
 import { shownAsk } from "@collector/answers/shownAsk";
 import type { PermissionRule } from "@core/permission-rules/permissionRules";
@@ -1479,5 +1480,121 @@ describe("the request that comes right after an answer, while the file still say
     await asks.check();
     expect(await asks.answer(ID, shown()?.requestId ?? "", "allow")).toBe("answered");
     expect(answered(waiting({ statusSince: ARRIVED }))).toEqual([]);
+  });
+});
+
+describe("a session two processes have open", () => {
+  const A = 4241;
+  const B = 4242;
+
+  /** Each process's registry file, and the one the collector lists, over a clock the test moves. */
+  function twoProcesses() {
+    const clock = { now: T0 };
+    const row = { pid: A };
+    /** When each process's wait for permission began, or null while it works. */
+    const since = new Map<number, number | null>([
+      [A, null],
+      [B, null],
+    ]);
+    const listed = () => {
+      const began = since.get(row.pid) ?? null;
+      return began === null
+        ? makeSession({ id: ID, status: "working", pid: row.pid, alive: true })
+        : waiting({ pid: row.pid, statusSince: began });
+    };
+    const drops: DropReason[] = [];
+    let ids = 0;
+    const asks = createHeldAsks({
+      status: createRegistryStatus({
+        snapshot: () => snapshot([listed()], clock.now),
+        env: {},
+        homeDir: "/Users/example",
+        readFile: async (file) => {
+          const pid = Number(/(\d+)\.json$/.exec(file)?.[1]);
+          const began = since.get(pid) ?? null;
+          return JSON.stringify({
+            pid,
+            sessionId: UUID,
+            ...(began === null
+              ? { status: "busy", statusUpdatedAt: T0 - 60_000 }
+              : { status: "waiting", waitingFor: "permission prompt", statusUpdatedAt: began }),
+          });
+        },
+      }),
+      holdMs: HOLD_MS,
+      now: () => clock.now,
+      every: () => () => {},
+      newId: () => (ids += 1).toString(16).padStart(32, "0"),
+      onDrop: (reason) => drops.push(reason),
+    });
+    const at = async (ms: number) => {
+      clock.now = T0 + ms;
+      await asks.check();
+    };
+    const poll = (): SessionsSnapshot => ({
+      ...snapshot([listed()], clock.now),
+      sources: [{ id: "claude-code", label: "Claude Code", state: "ok", checkedAt: clock.now }],
+    });
+    return { asks, row, since, drops, at, poll };
+  }
+
+  const shown = (asks: ReturnType<typeof createHeldAsks>, poll: SessionsSnapshot) =>
+    asks.withAsks(poll).sessions[0]?.ask;
+
+  test("an answer to one's request leaves the other's wait, whose request was let go, as it is", async () => {
+    const { asks, row, since, at, poll } = twoProcesses();
+    row.pid = B;
+    // A's request, before any file says it waits, and B's, for which it is let go.
+    asks.receive(bash("npm test"), standInReply().reply);
+    since.set(A, T0 + 120);
+    await at(450);
+    const reply = standInReply();
+    asks.receive(bash("npm run build"), reply.reply);
+    since.set(B, T0 + 570);
+    await at(1_000);
+    const ask = shown(asks, poll());
+    expect(await asks.answer(ID, ask?.requestId ?? "", "allow")).toBe("answered");
+    expect(reply.sent).toEqual([ALLOW_OUTPUT]);
+    expect([...asks.answeredIn(poll())]).toEqual([ID]);
+
+    // The collector lists A now, which waits still.
+    row.pid = A;
+    expect([...asks.answeredIn(poll())]).toEqual([]);
+  });
+
+  test("one answered while the other's older wait is read is answered in its own process's wait", async () => {
+    const { asks, row, since, at, poll } = twoProcesses();
+    since.set(A, T0 - 8_000);
+    asks.receive(bash("npm test"), standInReply().reply);
+    since.set(B, T0 + 100);
+    await at(400);
+    expect(await asks.answer(ID, shown(asks, poll())?.requestId ?? "", "allow")).toBe("answered");
+    row.pid = B;
+    expect([...asks.answeredIn(poll())]).toEqual([ID]);
+  });
+
+  test("one between two of its own waits is not taken up by the other's older wait", async () => {
+    const { asks, row, since, drops, at, poll } = twoProcesses();
+    row.pid = B;
+    since.set(A, T0 - 8_000);
+    asks.receive(bash("npm test"), standInReply().reply);
+    since.set(B, T0);
+    await at(500);
+    await at(1_000);
+    expect(await asks.answer(ID, shown(asks, poll())?.requestId ?? "", "allow")).toBe("answered");
+
+    // B's next prompt, before its file moves on, and answered in the session.
+    await at(1_150);
+    asks.receive(bash("rm -r build"), standInReply().reply);
+    await at(1_200);
+    expect(shown(asks, poll())?.command).toBe("rm -r build");
+    since.set(B, null);
+    row.pid = A;
+    for (const ms of [1_500, 2_000, 2_500, 3_000, 4_000]) {
+      await at(ms);
+      expect(shown(asks, poll()), `${ms}`).toBeUndefined();
+    }
+    await at(4_200);
+    expect([asks.size, drops]).toEqual([0, ["left-waiting"]]);
   });
 });

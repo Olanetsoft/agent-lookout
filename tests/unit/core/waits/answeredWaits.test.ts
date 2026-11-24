@@ -77,6 +77,18 @@ describe("whether a session is still in the wait that was answered", () => {
     expect(inAnsweredWait(waiting({ status: "working" }), wait)).toBe(false);
   });
 
+  test("a wait of another process that has the session open is not, whenever it began", () => {
+    const wait = { since: T0, pid: 4241, from: T0 + 1_000, at: T0 + 2_000 };
+    for (const statusSince of [T0, T0 + 1_500, null]) {
+      expect(inAnsweredWait(waiting({ statusSince, pid: 4242 }), wait)).toBe(false);
+      expect(inAnsweredWait(waiting({ statusSince, pid: 4241 }), wait)).toBe(true);
+      expect(inAnsweredWait(waiting({ statusSince, pid: undefined }), wait)).toBe(true);
+      expect(inAnsweredWait(waiting({ statusSince, pid: 4242 }), { ...wait, pid: undefined })).toBe(
+        true,
+      );
+    }
+  });
+
   test("past `until` the wait it was given in is another's, and its own wait is not", () => {
     const wait = { since: T0, from: T0 + 1_000, at: T0 + 2_000, until: T0 + 5_000 };
     for (const since of [T0, null]) {

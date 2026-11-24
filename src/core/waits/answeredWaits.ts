@@ -38,6 +38,8 @@ export interface AnsweredWait {
   source: SourceId;
   /** The wait's status time, as the session's registry file gave it, or null when it gave none. */
   since: number | null;
+  /** The process that waited, when it is known: another that has the session open waits for itself. */
+  pid?: number;
   /** When the answer was given, on the collector's clock. */
   at: number;
   /**
@@ -62,16 +64,17 @@ export function needsYou(session: Pick<Session, "status" | "answered">): boolean
  * Whether a session, as a poll found it, is still in the wait an answer was
  * for: waiting for permission, since the same status time, before `until`. A
  * wait since another time is another wait, unless it began from `from` to the
- * answer, and a wait for anything else is not the prompt that was answered. A
- * time that either side does not know says nothing about the wait, as in
- * `waitChanges`.
+ * answer, and a wait for anything else is not the prompt that was answered,
+ * nor is one of another process. A time or a process that either side does not
+ * know says nothing about the wait, as in `waitChanges`.
  */
 export function inAnsweredWait(
-  session: Pick<Session, "status" | "waitingReason" | "statusSince">,
+  session: Pick<Session, "status" | "waitingReason" | "statusSince" | "pid">,
   wait: Pick<AnsweredWait, "since"> & Partial<AnsweredWait>,
   now = 0,
 ): boolean {
   if (session.status !== "needs-you" || session.waitingReason !== "permission") return false;
+  if (wait.pid !== undefined && session.pid !== undefined && wait.pid !== session.pid) return false;
   const { since, at = 0, from = Infinity, until = Infinity } = wait;
   const { statusSince } = session;
   if (since === null || statusSince === null || statusSince === since) return now < until;

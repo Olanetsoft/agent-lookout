@@ -375,7 +375,8 @@ export function createHeldAsks(options: HeldAsksOptions): HeldAsks {
    * Where a confirmed request is, by a new reading of its session's file: in
    * its wait, which it moves to when it was confirmed in one before; between
    * two, when it waits to be confirmed again, under another id, so a page that
-   * shows it again offers it afresh; or out of it.
+   * shows it again offers it afresh; or out of it. It stays with the process it
+   * was confirmed in the wait of, so another's older wait never takes it up.
    */
   function follow(entry: Held, reading: RegistryReading, at: number): "in" | "between" | "out" {
     // Confirmed in the wait of another process that has the session open.
@@ -392,7 +393,6 @@ export function createHeldAsks(options: HeldAsksOptions): HeldAsks {
       confirmed: false,
       wait: null,
       since: null,
-      pid: undefined,
     });
     return "between";
   }
@@ -471,6 +471,8 @@ export function createHeldAsks(options: HeldAsksOptions): HeldAsks {
     const given: AnsweredWait = {
       source: SOURCE,
       since: entry.since,
+      // In a wait before its own, it may be in another process's.
+      ...(!early(entry) && entry.pid !== undefined && { pid: entry.pid }),
       at,
       ...(moves && { from: Math.max(earliest(entry), open?.arrivedAt ?? 0) }),
       ...(open && { until: at + GRACE_MS }),
