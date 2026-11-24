@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { ANSWER_SETTLE_MS } from "@core/answers/settle";
 import type { AnswerDecision, Session } from "@core/sessions/session";
+import { useSettling } from "@dashboard/hooks/dom/useSettling";
 import { requestAnswer, type AnswerOutcome } from "@dashboard/lib/answer/answerRequest";
 
 /** Where one session's answers are. */
@@ -20,8 +21,10 @@ export interface AnswerPress {
   step: AnswerStep;
   /** Sends Allow or Deny for the request shown, once. */
   press: (decision: AnswerDecision) => void;
-  /** Whether the request shown was drawn too lately for a press to be taken. */
+  /** Whether the request shown was drawn, or moved, too lately for a press to be taken. */
   settling: boolean;
+  /** The id of what holds Deny and Allow, whose place is watched. */
+  buttonsId: string;
   /** The id of the line that says what the press came to, which takes focus once it is said. */
   outcomeId: string;
 }
@@ -29,8 +32,9 @@ export interface AnswerPress {
 /**
  * One session's Allow and Deny. A press sends one request, naming the request
  * the page shows, and a second press while it is under way does nothing. A
- * press in the first second a request is drawn is not taken either. What the
- * last press came to stays said while the session is drawn: alone once its
+ * press in the first second a request is drawn, or within a second of its
+ * buttons moving or the page coming back into sight, is not taken either. What
+ * the last press came to stays said while the session is drawn: alone once its
  * request has gone, and above a newer request of the session's, which is
  * offered afresh. There is no confirmation: the press is the answer, and the
  * whole of what it answers is on the screen beside the buttons.
@@ -41,7 +45,7 @@ export function useAnswer(
     /** Told once an answer was handed over, so the page reads the sessions again at once. */
     onAnswered?: () => void;
     request?: typeof requestAnswer;
-    /** How long a newly drawn request takes no press. */
+    /** How long a newly drawn request, or one that moved, takes no press. */
     settleMs?: number;
   } = {},
 ): AnswerPress {
@@ -49,9 +53,10 @@ export function useAnswer(
   const [step, setStep] = useState<AnswerStep>({ kind: "idle" });
   const requestId = session.ask?.requestId ?? null;
   const since = session.statusSince;
-  const [settledFor, setSettledFor] = useState<string | null>(null);
-  const settling = requestId !== null && settledFor !== requestId;
-  const outcomeId = `${useId()}-answer-outcome`;
+  const id = useId();
+  const outcomeId = `${id}-answer-outcome`;
+  const buttonsId = `${id}-answer-buttons`;
+  const { settling, tooSoon } = useSettling(buttonsId, requestId, settleMs);
   const underWay = useRef(false);
   const focusOutcome = useRef(false);
   const drawn = useRef(true);
@@ -64,12 +69,6 @@ export function useAnswer(
   }, []);
 
   useEffect(() => {
-    if (requestId === null) return;
-    const timer = setTimeout(() => setSettledFor(requestId), settleMs);
-    return () => clearTimeout(timer);
-  }, [requestId, settleMs]);
-
-  useEffect(() => {
     if (!focusOutcome.current || step.kind !== "answered") return;
     focusOutcome.current = false;
     document.getElementById(outcomeId)?.focus();
@@ -77,7 +76,7 @@ export function useAnswer(
 
   const press = useCallback(
     (decision: AnswerDecision) => {
-      if (underWay.current || requestId === null || settling) return;
+      if (underWay.current || requestId === null || tooSoon()) return;
       underWay.current = true;
       setStep({ kind: "busy", decision, requestId });
       void request(session.id, requestId, decision).then((outcome) => {
@@ -88,8 +87,8 @@ export function useAnswer(
         setStep({ kind: "answered", outcome, requestId, since });
       });
     },
-    [session.id, requestId, since, settling, request, onAnswered],
+    [session.id, requestId, since, tooSoon, request, onAnswered],
   );
 
-  return { step, press, settling, outcomeId };
+  return { step, press, settling, buttonsId, outcomeId };
 }

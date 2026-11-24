@@ -10,7 +10,7 @@ import type { AnswerOutcome } from "@dashboard/lib/answer/answerRequest";
 import type { NoAskFacts } from "@dashboard/lib/answer/noAsk";
 import { NO_ASKS_SEEN, rememberAsks } from "@dashboard/lib/answer/seenAsks";
 import { makeSession } from "@tests/fixtures/session";
-import { startAtTop } from "@tests/support/browser/browser";
+import { assistivePress, startAtTop } from "@tests/support/browser/browser";
 import { rgbOf, warmPaint } from "@tests/support/browser/colours";
 
 const UUID = "00000000-0000-4000-8000-000000000001";
@@ -505,6 +505,32 @@ test("for a second after a request is drawn, neither button takes a press", asyn
   await settled();
   await userEvent.click(deny());
   expect(request).toHaveBeenCalledWith(`claude-code:${UUID}`, REQUEST_ID, "deny");
+});
+
+test("a press as something above moves the buttons answers nothing, and nor does one as the page comes back into sight", async () => {
+  const { request } = heldAnswer();
+  await page.viewport(1280, 900);
+  const screen = await render(
+    <>
+      <div data-testid='above' />
+      {block(1280, waiting(), request, undefined, 300)}
+    </>,
+  );
+  await settled();
+  (screen.getByTestId("above").element() as HTMLElement).style.height = "60px";
+  (allow().element() as HTMLButtonElement).click();
+  (deny().element() as HTMLButtonElement).click();
+  expect(request).not.toHaveBeenCalled();
+
+  await settled();
+  document.dispatchEvent(new Event("visibilitychange"));
+  await expect.element(allow()).toHaveAttribute("aria-disabled", "true");
+  (allow().element() as HTMLButtonElement).click();
+  expect(request).not.toHaveBeenCalled();
+
+  await settled();
+  assistivePress(allow().element() as HTMLElement);
+  expect(request).toHaveBeenCalledOnce();
 });
 
 test("a newer request of the session takes no press for a moment either", async () => {

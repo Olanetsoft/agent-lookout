@@ -38,3 +38,12 @@ export function assistivePress(control: HTMLElement): void {
   control.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
   control.click();
 }
+
+/** Presses the pointer at a point of the window, whatever is there. */
+export async function pressAt(x: number, y: number): Promise<void> {
+  const body = document.body.getBoundingClientRect();
+  await userEvent.click(document.body, {
+    position: { x: x - body.left, y: y - body.top },
+    force: true,
+  });
+}

@@ -17,7 +17,7 @@ import { setApiHost } from "@dashboard/lib/api/apiHost";
 import { readSession } from "@dashboard/lib/api/readApi";
 import { sessionHref } from "@dashboard/lib/shell/sessionDetails";
 import { makeSession } from "@tests/fixtures/session";
-import { pointAway, startAtTop } from "@tests/support/browser/browser";
+import { pointAway, pressAt, startAtTop } from "@tests/support/browser/browser";
 import { rgbOf, warmPaint } from "@tests/support/browser/colours";
 
 const SECOND = 1_000;
@@ -1582,6 +1582,59 @@ describe("what a waiting session is asking", () => {
     await expect.poll(() => document.activeElement?.getAttribute("data-part")).toBe("title");
     expect(hero(screen.container).contains(document.activeElement)).toBe(true);
   });
+
+  test.each([1280, 375])(
+    "at %i pixels, a click where the row above was when it left answers nothing for a second",
+    async (width) => {
+      await page.viewport(width, 1600);
+      const posted: unknown[] = [];
+      setApiHost(async (_path, init) => {
+        posted.push(JSON.parse(init?.body as string));
+        return new Response(JSON.stringify({ ok: true, decision: "allow" }));
+      });
+      const held = [11, 12, 13].map((n) =>
+        session(n, {
+          status: "needs-you",
+          waitingReason: "permission",
+          statusSince: NOW - (30 - n) * MINUTE,
+          ask: {
+            requestId: String(n).padStart(32, "0"),
+            tool: "Bash",
+            command: `npm run task-${n}`,
+            allow: true,
+            until: NOW + 300_000,
+          },
+        }),
+      );
+      const shown = (sessions: Session[]) => (
+        <div style={{ width: width === 375 ? 343 : 820 }}>
+          <HeroPanel sessions={sessions} sources={[CLAUDE]} now={NOW} />
+        </div>
+      );
+      const screen = await render(shown(held));
+      const allow = (n: number) =>
+        screen.getByRole("button", { name: `Allow, for project-${n}` }).element();
+      const settled = (n: number) =>
+        expect.poll(() => allow(n).getAttribute("aria-disabled"), { timeout: 3_000 }).toBeNull();
+      await settled(13);
+      const { left, top, width: wide, height } = allow(12).getBoundingClientRect();
+      const x = left + wide / 2;
+      const y = top + height / 2;
+
+      // Answered in its own terminal, or by the first half of a double click.
+      await screen.rerender(shown([held[0]!, held[2]!]));
+      expect(document.elementFromPoint(x, y)).toBe(allow(13));
+      expect(allow(13).getAttribute("aria-disabled")).toBe("true");
+      await pressAt(x, y);
+      expect(posted).toEqual([]);
+
+      await settled(13);
+      await pressAt(x, y);
+      expect(posted).toEqual([
+        expect.objectContaining({ sessionId: held[2]!.id, decision: "allow" }),
+      ]);
+    },
+  );
 
   test.each([375, 320])(
     "at %i pixels a long command is cut at two lines, stays inside the hero, and is whole one hover or one Tab away",
