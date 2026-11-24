@@ -70,6 +70,24 @@ describe("Claude Code's folder", () => {
     ).toBe("D:\\claude-work");
     expect(claudeHomeFor({}, "C:\\Users\\example", "win32")).toBe("C:\\Users\\example\\.claude");
   });
+
+  test("is found by the paths of the system the adapter runs on", async () => {
+    const dirs: string[] = [];
+    await createClaudeCodeAdapter({
+      env: { CLAUDE_CONFIG_DIR: "D:\\claude-work", AGENT_LOOKOUT_CLAUDE_FEED: "off" },
+      homeDir: "C:\\Users\\example",
+      platform: "win32",
+      now: () => now,
+      registryIo: {
+        ...unlistable,
+        readdir: async (dir) => {
+          dirs.push(dir);
+          return [];
+        },
+      },
+    }).poll();
+    expect(dirs).toEqual(["D:\\claude-work\\sessions"]);
+  });
 });
 
 describe("the Claude Code adapter", () => {
