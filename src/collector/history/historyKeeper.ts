@@ -180,8 +180,18 @@ export interface HistoryKeeper {
 
 /** A file of this version's format, as the keeper knows it. */
 interface Known extends KeptFile {
-  /** Its first record, or null when it holds none that could be read. */
+  /**
+   * Its first record, at the earliest time it holds, which is a later one's
+   * when the clock was set back. Null when it holds none that could be read.
+   */
   first: { at: number; kind: HistoryRecord["kind"] } | null;
+}
+
+/** Where a file begins, with one more record in it. */
+function withRecord(first: Known["first"], record: HistoryRecord | null): Known["first"] {
+  if (!record) return first;
+  const at = recordAt(record);
+  return first ? { ...first, at: Math.min(first.at, at) } : { at, kind: record.kind };
 }
 
 const BEGINNING: Record<HistoryRecord["kind"], HistoryBeginning> = {
@@ -360,8 +370,7 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
         continue;
       }
       const records = recordsIn(text, at);
-      const first = records[0];
-      if (first) known.first = { at: recordAt(first), kind: first.kind };
+      known.first = records.reduce(withRecord, null);
       for (const record of records) {
         const recorded = recordAt(record);
         times.push(recorded);
@@ -405,8 +414,8 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
   async function firstRecordOf(name: string, size: number): Promise<Known["first"]> {
     if (size === 0 || size > readLimit) return null;
     try {
-      const first = recordsIn(await fs.readRegular(full(name), readLimit), now())[0];
-      return first ? { at: recordAt(first), kind: first.kind } : null;
+      const records = recordsIn(await fs.readRegular(full(name), readLimit), now());
+      return records.reduce(withRecord, null);
     } catch {
       return null;
     }
@@ -452,14 +461,14 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
     }
   }
 
-  /** Goes on in today's newest file, so what is written follows what the files hold. */
+  /**
+   * Goes on in the newest file, so what is written follows what the files hold:
+   * today's, or tomorrow's once the clock has been set back past midnight.
+   */
   function aimAtNewest(): void {
-    const day = dayOf(now());
-    let part = 0;
-    for (const file of files.values()) {
-      if (file.day === day && file.part > part) part = file.part;
-    }
-    target = part > 0 ? { day, part } : null;
+    const days = [dayOf(now()), dayOf(now() + DAY_MS)];
+    target =
+      [...files.values()].sort(byFileOrder).findLast(({ day }) => days.includes(day)) ?? null;
   }
 
   /** Deletes what the age and the cap say must go before `incoming` bytes go to `writingTo`. */
@@ -506,12 +515,15 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
       }
       let text = lead;
       let bytes = lead.length;
+      let first = known?.first ?? null;
       let end = index;
       while (end < lines.length) {
-        const lineBytes = byteLength(lines[end] as string);
+        const line = lines[end] as string;
+        const lineBytes = byteLength(line);
         if (bytes - lead.length + lineBytes > room) break;
-        text += lines[end];
+        text += line;
         bytes += lineBytes;
+        first = withRecord(first, parseRecord(line.trim()));
         end += 1;
       }
       const outcome = yield { name, text, count: end - index };
@@ -520,13 +532,8 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
         part += 1;
         continue;
       }
-      const record = parseRecord((lines[index] as string).trim());
       const parsed = readHistoryFileName(name) as HistoryFileName;
-      files.set(name, {
-        ...parsed,
-        size: size + bytes,
-        first: known?.first ?? (record && { at: recordAt(record), kind: record.kind }),
-      });
+      files.set(name, { ...parsed, size: size + bytes, first });
       touched.add(name);
       target = { day, part };
       index = end;

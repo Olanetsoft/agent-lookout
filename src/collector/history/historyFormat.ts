@@ -6,9 +6,10 @@
 // file goes on in `v1-2026-10-06-2.jsonl`, and so on. The files hold records in
 // the order they were made, which the waits go by. So one that waited, as on a
 // full disk, is in the file of the day it was written, and once the clock is set
-// back past midnight they go on in the newest file. An earlier version reads
-// both, since it goes by each record's own time. The `v1` is the format: a later
-// format writes names of its own, which this one leaves alone.
+// back past midnight they go on in the newest file while that is tomorrow's,
+// through a restart too. An earlier version reads both, since it goes by each
+// record's own time. The `v1` is the format: a later format writes names of its
+// own, which this one leaves alone.
 //
 // A record is one of five, each an object with one field:
 //

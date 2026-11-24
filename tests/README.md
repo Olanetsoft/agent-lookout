@@ -4,13 +4,13 @@ Every test, fixture and test helper lives in this folder. Nothing under `src/` i
 
 ## What goes where
 
-| Folder         | Holds                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Runs in |
+| Folder         | Holds                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Runs in           |
 | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
-| `unit/`        | Tests of one module. No sockets, no child processes, no real files. What a module needs from outside is passed in                                                                                                                                                                                                                                                                                                                                                                                                                                        | Node |
-| `integration/` | Tests that open a socket, start a server, start a process or touch the real file system                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Node |
+| `unit/`        | Tests of one module. No sockets, no child processes, no real files. What a module needs from outside is passed in                                                                                                                                                                                                                                                                                                                                                                                                                                        | Node              |
+| `integration/` | Tests that open a socket, start a server, start a process or touch the real file system                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Node              |
 | `component/`   | React components, and the dashboard code that needs a real page, such as the theme and the stylesheet                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Headless Chromium |
-| `fixtures/`    | Session data shared by tests: `session.ts`, `claudeCode.ts`, `claudeTranscript.ts`, `codex.ts`, `antigravity.ts`, `mistralVibe.ts`, `statusFiles.ts`, `waits.ts`, `remote.ts` and the folders `codex-home/`, `gemini-cli/`, `opencode/`, `qwen-code/`, `hermes-agent/`, `cline/`, `goose/`, `pi/`, `kimi-code/`, `continue/`, `crush/`, `kilo-code/`, `mimo-code/`, `kimchi/`, `prime-agent/`, `fx/`, `unreal-agent/`, `autohand-code/`, `deepseek-harness/`, `droid/`, `grok-build/`, `oh-my-pi/`, `muse-code/`, `copilot-cli/` and `copilot-cli-home/` | |
-| `support/`     | Setup files and helpers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | |
+| `fixtures/`    | Session data shared by tests: `session.ts`, `claudeCode.ts`, `claudeTranscript.ts`, `codex.ts`, `antigravity.ts`, `mistralVibe.ts`, `statusFiles.ts`, `waits.ts`, `remote.ts` and the folders `codex-home/`, `gemini-cli/`, `opencode/`, `qwen-code/`, `hermes-agent/`, `cline/`, `goose/`, `pi/`, `kimi-code/`, `continue/`, `crush/`, `kilo-code/`, `mimo-code/`, `kimchi/`, `prime-agent/`, `fx/`, `unreal-agent/`, `autohand-code/`, `deepseek-harness/`, `droid/`, `grok-build/`, `oh-my-pi/`, `muse-code/`, `copilot-cli/` and `copilot-cli-home/` |                   |
+| `support/`     | Setup files and helpers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |                   |
 
 Outside `src/`, the Claude Code plugin has tests of its own: `integration/plugins/agent-lookout/hooks/ask-agent-lookout.test.ts` runs its hook script, as Claude Code would, against a stand-in socket of the test's own. No test runs Claude Code, installs the plugin or opens the socket in `~/.agent-lookout`: `nodeSetup.ts` sets `AGENT_LOOKOUT_ANSWER=off` and `AGENT_LOOKOUT_PLUGIN_INSTALL=off`, and a test of answering names a socket in a temporary folder with `AGENT_LOOKOUT_ANSWER_SOCKET`.
 
@@ -81,12 +81,12 @@ The browser tests write failure screenshots and attachments to `.artifacts/`, wh
 
 ## Running them
 
-| Command                    | Runs |
+| Command                    | Runs                                    |
 | -------------------------- | --------------------------------------- |
-| `npm test`                 | All three groups, once |
-| `npm run test:unit`        | `unit/` |
-| `npm run test:integration` | `integration/` |
-| `npm run test:component`   | `component/` |
+| `npm test`                 | All three groups, once                  |
+| `npm run test:unit`        | `unit/`                                 |
+| `npm run test:integration` | `integration/`                          |
+| `npm run test:component`   | `component/`                            |
 | `npm run test:watch`       | All three groups, again after each edit |
 
 `npm run check` runs the layout check, the typecheck, the linter and the format check, then `npm test`.
@@ -125,14 +125,14 @@ The same file takes the Amp plugin from that section and runs it with the Node t
 
 A test file is named for the module it covers and sits at that module's path, with `tests/<group>/` in place of `src/`. It ends in `.test.tsx` when the module is a `.tsx` file, and in `.test.ts` otherwise. There are no exceptions: every test file names a module that exists.
 
-| Module                                             | Test |
+| Module                                             | Test                                                               |
 | -------------------------------------------------- | ------------------------------------------------------------------ |
-| `src/core/sessions/diff.ts`                        | `tests/unit/core/sessions/diff.test.ts` |
-| `src/collector/hosts/standalone.ts`                | `tests/integration/collector/hosts/standalone.test.ts` |
+| `src/core/sessions/diff.ts`                        | `tests/unit/core/sessions/diff.test.ts`                            |
+| `src/collector/hosts/standalone.ts`                | `tests/integration/collector/hosts/standalone.test.ts`             |
 | `src/dashboard/components/ui/controls/Button.tsx`  | `tests/component/dashboard/components/ui/controls/Button.test.tsx` |
-| `src/dashboard/lib/shell/theme.ts`, in a real page | `tests/component/dashboard/lib/shell/theme.test.ts` |
-| `src/dashboard/styles/index.css`, the theme        | `tests/component/dashboard/styles/index.test.ts` |
-| `tests/support/reporters/stallWatch.ts`            | `tests/unit/support/reporters/stallWatch.test.ts` |
+| `src/dashboard/lib/shell/theme.ts`, in a real page | `tests/component/dashboard/lib/shell/theme.test.ts`                |
+| `src/dashboard/styles/index.css`, the theme        | `tests/component/dashboard/styles/index.test.ts`                   |
+| `tests/support/reporters/stallWatch.ts`            | `tests/unit/support/reporters/stallWatch.test.ts`                  |
 
 Outside `src/`, the plugin's tests sit at its path with `tests/<group>/plugins/` in place of `plugins/`, and a helper in `support/` that has a test of its own is mirrored with `tests/<group>/support/` in place of `tests/support/`.
 

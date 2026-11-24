@@ -174,6 +174,48 @@ describe("writing", () => {
     expect(points("v1-2026-10-05.jsonl")).toEqual([-DAY - 1_000]);
   });
 
+  test("after a restart, or with the lock taken again, it goes on in that file too, and begins where the clock went back to", async () => {
+    const midnight = Date.parse("2026-10-07T00:00:00.000Z");
+    const back = midnight - 3_600_000;
+    const { fs, keeper, copy, setNow } = setUp({ now: () => midnight + 1_800_000 });
+    const add = async (to: typeof keeper, moment: number) => {
+      setNow(moment);
+      to.addPoint(point(moment));
+      await to.flush();
+    };
+    await keeper.restore(LIMITS);
+    keeper.start();
+    await add(keeper, midnight + 1_802_000);
+    await add(keeper, back);
+    expect(keeper.since()).toEqual({ at: back, by: "started" });
+    keeper.stop();
+
+    const again = copy(100);
+    await again.restore(LIMITS);
+    expect(again.since()?.at).toBe(back);
+    again.start();
+    await add(again, back + 2_000);
+    fs.removeNow(file("writer.lock"));
+    await add(again, back + 4_000);
+    expect(again.since()?.at).toBe(back);
+    again.stop();
+    expect([...fs.entries.keys()]).toEqual([file("v1-2026-10-07.jsonl")]);
+
+    setNow(midnight + DAY / 2);
+    const later = copy(100);
+    const { points } = await later.restore(LIMITS);
+    expect(points).toHaveLength(4);
+    const since = { at: back, by: "started" };
+    expect(later.since()).toEqual(since);
+    // A copy that reads the file only once it takes the lock.
+    const taking = copy(100);
+    taking.start();
+    fs.removeNow(file("writer.lock"));
+    await taking.flush();
+    expect(taking.since()).toEqual(since);
+    taking.stop();
+  });
+
   test("days more than 8 days past go as soon as this copy writes, and so does the oldest once the files hold 20 MB", async () => {
     const { fs, keeper, setNow } = setUp({ maxBytes: 1_000 });
     fs.folders.add(DIR);

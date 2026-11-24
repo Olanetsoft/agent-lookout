@@ -546,14 +546,14 @@ describe("the clock set back during a wait", () => {
     const sessions: Session[] = [busy];
     const run = await startIn(dir, sessions, {}, clock);
     await run.pollFor(HOUR);
-    let page: SessionEvent[] = [];
-    /** A beat of the page, as its store makes one: it asks for what is after the latest it holds. */
+    const page: SessionEvent[] = [];
+    let newestAt = 0;
+    /** A beat of the page, as its store makes one: it asks for what followed the event added last. */
     const beat = async () => {
-      const response = await request(run.port, `/api/events?since=${page[0]?.at ?? 0}`);
-      const held = new Set(page.map((event) => event.id));
+      const response = await request(run.port, `/api/events?since=${newestAt}`);
       const { events } = response.json<{ events: SessionEvent[] }>();
-      page = [...events.filter((event) => !held.has(event.id)), ...page];
-      page.sort((a, b) => b.at - a.at);
+      newestAt = events[0]?.at ?? newestAt;
+      page.push(...events);
     };
     sessions[0] = { ...busy, status: "needs-you" };
     await run.pollFor(MINUTE);
@@ -585,6 +585,43 @@ describe("the clock set back during a wait", () => {
     await again.pollFor(HOUR);
     expect((await waitsFrom(again.port)).today).toMatchObject(none);
     expect(await eventsOf(again.port, id(5))).toHaveLength(moves.length + 1);
+  });
+});
+
+describe("a wait as the clock, ahead past midnight, has been put right", () => {
+  test("is one wait through restarts before and after that midnight, told once", async () => {
+    const dir = await tempDir();
+    const clock = { now: at(6, 0, 30) };
+    const busy = makeSession({ id: id(5), name: "demo-project-5", status: "working" });
+    const sessions: Session[] = [busy];
+    const first = await startIn(dir, sessions, {}, clock);
+    await first.pollFor(MINUTE);
+    await first.flush();
+    clock.now = at(5, 23, 1);
+    await first.pollFor(MINUTE);
+    sessions[0] = { ...busy, status: "needs-you" };
+    await first.pollFor(5 * MINUTE + 2 * SECOND);
+    await first.flush();
+    expect((await waitsFrom(first.port)).sevenDays).toMatchObject({ waitedMs: 5 * MINUTE });
+    first.stop();
+
+    clock.now += 4 * SECOND;
+    const second = await startIn(dir, sessions, {}, clock);
+    await second.pollFor(2 * MINUTE);
+    sessions[0] = { ...busy, status: "idle" };
+    await second.pollFor(2 * HOUR);
+    const counted = { waitedMs: 7 * MINUTE + 2 * SECOND, openMs: 0, waits: 1 };
+    expect((await waitsFrom(second.port)).sevenDays).toMatchObject(counted);
+    second.stop();
+
+    clock.now += 4 * SECOND;
+    const third = await startIn(dir, sessions, {}, clock);
+    await third.pollFor(MINUTE);
+    expect((await waitsFrom(third.port)).sevenDays).toMatchObject(counted);
+    expect(await eventsOf(third.port, id(5))).toEqual([
+      ["status-changed", "working", "needs-you"],
+      ["status-changed", "needs-you", "idle"],
+    ]);
   });
 });
 

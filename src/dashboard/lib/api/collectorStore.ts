@@ -271,6 +271,11 @@ export function createCollectorStore(options: CollectorStoreOptions = {}): Colle
    * the 15 minutes polled on each beat would no longer join on to what is held.
    */
   let hourCurrentAt: number | null = null;
+  /**
+   * When the event added last of those held was, which the next poll asks what
+   * followed: not always the latest, once the collector's clock was set back.
+   */
+  let newestAt = 0;
 
   function setState(next: CollectorState): void {
     state = next;
@@ -287,7 +292,7 @@ export function createCollectorStore(options: CollectorStoreOptions = {}): Colle
         hourCurrentAt === null || askedAt - hourCurrentAt > HISTORY_WINDOW_MS - STALE_AFTER_MS;
       const [sessions, newer, history] = await Promise.allSettled([
         getJson("/api/sessions").then(parseSnapshot),
-        eventsSince(state.events[0]?.at ?? 0),
+        eventsSince(newestAt),
         getJson(`/api/history?windowMs=${wholeHour ? HISTORY_KEPT_MS : HISTORY_WINDOW_MS}`).then(
           parseHistory,
         ),
@@ -321,6 +326,7 @@ export function createCollectorStore(options: CollectorStoreOptions = {}): Colle
           hourCurrentAt = askedAt;
         }
         const oldest = now() - HISTORY_KEPT_MS - HISTORY_SLACK_MS;
+        if (restarted) newestAt = 0;
         next = {
           ...next,
           history: {
@@ -335,6 +341,7 @@ export function createCollectorStore(options: CollectorStoreOptions = {}): Colle
         };
       }
       if (events.status === "fulfilled") {
+        newestAt = events.value[0]?.at ?? newestAt;
         next = { ...next, events: mergeEvents(next.events, events.value) };
       }
 

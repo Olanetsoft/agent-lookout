@@ -9,9 +9,9 @@ export interface EventStore {
   add(events: readonly SessionEvent[]): void;
   /**
    * Newest first. `since` keeps only the events added after the one at that
-   * time, whatever theirs are, so a caller that passes the time of the newest
-   * event it holds misses none when the clock is set back, and gets no repeats
-   * when it is not. With none at that time it keeps those later than it.
+   * time, whatever theirs are, so a caller that passes the time of the first
+   * event it was last given is given each once, also when the clock is set
+   * back. With none at that time it keeps those later than it.
    */
   list(options?: { since?: number; limit?: number }): SessionEvent[];
   /** Lets every event go, as clearing the history does. */
