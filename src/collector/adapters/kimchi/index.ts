@@ -23,10 +23,10 @@ export {
  * It differs from Pi's in two ways. Kimchi names every session itself from
  * the person's first messages (`src/extensions/session-name.ts`), so no
  * `session_info` line is read, and a session takes its folder's name. And
- * Kimchi writes the sessions of its subagents and of its Ferment evaluator
- * beside the person's, each marked on its second line, so those are left
- * out. A session is never left out for naming a parent: a branch the person
- * makes names one too.
+ * Kimchi writes the sessions of its subagents, and before 1.40.0 of its
+ * Ferment evaluator, beside the person's, each marked on its second line, so
+ * those are left out. A session is never left out for naming a parent: a
+ * branch the person makes names one too.
  *
  * See docs/adapters/kimchi.md. Built from Kimchi's source at v1.35.0
  * (Apache-2.0) and Pi's at v1.3.0 (MIT), and not yet checked on a computer

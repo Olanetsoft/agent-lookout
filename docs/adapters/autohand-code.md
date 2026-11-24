@@ -4,7 +4,7 @@ These notes record what Agent Lookout reads from Autohand Code, where each value
 
 Written on 2026-11-17 from Autohand Code's source at `v0.9.11`, released 2026-11-12 (commit `46a28b1` of [autohandai/code-cli](https://github.com/autohandai/code-cli)), the newest release then. Autohand Code is Autohand AI's terminal coding agent, `autohand`, under the Apache-2.0 licence. It was not installed or run to write these notes, and no real session was looked at. The fixtures are written by hand from the source. **The adapter was built from Autohand Code's source at v0.9.11 and has not yet been checked on a computer running Autohand Code.** The Sources view says so too.
 
-Each citation is `path:line` at `v0.9.11`, from the top of Autohand Code's repository. The lines were counted on the raw files.
+Each citation is `path:line` at `v0.9.11`, from the top of Autohand Code's repository. The lines were counted on the raw files. The files cited were compared on 2026-11-24 with those at `v0.9.12`, released 2026-11-20 (commit `b99bedf`). What these notes say of them holds there, and [Known gaps](#known-gaps) has what it adds.
 
 The code is in `src/collector/adapters/autohand-code/`. `index.ts` builds the adapter and keeps what it remembers of each session, `folders.ts` finds the folder and says which files may be read, `jsonBytes.ts` finds a field in a file's bytes, `heartbeats.ts` reads the heartbeats, `metadata.ts` reads each session's `metadata.json`, and `toSession.ts` makes the session. The status is given by `src/core/mapping/autohand-code/autohandCodeMapping.ts`.
 
@@ -249,6 +249,7 @@ No Stop: Agent Lookout stops Claude Code sessions only so far. No Answer: it nev
 
 ## Known gaps
 
+- With lanes on (0.9.12, `cli_lanes`, experimental and off by default), a session shows as idle while a lane of it works or waits for your approval and no instruction of the session's own runs. A lane is a subagent of the session's process with no heartbeat or session of its own (`docs/cli-lanes.md:79-95`, `src/core/lanes/LaneManager.ts:141-151` at v0.9.12), and the heartbeat's stage is `idle` whenever no instruction runs (`src/session/peers/PeerActivityPublisher.ts:46-48`).
 - A run with `--no-daemon`, or with its heartbeats moved, writes no heartbeat here. A new one shows as unknown while it runs, and is finished only once closed. One that resumes a session shows as that session did before, finished or failed from its old time, or is not listed when it was last written over a day ago, until it first saves. Then it shows as unknown.
 - A run with `--no-daemon`, or with its heartbeats moved, that Autohand Code marks crashed after an error its loop gets past shows as failed while it runs, until its next save.
 - After the clock is set back to before a session's last save, a session found ended that a run with `--no-daemon` resumes, and saves before Agent Lookout first polls with the clock at or past that save, stays finished or failed until it saves again after Agent Lookout first sees it saved.

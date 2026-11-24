@@ -6,10 +6,10 @@ import type { ProcessAnswer, RunPs } from "../opencode/processes.ts";
  * finished once none does.
  *
  * That is as near as anyone outside Crush can come. A session's row names no
- * process, and in its usual mode Crush writes no lock or pid file. The name of a
- * program does not say which project it works in, and nothing else about a
- * process is read here. So this says whether any Crush runs, never which session
- * it has.
+ * process, and in its usual mode Crush writes no lock or pid file for a session
+ * or its database. The name of a program does not say which project it works in,
+ * and nothing else about a process is read here. So this says whether any Crush
+ * runs, never which session it has.
  *
  * A process whose program is exactly `crush` is taken for it: on macOS `ps`
  * prints a process's first argument, such as `crush` or a full path ending in

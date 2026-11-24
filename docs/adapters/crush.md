@@ -4,7 +4,7 @@ These notes record what Agent Lookout reads from Crush, where each value comes f
 
 Written on 2026-11-04 from Crush's source at `v0.99.0`, released 2026-10-29 (commit `e38655a` of [charmbracelet/crush](https://github.com/charmbracelet/crush)), the newest release then. Crush is under the Functional Source License, FSL-1.1-MIT. Crush was not installed or run to write them, and no real session, project list or `.crush` folder was looked at, so nothing here has been checked on a computer running Crush. The fixtures are written by hand from the source.
 
-Each citation is `path:line` at `v0.99.0`.
+Each citation is `path:line` at `v0.99.0`, but for those that name another version. What `v0.101.0`, released 2026-11-12, and `v0.102.0`, released 2026-11-19 (commit `c62fa02`), changed in the list of projects and in where a project's database is was read on 2026-11-24.
 
 The code is in `src/collector/adapters/crush/`, and the status mapping is in `src/core/mapping/crush/crushMapping.ts`.
 
@@ -62,14 +62,14 @@ The file came with v0.25.0, released 2025-12-16. A Crush older than that writes 
 }
 ```
 
-`Register` (`internal/projects/projects.go:78`) rewrites the whole file each time Crush starts in a folder (`internal/cmd/root.go:321`), with that folder first, so the newest is always first. It keeps each folder once, and nothing ever takes a folder out, so a project that was deleted stays listed. It writes the file in place, with `os.WriteFile`, so a read can catch it half written.
+`Register` (`internal/projects/projects.go:78`) rewrites the whole file each time Crush starts in a folder (`internal/cmd/root.go:321`), with that folder first, so the newest is always first. It keeps each folder once, and nothing ever takes a folder out, so a project that was deleted stays listed. Before v0.102.0 it writes the file in place, with `os.WriteFile`, so a read can catch it half written. From v0.102.0 it renames a temporary file, `projects.json.<number>.tmp`, into place, under a lock on `projects.json.lock` beside it (`internal/projects/projects.go:47-119`, `internal/config/atomicwrite.go:11` at v0.102.0). Neither file is looked at.
 
 What is written as `path`:
 
 - The folder Crush works in, from `os.Getwd`, which can hold a link, as `$PWD` does.
-- With `crush --cwd <folder>`, that folder **as it was typed** (`ResolveCwd`, `internal/cmd/root.go:988`). So a relative path is a real entry.
+- With `crush --cwd <folder>`, that folder **as it was typed** (`ResolveCwd`, `internal/cmd/root.go:988`). So a relative path is a real entry. From v0.102.0 the folder is made absolute first (`internal/cmd/root.go:1311-1324` at v0.102.0), and an older entry stays as it was.
 
-Only `setupLocalWorkspace` registers a folder. A session run through `CRUSH_CLIENT_SERVER=1` adds nothing to the list.
+Before v0.102.0 only `setupLocalWorkspace` registers a folder, and a session run through `CRUSH_CLIENT_SERVER=1` adds nothing to the list. From v0.101.0 `crush run` goes through a server only when one already runs (`internal/cmd/run.go:106` at v0.101.0), and from v0.102.0 the server registers each folder opened through it too (`internal/backend/backend.go:495` at v0.102.0).
 
 ### How the list is read
 
@@ -85,14 +85,14 @@ Only `setupLocalWorkspace` registers a folder. A session run through `CRUSH_CLIE
 
 `crush.db` lies in the data directory (`internal/db/connect.go:93`), which `internal/config/load.go:736-744` works out:
 
-1. `--data-dir`, any folder.
+1. `--data-dir`, any folder. Else, from v0.101.0, `CRUSH_DATA_DIR`, any folder, relative to the working folder or absolute (`internal/config/load.go:240-243` at v0.101.0).
 2. Else `options.data_directory` from a config file, any folder, relative to the working folder or absolute.
 3. Else the nearest `.crush` above the working folder, up to the root of the repository (`projectBoundary`, `:1504`).
 4. Else `.crush` in the working folder.
 
 **Agent Lookout reads `.crush/crush.db` in a listed folder and nothing else.** It never takes `data_dir` from the list: that value can name any folder on the computer, and the list is the one thing that decides what is read. So:
 
-- A session Crush keeps through `--data-dir` or `options.data_directory` is not read, unless that folder happens to be `.crush` in a listed folder.
+- A session Crush keeps through `--data-dir`, `CRUSH_DATA_DIR` or `options.data_directory` is not read, unless that folder happens to be `.crush` in a listed folder.
 - Crush started in a folder under a repository that has a `.crush` at its root writes to that one. The list then has both folders, since Crush made that `.crush` when it started at the root, and the sessions show under the root's folder. If the root's entry is older than the newest 20, they do not show.
 
 ## What it reads
@@ -192,7 +192,7 @@ Closing Crush finishes every session at once, and opening it again shows them al
 
 ### The process
 
-**No process can be told to hold a session.** A session's row names no process, and in its usual mode Crush writes no lock or pid file. The name of a program does not say which project it works in. Which folder a `crush` runs in could be asked of the system, but that means reading more of a process than its name, which Agent Lookout does not do here, and it would still not say which session of that folder.
+**No process can be told to hold a session.** A session's row names no process, and in its usual mode Crush writes no lock or pid file for a session or its database. The name of a program does not say which project it works in. Which folder a `crush` runs in could be asked of the system, but that means reading more of a process than its name, which Agent Lookout does not do here, and it would still not say which session of that folder.
 
 So `processes.ts` asks only whether any Crush runs, with `ps -A -o comm=`, the name each process gives its program. It compares each line with `crush` and drops it. On macOS `ps` prints a process's first argument, and on Linux the name of the file it was started from. It asks at most every 10 seconds while there are sessions to show, and sooner, though not within 2 seconds of the last ask, when a session is written after `ps` said none runs. `updated_at` is in whole seconds, so a session written in the same second as that `ps` counts as written after it, which costs at most one more run. On macOS and Linux only.
 
@@ -216,7 +216,7 @@ So a session waiting for a permission shows as unknown. A later version could re
 
 Crush's title cannot be told from a person's first words, so it is never asked for. A session takes its folder's name, else its id, as for Cline.
 
-- A session starts with a fixed title: `New Session` from the interface (`internal/ui/model/ui.go:5244`), `Untitled Session` from `crush run` (`internal/app/hooks.go:55`), or `non-interactive` from `crush run` with `CRUSH_CLIENT_SERVER=1` (`internal/cmd/run.go:750`).
+- A session starts with a fixed title: `New Session` from the interface (`internal/ui/model/ui.go:5244`), `Untitled Session` from `crush run` (`internal/app/hooks.go:55`), or `non-interactive` from `crush run` with `CRUSH_CLIENT_SERVER=1` (`internal/cmd/run.go:750`), from v0.101.0 only while a server already runs.
 - After the first prompt with text, Crush asks a small model for a title of at most 50 characters (`GenerateTitle`, `internal/agent/agent.go:1803`, and `internal/agent/templates/title.md`).
 - If no model answers, the title is `Untitled Session`.
 - **If the model answers with nothing, the title is the first 50 characters of the prompt, word for word** (`:1898-1903`). A model that only thinks does this, since Crush takes its `<think>` tags out of the answer.
@@ -250,8 +250,8 @@ Nothing is read, and `sqlite3` and `ps` are not run, as for OpenCode, Hermes Age
 - A session waiting for a permission does not show as waiting, as [What a message could say](#what-a-message-could-say) says.
 - Crush's title is never shown, even where a model wrote it or a person chose it, so two sessions in one folder share a name.
 - Only the newest 20 projects are read. An entry for a folder that has gone takes up one of the 20.
-- A session kept in a folder other than `.crush` in a listed folder is not read, as [Where a project's database is](#where-a-projects-database-is) says. So is a session run only through `CRUSH_CLIENT_SERVER=1`, unless the folder is listed anyway.
-- An entry with a relative path, as `crush --cwd` can write, is not read.
+- A session kept in a folder other than `.crush` in a listed folder is not read, as [Where a project's database is](#where-a-projects-database-is) says. So is a session run only through `CRUSH_CLIENT_SERVER=1` before v0.102.0, unless the folder is listed anyway.
+- An entry with a relative path, as `crush --cwd` could write before v0.102.0, is not read.
 - A listed folder, or its `.crush`, reached by a link is not read, and the card names it. The folders above it are not looked at.
 - A link at the data folder is not followed to read the list, so a person who keeps Crush's data on another disk through a link sees an error on the card. `CRUSH_GLOBAL_DATA` or `AGENT_LOOKOUT_CRUSH_HOME` is the way to name it.
 - A session left quiet for a day leaves the list until it is next written.
