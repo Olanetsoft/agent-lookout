@@ -286,7 +286,7 @@ describe("createAgyProcessReader", () => {
       812: `agy -r ${A}`,
       813: `agy --remote-agent --conversation=${B}`,
       814: `agy --resume ${B}`,
-      // Started by the agy in 812, whose session it belongs to.
+      // Started by the agy in 812. It is no session, and may write a log all the same.
       900: "agy --remote-agent",
       901: "agy --model auto",
     });
@@ -298,7 +298,7 @@ describe("createAgyProcessReader", () => {
         { startedAt: NOW - 3 * MINUTE, conversation: B },
       ],
       // By its start alone: it names no conversation kept on this computer.
-      remoteAgents: [{ startedAt: NOW - 4 * MINUTE }],
+      remoteAgents: [{ startedAt: NOW - 4 * MINUTE }, { startedAt: NOW - 2 * MINUTE }],
     });
     // The same two runs as for any other line, and nothing more is asked of ps.
     expect(ps.runs).toEqual([

@@ -278,9 +278,9 @@ export function createAgyProcessReader(
     const remoteAgents: AgyRemoteAgent[] = [];
     for (const row of running.values()) {
       const line = lineOf(row);
-      if (underSession(row)) continue;
+      // One that a session started counts too: it may write a log of its own.
       if (line.remoteAgent) remoteAgents.push({ startedAt: row.startedAt });
-      if (!line.session) continue;
+      if (!line.session || underSession(row)) continue;
       sessions.push(
         line.conversation === undefined
           ? { startedAt: row.startedAt }
