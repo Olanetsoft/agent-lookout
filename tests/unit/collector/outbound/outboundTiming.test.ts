@@ -69,6 +69,12 @@ describe("the hourly limit", () => {
     const sent = sends(SENDS_PER_HOUR, T0 + HOUR_MS);
     expect(emailTiming(T0 - HOUR_MS, 0, sent, T0)).toBe("limited");
   });
+
+  test("a send later than now counts as tried now, so the limit holds for an hour at most", () => {
+    const sent = sends(SENDS_PER_HOUR, T0 + 5 * HOUR_MS);
+    expect(sendsInLastHour(sent, T0)).toEqual(sent.map(() => T0));
+    expect(limitLiftsAt(sent, T0)).toBe(T0 + HOUR_MS);
+  });
 });
 
 describe("waitBegan", () => {

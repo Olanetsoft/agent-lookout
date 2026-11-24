@@ -84,6 +84,9 @@ export interface DueReminder {
 
 /** One wait being watched. */
 interface Watched {
+  /** The status time that tells it from another, or the moment it was first seen. */
+  since: number;
+  /** When it began: `since`, or, when the clock has been set back to before that, the moment it was. */
   begunAt: number;
   /** How long it had waited when it was first seen. No reminder is due for a moment it had passed by then. */
   seenAfterMs: number;
@@ -149,8 +152,12 @@ export function createReminderWatch(): ReminderWatch {
           session.statusSince !== null && session.statusSince <= at ? session.statusSince : null;
         const known = watched.get(session.id);
         // A wait whose source gives no time keeps the moment it was first seen.
-        if (known && (since === null || since === known.begunAt)) continue;
+        if (known && (since === null || since === known.since)) {
+          known.begunAt = Math.min(known.begunAt, at);
+          continue;
+        }
         watched.set(session.id, {
+          since: since ?? at,
           begunAt: since ?? at,
           seenAfterMs: since === null ? 0 : at - since,
           toldAfterMs: null,

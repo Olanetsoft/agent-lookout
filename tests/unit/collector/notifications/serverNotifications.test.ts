@@ -361,6 +361,50 @@ describe("never twice", () => {
   });
 });
 
+describe("the clock set back an hour", () => {
+  const HOUR = 3_600_000;
+
+  test("a wait that begins after it is shown, though a page fetched the sessions at what is now a later time", () => {
+    const { notifier, poll, page } = setUp(false);
+    poll(0, [working(1, "checkout-flow"), working(2, "docs-site")]);
+    page(1_000, "on");
+
+    poll(2_000 - HOUR, [waiting(1, "checkout-flow"), working(2, "docs-site")]);
+    expect(notifier.shown.map(({ title }) => title)).toEqual(["checkout-flow"]);
+    // Nor once the clock has come to that time again.
+    poll(500, [waiting(1, "checkout-flow"), waiting(2, "docs-site")]);
+    poll(2_500, [waiting(1, "checkout-flow"), waiting(2, "docs-site")]);
+    expect(notifier.shown.map(({ title }) => title)).toEqual(["checkout-flow", "docs-site"]);
+  });
+
+  test("a wait held for a page is not held for the hour: the page that goes on fetching has it", () => {
+    const { notifier, poll, page } = setUp(false);
+    poll(0, [working(1, "checkout-flow")]);
+    page(1_900, "on");
+    poll(2_000, [waiting(1, "checkout-flow")]);
+
+    page(3_000 - HOUR, "on", false);
+    poll(4_000 - HOUR, [waiting(1, "checkout-flow")]);
+    expect(notifier.shown).toEqual([]);
+    page(5_000 - HOUR, "on");
+    poll(6_000 - HOUR, [waiting(1, "checkout-flow")]);
+    poll(60_000 - HOUR, [waiting(1, "checkout-flow")]);
+    expect(notifier.shown).toEqual([]);
+  });
+
+  test("one no page takes is shown when its grace period is over", () => {
+    const { notifier, poll, page } = setUp(false);
+    poll(0, [working(1, "checkout-flow")]);
+    page(1_900, "on");
+    poll(2_000, [waiting(1, "checkout-flow")]);
+    for (const at of [4_000, 6_000, 8_000]) {
+      page(at - 1_000 - HOUR, "on", false);
+      poll(at - HOUR, [waiting(1, "checkout-flow")]);
+    }
+    expect(notifier.shown).toHaveLength(1);
+  });
+});
+
 describe("with pages that show none of their own, as in the Mac app", () => {
   test("a wait is shown at the poll that sees it, and once, while a page that said on keeps fetching the sessions", () => {
     const { notifier, poll, page } = setUp(false, false);

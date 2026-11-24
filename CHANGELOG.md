@@ -35,6 +35,7 @@ Changes that a user of Agent Lookout would notice, newest first.
 - A permission prompt that comes right after an answered one, before Claude Code has rewritten its file, keeps its Deny and Allow, and one a rule answers then no longer shows as a Needs you, with a notification and a counted wait, unless that file gives it a time after the answer. (#452)
 - A session that waits through quiet hours and cannot be read as they end, as on a computer over SSH that is asleep, is notified once it can be read again and still waits. Before, the summary listed it as if its wait were over, and nothing more was sent. (#460)
 - A session that already waits on another computer is no longer announced as a new wait when its Agent Lookout first answers before it has read its own agents, nor is one of a Hermes Agent profile that could not be read at first. (#462)
+- After the computer's clock is set back, notifications are shown at once rather than only once the clock has passed the last time a dashboard tab asked for the sessions, and an email, post, push or reminder for an open wait goes late by its delay at most, not by as much as the clock moved. (#463)
 
 ## 0.2.30 - 2026-11-24
 

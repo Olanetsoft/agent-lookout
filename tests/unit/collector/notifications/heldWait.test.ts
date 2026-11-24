@@ -5,6 +5,7 @@ import {
   heldWaitOutcome,
   noPageReports,
   PAGE_GONE_AFTER_MS,
+  pagesAt,
   type PageReports,
 } from "@collector/notifications/heldWait";
 import { POLL_INTERVAL_MS } from "@collector/poller";
@@ -101,6 +102,19 @@ describe("with pages that show no notifications of their own, as the Mac app's w
     // With them off, the same two are shown at once.
     expect(heldWaitOutcome(T0, asking, T0, false)).toBe("show");
     expect(heldWaitOutcome(T0, fetched, T0 + 1_500, false)).toBe("show");
+  });
+});
+
+describe("the clock set back", () => {
+  test("a time later than now is no page's fetch, and one now or before is", () => {
+    const { on, lastOnAt, lastOnSessionsAt } = pageOn(0, { lastOnAt: T0 + 1 });
+    expect(pagesAt({ on, lastOnAt, lastOnSessionsAt }, T0)).toEqual({
+      on: true,
+      lastOnAt: null,
+      lastOnSessionsAt: T0,
+    });
+    expect(pagesAt(pageOn(0), T0 - 1)).toEqual(noPageReports(true));
+    expect(pagesAt(noPageReports(false), T0)).toEqual(noPageReports(false));
   });
 });
 

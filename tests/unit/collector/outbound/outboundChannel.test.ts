@@ -476,6 +476,23 @@ describe("the time rules", () => {
     expect(sent.slice(SENDS_PER_HOUR)).toEqual([`ended session-${SENDS_PER_HOUR + 1}`]);
   });
 
+  test("a wait's delay is counted from now at the latest when the clock is set back while it is open", async () => {
+    const { poll, sent } = ruled(["needs-you"]);
+    const NOON = EVENING - 600 * MINUTE;
+    const wait = waitingSince(1, NOON);
+    await poll(NOON - MINUTE, DEFAULT_TIME_RULES, [working(1)]);
+    await poll(NOON, DEFAULT_TIME_RULES, [wait]);
+    const back = NOON - 60 * MINUTE;
+    // Not listed at the first poll after it.
+    await poll(back, DEFAULT_TIME_RULES, [], { state: "error" });
+    await poll(back + MINUTE - 1, DEFAULT_TIME_RULES, [wait]);
+    expect(sent).toEqual([]);
+    await poll(back + MINUTE, DEFAULT_TIME_RULES, [wait]);
+    expect(sent).toEqual(["wait session-1 1m"]);
+    await poll(NOON + MINUTE, DEFAULT_TIME_RULES, [wait]);
+    expect(sent).toHaveLength(1);
+  });
+
   test("a wait that has been sent is reminded of once it has lasted the rule's minutes, with what it is asking, once", async () => {
     const { poll, sent } = ruled(["needs-you"]);
     const noon = new Date(2026, 9, 5, 12, 0).getTime();

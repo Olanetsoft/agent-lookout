@@ -307,7 +307,10 @@ export function createOutboundChannel<Content>(
           send(write(at));
         }
         const schedule = reminderSchedule(rules.longWait);
-        for (const [id, begunAt] of open) {
+        for (const [id, began] of open) {
+          // From now at the latest, when the clock has been set back.
+          const begunAt = Math.min(began, at);
+          open.set(id, begunAt);
           // Still open as far as this snapshot shows. A session whose source did
           // not answer this time is not in it, and is held until it is.
           const session = snapshot.sessions.find(

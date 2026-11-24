@@ -20,7 +20,7 @@ import { rulesOf } from "../../core/time-rules/timeRules.ts";
 import { reminderNotice, summaryNotice } from "../../core/time-rules/timeRulesWords.ts";
 import { needsYou } from "../../core/waits/answeredWaits.ts";
 import { waitBegan } from "../outbound/outboundTiming.ts";
-import { heldWaitOutcome, noPageReports, type PageReports } from "./heldWait.ts";
+import { heldWaitOutcome, noPageReports, pagesAt, type PageReports } from "./heldWait.ts";
 import type { NoticeAbout, SystemNotifier } from "./systemNotifier.ts";
 
 /**
@@ -209,6 +209,7 @@ export function createServerNotifications(
 
     handle(snapshot) {
       const at = now();
+      pages = pagesAt(pages, at);
       const rules = rulesOf(snapshot);
       // As the snapshot says, which the page that reads it goes by too.
       const quietNow = quietOf(snapshot);
@@ -290,6 +291,8 @@ export function createServerNotifications(
       // Everything is handed over to a page the same way, so a page that is
       // open and the collector never both announce one.
       for (const [key, entry] of held) {
+        // Since now at the latest, when the clock has been set back.
+        entry.since = Math.min(entry.since, at);
         const event = entry.kind === "change" ? entry.change.event : "needs-you";
         const outcome =
           entry.kind === "summary" || chosen.has(event)

@@ -152,6 +152,22 @@ describe("when a long wait's reminder is due", () => {
     expect(poll(T0 + 11 * MINUTE, [waiting(1, T0)])).toEqual([[id(1), 11 * MINUTE]]);
   });
 
+  test("a clock set back before a wait began counts it from then, and it is reminded of once", () => {
+    const { poll } = setUp();
+    poll(T0, [waiting(1, T0)]);
+    const back = T0 - 60 * MINUTE;
+    // Its source's time lies ahead of the clock, so it can be given or left out.
+    expect(poll(back, [waiting(1, null)])).toEqual([]);
+    expect(poll(back + 5 * MINUTE, [waiting(1, T0)])).toEqual([]);
+    expect(poll(back + 10 * MINUTE, [waiting(1, null)])).toEqual([[id(1), TEN_MINUTES]]);
+    // Nor again once the clock has passed the time it began.
+    expect(poll(T0 + MINUTE, [waiting(1, T0)])).toEqual([]);
+    expect(poll(T0 + 30 * MINUTE, [waiting(1, T0)])).toEqual([]);
+    // A wait that begins later is reminded of as any is.
+    expect(poll(T0 + 31 * MINUTE, [waiting(1, T0 + 31 * MINUTE)])).toEqual([]);
+    expect(poll(T0 + 41 * MINUTE, [waiting(1, T0 + 31 * MINUTE)])).toEqual([[id(1), TEN_MINUTES]]);
+  });
+
   test("the reminders come in the snapshot's order, and a wait a channel has not told of is left out", () => {
     const { watch } = setUp();
     const shot = snapshot(T0 + 10 * MINUTE, [waiting(2, T0), waiting(1, T0)]);
