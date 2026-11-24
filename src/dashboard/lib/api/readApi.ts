@@ -403,6 +403,8 @@ export function readSource(value: unknown, generatedAt: number): SourceHealth | 
   if (basis) source.basis = basis;
   const parts = readParts(value.parts);
   if (parts) source.parts = parts;
+  const notRead = readNotRead(value.notRead);
+  if (notRead.length > 0) source.notRead = notRead;
   const capabilities = readCapabilities(value.capabilities);
   if (capabilities) source.capabilities = capabilities;
   if (isMachineName(value.machine)) source.machine = value.machine;
@@ -445,6 +447,12 @@ function readParts(value: unknown): Record<string, string> | null {
     count += 1;
   }
   return count > 0 ? parts : null;
+}
+
+/** The parts of a source that were not read, by the start of their sessions' ids. */
+function readNotRead(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((start): start is string => text(start) !== null).slice(0, MAX_PARTS);
 }
 
 /** What one agent on another machine can report: its name and every cell, or null. */

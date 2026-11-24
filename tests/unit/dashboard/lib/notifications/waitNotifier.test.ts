@@ -579,6 +579,33 @@ test.each(["searching", "error", "unavailable"] as const)(
   },
 );
 
+test("when a new collector starts, a notification whose part of a source is not read yet stays until it is", () => {
+  const answer = (sessions: Session[], notRead: string[] = []): SessionsSnapshot => ({
+    generatedAt: T0,
+    sources: [{ id: "claude-code", label: "Claude Code", state: "ok", notRead, checkedAt: T0 }],
+    sessions,
+  });
+  const { host, notifier } = setUp();
+  notifier.handle(answer([session(1, { status: "working" })]), T0);
+  notifier.handle(answer([waiting(1)]), T0);
+  expect(host.open()).toHaveLength(1);
+
+  // The new collector's first answers do not read it, and the first that does is a baseline.
+  notifier.handle(answer([], ["claude-code:"]), T0 + 1);
+  expect(host.open()).toHaveLength(1);
+  notifier.handle(answer([waiting(1)]), T0 + 1);
+  expect(host.open()).toHaveLength(1);
+  expect(host.shown).toHaveLength(1);
+  notifier.handle(answer([session(1, { status: "working" })]), T0 + 1);
+  expect(host.open()).toEqual([]);
+
+  notifier.handle(answer([waiting(1, { statusSince: T0 })]), T0 + 1);
+  expect(host.open()).toHaveLength(1);
+  notifier.handle(answer([], ["claude-code:"]), T0 + 2);
+  notifier.handle(answer([]), T0 + 2);
+  expect(host.open()).toEqual([]);
+});
+
 test("the same collector, answer after answer, is not a new one, and nor is one whose start is learned late or not said", () => {
   const { host, notifier } = setUp();
   // The history had not been answered yet.

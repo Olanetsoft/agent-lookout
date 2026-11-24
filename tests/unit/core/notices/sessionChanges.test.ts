@@ -54,13 +54,13 @@ function memoryAfter(...snapshots: SessionsSnapshot[]): WaitMemory {
 
 /** The sessions remembered as waiting, as plain data. */
 function remembered(memory: WaitMemory): Record<string, string[]> {
-  return Object.fromEntries([...memory].map(([id, waits]) => [id, [...waits.keys()]]));
+  return Object.fromEntries([...memory].map(([id, { waits }]) => [id, [...waits.keys()]]));
 }
 
 /** The status time each remembered wait is kept with, as plain data. */
 function rememberedTimes(memory: WaitMemory): Record<string, number | null> {
   return Object.fromEntries(
-    [...memory].flatMap(([, waits]) => [...waits].map(([id, wait]) => [id, wait.since])),
+    [...memory].flatMap(([, { waits }]) => [...waits].map(([id, wait]) => [id, wait.since])),
   );
 }
 
@@ -543,13 +543,18 @@ describe("a source read in parts", () => {
   const CODER = "hermes-agent:coder/20261001_110000_0000b1";
   const BOTH = { "hermes-agent:default/": "database", "hermes-agent:coder/": "database" };
 
-  /** One answer of Hermes Agent, with the profiles it read, as its adapter names them. */
-  function hermes(sessions: Session[], parts: Record<string, string> = BOTH): SessionsSnapshot {
+  /** One answer of Hermes Agent, with the profiles it read and those it did not, as its adapter names them. */
+  function hermes(
+    sessions: Session[],
+    parts: Record<string, string> = BOTH,
+    notRead?: string[],
+  ): SessionsSnapshot {
     const read: SourceHealth = {
       ...source("hermes-agent"),
       label: "Hermes Agent",
       basis: "database",
       parts,
+      ...(notRead && { notRead }),
     };
     return snapshot(
       sessions.map((session) => ({ ...session, source: "hermes-agent" })),
@@ -643,6 +648,75 @@ describe("a source read in parts", () => {
     );
     expect(back.started).toEqual([]);
     expect(back.stopped).toEqual([]);
+  });
+
+  describe("a part not read yet", () => {
+    const ALONE = { "hermes-agent:default/": "database" };
+    const unread = (sessions: Session[]) => hermes(sessions, ALONE, ["hermes-agent:coder/"]);
+
+    test("has its first read answer as its baseline, and after it a wait there has started", () => {
+      const memory = memoryAfter(unread([waiting(DEFAULT)]), unread([waiting(DEFAULT)]));
+      const read = waitChanges(memory, hermes([waiting(DEFAULT), waiting(CODER)]));
+      expect(read.started).toEqual([]);
+      expect(remembered(read.memory)).toEqual({ "hermes-agent": [DEFAULT, CODER] });
+
+      const next = memoryAfter(
+        unread([]),
+        hermes([working(DEFAULT), working(CODER)]),
+        unread([working(DEFAULT)]),
+      );
+      const later = waitChanges(next, hermes([waiting(DEFAULT), waiting(CODER)]));
+      expect(later.started.map((session) => session.id)).toEqual([DEFAULT, CODER]);
+    });
+
+    test("is one its source named so: a part that comes later was empty before, and a wait in it has started", () => {
+      const memory = memoryAfter(hermes([], ALONE), unread([]));
+      const read = waitChanges(memory, hermes([waiting(CODER)]));
+      expect(read.started.map((session) => session.id)).toEqual([CODER]);
+    });
+
+    test("is not read by an answer that still names it, though a session of it is listed", () => {
+      const read = waitChanges(memoryAfter(unread([])), unread([waiting(CODER)]));
+      expect(read.started.map((session) => session.id)).toEqual([CODER]);
+    });
+
+    test("through sessionChanges, says nothing of what its first read answer holds, finished or waiting", () => {
+      const { memory } = sessionChanges(EMPTY_CHANGE_MEMORY, unread([]));
+      const read = sessionChanges(memory, hermes([working(DEFAULT), waiting(CODER)]));
+      expect(read.changes).toEqual([]);
+    });
+
+    test("of a machine whose Agent Lookout has just begun is each source there, however that answer names them", () => {
+      const OPENCODE = "remote:devbox:opencode:ses_000000000000000000000000a1";
+      const THERE = "remote:devbox:hermes-agent:coder/20261001_110000_0000b1";
+      const machine = (sessions: Session[], notRead: string[]) =>
+        snapshot(
+          sessions.map((session) => ({ ...session, source: "remote:devbox" })),
+          [{ ...source("remote:devbox"), basis: "api", notRead }],
+        );
+      const memory = memoryAfter(
+        machine([], ["remote:devbox:opencode:", "remote:devbox:hermes-agent:"]),
+      );
+      // Only some profiles of the source named whole are read, and then it fails whole again.
+      const some = waitChanges(
+        memory,
+        machine([waiting(OPENCODE)], ["remote:devbox:hermes-agent:coder/"]),
+      );
+      expect(some.started).toEqual([]);
+      const none = waitChanges(
+        some.memory,
+        machine([waiting(OPENCODE)], ["remote:devbox:hermes-agent:"]),
+      );
+      const all = waitChanges(none.memory, machine([waiting(OPENCODE), waiting(THERE)], []));
+      expect(all.started).toEqual([]);
+      // Both have been read, so the next wait of each is news.
+      const asked = { statusSince: at + 1 };
+      const next = waitChanges(
+        all.memory,
+        machine([waiting(OPENCODE, asked), waiting(THERE, asked)], []),
+      );
+      expect(next.started.map((session) => session.id)).toEqual([OPENCODE, THERE]);
+    });
   });
 
   test("through sessionChanges, a profile that fails one poll says nothing at all of its waiting session", () => {
@@ -1544,6 +1618,9 @@ describe("mayStillWait: whether a wait that is not listed may be open", () => {
     });
     const memory = after(snapshot([wait()], [part(true)]), snapshot([], [part(false)]));
     expect(mayStillWait(memory, wait(), null)).toBe(true);
+    // Nor has been yet, as after a page found a new collector.
+    const never = after(snapshot([], [{ ...part(false), notRead: [A] }]));
+    expect(mayStillWait(never, wait(), null)).toBe(true);
     expect(mayStillWait(after(snapshot([], [part(true)])), wait(), null)).toBe(false);
   });
 

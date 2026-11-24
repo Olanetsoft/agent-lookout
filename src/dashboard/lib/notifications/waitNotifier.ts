@@ -7,6 +7,7 @@ import {
 import { changeNotice, type Notice } from "@core/notices/waiting";
 import {
   EMPTY_CHANGE_MEMORY,
+  mayStillWait,
   sessionChanges,
   type ChangeMemory,
   type NoticeEvent,
@@ -240,10 +241,9 @@ export function createWaitNotifier({ host, isOn }: WaitNotifierOptions): WaitNot
       }
       reminders.observe(snapshot, result.stopped, at);
       // A notification left from before a new collector began is not among
-      // those. It goes once its source has answered without its session waiting.
+      // those. It goes once its source, or its part, is read without its session waiting.
       for (const [id, { source }] of open) {
-        const waiting = memory.waits.get(source);
-        if (waiting && !waiting.has(id)) close(id);
+        if (!mayStillWait(memory, { id, source }, null)) close(id);
       }
 
       /** The sessions whose held wait is told of at this snapshot. */
@@ -303,7 +303,7 @@ export function createWaitNotifier({ host, isOn }: WaitNotifierOptions): WaitNot
       for (const session of latest.sessions) {
         if (!wanted.has(session.id) || !needsYou(session)) continue;
         // Waiting at its source's last answer, which is what would keep it on show here.
-        if (!memory.waits.get(session.source)?.has(session.id)) continue;
+        if (!memory.waits.get(session.source)?.waits.has(session.id)) continue;
         wanted.delete(session.id);
         if (isOn("needs-you")) show({ event: "needs-you", session });
       }

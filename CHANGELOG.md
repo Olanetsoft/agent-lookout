@@ -34,6 +34,7 @@ Changes that a user of Agent Lookout would notice, newest first.
 - Each permission request of a session is put to the permission rules, also when several arrive within half a second, as parallel tool calls make them. Before, only the last was. A session with a prompt let go unanswered no longer shows as Answered for 10 seconds: it stays in Needs you, or is back there after 3 seconds when that prompt may have been answered in the session. (#454)
 - A permission prompt that comes right after an answered one, before Claude Code has rewritten its file, keeps its Deny and Allow, and one a rule answers then no longer shows as a Needs you, with a notification and a counted wait, unless that file gives it a time after the answer. (#452)
 - A session that waits through quiet hours and cannot be read as they end, as on a computer over SSH that is asleep, is notified once it can be read again and still waits. Before, the summary listed it as if its wait were over, and nothing more was sent. (#460)
+- A session that already waits on another computer is no longer announced as a new wait when its Agent Lookout first answers before it has read its own agents, nor is one of a Hermes Agent profile that could not be read at first. (#462)
 
 ## 0.2.30 - 2026-11-24
 
