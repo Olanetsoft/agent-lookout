@@ -4,7 +4,11 @@ import path from "node:path";
 
 import { describe, expect, onTestFinished, test } from "vitest";
 
-import { createAgyProcessReader } from "@collector/adapters/antigravity/cli/agyProcesses";
+import {
+  createAgyProcessReader,
+  type RunPs,
+} from "@collector/adapters/antigravity/cli/agyProcesses";
+import { runPs } from "@collector/processes/ps";
 import { conversationId } from "@tests/fixtures/antigravity";
 import { tempDir } from "@tests/support/node/tempFiles";
 
@@ -12,7 +16,9 @@ import { tempDir } from "@tests/support/node/tempFiles";
 // that only waits, started through a link named `agy`: this Node on macOS,
 // where `ps` names a program by the file it was started from, and `/bin/sh`
 // on Linux, where it names it by the name the program gives itself, which
-// Node 24 sets to its own.
+// Node 24 sets to its own. The reader asks for the arguments of every agy in
+// the table, so it is given the stand-in's row alone, and no other program's
+// arguments are ever asked for.
 
 const CONVERSATION = conversationId("a1");
 
@@ -36,12 +42,26 @@ async function startStandInAgy(args: string[]): Promise<number> {
   return child.pid as number;
 }
 
+/** The real `ps`, with the stand-in the only agy in its table. */
+function psOfStandIn(pid: number): RunPs {
+  return async (args, options) => {
+    if (!args.includes("-A")) {
+      // The arguments asked for are the stand-in's alone.
+      expect(args.slice(args.indexOf("-p"))).toEqual(["-p", String(pid)]);
+      return runPs(args, options);
+    }
+    const table = await runPs(args, options);
+    const rows = table.stdout.split("\n").filter((row) => Number.parseInt(row, 10) === pid);
+    return { ...table, stdout: rows.join("\n") };
+  };
+}
+
 // Windows has no ps.
 describe.skipIf(process.platform === "win32")("createAgyProcessReader, asking the real ps", () => {
   test("finds a running agy, when it started and the conversation it names", async () => {
     const before = Date.now();
-    await startStandInAgy(["--conversation", CONVERSATION]);
-    const reader = createAgyProcessReader();
+    const pid = await startStandInAgy(["--conversation", CONVERSATION]);
+    const reader = createAgyProcessReader({ run: psOfStandIn(pid) });
 
     // The table can lag the start by a moment.
     let found;
@@ -58,8 +78,8 @@ describe.skipIf(process.platform === "win32")("createAgyProcessReader, asking th
   }, 10_000);
 
   test("an agy that names no conversation is a session that names none", async () => {
-    await startStandInAgy([]);
-    const reader = createAgyProcessReader();
+    const pid = await startStandInAgy([]);
+    const reader = createAgyProcessReader({ run: psOfStandIn(pid) });
     let named = false;
     for (let attempt = 0; attempt < 20 && !named; attempt += 1) {
       const list = await reader.read();
