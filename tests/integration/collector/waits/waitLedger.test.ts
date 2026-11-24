@@ -453,6 +453,56 @@ describe("a wait found by a run's first poll, over a history folder on disk", ()
   });
 });
 
+describe("the clock set back during a wait", () => {
+  test("is no wait at all, now or after a restart, and an open page is sent each event once", async () => {
+    const dir = await tempDir();
+    const clock = { now: at(6, 9) };
+    const busy = makeSession({ id: id(5), name: "demo-project-5", status: "working" });
+    const sessions: Session[] = [busy];
+    const run = await startIn(dir, sessions, {}, clock);
+    await run.pollFor(HOUR);
+    let page: SessionEvent[] = [];
+    /** A beat of the page, as its store makes one: it asks for what is after the latest it holds. */
+    const beat = async () => {
+      const response = await request(run.port, `/api/events?since=${page[0]?.at ?? 0}`);
+      const held = new Set(page.map((event) => event.id));
+      const { events } = response.json<{ events: SessionEvent[] }>();
+      page = [...events.filter((event) => !held.has(event.id)), ...page];
+      page.sort((a, b) => b.at - a.at);
+    };
+    sessions[0] = { ...busy, status: "needs-you" };
+    await run.pollFor(MINUTE);
+    await beat();
+    expect((await waitsFrom(run.port)).today.waitedMs).toBe(MINUTE - 2 * SECOND);
+
+    clock.now -= 5 * MINUTE + 300;
+    const none = { waitedMs: 0, openMs: 0, waits: 0 };
+    for (const status of ["working", "idle", "working"] as const) {
+      sessions[0] = { ...busy, status };
+      await run.pollFor(4 * SECOND);
+      await beat();
+      expect((await waitsFrom(run.port)).today).toMatchObject(none);
+    }
+    const moves = ["needs-you", "working", "idle", "working"];
+    expect(new Set(page.map((event) => event.to))).toEqual(new Set(moves));
+    expect(page).toHaveLength(moves.length);
+
+    await run.pollFor(HOUR);
+    sessions[0] = { ...busy, status: "idle" };
+    await run.pollFor(2 * SECOND);
+    await beat();
+    expect(page).toHaveLength(moves.length + 1);
+    expect((await waitsFrom(run.port)).today).toMatchObject(none);
+    run.stop();
+
+    clock.now += MINUTE;
+    const again = await startIn(dir, sessions, {}, clock);
+    await again.pollFor(HOUR);
+    expect((await waitsFrom(again.port)).today).toMatchObject(none);
+    expect(await eventsOf(again.port, id(5))).toHaveLength(moves.length + 1);
+  });
+});
+
 describe("a wait that ends while the disk is full", () => {
   test("is counted the same after a restart, with its end where it was seen", async () => {
     const dir = await tempDir();

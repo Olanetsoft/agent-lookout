@@ -15,7 +15,7 @@ import type {
 } from "@core/sessions/session";
 import { DEFAULT_TIME_RULES, type TimeRules } from "@core/time-rules/timeRules";
 import type { WaitSighting } from "@core/waits/waitSightings";
-import { unendedWaits, waitTotals } from "@core/waits/waitTotals";
+import { unendedWaits, waitTotals, type WaitMark } from "@core/waits/waitTotals";
 import { makeSession } from "@tests/fixtures/session";
 
 const T0 = 1_700_000_000_000;
@@ -531,6 +531,18 @@ describe("events after a restart, with history kept from before it", () => {
     expect(events.list()).toHaveLength(3);
   });
 
+  test("what a session was last doing is the last of its events, though the clock was set back before it", async () => {
+    const a = makeSession({ id: "claude-code:a", name: "demo-a", status: "idle" });
+    const { adapter } = scriptedAdapter(result([a]));
+    const { poller, events } = setUp(adapter);
+    poller.resume([
+      kept("claude-code:a", "status-changed", "needs-you", T0 - 60_000),
+      kept("claude-code:a", "status-changed", "idle", T0 - 120_000),
+    ]);
+    await poller.pollOnce();
+    expect(events.list()).toEqual([]);
+  });
+
   test("a part the first poll did not read gets no event then, and is compared with the history at its first read", async () => {
     const read = makeSession({ id: "claude-code:read/a", status: "idle" });
     const refused = makeSession({ id: "claude-code:refused/b", status: "working" });
@@ -1010,9 +1022,8 @@ describe("a wait that ends when its agent closes, in a way of reading of its own
   /** What the waits add up to, with every moment since the first poll measured. */
   function totals(events: ReturnType<typeof createEventStore>, now: number, waiting: boolean) {
     const { sevenDays } = waitTotals({
-      events: events.list(),
+      marks: [{ kind: "start", at: T0 }, ...events.list().reverse()],
       measured: [{ from: T0, to: T0 + now }],
-      runStarts: [T0],
       waitingNow: waiting ? [{ id: asking.id, name: asking.name }] : [],
       since: T0,
       now: T0 + now,
@@ -1114,6 +1125,8 @@ describe("a wait whose session leaves every listing", () => {
       events: createEventStore(),
       sightings: [] as WaitSighting[],
       runStarts: [] as number[],
+      /** What the waits are worked out from, as it was added. */
+      marks: [] as WaitMark[],
     };
   }
 
@@ -1123,13 +1136,23 @@ describe("a wait whose session leaves every listing", () => {
     vi.setSystemTime(T0 + (steps[0] as [number, AdapterResult])[0]);
     const poller = createPoller({
       adapters: [adapter],
-      events: history.events,
+      events: {
+        ...history.events,
+        add: (events) => {
+          history.events.add(events);
+          history.marks.push(...events);
+        },
+      },
       history: createHistoryStore(),
-      onSightings: (sightings) => history.sightings.push(...sightings),
+      onSightings: (sightings) => {
+        history.sightings.push(...sightings);
+        history.marks.push(...sightings);
+      },
     });
-    const held = history.events.list();
+    const held = history.events.list().reverse();
     poller.resume([...unendedWaits(held), ...held], history.sightings, history.runStarts.slice(1));
     history.runStarts.push(poller.startedAt);
+    history.marks.push({ kind: "start", at: poller.startedAt });
     for (const [after] of steps) {
       vi.setSystemTime(T0 + after);
       await poller.pollOnce();
@@ -1151,10 +1174,8 @@ describe("a wait whose session leaves every listing", () => {
     measured = [{ from: T0, to: T0 + now }],
   ) {
     const { sevenDays } = waitTotals({
-      events: history.events.list(),
+      marks: history.marks,
       measured,
-      sightings: history.sightings,
-      runStarts: history.runStarts,
       waitingNow: waiting ? [{ id: asking.id, name: asking.name }] : [],
       since: T0,
       now: T0 + now,

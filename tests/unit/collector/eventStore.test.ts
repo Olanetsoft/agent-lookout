@@ -57,6 +57,25 @@ test("a caller that passes the time of its newest event gets no repeats", () => 
   expect(next.map((item) => item.at)).toEqual([12]);
 });
 
+test("events added once the clock is set back are after the newest a caller holds, whatever their times", () => {
+  const store = createEventStore();
+  store.add([event(90), event(100, "a"), event(100, "b")]);
+  // Set back to 40, and caught up at 110.
+  store.add([event(40)]);
+  expect(store.list({ since: 100 }).map((item) => item.at)).toEqual([40]);
+  store.add([event(60), event(100, "c")]);
+  expect(store.list({ since: 100 }).map((item) => item.sessionName)).toEqual([
+    "demo-c",
+    "demo-a",
+    "demo-a",
+  ]);
+  store.add([event(110)]);
+  expect(store.list({ since: 100 }).map((item) => item.at)).toEqual([110, 100, 60, 40]);
+  expect(store.list({ since: 110 })).toEqual([]);
+  // A time no event held has is only a time.
+  expect(store.list({ since: 95 }).map((item) => item.at)).toEqual([110, 100, 100, 100]);
+});
+
 test("a response never carries more than 200 events, and they are the newest", () => {
   const store = createEventStore();
   store.add(range(350));

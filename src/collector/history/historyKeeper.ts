@@ -9,12 +9,13 @@ import type {
 import type { HistoryPoint, SessionEvent } from "../../core/sessions/session.ts";
 import { pollRuns, type Span } from "../../core/waits/measured.ts";
 import type { WaitSighting } from "../../core/waits/waitSightings.ts";
-import { isWaitEvent } from "../../core/waits/waitTotals.ts";
+import { isWaitEvent, type WaitMark } from "../../core/waits/waitTotals.ts";
 import type { EventStore } from "../eventStore.ts";
 import type { HistoryStore } from "../historyStore.ts";
 import { nodeHistoryFs, type HistoryFs } from "./historyFiles.ts";
 import {
   byFileOrder,
+  DAY_MS,
   dayEnd,
   dayOf,
   encodeRecord,
@@ -96,6 +97,7 @@ export interface HistoryKeeperOptions {
 
 /** What the files held, oldest first: as much as the stores in memory take. */
 export interface RestoredHistory {
+  /** In the order they were added, whatever their times, which go back when the clock is set back. */
   events: SessionEvent[];
   points: HistoryPoint[];
   /** Each time Agent Lookout started again, oldest first: the newest 500, from 8 days at most. */
@@ -104,15 +106,11 @@ export interface RestoredHistory {
   lastAt: number | null;
   /**
    * All that the files hold, compactly, for what reads further back than the
-   * stores: every event into or out of needs-you, the stretches the points
-   * cover, broken at each start, and how the sessions in a wait were seen.
-   * `GET /api/waits` is worked out from it.
+   * stores: every start, every event into or out of needs-you and how the
+   * sessions in a wait were seen, as they were added, and the stretches the
+   * points cover, broken at each start. `GET /api/waits` is worked out from it.
    */
-  whole: {
-    waitEvents: SessionEvent[];
-    measured: Span[];
-    sightings: WaitSighting[];
-  };
+  whole: { marks: WaitMark[]; measured: Span[] };
 }
 
 /** How much of what is restored goes into memory: what the stores hold. */
@@ -301,7 +299,7 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
   /**
    * The records of a file's text this run can take: none written further
    * ahead of the clock than a little, since those would sit after everything
-   * this run records, in stores that are kept in time order.
+   * this run records.
    */
   function recordsIn(text: string, at: number): HistoryRecord[] {
     return parseHistoryText(text).records.filter(
@@ -330,7 +328,7 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
     const notFiles = new Set<string>();
     const events = new Map<string, SessionEvent>();
     const points: HistoryPoint[] = [];
-    const sightings: WaitSighting[] = [];
+    const marks = new Map<string, WaitMark>();
     const starts: number[] = [];
     const times: number[] = [];
     let lastAt: number | null = null;
@@ -364,29 +362,34 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
         const recorded = recordAt(record);
         times.push(recorded);
         if (lastAt === null || recorded > lastAt) lastAt = recorded;
-        if (record.kind === "event") events.set(record.event.id, record.event);
-        else if (record.kind === "point") points.push(record.point);
-        else if (record.kind === "sighting") sightings.push(record.sighting);
-        else if (record.kind === "start") starts.push(record.at);
+        // A line written twice is one mark, where it was first.
+        const mark = (held: WaitMark) => marks.set(encodeRecord(record), held);
+        if (record.kind === "event") {
+          events.set(record.event.id, record.event);
+          if (isWaitEvent(record.event)) mark(record.event);
+        } else if (record.kind === "point") points.push(record.point);
+        else if (record.kind === "sighting") mark(record.sighting);
+        else if (record.kind === "start") {
+          starts.push(record.at);
+          mark(record);
+        }
       }
     }
 
-    const allEvents = [...events.values()].sort((a, b) => a.at - b.at);
     points.sort((a, b) => a.at - b.at);
     const allPoints = points.filter((point, index) => point.at !== points[index - 1]?.at);
     return {
       history: {
-        events: newest(allEvents, limits.events),
+        events: newest([...events.values()], limits.events),
         points: newest(allPoints, limits.points),
         restarts: newest(restartsAmong(starts, times), MAX_RESTARTS),
         lastAt,
         whole: {
-          waitEvents: allEvents.filter(isWaitEvent),
+          marks: [...marks.values()],
           measured: pollRuns(
             allPoints.map((point) => point.at),
             starts,
           ),
-          sightings: sightings.sort((a, b) => a.at - b.at),
         },
       },
       found,
@@ -481,7 +484,9 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
   function* chunks(
     lines: readonly string[],
   ): Generator<{ name: string; text: string; count: number }, void, "written" | "blocked"> {
-    const day = dayOf(now());
+    // A clock set back past midnight goes on in the newest file, so that the
+    // files hold what was written in order.
+    const day = target?.day === dayOf(now() + DAY_MS) ? target.day : dayOf(now());
     let part = target?.day === day ? target.part : 1;
     let index = 0;
     while (index < lines.length && part <= MAX_PART) {
@@ -671,7 +676,7 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
         points: [],
         restarts: [],
         lastAt: null,
-        whole: { waitEvents: [], measured: [], sightings: [] },
+        whole: { marks: [], measured: [] },
       };
       if (restored) return none;
       restored = true;

@@ -38,33 +38,44 @@ export function isWaitEvent(event: Pick<SessionEvent, "kind" | "from" | "to">): 
   return event.to === "needs-you" || event.from === "needs-you";
 }
 
+/** A start of Agent Lookout. */
+export interface RunStart {
+  kind: "start";
+  at: number;
+}
+
+/** What waits are worked out from: a start, a session's move, or how a session in a wait was seen. */
+export type WaitMark = RunStart | SessionEvent | WaitSighting;
+
+const isStart = (mark: WaitMark): mark is RunStart => "kind" in mark && mark.kind === "start";
+
+/** Whether a mark says how a session in a wait was seen. */
+export const isSighting = (mark: WaitMark): mark is WaitSighting => "way" in mark;
+
 /**
- * The move into needs-you of each session whose last wait the events hold no
- * end for. Any event after such a move is a move out of needs-you, so it is
- * the session's newest event of all, and says what it was last doing.
+ * The move into needs-you of each session whose last wait the marks, in the
+ * order they were added, hold no end for. Any event after such a move is a move
+ * out of needs-you, so it is the session's newest event of all, and says what
+ * it was last doing.
  */
-export function unendedWaits(events: readonly SessionEvent[]): SessionEvent[] {
+export function unendedWaits(marks: readonly WaitMark[]): SessionEvent[] {
   const newest = new Map<string, SessionEvent>();
-  for (const event of events) {
-    if (!isWaitEvent(event)) continue;
-    const held = newest.get(event.sessionId);
-    if (!held || event.at >= held.at) newest.set(event.sessionId, event);
+  for (const mark of marks) {
+    if (isStart(mark) || isSighting(mark) || !isWaitEvent(mark)) continue;
+    newest.set(mark.sessionId, mark);
   }
   return [...newest.values()].filter((event) => event.kind !== "ended" && event.to === "needs-you");
 }
 
 export interface WaitTotalsInput {
-  /** The events into and out of needs-you the history holds, in any order. Others are passed over. */
-  events: readonly SessionEvent[];
+  /**
+   * The starts, the events into and out of needs-you and the sightings the
+   * history holds, in the order they were added. Not by their times, which go
+   * back when the clock is set back. Other events are passed over.
+   */
+  marks: readonly WaitMark[];
   /** The stretches Agent Lookout measured, in any order. */
   measured: readonly Span[];
-  /** Where a session in a wait was lost sight of, or seen again, in any order. */
-  sightings?: readonly WaitSighting[];
-  /**
-   * When each run of Agent Lookout began, in any order. A wait that no event
-   * and no sighting began is counted from the run it was seen in.
-   */
-  runStarts: readonly number[];
   /** The sessions that need the person now, as the latest poll found them. */
   waitingNow: readonly { id: string; name: string }[];
   /**
@@ -127,14 +138,6 @@ interface Standing {
   found?: boolean;
 }
 
-/** What the waits are worked out from, oldest first. At one moment a run starts, then a session moves, then it is seen. */
-function marksOf({ runStarts, events, sightings = [], now }: WaitTotalsInput) {
-  const starts = runStarts.map((at) => ({ run: at, at }));
-  return [...starts, ...events.filter(isWaitEvent), ...sightings]
-    .filter((mark) => mark.at <= now)
-    .sort((a, b) => a.at - b.at);
-}
-
 /**
  * Every wait the history holds, oldest first: a move into needs-you, to the
  * session's next move out of it. A wait that was already under way when the
@@ -159,6 +162,9 @@ function marksOf({ runStarts, events, sightings = [], now }: WaitTotalsInput) {
  * it began, and nothing is lost. But a status time later than where it was last
  * known (`began`) shows the wait ended unseen: it stops there, and a new wait
  * starts at that time.
+ *
+ * A wait that ends at an earlier time than it began, as when the clock is set
+ * back in it, counts as no time.
  */
 export function waitsOf(input: WaitTotalsInput): { waits: Wait[]; names: Map<string, string> } {
   const { now, since } = input;
@@ -182,17 +188,18 @@ export function waitsOf(input: WaitTotalsInput): { waits: Wait[]; names: Map<str
     return undefined;
   };
 
-  for (const mark of marksOf(input)) {
-    if ("run" in mark) {
-      run = mark.run;
+  for (const mark of input.marks) {
+    if (isStart(mark)) {
+      run = mark.at;
       for (const wait of standing.values()) wait.nextRun ??= run;
       continue;
     }
+    if (!isSighting(mark) && !isWaitEvent(mark)) continue;
     const { sessionId, at } = mark;
     names.set(sessionId, mark.sessionName);
     let wait = standingIn(sessionId);
     const gone = wait?.lost ?? wait?.nextRun;
-    if ("way" in mark) {
+    if (isSighting(mark)) {
       if (!wait) {
         const from = mark.lastSeen === undefined ? at : unbegun(sessionId).from;
         wait = { from, found: true };
@@ -315,7 +322,7 @@ export function waitTotals(input: WaitTotalsInput): { today: WaitPeriod; sevenDa
     newest &&
     newest.to < now &&
     now - newest.to <= gapMs &&
-    !input.runStarts.some((start) => start > newest.to && start <= now)
+    !input.marks.some((mark) => isStart(mark) && mark.at > newest.to && mark.at <= now)
   ) {
     newest.to = now;
   }

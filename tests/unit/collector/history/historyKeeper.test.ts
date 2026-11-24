@@ -19,7 +19,7 @@ const NOTHING = {
   points: [],
   restarts: [],
   lastAt: null,
-  whole: { waitEvents: [], measured: [], sightings: [] },
+  whole: { marks: [], measured: [] },
 };
 
 const file = (name: string) => `${DIR}/${name}`;
@@ -147,6 +147,31 @@ describe("writing", () => {
       lines({ kind: "point", point: point(T0 + DAY) }),
     );
     keeper.stop();
+  });
+
+  test("a clock set back past midnight goes on in the newest file, and a day or more back in that day's", async () => {
+    const { fs, keeper, setNow } = setUp();
+    const midnight = Date.parse("2026-10-07T00:00:00.000Z");
+    const at = async (moment: number) => {
+      setNow(moment);
+      keeper.addPoint(point(moment));
+      await keeper.flush();
+    };
+    await keeper.restore(LIMITS);
+    keeper.start();
+    await at(midnight - 2_000);
+    await at(midnight + 2_000);
+    await at(midnight - 1_000);
+    await at(midnight + 4_000);
+    await at(midnight - DAY - 1_000);
+    keeper.stop();
+    const points = (name: string) =>
+      (fs.text(file(name)) ?? "")
+        .match(/(?<="point":\[)\d+/g)
+        ?.map((text) => Number(text) - midnight);
+    expect(points("v1-2026-10-06.jsonl")).toEqual([-2_000]);
+    expect(points("v1-2026-10-07.jsonl")).toEqual([2_000, -1_000, 4_000]);
+    expect(points("v1-2026-10-05.jsonl")).toEqual([-DAY - 1_000]);
   });
 
   test("days more than 8 days past go as soon as this copy writes, and so does the oldest once the files hold 20 MB", async () => {
@@ -524,7 +549,7 @@ describe("reading back", () => {
     expect(keeper.status()).toMatchObject({ where: "disk", folder: "~/.agent-lookout/history" });
   });
 
-  test("how a session in a wait was seen is written with the rest, and comes back whole, oldest first, beside no other store", async () => {
+  test("how a session in a wait was seen is written with the rest, and comes back whole, as it was added, beside no other store", async () => {
     const { keeper, copy, setNow } = setUp();
     const sighting = {
       sessionId: "opencode:ses_000000000000000000000000a1",
@@ -536,15 +561,39 @@ describe("reading back", () => {
     await keeper.restore(LIMITS);
     keeper.start();
     keeper.addEvents([event(T0)]);
-    keeper.addSightings([lost, sighting]);
+    keeper.addSightings([lost]);
+    keeper.addEvents([event(T0 - 2_000)]);
+    keeper.addSightings([sighting]);
     await keeper.flush();
     keeper.stop();
 
     setNow(T0 + 60_000);
     const again = await copy(2).restore(LIMITS);
-    expect(again.whole.sightings).toEqual([sighting, lost]);
-    expect(again.events).toEqual([event(T0)]);
+    const marks = [{ kind: "start", at: T0 }, event(T0), lost, event(T0 - 2_000), sighting];
+    expect(again.whole.marks).toEqual(marks);
+    expect(again.events).toEqual([event(T0), event(T0 - 2_000)]);
     expect(again.points).toEqual([]);
+  });
+
+  test("a line that is in the files twice, as after a stop during a write, is read once, where it was first", async () => {
+    const { fs, keeper } = setUp();
+    const seen = {
+      sessionId: event(T0).sessionId,
+      sessionName: "demo-project",
+      at: T0 - 4_000,
+      way: "database",
+    };
+    const lost = { ...seen, at: T0 - 2_000, lastSeen: T0 - 4_000 };
+    const records: HistoryRecord[] = [
+      { kind: "start", at: T0 - 6_000 },
+      { kind: "event", event: event(T0 - 4_000) },
+      { kind: "sighting", sighting: seen },
+      { kind: "sighting", sighting: lost },
+    ];
+    fs.put(file("v1-2026-10-06.jsonl"), lines(...records, ...records.slice(0, 3)));
+    const { whole, events } = await keeper.restore(LIMITS);
+    expect(whole.marks).toEqual([records[0], event(T0 - 4_000), seen, lost]);
+    expect(events).toEqual([event(T0 - 4_000)]);
   });
 
   test("a Hermes Agent run's title an earlier version kept is in nothing that comes back, and the file is left as it was", async () => {
@@ -573,8 +622,11 @@ describe("reading back", () => {
 
     const restored = await keeper.restore(LIMITS);
     expect(restored.events.map((each) => each.sessionName)).toEqual([kept.sessionId]);
-    expect(restored.whole.waitEvents.map((each) => each.sessionName)).toEqual([kept.sessionId]);
-    expect(restored.whole.sightings.map((each) => each.sessionName)).toEqual([kept.sessionId]);
+    expect(restored.whole.marks).toMatchObject([
+      { kind: "start" },
+      { sessionName: kept.sessionId, kind: "status-changed" },
+      { sessionName: kept.sessionId, way: "database" },
+    ]);
     expect(JSON.stringify(restored)).not.toContain(prompt);
     expect(written(fs)).toBe(before);
   });
@@ -623,8 +675,13 @@ describe("reading back", () => {
     expect(restored.events).toEqual([idle]);
     expect(restored.points).toEqual([point(T0 - 54_000)]);
     // A move from working to idle is no part of a wait.
-    expect(restored.whole.waitEvents).toEqual([event(T0 - DAY + 2_000), answered]);
-    expect(restored.whole.sightings).toEqual([]);
+    expect(restored.whole.marks).toEqual([
+      { kind: "start", at: T0 - DAY },
+      event(T0 - DAY + 2_000),
+      answered,
+      { kind: "start", at: T0 - 60_000 },
+      { kind: "start", at: T0 - 56_500 },
+    ]);
     expect(restored.whole.measured).toEqual([
       { from: T0 - DAY + 2_000, to: T0 - DAY + 6_000 },
       { from: T0 - 58_000, to: T0 - 58_000 },

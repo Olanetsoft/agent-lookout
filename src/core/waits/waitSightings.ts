@@ -28,16 +28,3 @@ export interface WaitSighting {
    */
   began?: number;
 }
-
-/** Each session's sightings, oldest first. */
-export function sightingsBySession(
-  sightings: readonly WaitSighting[],
-): Map<string, WaitSighting[]> {
-  const bySession = new Map<string, WaitSighting[]>();
-  for (const sighting of [...sightings].sort((a, b) => a.at - b.at)) {
-    const own = bySession.get(sighting.sessionId);
-    if (own) own.push(sighting);
-    else bySession.set(sighting.sessionId, [sighting]);
-  }
-  return bySession;
-}

@@ -3,10 +3,12 @@
 //
 // The files are JSON lines, one record a line, appended to and never rewritten.
 // A file holds one UTC day, `v1-2026-10-06.jsonl`, and a day that outgrows a
-// file goes on in `v1-2026-10-06-2.jsonl`, and so on. A record that waited, as
-// on a full disk, is in the file of the day it was written, and every version
-// goes by the record's own time. The `v1` is the format:
-// a later format writes names of its own, which this one leaves alone.
+// file goes on in `v1-2026-10-06-2.jsonl`, and so on. The files hold records in
+// the order they were made, which the waits go by. So one that waited, as on a
+// full disk, is in the file of the day it was written, and once the clock is set
+// back past midnight they go on in the newest file. An earlier version reads
+// both, since it goes by each record's own time. The `v1` is the format: a later
+// format writes names of its own, which this one leaves alone.
 //
 // A record is one of five, each an object with one field:
 //
@@ -52,7 +54,7 @@ export const MAX_LINE_LENGTH = 8 * 1024;
 /** The longest text of an event's that is read: its id, its session's id and its session's name. */
 const MAX_FIELD_LENGTH = 1024;
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+export const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** A file's name, read: the format it is in, its UTC day and which of that day's files it is. */
 export interface HistoryFileName {

@@ -23,7 +23,7 @@ import { sortSessions } from "../core/sessions/sorting.ts";
 import { isStale } from "../core/sessions/staleness.ts";
 import { isQuietAt } from "../core/time-rules/quietHours.ts";
 import { staleAfterMs, type TimeRules } from "../core/time-rules/timeRules.ts";
-import { sightingsBySession, type WaitSighting } from "../core/waits/waitSightings.ts";
+import type { WaitSighting } from "../core/waits/waitSightings.ts";
 import type { Adapter, AdapterResult } from "./adapters/adapter.ts";
 import type { EventStore } from "./eventStore.ts";
 import type { HistoryStore } from "./historyStore.ts";
@@ -160,7 +160,7 @@ export interface Poller {
   getSnapshot(): SessionsSnapshot;
   /**
    * What each session was last seen doing before this run, from the history
-   * kept on disk: its events, in any order. The first good poll of each
+   * kept on disk: its events, in the order they were added. The first good poll of each
    * source is compared with what they say of that source's sessions, instead
    * of being taken as a baseline, so what changed while Agent Lookout was
    * stopped is an event of that poll, as what changed while the computer
@@ -168,7 +168,7 @@ export interface Poller {
    * ended. A session they say nothing of is taken as it is found. Called
    * before `start`.
    *
-   * `sightings` say how the sessions in a wait were last seen, in any order.
+   * `sightings` say how the sessions in a wait were last seen, in that order.
    * A session whose wait the history leaves open, that the first good poll
    * leaves out, is not taken to have ended unless the way that last listed it
    * is the way that poll was read. Nor is a session of a part that poll did
@@ -771,14 +771,13 @@ export function createPoller(options: PollerOptions): Poller {
     },
     pollOnce,
     resume(kept, sightings = [], restarts = []) {
-      const sighted = sightingsBySession(sightings);
+      // Each session's newest.
+      const sighted = new Map(sightings.map((sighting) => [sighting.sessionId, sighting]));
       const newest = new Map<string, SessionEvent>();
       for (const event of kept) {
         // An event of what was done to a session, such as being stopped, says
         // nothing of its status. Its leaving the list is an event of its own.
-        if (!isStatusEvent(event)) continue;
-        const held = newest.get(event.sessionId);
-        if (!held || event.at >= held.at) newest.set(event.sessionId, event);
+        if (isStatusEvent(event)) newest.set(event.sessionId, event);
       }
       resumed.clear();
       for (const event of newest.values()) {
@@ -788,8 +787,7 @@ export function createPoller(options: PollerOptions): Poller {
         // `remote:devbox:…` for one on another machine.
         const source = sourceOf(event.sessionId);
         if (source === null) continue;
-        const own = sighted.get(event.sessionId);
-        const sighting = own?.[own.length - 1];
+        const sighting = sighted.get(event.sessionId);
         // A sighting from before this wait's own event is of an earlier wait,
         // and says nothing of this one.
         const followed = status === "needs-you" && sighting && sighting.at >= event.at;
