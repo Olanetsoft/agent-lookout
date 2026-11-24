@@ -23,6 +23,7 @@ import {
 } from "@collector/adapters/antigravity/cli/index";
 import { nodeIo, type ReadOnlyIo } from "@collector/files/readOnlyIo";
 import {
+  checkpoint,
   conversationId,
   databasePath,
   DAY,
@@ -289,6 +290,73 @@ describe("the Antigravity CLI adapter, on a folder laid out as agy lays it out",
       status: "idle",
       tokens: { input: 12_544, cached: 12_032, output: 66 },
     });
+  });
+
+  test("a finished checkpoint leaves a session with no counts until its next reply, and its status as it was", async () => {
+    const home = await makeAgyHome();
+    const compacted = conversationId("e5");
+    const file = transcriptPath(home, compacted);
+    const reply = (index: number, at: number, input: number) =>
+      step({
+        index,
+        type: "PLANNER_RESPONSE",
+        at,
+        counts: { input_tokens: input, cache_read_tokens: 0, output_tokens: 140 },
+      });
+    await put(
+      file,
+      [
+        step({ index: 0, type: "USER_INPUT", at: NOW - 2 * MINUTE }),
+        reply(1, NOW - 2 * MINUTE + SECOND, 182_400),
+      ].join(""),
+      NOW - MINUTE,
+    );
+    let at = NOW;
+    const adapter = adapterFor(home, { now: () => at });
+    const sessionOf = async () =>
+      (await adapter.poll()).sessions.find((session) => session.id.endsWith(compacted));
+
+    const before = await sessionOf();
+    expect(before).toMatchObject({
+      status: "idle",
+      tokens: { input: 182_400, cached: 0, output: 140 },
+    });
+
+    await appendFile(file, checkpoint(2, NOW + SECOND));
+    at += 2 * SECOND;
+    const after = await sessionOf();
+    expect(after).not.toHaveProperty("tokens");
+    // Its status is as it was, since the reply that ended its turn, and the
+    // summary's own counts are not the session's.
+    expect(after).toMatchObject({ status: "idle", statusSince: before?.statusSince });
+    expect(JSON.stringify(after)).not.toContain(PRIVATE_WORDS);
+    // An adapter that reads the file for the first time says the same.
+    const fresh = (await adapterFor(home, { now: () => at }).poll()).sessions;
+    expect(fresh.find((session) => session.id.endsWith(compacted))).toEqual(after);
+
+    await appendFile(
+      file,
+      step({ index: 3, type: "USER_INPUT", at: NOW + 3 * SECOND }) +
+        reply(4, NOW + 4 * SECOND, 31_200),
+    );
+    at += 4 * SECOND;
+    expect(await sessionOf()).toMatchObject({
+      status: "idle",
+      tokens: { input: 31_200, cached: 0, output: 140 },
+    });
+
+    // A known gap: a bare /compact leaves its own prompt, then the checkpoint,
+    // and the session shows as working until the next turn's reply.
+    await appendFile(
+      file,
+      step({ index: 5, type: "USER_INPUT", at: NOW + 10 * SECOND }) +
+        checkpoint(6, NOW + 11 * SECOND),
+    );
+    at += 8 * SECOND;
+    const bare = await sessionOf();
+    expect(bare).not.toHaveProperty("tokens");
+    expect(bare).toMatchObject({ status: "working" });
+    expect((await adapterFor(home, { now: () => at }).poll()).sessions).toContainEqual(bare);
   });
 });
 

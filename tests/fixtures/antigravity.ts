@@ -135,6 +135,32 @@ export function failedTurn(firstIndex: number, start: number): string[] {
   ];
 }
 
+/**
+ * The counts on a checkpoint's line, which are not a reply's. The adapter must
+ * never show them as the session's.
+ */
+export const CHECKPOINT_COUNTS: ReplyCounts = {
+  input_tokens: 171_000,
+  cache_read_tokens: 11_000,
+  output_tokens: 5_100,
+};
+
+/**
+ * The step a compaction ends in: a checkpoint, whose content, a summary of the
+ * conversation, the adapter must never keep. Finished unless another status is
+ * given.
+ */
+export function checkpoint(index: number, ms: number, status = "DONE"): string {
+  return step({
+    index,
+    type: "CHECKPOINT",
+    status,
+    source: "SYSTEM",
+    at: ms,
+    counts: CHECKPOINT_COUNTS,
+  });
+}
+
 /** What `ps -o lstart=` prints in UTC for a moment, as the table has it. */
 export function lstart(ms: number): string {
   const date = new Date(ms);

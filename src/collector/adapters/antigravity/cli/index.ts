@@ -132,7 +132,8 @@ export const UNMATCHED_NOTE =
  *   agy takes its answers only in that terminal.
  * - Quiet for is the newest modified time of the conversation's files.
  * - Tokens are the counts of the newest reply, from the transcript's newest
- *   `PLANNER_RESPONSE` step that names them (`transcriptFile.ts`).
+ *   `PLANNER_RESPONSE` step that names them, until a finished checkpoint
+ *   (`transcriptFile.ts`).
  */
 export const ANTIGRAVITY_CAPABILITIES: SourceCapabilities = {
   "working-and-idle": { level: "yes" },

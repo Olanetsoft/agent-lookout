@@ -6,8 +6,10 @@ import {
   readStepLine,
   TAIL_LIMIT_BYTES,
 } from "@collector/adapters/antigravity/shared/transcriptFile";
+import { ANTIGRAVITY_STEP_TYPES } from "@core/mapping/antigravityMapping";
 import {
   AGY_HOME,
+  checkpoint,
   conversationId,
   failedTurn,
   finishedTurn,
@@ -148,7 +150,7 @@ describe("readStepLine", () => {
       readStepLine(step({ index: 1, type: "PLANNER_RESPONSE", at: START })),
     ).not.toHaveProperty("tokens");
     const counts = { input_tokens: 900, cache_read_tokens: 100, output_tokens: 40 };
-    for (const type of ["USER_INPUT", "RUN_COMMAND", "ERROR_MESSAGE"]) {
+    for (const type of ["USER_INPUT", "RUN_COMMAND", "ERROR_MESSAGE", "CHECKPOINT"]) {
       expect(readStepLine(step({ index: 1, type, at: START, counts })), type).not.toHaveProperty(
         "tokens",
       );
@@ -504,7 +506,7 @@ describe("the newest reply's token counts", () => {
         reply(3, START + 11 * SECOND, B, ["run_command"]),
         step({ index: 4, type: "RUN_COMMAND", at: START + 12 * SECOND }),
         step({ index: 5, type: "ERROR_MESSAGE", source: "SYSTEM", at: START + 13 * SECOND }),
-        step({ index: 6, type: "CHECKPOINT", at: START + 14 * SECOND }),
+        step({ index: 6, type: "EPHEMERAL_MESSAGE", source: "SYSTEM", at: START + 14 * SECOND }),
         step({ index: 7, type: "USER_INPUT", at: START + 20 * SECOND }),
       ].join(""),
     );
@@ -599,5 +601,263 @@ describe("the newest reply's token counts", () => {
       lastAt: null,
       lastIndex: null,
     });
+  });
+});
+
+describe("a finished checkpoint", () => {
+  const A = { input_tokens: 2_048, cache_read_tokens: 10_240, output_tokens: 96 };
+  const B = { input_tokens: 1_536, cache_read_tokens: 512, output_tokens: 288 };
+  const COUNTS_A = { input: 12_288, cached: 10_240, output: 96 };
+  const COUNTS_B = { input: 2_048, cached: 512, output: 288 };
+  const reply = (index: number, at: number, given?: ReplyCounts, tools?: string[]) =>
+    step({ index, type: "PLANNER_RESPONSE", at, counts: given, tools });
+  const prompt = (index: number, at: number) => step({ index, type: "USER_INPUT", at });
+  /** A turn that ended on a reply with counts. */
+  const turn = [prompt(0, START), reply(1, START + SECOND, A)];
+  /** A turn still going, its newest reply's counts those of A. */
+  const toolTurn = [
+    prompt(0, START),
+    reply(1, START + SECOND, A, ["run_command"]),
+    step({ index: 2, type: "RUN_COMMAND", at: START + 2 * SECOND }),
+  ];
+
+  /** What it is, the lines read first, the lines added one by one, and the counts after each. */
+  const cases: [string, string[], string[], (typeof COUNTS_A | null)[]][] = [
+    [
+      "after a bare /compact, until the next turn's reply",
+      turn,
+      [
+        prompt(2, START + 9 * SECOND),
+        checkpoint(3, START + 10 * SECOND),
+        prompt(4, START + 60 * SECOND),
+        reply(5, START + 61 * SECOND, B),
+      ],
+      [COUNTS_A, null, null, COUNTS_B],
+    ],
+    [
+      "after /compact with a message, until the reply to it",
+      [...turn, prompt(2, START + 9 * SECOND)],
+      [checkpoint(3, START + 10 * SECOND), reply(4, START + 11 * SECOND, B)],
+      [null, COUNTS_B],
+    ],
+    [
+      "in the middle of a turn, as agy compacts on its own, until the turn's next reply",
+      toolTurn,
+      [
+        checkpoint(3, START + 10 * SECOND),
+        step({ index: 4, type: "VIEW_FILE", at: START + 11 * SECOND }),
+        reply(5, START + 12 * SECOND, B),
+        step({ index: 6, type: "EPHEMERAL_MESSAGE", source: "SYSTEM", at: START + 13 * SECOND }),
+      ],
+      [null, null, COUNTS_B, COUNTS_B],
+    ],
+    [
+      "twice in a row",
+      turn,
+      [
+        checkpoint(2, START + 10 * SECOND),
+        checkpoint(3, START + 20 * SECOND),
+        reply(4, START + 30 * SECOND, B),
+        checkpoint(5, START + 40 * SECOND),
+      ],
+      [null, null, COUNTS_B, null],
+    ],
+    [
+      "which a reply that names no counts, or one agy cleared, does not bring back",
+      turn,
+      [
+        checkpoint(2, START + 10 * SECOND),
+        reply(3, START + 11 * SECOND),
+        step({
+          index: 4,
+          type: "PLANNER_RESPONSE",
+          status: "CLEARED",
+          at: START + 12 * SECOND,
+          counts: B,
+        }),
+        reply(5, START + 13 * SECOND, { ...B, output_tokens: "lots" }),
+      ],
+      [null, null, null, null],
+    ],
+    [
+      "written with the prefix agy's program uses, in any case",
+      turn,
+      [
+        step({
+          index: 2,
+          type: "cortex_step_type_checkpoint",
+          status: "cortex_step_status_done",
+          at: START + 10 * SECOND,
+        }),
+      ],
+      [null],
+    ],
+  ];
+
+  test.each(cases)("clears the counts: %s", async (_what, before, after, expected) => {
+    const onward = setUp(before.join(""));
+    expect((await onward.read()).tokens).toEqual(COUNTS_A);
+    for (const [index, line] of after.entries()) {
+      onward.files.append(FILE, line);
+      const state = await onward.read();
+      expect(state.tokens, line).toEqual(expected[index]);
+      // A first read of the same file says the same, of the counts and of everything else.
+      const fresh = setUp([...before, ...after.slice(0, index + 1)].join(""));
+      expect(await fresh.read(), line).toEqual(state);
+      expect(JSON.stringify(state)).not.toContain(PRIVATE_WORDS);
+    }
+    // Read onward all at once, it says the same too.
+    const atOnce = setUp(before.join(""));
+    await atOnce.read();
+    atOnce.files.append(FILE, after.join(""));
+    expect(await atOnce.read()).toEqual(await onward.read());
+  });
+
+  test.each([
+    ["is PENDING", "PENDING"],
+    ["is RUNNING", "RUNNING"],
+    ["is GENERATING", "GENERATING"],
+    ["is WAITING", "WAITING"],
+    ["is QUEUED", "QUEUED"],
+    ["is CANCELED", "CANCELED"],
+    ["is INTERRUPTED", "INTERRUPTED"],
+    ["is ERROR", "ERROR"],
+    ["is CLEARED", "CLEARED"],
+    ["is INVALID", "INVALID"],
+    ["is UNSPECIFIED", "UNSPECIFIED"],
+    ["has a status this adapter does not know", "COMPLETED"],
+    ["has a status that only begins as DONE", "DONE_WITH_ERRORS"],
+    ["has an empty status", ""],
+    ["has a status that is no word", 3],
+    ["has no status", undefined],
+  ])("that %s is not a finished one, and leaves the counts as they were", async (_what, status) => {
+    const line = `${JSON.stringify({ ...(JSON.parse(checkpoint(2, START + 10 * SECOND)) as object), status })}\n`;
+    const onward = setUp(turn.join(""));
+    await onward.read();
+    onward.files.append(FILE, line);
+    const state = await onward.read();
+    expect(state.tokens).toEqual(COUNTS_A);
+    const fresh = setUp([...turn, line].join(""));
+    expect(await fresh.read()).toEqual(state);
+  });
+
+  test("is the only finished step that clears the counts", async () => {
+    const types = [
+      ...ANTIGRAVITY_STEP_TYPES.filter(
+        (type) => type !== "CHECKPOINT" && type !== "PLANNER_RESPONSE",
+      ),
+      "CHECKPOINTS",
+      "CHECKPOINT_REVERTED",
+      "PRE_CHECKPOINT",
+    ];
+    for (const type of types) {
+      const line = step({ index: 2, type, at: START + 10 * SECOND, counts: B });
+      const onward = setUp(turn.join(""));
+      await onward.read();
+      onward.files.append(FILE, line);
+      const state = await onward.read();
+      expect(state.tokens, type).toEqual(COUNTS_A);
+      const fresh = setUp([...turn, line].join(""));
+      expect(await fresh.read(), type).toEqual(state);
+    }
+  });
+
+  test("is still passed over for the status, and counts for when agy last wrote a step", async () => {
+    const idle = setUp([...turn, checkpoint(2, START + 10 * SECOND)].join(""));
+    expect(await idle.read()).toEqual({
+      firstAt: START,
+      last: {
+        index: 1,
+        type: "PLANNER_RESPONSE",
+        status: "DONE",
+        toolCalls: false,
+        at: START + SECOND,
+        tokens: COUNTS_A,
+      },
+      since: START + SECOND,
+      lastAt: START + 10 * SECOND,
+      lastIndex: 2,
+      tokens: null,
+    });
+
+    const working = setUp([...toolTurn, checkpoint(3, START + 10 * SECOND)].join(""));
+    expect(await working.read()).toMatchObject({
+      last: { index: 2, type: "RUN_COMMAND" },
+      since: START,
+      tokens: null,
+    });
+  });
+
+  test("with a long summary, or still being written, clears the counts once its line is whole", async () => {
+    const short = JSON.parse(checkpoint(2, START + 10 * SECOND)) as object;
+    const long = `${JSON.stringify({ ...short, content: "word ".repeat(40 * 1024) })}\n`;
+    const onward = setUp(turn.join(""));
+    await onward.read();
+    onward.files.append(FILE, long.slice(0, -20));
+    expect((await onward.read()).tokens).toEqual(COUNTS_A);
+    onward.files.append(FILE, long.slice(-20));
+    const state = await onward.read();
+    expect(state.tokens).toBeNull();
+    expect(await setUp(turn.join("") + long).read()).toEqual(state);
+
+    // Whole, with no newline yet: it counts, and reading its newline later changes nothing.
+    const whole = setUp(turn.join("") + long.trimEnd());
+    expect(await whole.read()).toEqual(state);
+    whole.files.append(FILE, "\n");
+    expect(await whole.read()).toEqual(state);
+    whole.files.append(FILE, reply(3, START + 20 * SECOND, B));
+    expect((await whole.read()).tokens).toEqual(COUNTS_B);
+  });
+
+  test("a line that is broken, or that names a checkpoint in its text alone, clears nothing", async () => {
+    const quoted = `${JSON.stringify({
+      step_index: 2,
+      source: "USER_EXPLICIT",
+      type: "USER_INPUT",
+      status: "DONE",
+      content: checkpoint(2, START + 10 * SECOND),
+    })}\n`;
+    for (const line of [quoted, `${checkpoint(2, START).slice(0, 60)}\n`]) {
+      const onward = setUp(turn.join(""));
+      await onward.read();
+      onward.files.append(FILE, line);
+      const state = await onward.read();
+      expect(state.tokens, line).toEqual(COUNTS_A);
+      expect(await setUp(turn.join("") + line).read()).toEqual(state);
+    }
+  });
+
+  test("past the run's start ends the look for a reply's counts", async () => {
+    const PIECE = 64 * 1024;
+    const filler = step({ index: 2, type: "VIEW_FILE", at: START + 2 * SECOND });
+    const earlier = [
+      ...turn.slice(0, 1),
+      reply(1, START + SECOND, A, ["view_file"]),
+      ...Array.from({ length: Math.ceil((200 * 1024) / filler.length) }, () => filler),
+    ];
+    const ending = [
+      step({ index: 4, type: "ERROR_MESSAGE", source: "SYSTEM", at: START + 4 * SECOND }),
+      prompt(5, START + 5 * SECOND),
+    ];
+    const tail = async (lines: string[]) => {
+      const { files, read } = setUp(lines.join(""));
+      const state = await read();
+      const size = files.reads
+        .filter((range) => range.position > 0)
+        .reduce((sum, range) => sum + range.length, 0);
+      return { state, size };
+    };
+    // With no checkpoint, the reply is found within the 256 KiB looked through.
+    const without = await tail([...earlier, ...ending]);
+    expect(without.state.tokens).toEqual(COUNTS_A);
+    expect(without.size).toBeGreaterThan(PIECE);
+    // With one, the older reply is not looked for, and its counts are not taken.
+    const within = await tail([...earlier, checkpoint(3, START + 3 * SECOND), ...ending]);
+    expect(within.state).toMatchObject({
+      last: { index: 5, type: "USER_INPUT" },
+      since: START + 5 * SECOND,
+      tokens: null,
+    });
+    expect(within.size).toBe(PIECE);
   });
 });

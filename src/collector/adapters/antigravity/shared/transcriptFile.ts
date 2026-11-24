@@ -30,8 +30,11 @@ import type { FileInfo, OpenFile, ReadOnlyIo } from "../../../files/readOnlyIo.t
  * - From the end too, the token counts of the newest reply, a
  *   `PLANNER_RESPONSE` step, from its `input_tokens`, `cache_read_tokens` and
  *   `output_tokens`, which both the CLI and Antigravity 2.0 write on a reply's
- *   line and on no other step's. They are held apart from the last step, so
- *   a tool step after the reply keeps the reply's counts.
+ *   line. They are held apart from the last step, so a tool step after the
+ *   reply keeps the reply's counts. A finished checkpoint, as a compaction
+ *   writes, clears them until the next reply that names its counts
+ *   (`clearsCounts`). Its own line carries counts too, not a reply's, and
+ *   those are never taken.
  *
  * `content`, `thinking`, `media`, `source` and the tool calls themselves are
  * never kept: each line is parsed, those fields and the three counts are
@@ -111,9 +114,10 @@ export interface TranscriptState {
   lastIndex: number | null;
   /**
    * The token counts of the newest reply that names any, as its line gave
-   * them. Null when none was found within the part read, or when that reply's
-   * counts could not be right: an older reply's are never taken in their
-   * place. A reply agy cleared or marked invalid is passed over.
+   * them. Null when none was found within the part read, when that reply's
+   * counts could not be right, or when a finished checkpoint is newer than it:
+   * an older reply's are never taken in their place. A reply or a checkpoint
+   * agy cleared or marked invalid is passed over.
    */
   tokens: TokenCounts | null;
 }
@@ -205,10 +209,25 @@ function countsForIndex(step: TranscriptStep): boolean {
   return step.index !== null && step.status !== "CLEARED" && step.status !== "INVALID";
 }
 
+/**
+ * Whether a step takes back the counts of the replies before it: a checkpoint
+ * that is done. A compaction, the person's `/compact` or agy's own, ends in
+ * one, and the context those replies were given is then no longer the one in
+ * use. A bare `/compact` stops there, so until the next reply there are no
+ * counts. Told by its type and status alone: the counts on its line are not a
+ * reply's. A checkpoint still under way, stopped or failed takes back nothing,
+ * nor does one agy cleared.
+ */
+function clearsCounts(step: TranscriptStep): boolean {
+  return step.type === "CHECKPOINT" && step.status === "DONE";
+}
+
 /** Moves the state on by one step, read in the order agy wrote them. */
 function addStep(state: TranscriptState, step: TranscriptStep): void {
   if (step.at !== null) state.lastAt = step.at;
   if (countsForIndex(step)) state.lastIndex = step.index;
+  // It is still passed over for the status.
+  if (clearsCounts(step)) state.tokens = null;
   if (isAsideStep(step)) return;
   // A newer reply replaces the counts, even with none that could be right.
   if (step.tokens !== undefined) state.tokens = step.tokens;
@@ -255,10 +274,11 @@ interface Tail {
  * of the file, or has read the tail limit. The bytes after the last newline are
  * a line still being written, and are used only if they are already a whole step.
  *
- * On the way it notes the newest reply that names its token counts. When none
- * has been seen by the run's start, the rest of that piece is looked through,
- * then at most 256 KiB more, within the same limit: a file with no counts
- * costs 256 KiB more, not the whole limit.
+ * On the way it notes the newest reply that names its token counts, or the
+ * newest finished checkpoint, past which no reply's are taken (`addStep`). When
+ * neither has been seen by the run's start, the rest of that piece is looked
+ * through, then at most 256 KiB more, within the same limit: a file with no
+ * counts costs 256 KiB more, not the whole limit.
  */
 async function scanTail(file: OpenFile, size: number): Promise<Tail> {
   const state = emptyState();
@@ -269,7 +289,7 @@ async function scanTail(file: OpenFile, size: number): Promise<Tail> {
   let end: number | null = null;
   /** Whether the run the last step belongs to has been followed back to its start. */
   let settled = false;
-  /** Whether the newest reply that names its counts has been found. */
+  /** Whether the newest reply that names its counts, or a finished checkpoint newer than it, has been found. */
   let counted = false;
   /** How much more may be read past the run's start, for a reply's counts. */
   let lookBack = LOOK_BACK_BYTES;
@@ -281,12 +301,14 @@ async function scanTail(file: OpenFile, size: number): Promise<Tail> {
       if (state.lastAt === null && step.at !== null) state.lastAt = step.at;
       if (state.lastIndex === null && countsForIndex(step)) state.lastIndex = step.index;
     }
+    // Every reply still to come is older than the checkpoint, and has no say.
+    if (clearsCounts(step)) counted = true;
     if (isAsideStep(step)) return;
     if (!counted && step.tokens !== undefined) {
       state.tokens = step.tokens;
       counted = true;
     }
-    // Past the run's start, only a reply's counts are looked for.
+    // Past the run's start, only what settles the counts is looked for.
     if (settled) return;
     if (state.last === undefined || state.last === null) {
       state.last = step;

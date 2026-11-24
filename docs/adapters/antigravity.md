@@ -4,7 +4,7 @@ These notes record what Agent Lookout reads from the Antigravity CLI, `agy`, and
 
 Written on 2026-10-07 from agy 1.3.1: its `agy --version` and `agy --help`, the text and protocol buffer descriptors inside its program, the documentation it bundles under `builtin/skills/` in its folder, its changelog ([google-antigravity/antigravity-cli](https://github.com/google-antigravity/antigravity-cli/blob/main/CHANGELOG.md), also inside the program up to 1.3.0), and Google's documentation of [hooks](https://antigravity.google/docs/hooks/) and of the [status line](https://antigravity.google/docs/cli/statusline). When the adapter was first written no conversation had been run on that machine, so the files below are as agy documents them and its program describes them, and the tests use hand-written files laid out the same way. On 2026-10-07 one conversation was run there with agy 1.3.1, asked to run a command, and looked at while it waited for approval: by the names, sizes and modified times of its files, by which files its agy program had open (`lsof`), by the fields of each transcript step other than its content, and by the lines of the program's log that say what it does with conversations and approvals. What that showed is marked as seen below. [Not yet checked](#not-yet-checked) lists what is still to be shown, and how to check it.
 
-On 2026-11-24 agy's [changelog at 1.5.16](https://github.com/google-antigravity/antigravity-cli/blob/1.5.16/CHANGELOG.md) and Google's pages on [remote agents](https://antigravity.google/docs/remote-agents), [resuming](https://antigravity.google/docs/cli/commands/resume) and [headless runs](https://antigravity.google/docs/cli/headless) were read for `-r`, `--resume` and `--remote-agent` (#437). No agy 1.5 was run and none of its program was looked at, so what those pages say is marked as theirs. How a subagent's or swarm worker's conversation is told from a person's (#440) was settled that day too, from the sources [Subagents and swarm workers](#subagents-and-swarm-workers) names, and has not been checked on a computer running agy.
+On 2026-11-24 agy's [changelog at 1.5.16](https://github.com/google-antigravity/antigravity-cli/blob/1.5.16/CHANGELOG.md) and Google's pages on [remote agents](https://antigravity.google/docs/remote-agents), [resuming](https://antigravity.google/docs/cli/commands/resume) and [headless runs](https://antigravity.google/docs/cli/headless) were read for `-r`, `--resume` and `--remote-agent` (#437). No agy 1.5 was run and none of its program was looked at, so what those pages say is marked as theirs. How a subagent's or swarm worker's conversation is told from a person's (#440) was settled that day too, from the sources [Subagents and swarm workers](#subagents-and-swarm-workers) names, and what a compaction does to the token counts (#438) from those [After a compaction](#after-a-compaction) names. Neither has been checked on a computer running agy.
 
 The code is in `src/collector/adapters/antigravity/`: what both products share in `shared/` (the conversation finder, the reader of subagents' records, the transcript reader, the title reader and the session it makes), the CLI's adapter in `cli/` and Antigravity 2.0's in `app/`. The status mapping is in `src/core/mapping/antigravityMapping.ts`, which conversations are open in `src/core/mapping/antigravityLiveness.ts`, and what a program's log says in `src/core/mapping/antigravityLog.ts`.
 
@@ -96,7 +96,7 @@ On each poll the adapter parses each line it reads and keeps `type`, `status`, `
 
 ### Token counts
 
-Seen on 2026-10-13 in one transcript of agy 1.3.1 and two of the Antigravity 2.0 app of October 2026, ten replies in all, by a check of the numbers alone: a reply's step, `PLANNER_RESPONSE`, carries three whole numbers, `input_tokens`, `cache_read_tokens` and `output_tokens`, and no other step carries a token count. `input_tokens` is only the part of the prompt not read from a cache: one reply's `cache_read_tokens` was larger than its `input_tokens`. Neither product documents these keys.
+Seen on 2026-10-13 in one transcript of agy 1.3.1 and two of the Antigravity 2.0 app of October 2026, ten replies in all, by a check of the numbers alone: a reply's step, `PLANNER_RESPONSE`, carries three whole numbers, `input_tokens`, `cache_read_tokens` and `output_tokens`. A checkpoint's line has them too, for another call than a reply's, as [After a compaction](#after-a-compaction) says. `input_tokens` is only the part of the prompt not read from a cache: one reply's `cache_read_tokens` was larger than its `input_tokens`. Neither product documents these keys.
 
 So a session's Tokens are its newest reply's, as for Codex:
 
@@ -110,9 +110,24 @@ So a session's Tokens are its newest reply's, as for Codex:
 
 - A tool step after a reply keeps the reply's counts: they are held apart from the last step.
 - A reply that names none of the three changes nothing, and a reply agy cleared or marked invalid is passed over.
+- A finished checkpoint clears the counts (`clearsCounts`), and they are a dash until the next reply that names its own.
 - Counts that could not be right give a dash, never an older reply's: a count that is negative or not a whole number, a missing `input_tokens` or `output_tokens`, or a whole prompt of 0, with `input_tokens` 0 and `cache_read_tokens` 0 or left out. A `cache_read_tokens` that is left out counts as 0, and the cached part is left out.
 - Nothing is summed: there are no totals.
-- The newest reply is noted as the tail is read for the last step. When none has been found by the start of the run of steps that say the same, at most 256 KiB more of the file is read for one, within the 2 MiB.
+- The newest reply, or a finished checkpoint newer than it, is noted as the tail is read for the last step. When neither has been found by the start of the run of steps that say the same, at most 256 KiB more of the file is read for one, within the 2 MiB. A checkpoint found there ends the look, so a first read takes no reply's counts from before it, as reading onward does not.
+
+#### After a compaction
+
+Google's page on [`/compact`](https://antigravity.google/docs/commands/compact/), which the CLI and the app have, says that a bare `/compact` ends the turn once the summary is written, so the next message is the first on the shorter context, and that `/compact <message>` has the message answered in the same turn. A conversation near the model's limit is compacted by the same step, and a canceled compaction leaves the context as it was. So the counts of the reply before one are not what is in use after it, and the next reply's are.
+
+The page names no file. That a compaction adds one finished `CHECKPOINT` line to `transcript.jsonl`, and a plain turn none, comes from readers of these files, each under MIT, read on 2026-11-24:
+
+- [yepanywhere](https://github.com/kzahel/yepanywhere/blob/94c793028b/topics/antigravity-native-storage.md), on agy 1.5.13 and 1.5.14, gives a plain turn as `USER_INPUT` then `PLANNER_RESPONSE`, and `/compact <message>` as `USER_INPUT`, `CHECKPOINT`, `PLANNER_RESPONSE`. A conversation with three compactions had three `CHECKPOINT` lines in its 1,271. Its [own check](https://github.com/kzahel/yepanywhere/blob/94c793028b/packages/server/src/sdk/providers/antigravity-compaction.ts) that `/compact` worked is a new `CHECKPOINT` line with status `DONE`.
+- [agent-session-manager](https://github.com/TMYTiMidlY/agent-session-manager/blob/bc9c1854a1/docs/agy-format.md) and [deja-vu](https://github.com/vshulcz/deja-vu/blob/e9825f764f/internal/sources/compaction_antigravity.go) take the line for a compaction and nothing else.
+- yepanywhere and agent-session-manager say the line carries token counts, and do not agree on what they count. yepanywhere has the line written as the call that makes the summary ends, which would make them that call's. agent-session-manager takes them for the size of the context then. By neither are they a reply's, so they are never shown as the session's.
+
+The check of 2026-10-30, of conversations not known to have been compacted, found no `CHECKPOINT` line. Google's page on [headless runs](https://antigravity.google/docs/cli/headless) has a finished checkpoint in what one short run prints, after its one reply, with 116 tokens in and 7 out, too few for a compaction of it. That may be the call for its title, which agy's changelog drops from such runs at 1.1.28, though Google does not say so. If a build wrote such a step to the file, that conversation's Tokens are a dash until its next reply.
+
+A checkpoint with any other status, or none, clears nothing. It is told by its `type` and `status` alone, and its content and its counts are dropped as every other step's are. It is still passed over for the status, which is the step's before it, and still counts for when the last step was made and for the highest `step_index`.
 
 ### What a session last said
 
@@ -255,6 +270,7 @@ A session's `lastWriteAt` is the newest modified time of its transcript, its dat
 - No Jump, no Stop and no Answer: agy takes the answer to its prompt only in its terminal.
 - What a session last said is its newest reply with text. A reply whose `content` the transcript cut shows only its start, since `transcript_full.jsonl` is not read, and a reply whose line, with its `thinking`, is longer than the 256 KB read is too far back to show.
 - Tokens show a dash while the newest reply is further back than the part read for it, until the next reply.
+- A bare `/compact` leaves its `USER_INPUT`, then the checkpoint, and no reply: [yepanywhere](https://github.com/kzahel/yepanywhere/blob/94c793028b/topics/antigravity-native-storage.md) saw one `USER_INPUT` for each `/compact`. So the session shows as working until the reply to the next message. A compaction in the middle of a turn, and `/compact <message>` while its reply is made, end on a checkpoint too, so type and status cannot tell them apart.
 
 ## Not yet checked
 
@@ -274,6 +290,8 @@ Each of these needs a real conversation, and each says what changes if it turns 
 12. What `ps` shows for `agy -r <id>`, and whether a program started with `--remote-agent` writes anything under `brain/`, writes a log under `log/`, and which lines in it, or starts an agy program of its own.
 13. Whether a swarm worker, one forked from a member among them, and an agent `/run-workflow` starts each have a record in `subagents/`, whether each runs in the program that has the conversation that started it open, and whether one a person opens with `--conversation`, `-r` or `--resume` keeps its record. A workflow agent with one is left out already. A person's own conversation with one would be left out too.
 14. Whether agy logs `Created conversation <id>` or `Streaming conversation <id>` for a child. If it does, an approval the coordinator asks for after it is taken for the child's, so its row does not need you, and one asked for before it is taken as over. If it does not, a child's approval shows on its coordinator's row when the child's step number happens to be just past the coordinator's last.
+15. Whether the app writes a compaction's `CHECKPOINT` line as agy does, and whether a build from before 1.1.28 wrote one to the file for a conversation's first turn. [After a compaction](#after-a-compaction) says what changes.
+16. What a bare `/compact`, and one that is canceled, leave at the end of `transcript.jsonl`.
 
 To check, in a scratch folder, with agy's default permission mode, run `agy`. After each step below, from another terminal, note these, and only these fields, never the content:
 
@@ -298,6 +316,7 @@ sqlite3 'file:<agy folder>/conversation_summaries.db?mode=ro' 'select conversati
 9. Run `agy remote-control start`, and note its `ps` line and its parent. Start a turn from a Remote Control companion, if you have one, and note which program writes the conversation.
 10. If agy shows it is retrying an error from the model, note the last steps of the transcript while it does and once it goes on.
 11. On agy 1.5.9 or later, start a swarm, then a `/run-workflow`. List the names alone in `brain/*/.system_generated/subagents/`, and note which of the new folders in `brain/` they name and which of those IDs the log's lines above name.
+12. After a turn with a reply, run `/compact` on its own and note once agy says the conversation was compacted. Send a message, and note once it is answered.
 
 Then run Agent Lookout against the same folder and compare its Sources card and sessions with what was noted.
 
@@ -323,6 +342,7 @@ Then run Agent Lookout against the same folder and compare its Sources card and 
 | A reply's token keys are renamed                                 | Tokens is a dash in every session's details                                                                                | `shared/transcriptFile.ts`                            |
 | `input_tokens` starts to count the part read from a cache        | Tokens shows more input than the context in use                                                                            | `shared/transcriptFile.ts`                            |
 | A reply's `content` is renamed or made a list of parts           | Last message says the session has not said anything yet, or that its last message is further back than Agent Lookout reads | `shared/lastMessages.ts`                              |
+| `CHECKPOINT` is renamed, or a compaction stops writing one       | Tokens shows the counts from before a compaction until the next reply                                                      | `shared/transcriptFile.ts`                            |
 | The shape of `truncated_fields` changes                          | A reply the transcript cut is shown as if it were whole, without the line that says its end is left out                    | `shared/lastMessages.ts`                              |
 
 To check a new agy version, read its changelog for the transcript, compaction, subagents and swarms, `/resume`, the options that name a conversation and the process, run `agy --help` for its commands, and make the check above.
@@ -337,7 +357,7 @@ Antigravity 2.0 is Google's desktop app with the Agent Manager, shown in Agent L
 
 ### Transcripts
 
-Seen: lines with `step_index`, `source`, `type`, `status`, `created_at`, `content` and `thinking`, as the CLI writes them, with `input_tokens`, `cache_read_tokens` and `output_tokens` on the model's replies, and `truncated_fields` on the lines under `chunks/`. `type` was `USER_INPUT` or `PLANNER_RESPONSE`, `status` `DONE`, without a prefix. The token counts are read as the CLI's are, as [Token counts](#token-counts) says. While a chat was at work, its transcript held only the steps that were done, and its `steps/` folder was ahead of it: a step is written to the transcript only once it is done. So while a chat works, its last message is the reply before the one under way.
+Seen: lines with `step_index`, `source`, `type`, `status`, `created_at`, `content` and `thinking`, as the CLI writes them, with `input_tokens`, `cache_read_tokens` and `output_tokens` on the model's replies, and `truncated_fields` on the lines under `chunks/`. `type` was `USER_INPUT` or `PLANNER_RESPONSE`, `status` `DONE`, without a prefix. The token counts are read as the CLI's are, as [Token counts](#token-counts) says, and a finished checkpoint clears them as [it does there](#after-a-compaction). While a chat was at work, its transcript held only the steps that were done, and its `steps/` folder was ahead of it: a step is written to the transcript only once it is done. So while a chat works, its last message is the reply before the one under way.
 
 On 2026-10-30 `truncated_fields` was seen in `transcript.jsonl` too, naming `content` on one reply of Antigravity 2.23.1. [What a session last said](#what-a-session-last-said) has the rest of that check, with the step types seen, and how a cut reply is shown.
 
