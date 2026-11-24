@@ -34,8 +34,9 @@ export function runPermissionHook(
   });
   let stdout = "";
   child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString("utf8")));
+  // Once its output has been read: Node can say it has exited before that.
   const done = new Promise<HookRun>((resolve) =>
-    child.once("exit", (code) => resolve({ code, stdout })),
+    child.once("close", (code) => resolve({ code, stdout })),
   );
   onTestFinished(() => {
     child.kill("SIGKILL");

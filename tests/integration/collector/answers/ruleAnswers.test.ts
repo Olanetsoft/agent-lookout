@@ -176,8 +176,9 @@ function hook(socketPath: string, toolName: string, toolInput: unknown) {
   let stdout = "";
   let exited = false;
   child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString("utf8")));
+  // Once its output has been read: Node can say it has exited before that.
   const done = new Promise<{ code: number | null; stdout: string }>((resolve) =>
-    child.once("exit", (code) => {
+    child.once("close", (code) => {
       exited = true;
       resolve({ code, stdout });
     }),
