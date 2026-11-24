@@ -3,11 +3,16 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 /** A move of no more than this is not one a press could land on something else by. */
 const SLACK_PX = 4;
 
-/** Where something is laid out, and how far down the page was scrolled then. */
+/** Where something is laid out, and how far down each thing that holds it was scrolled then. */
 interface Place {
   x: number;
   y: number;
-  scrolled: number;
+  scrolled: [holder: Element, top: number][];
+}
+
+/** How far down an element can be scrolled. */
+function room(holder: Element): number {
+  return holder.scrollHeight - holder.clientHeight;
 }
 
 /**
@@ -17,10 +22,16 @@ interface Place {
  */
 function placeOf(element: HTMLElement | null): Place | null {
   if (element === null || element.closest("[aria-hidden='true']")) return null;
-  const place = { x: 0, y: 0, scrolled: window.scrollY };
+  const place: Place = { x: 0, y: 0, scrolled: [] };
   for (let at: Element | null = element; at instanceof HTMLElement; at = at.offsetParent) {
     place.x += at.offsetLeft;
     place.y += at.offsetTop;
+  }
+  for (let at: Element | null = element; at; at = at.parentElement) {
+    // Safari says a page pulled past its end is scrolled further than it can be.
+    if (at.scrollTop > 0) place.scrolled.push([at, Math.min(at.scrollTop, room(at))]);
+    // A dialog stays where it is in the window, whatever the page behind it does.
+    if (getComputedStyle(at).position === "fixed") break;
   }
   return place;
 }
@@ -28,10 +39,11 @@ function placeOf(element: HTMLElement | null): Place | null {
 /** Whether what was at one place came to another, other than by the person scrolling. */
 function isMove(was: Place | null, is: Place | null): boolean {
   if (was === null || is === null) return was !== is;
-  if (Math.abs(is.x - was.x) + Math.abs(is.y - was.y) > SLACK_PX) return true;
-  // A page now too short to be scrolled that far has come down under the pointer.
-  const { scrollHeight, clientHeight } = document.documentElement;
-  return was.scrolled > scrollHeight - clientHeight + SLACK_PX;
+  return (
+    Math.abs(is.x - was.x) + Math.abs(is.y - was.y) > SLACK_PX ||
+    // What is now too short to be scrolled that far has come down under the pointer.
+    was.scrolled.some(([holder, top]) => top > room(holder) + SLACK_PX)
+  );
 }
 
 /**
@@ -42,8 +54,8 @@ function isMove(was: Place | null, is: Place | null): boolean {
  * as it is pressed.
  *
  * Its place is looked at each time it is drawn, which the page's clock does
- * every second, and as it is pressed, since something else on the page may
- * have moved it meanwhile.
+ * every second, as anything is scrolled, and as it is pressed, since something
+ * else on the page may have moved it meanwhile.
  */
 export function useSettling(
   id: string,
@@ -66,7 +78,7 @@ export function useSettling(
     const is = placeOf(document.getElementById(id));
     const moved = isMove(was, is);
     // A drift is measured from where it settled.
-    seen.current = moved || was === null ? is : { ...was, scrolled: window.scrollY };
+    seen.current = moved || !was || !is ? is : { ...was, scrolled: is.scrolled };
     if (moved) again();
   }, [id, again]);
 
@@ -74,8 +86,12 @@ export function useSettling(
 
   useEffect(() => {
     document.addEventListener("visibilitychange", again);
-    return () => document.removeEventListener("visibilitychange", again);
-  }, [again]);
+    window.addEventListener("scroll", look, true);
+    return () => {
+      document.removeEventListener("visibilitychange", again);
+      window.removeEventListener("scroll", look, true);
+    };
+  }, [again, look]);
 
   useLayoutEffect(() => {
     soon.current = true;
