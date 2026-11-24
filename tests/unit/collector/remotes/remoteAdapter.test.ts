@@ -3,7 +3,7 @@ import { describe, expect, test } from "vitest";
 import { OPENCODE_CAPABILITIES } from "@collector/adapters/opencode/index";
 import { createEventStore } from "@collector/eventStore";
 import { createHistoryStore } from "@collector/historyStore";
-import { createPoller } from "@collector/poller";
+import { createPoller, POLL_DEADLINE_MS, POLL_INTERVAL_MS } from "@collector/poller";
 import {
   BASIS,
   createRemoteAdapter,
@@ -431,9 +431,10 @@ describe("the last reading, while the next one is under way", () => {
     };
   }
 
-  test("is used for as long as one can take", async () => {
+  test("is used for as long as one can take, and at the poll after one held up to its deadline", async () => {
     const machine = await readOnce();
-    for (const ms of [2_000, 14_000, READING_KEPT_MS]) {
+    const slowPoll = POLL_DEADLINE_MS + POLL_INTERVAL_MS + 2_000;
+    for (const ms of [2_000, 14_000, slowPoll, READING_KEPT_MS]) {
       const { health, sessions } = await machine.pollAt(ms);
       expect(health).toMatchObject({ state: "ok", checkedAt: NOW });
       expect(sessions).toHaveLength(2);
@@ -443,6 +444,7 @@ describe("the last reading, while the next one is under way", () => {
   test.each([
     ["older, as after this computer slept", 11 * 60 * 60_000],
     ["just older", READING_KEPT_MS + 1],
+    ["half a minute old", 30_000],
     ["dated later than now, by a clock set back", -1],
   ])("is not used once it is %s: the machine is not connected until the next", async (_, ms) => {
     const machine = await readOnce();

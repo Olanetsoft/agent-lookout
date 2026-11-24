@@ -984,7 +984,7 @@ Each tool is marked read-only (`READ_ONLY`). None can jump to, stop or answer a 
 **Things to know.**
 
 - A machine that cannot be reached is `unavailable` (`NOT_CONNECTED`), never `error`. A box switched off overnight is not a fault of this computer, so nothing turns red.
-- A poll waits half a second at most for a machine (`ANSWER_WAIT_MS`). A slower answer is used at the next poll, so a slow link never holds up this computer's sessions. The last answer is used until then for 16 seconds at most (`READING_KEPT_MS`), so one from before this computer slept never is.
+- A poll waits half a second at most for a machine (`ANSWER_WAIT_MS`). A slower answer is used at the next poll, so a slow link never holds up this computer's sessions. The last answer is used until then for 29 seconds at most (`READING_KEPT_MS`), so one from before this computer slept never is.
 - Its sessions have no Jump, Stop, Allow or Deny. `readRemoteSnapshot` leaves behind each session's process ID, Jump, Stop, links, held request and pull request, and its row of what each agent can report says No for Jump, Stop and Answer (`ACTS_HERE`).
 - It does not chain: a session that machine read from a third machine is left out.
 - It never asks that machine for a session's last message.

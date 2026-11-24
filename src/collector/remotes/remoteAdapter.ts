@@ -13,7 +13,7 @@ import {
 } from "../../core/sessions/session.ts";
 import type { Adapter, AdapterResult } from "../adapters/adapter.ts";
 import { every } from "../adapters/words.ts";
-import { POLL_INTERVAL_MS } from "../poller.ts";
+import { POLL_DEADLINE_MS, POLL_INTERVAL_MS } from "../poller.ts";
 import { REMOTE_ANSWER_TIMEOUT_MS, type RemoteReading } from "./remoteReader.ts";
 import { readRemoteSnapshot, type RemoteSnapshot } from "./remoteSessions.ts";
 import type { Remote } from "./remoteSettings.ts";
@@ -51,10 +51,11 @@ export const ANSWER_WAIT_MS = 500;
 
 /**
  * How long a reading is used while the next one is under way: as long as that
- * one can take, two answers, and two polls. An older one is from before this
- * computer slept or stopped polling, and says nothing of now.
+ * one can take, two answers, and the poll before it, which a slow source can
+ * hold up to its deadline. An older one is from before this computer slept or
+ * stopped polling, and says nothing of now.
  */
-export const READING_KEPT_MS = 2 * (REMOTE_ANSWER_TIMEOUT_MS + POLL_INTERVAL_MS);
+export const READING_KEPT_MS = 2 * REMOTE_ANSWER_TIMEOUT_MS + POLL_DEADLINE_MS + POLL_INTERVAL_MS;
 
 /**
  * How long the first connection is said to be under way before the card says
