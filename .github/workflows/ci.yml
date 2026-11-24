@@ -123,7 +123,15 @@ jobs:
       - run: npm ci
       # Component tests run in real Chromium.
       - run: npx playwright install chromium
+      # The tests take under 7 minutes here: 3:42 to 6:29 in ten passing runs on
+      # main on 2026-11-23. A run in which nothing reports for 3 minutes ends
+      # itself and names the files still open (tests/support/reporters/stallWatch.ts),
+      # well inside this limit even at the end of a slow run. If the watch does
+      # not end it, this limit fails the step, and the upload below still runs,
+      # since the steps before this take under 2 minutes of the job's 20. The
+      # job's own limit would cancel the job instead, upload and all.
       - run: npm test
+        timeout-minutes: 15
       - if: failure()
         uses: actions/upload-artifact@v7
         with:
