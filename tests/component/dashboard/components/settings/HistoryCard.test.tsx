@@ -1,14 +1,16 @@
-import { afterEach, expect, test, vi } from "vitest";
-import { userEvent } from "vitest/browser";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
 import type { HistoryKept, HistoryResponse } from "@core/api";
 import { CLEAR_QUESTION, HistoryCard } from "@dashboard/components/settings/HistoryCard";
 import { setApiHost } from "@dashboard/lib/api/apiHost";
 import type { ClearOutcome } from "@dashboard/lib/api/keptHistory";
-import { pointAway } from "@tests/support/browser/browser";
+import { middleOf, pointAway, pressAt, tapAt } from "@tests/support/browser/browser";
 import { warmPaint } from "@tests/support/browser/colours";
 import { piecesDrawn } from "@tests/support/browser/lines";
+
+beforeEach(() => page.viewport(1280, 900));
 
 afterEach(() => {
   setApiHost();
@@ -157,6 +159,53 @@ test("answering yes clears it once, says when, tells the page, and gives focus b
   expect(cleared).toHaveBeenCalledTimes(1);
   expect(state(screen).textContent).toBe("History is kept on this computer for 8 days.");
   await expect.element(card(screen).getByRole("button", { name: "Clear history" })).toHaveFocus();
+});
+
+test.each([
+  [280, "click"],
+  [410, "click"],
+  [700, "click"],
+  [280, "tap"],
+] as const)(
+  "at %i pixels wide a double %s on Clear history asks, and clears nothing",
+  async (width, press) => {
+    const { clear } = heldClear();
+    const screen = await render(
+      <div style={{ width }}>
+        <HistoryCard history={history()} now={NOW} clear={clear} />
+      </div>,
+    );
+    const button = () => card(screen).getByRole("button", { name: "Clear history" }).element();
+    const point = middleOf(button());
+    await (press === "tap" ? tapAt : pressAt)(...point, 2);
+    expect(state(screen).textContent).toBe(CLEAR_QUESTION);
+    // On a narrow card the button that clears is where the one that asked was.
+    if (width < 700) expect(document.elementFromPoint(...point)).toBe(button());
+    expect(clear).not.toHaveBeenCalled();
+
+    // Pressed there once the question has been seen, it clears.
+    if (width === 700) return;
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    await (press === "tap" ? tapAt : pressAt)(...point);
+    expect(clear).toHaveBeenCalledOnce();
+  },
+);
+
+test("while the history is being cleared, Cancel is inactive and puts nothing back", async () => {
+  const { clear, answer } = heldClear();
+  const screen = await render(<HistoryCard history={history()} now={NOW} clear={clear} />);
+  await userEvent.click(card(screen).getByRole("button", { name: "Clear history" }));
+  await userEvent.click(card(screen).getByRole("button", { name: "Clear history" }));
+  const cancel = card(screen).getByRole("button", { name: "Cancel" });
+  await expect.element(cancel).toHaveAttribute("aria-disabled", "true");
+  await pressAt(...middleOf(cancel.element()));
+  expect(state(screen).textContent).toBe(CLEAR_QUESTION);
+  expect(buttons(screen)).toEqual(["Clear history", "Cancel"]);
+
+  answer({ ok: true, at: today(15, 0) });
+  await expect
+    .element(card(screen).getByRole("status"))
+    .toHaveTextContent("History cleared at 15:00.");
 });
 
 test("a clear that does not work says so in a note, and the button stays", async () => {

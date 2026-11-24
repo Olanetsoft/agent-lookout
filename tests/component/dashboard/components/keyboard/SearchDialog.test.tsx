@@ -521,6 +521,54 @@ test("the lit session stays lit when an answer moves the sessions about", async 
   expect(litName()).toBe("email-templates");
 });
 
+test.each([
+  ["nothing typed", ""],
+  ["something typed", "e"],
+])(
+  "with %s, the first session stays lit when another goes above it, and Enter chooses it",
+  async (_, typed) => {
+    const chosen: string[] = [];
+    const shown = (sessions: Session[]) => (
+      <Harness state={stateWith(sessions)} onChoose={({ name }) => chosen.push(name)} />
+    );
+    const screen = await render(shown(SESSIONS));
+    await userEvent.click(page.getByRole("button", { name: "Open search" }));
+    await expect.element(field()).toHaveFocus();
+    if (typed) await userEvent.keyboard(typed);
+    expect(litName()).toBe("search-indexing");
+    const said = field_().getAttribute("aria-activedescendant");
+
+    const waiting = session(7, {
+      name: "email-templates",
+      status: "needs-you",
+      waitingReason: "permission",
+      statusSince: NOW - 20 * MINUTE,
+    });
+    await screen.rerender(shown([...SESSIONS, waiting]));
+    expect(namesShown()[0]).toBe("email-templates");
+    expect(litName()).toBe("search-indexing");
+    expect(field_().getAttribute("aria-activedescendant")).toBe(said);
+
+    await userEvent.keyboard("{Enter}");
+    await expect.poll(() => chosen).toEqual(["search-indexing"]);
+  },
+);
+
+test("typing lights the first session found, and one lit in the place of another that left stays lit", async () => {
+  const screen = await openSearch();
+  await userEvent.keyboard("{ArrowDown}");
+  expect(litName()).toBe("checkout-flow");
+  await userEvent.keyboard("e");
+  expect(litName()).toBe("search-indexing");
+
+  const without = SESSIONS.filter(({ name }) => name !== "search-indexing");
+  await screen.rerender(<Harness state={stateWith(without)} />);
+  expect(litName()).toBe("checkout-flow");
+  await screen.rerender(<Harness state={stateWith(SESSIONS)} />);
+  expect(namesShown()[0]).toBe("search-indexing");
+  expect(litName()).toBe("checkout-flow");
+});
+
 test("under the list it says what Enter will do with the lit session: jump to it, and where, or open its details", async () => {
   await openSearch();
   const enter = () => part(dialog().element(), "enter").textContent;

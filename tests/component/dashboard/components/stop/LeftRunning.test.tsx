@@ -8,6 +8,7 @@ import { LeftRunning } from "@dashboard/components/stop/LeftRunning";
 import { HIDDEN_SESSIONS_STORAGE_KEY } from "@dashboard/lib/stop/hiddenSessions";
 import type { CleanUpAnswer } from "@dashboard/lib/stop/stopRequest";
 import { makeSession } from "@tests/fixtures/session";
+import { holdKey, middleOf, pressAt } from "@tests/support/browser/browser";
 import { warmPaint } from "@tests/support/browser/colours";
 
 const HOUR = 60 * 60 * 1000;
@@ -111,6 +112,21 @@ test.each([375, 1280] as const)(
     expect(warmPaint(screen.container)).toEqual([]);
   },
 );
+
+test("a double click on Hide until it changes, or Enter held on it, hides one session", async () => {
+  await renderAt(1280);
+  await review();
+  const [longest, , shortest] = names();
+  const hide = (name?: string | null) =>
+    page.getByRole("button", { name: `Hide ${name} until it changes` }).element() as HTMLElement;
+  await pressAt(...middleOf(hide(longest)), 2);
+  expect(names()).not.toContain(longest);
+  expect(rows()).toHaveLength(2);
+
+  hide(names()[0]).focus();
+  await holdKey("Enter", 10);
+  expect(names()).toEqual([shortest]);
+});
 
 test("Review… opens the band in place and Close folds it again, with focus staying on the button", async () => {
   await renderAt(1280);

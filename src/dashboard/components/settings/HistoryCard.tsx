@@ -46,10 +46,11 @@ export const CLEAR_QUESTION = "Clear the Events log and the charts? This cannot 
  * Kept on disk, the state says for how long, beside Clear history, and the
  * facts under it give the folder, the size against the cap and where the
  * history begins. Clear history asks first, in the state's own line, with
- * Clear history and Cancel beside it, and focus goes to Cancel. Once it is
- * cleared, a line says when, and the Events log starts again from there. In
- * memory only, with `AGENT_LOOKOUT_HISTORY=off`, the card says so and has no
- * button. Before the app has answered, it says nothing.
+ * Clear history and Cancel beside it, and focus goes to Cancel. Neither takes
+ * a press while it is being cleared. Once it is cleared, a line says when, and
+ * the Events log starts again from there. In memory only, with
+ * `AGENT_LOOKOUT_HISTORY=off`, the card says so and has no button. Before the
+ * app has answered, it says nothing.
  *
  * While this copy is not writing the files, because another copy is or they
  * cannot be written, an info note says why, and there is no button: clearing
@@ -96,6 +97,7 @@ export function HistoryCard({
     setStep({ kind: "confirming", busy: false });
   };
   const cancel = () => {
+    if (step.kind === "confirming" && step.busy) return;
     focusNext.current = "clear";
     setStep({ kind: "idle" });
   };
@@ -128,7 +130,12 @@ export function HistoryCard({
                 <Button size='sm' onClick={confirm} aria-disabled={step.busy || undefined}>
                   Clear history
                 </Button>
-                <Button ref={cancelButton} size='sm' onClick={cancel}>
+                <Button
+                  ref={cancelButton}
+                  size='sm'
+                  onClick={cancel}
+                  aria-disabled={step.busy || undefined}
+                >
                   Cancel
                 </Button>
               </>

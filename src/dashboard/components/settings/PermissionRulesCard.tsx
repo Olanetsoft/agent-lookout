@@ -450,7 +450,13 @@ export function PermissionRulesCard({ answering = null, now: given }: Permission
               />
             </div>
             <div className='flex flex-wrap items-center gap-3'>
-              <Button type='submit' size='sm' data-action='save'>
+              <Button
+                // Two buttons, so a double click on one does not press the other.
+                key={editing === null ? "add" : "save"}
+                type='submit'
+                size='sm'
+                data-action='save'
+              >
                 {editing === null ? "Add rule" : "Save rule"}
               </Button>
               {editing !== null && (

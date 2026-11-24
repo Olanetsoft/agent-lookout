@@ -1,9 +1,17 @@
-import { afterEach, expect, test, vi } from "vitest";
-import { userEvent } from "vitest/browser";
+import { useLayoutEffect, useRef, useState } from "react";
+import { afterEach, describe, expect, onTestFinished, test, vi } from "vitest";
+import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
 import { Button } from "@dashboard/components/ui/controls/Button";
-import { pointAway, startAtTop } from "@tests/support/browser/browser";
+import {
+  assistivePress,
+  holdKey,
+  middleOf,
+  pointAway,
+  pressAt,
+  startAtTop,
+} from "@tests/support/browser/browser";
 import { rgbOf, warmPaint } from "@tests/support/browser/colours";
 
 afterEach(() => {
@@ -134,4 +142,338 @@ test("the icon size is a 28px circle", async () => {
 
   expect([box.width, box.height]).toEqual([28, 28]);
   expect(getComputedStyle(button).borderRadius).toBe("999px");
+});
+
+describe("where the next one comes up and takes focus as one is pressed", () => {
+  /** Three buttons down a list, each of which leaves it when pressed. */
+  function List({ onPress }: { onPress: (name: string) => void }) {
+    const [names, setNames] = useState(["First", "Second", "Third"]);
+    const list = useRef<HTMLDivElement>(null);
+    useLayoutEffect(() => {
+      if (names.length < 3) list.current?.querySelector("button")?.focus();
+    }, [names]);
+    return (
+      <div ref={list} className='flex flex-col items-start gap-5'>
+        {names.map((name) => (
+          <Button
+            key={name}
+            onClick={() => {
+              onPress(name);
+              setNames(names.filter((other) => other !== name));
+            }}
+          >
+            {name}
+          </Button>
+        ))}
+      </div>
+    );
+  }
+
+  async function drawn() {
+    const onPress = vi.fn<(name: string) => void>();
+    const screen = await render(<List onPress={onPress} />);
+    const button = (name: string) => screen.getByRole("button", { name }).element() as HTMLElement;
+    return { button, pressed: () => onPress.mock.calls.map(([name]) => name) };
+  }
+
+  /** Waits until so long after it was made. */
+  function clock() {
+    const began = performance.now();
+    return (ms: number) =>
+      new Promise((resolve) => setTimeout(resolve, began + ms - performance.now()));
+  }
+
+  test("a double click, or three in a row, presses the first", async () => {
+    const { button, pressed } = await drawn();
+    const [x, y] = middleOf(button("First"));
+    await pressAt(x, y, 3);
+    expect(document.elementFromPoint(x, y)).toBe(button("Second"));
+    expect(pressed()).toEqual(["First"]);
+  });
+
+  test("a press some pixels off and most of a second later presses nothing, and one a second after the first presses the next", async () => {
+    const { button, pressed } = await drawn();
+    const [x, y] = middleOf(button("First"));
+    const until = clock();
+    await pressAt(x, y);
+    await until(650);
+    await pressAt(x + 12, y + 6);
+    expect(pressed()).toEqual(["First"]);
+    // Counted from the press that was taken, not from the one that was not.
+    await until(1_300);
+    await pressAt(x, y);
+    expect(pressed()).toEqual(["First", "Second"]);
+  });
+
+  test("one held for more than a second is the rest of the first still, and one on its own is taken", async () => {
+    const { button, pressed } = await drawn();
+    const [x, y] = middleOf(button("First"));
+    await pressAt(x, y);
+    await pressAt(x, y, 1, 1_200);
+    expect(pressed()).toEqual(["First"]);
+    await pressAt(x, y, 1, 1_200);
+    expect(pressed()).toEqual(["First", "Second"]);
+  });
+
+  test("Space held for more than a second, and let go, is the rest of the first still", async () => {
+    const { button, pressed } = await drawn();
+    button("First").focus();
+    await userEvent.keyboard("{Enter}");
+    await holdKey(" ", 0, 1_200);
+    expect(pressed()).toEqual(["First"]);
+    await holdKey(" ", 0, 1_200);
+    expect(pressed()).toEqual(["First", "Second"]);
+  });
+
+  test("the same goes for a key", async () => {
+    const { button, pressed } = await drawn();
+    button("First").focus();
+    const until = clock();
+    await userEvent.keyboard("{Enter}");
+    await until(650);
+    await userEvent.keyboard("{Enter}");
+    expect(pressed()).toEqual(["First"]);
+    await until(1_300);
+    await userEvent.keyboard("{Enter}");
+    expect(pressed()).toEqual(["First", "Second"]);
+  });
+
+  test.each(["Enter", " "] as const)(
+    "%j held, or pressed again, presses the first",
+    async (key) => {
+      const { button, pressed } = await drawn();
+      button("First").focus();
+      await holdKey(key, 10);
+      await userEvent.keyboard(key === " " ? key : `{${key}}`);
+      expect(pressed()).toEqual(["First"]);
+      expect(document.activeElement).toBe(button("Second"));
+    },
+  );
+
+  test("Enter held on a keyboard that waits longer than a second to repeat it presses the first", async () => {
+    const { button, pressed } = await drawn();
+    button("First").focus();
+    await holdKey("Enter", 10, 1_200);
+    expect(pressed()).toEqual(["First"]);
+
+    // Let go, and pressed anew.
+    await userEvent.keyboard("{Enter}");
+    expect(pressed()).toEqual(["First", "Second"]);
+  });
+
+  test("what the page itself presses is taken, though a key is held", async () => {
+    const { button, pressed } = await drawn();
+    button("First").focus();
+    await holdKey("Enter", 2);
+    expect(document.activeElement).toBe(button("Second"));
+    button("Second").click();
+    expect(pressed()).toEqual(["First", "Second"]);
+  });
+
+  test("a key pressed on one that Tab went to is taken at once", async () => {
+    const { button, pressed } = await drawn();
+    button("First").focus();
+    await userEvent.keyboard("{Enter}");
+    await userEvent.tab();
+    await userEvent.keyboard("{Enter}");
+    expect(pressed()).toEqual(["First", "Third"]);
+  });
+
+  test("a press of one that was there all along, or by assistive technology, is taken at once", async () => {
+    const { button, pressed } = await drawn();
+    await pressAt(...middleOf(button("First")));
+    assistivePress(button("Second"));
+    expect(pressed()).toEqual(["First", "Second"]);
+  });
+
+  test("a press somewhere else is taken at once", async () => {
+    const { button, pressed } = await drawn();
+    await pressAt(...middleOf(button("Third")));
+    await pressAt(...middleOf(button("First")));
+    expect(pressed()).toEqual(["Third", "First"]);
+  });
+});
+
+describe("a press soon after another, with nothing in the first one's place", () => {
+  test("one beside what the first was on, which is still there, is taken", async () => {
+    const got: string[] = [];
+    const screen = await render(
+      <div className='flex gap-1'>
+        <Button onClick={() => got.push("One")}>One</Button>
+        <Button onClick={() => got.push("Two")}>Two</Button>
+      </div>,
+    );
+    const box = screen.getByRole("button", { name: "Two" }).element().getBoundingClientRect();
+    const y = box.top + box.height / 2;
+    // On the one before it, on the gap between them, and on it, a few pixels apart.
+    await pressAt(box.left - 8, y);
+    await pressAt(box.left - 2, y);
+    await pressAt(box.left + 8, y);
+    expect(got).toEqual(["One", "Two"]);
+  });
+
+  test.each(["button", "link"])(
+    "one of the same %s is taken, though what was drawn in it has gone",
+    async (kind) => {
+      const press = vi.fn((event: { preventDefault: () => void }) => event.preventDefault());
+      function Said() {
+        const [presses, setPresses] = useState(0);
+        const said = <span key={presses}>Pressed {presses}</span>;
+        return (
+          <Button
+            asChild={kind === "link"}
+            onClick={(event) => {
+              press(event);
+              setPresses((count) => count + 1);
+            }}
+          >
+            {kind === "link" ? <a href='#pressed'>{said}</a> : said}
+          </Button>
+        );
+      }
+      const screen = await render(<Said />);
+      await pressAt(...middleOf(screen.getByRole(kind).element()), 2);
+      expect(press).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  test.each([
+    ["a button", <Button key='first'>One</Button>],
+    ["plain words", <span key='first'>Some words</span>],
+  ])("one of what the person scrolled to where %s was pressed is taken", async (_, above) => {
+    await page.viewport(1280, 900);
+    const press = vi.fn();
+    const screen = await render(
+      <div style={{ height: 3000 }}>
+        <div data-testid='first' style={{ height: 100 }}>
+          {above}
+        </div>
+        <Button onClick={press}>Two</Button>
+      </div>,
+    );
+    onTestFinished(() => window.scrollTo({ top: 0 }));
+    const two = screen.getByRole("button", { name: "Two" });
+    const [x, y] = middleOf(two.element());
+    await pressAt(x, y - 100);
+    await userEvent.wheel(screen.getByTestId("first").element(), { delta: { y: 100 } });
+    await expect.poll(() => document.elementFromPoint(x, y - 100)).toBe(two.element());
+    await pressAt(x, y - 100);
+    expect(press).toHaveBeenCalledOnce();
+  });
+
+  test.each([
+    ["a little", 3],
+    ["where there is nothing more to scroll", 120],
+  ])("a wheel turned %s between the halves of a double click does not part them", async (_, y) => {
+    const press = vi.fn();
+    function Two() {
+      const [gone, setGone] = useState(false);
+      return (
+        <div>
+          {!gone && (
+            <Button key='one' onClick={() => setGone(true)}>
+              One
+            </Button>
+          )}
+          <Button key='two' onClick={press}>
+            Two
+          </Button>
+        </div>
+      );
+    }
+    const screen = await render(<Two />);
+    const point = middleOf(screen.getByRole("button", { name: "One" }).element());
+    await pressAt(...point);
+    await userEvent.wheel(screen.getByRole("button", { name: "Two" }).element(), {
+      delta: { y },
+    });
+    await pressAt(...point);
+    expect(press).not.toHaveBeenCalled();
+  });
+});
+
+test("the second half of a double click presses nothing that came down as the page got shorter at its end", async () => {
+  await page.viewport(1280, 900);
+  const press = vi.fn();
+  function Rows() {
+    const [gone, setGone] = useState(false);
+    return (
+      <div style={{ paddingTop: 3000 }}>
+        <div style={{ height: 100 }}>
+          <Button onClick={press}>One</Button>
+        </div>
+        {!gone && (
+          <div style={{ height: 100 }}>
+            <Button onClick={() => setGone(true)}>Two</Button>
+          </div>
+        )}
+      </div>
+    );
+  }
+  const screen = await render(<Rows />);
+  onTestFinished(() => window.scrollTo({ top: 0 }));
+  window.scrollTo({ top: document.documentElement.scrollHeight });
+  const point = middleOf(screen.getByRole("button", { name: "Two" }).element());
+  await pressAt(...point);
+  expect(document.elementFromPoint(...point)).toBe(
+    screen.getByRole("button", { name: "One" }).element(),
+  );
+  await pressAt(...point);
+  expect(press).not.toHaveBeenCalled();
+});
+
+test.each(["link", "button"])(
+  "the second half of a double click follows no link and sends no form: a %s",
+  async (kind) => {
+    const was = location.hash;
+    const submit = vi.fn();
+    function Two() {
+      const [gone, setGone] = useState(false);
+      return (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            submit();
+          }}
+        >
+          {!gone && (
+            <Button key='one' onClick={() => setGone(true)}>
+              Hide
+            </Button>
+          )}
+          {kind === "link" ? (
+            <Button key='two' asChild>
+              <a href='#followed'>Open</a>
+            </Button>
+          ) : (
+            <Button key='two' type='submit'>
+              Send
+            </Button>
+          )}
+        </form>
+      );
+    }
+    const screen = await render(<Two />);
+    const point = middleOf(screen.getByRole("button", { name: "Hide" }).element());
+    await pressAt(...point, 2);
+    expect(document.elementFromPoint(...point)).toBe(screen.getByRole(kind).element());
+    expect([location.hash, submit.mock.calls.length]).toEqual([was, 0]);
+  },
+);
+
+test("Enter in a form's field presses its button", async () => {
+  const submit = vi.fn();
+  const screen = await render(
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        submit();
+      }}
+    >
+      <input aria-label='Name' />
+      <Button type='submit'>Save</Button>
+    </form>,
+  );
+  await userEvent.type(screen.getByRole("textbox"), "a{Enter}");
+  expect(submit).toHaveBeenCalledOnce();
 });

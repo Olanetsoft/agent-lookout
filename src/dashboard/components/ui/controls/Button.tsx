@@ -2,6 +2,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { Slot } from "radix-ui";
 import type { ComponentProps } from "react";
 
+import { isStrayPress } from "@dashboard/lib/dom/strayPress";
 import { cn } from "@dashboard/lib/utils";
 
 const button = cva(
@@ -57,7 +58,18 @@ type ButtonProps = ComponentProps<"button"> &
     asChild?: boolean;
   };
 
-export function Button({ className, variant, size, asChild = false, ...props }: ButtonProps) {
+/**
+ * A button. It takes no press that is the rest of one meant for another, as when
+ * the second half of a double click lands on what took the first one's place.
+ */
+export function Button({
+  className,
+  variant,
+  size,
+  asChild = false,
+  onClick,
+  ...props
+}: ButtonProps) {
   const Comp = asChild ? Slot.Root : "button";
   return (
     <Comp
@@ -66,6 +78,10 @@ export function Button({ className, variant, size, asChild = false, ...props }: 
       {...(asChild ? {} : { type: "button" as const })}
       className={cn(button({ variant, size }), className)}
       {...props}
+      onClick={(event) => {
+        if (isStrayPress(event.nativeEvent, event.currentTarget)) event.preventDefault();
+        else onClick?.(event);
+      }}
     />
   );
 }

@@ -54,6 +54,11 @@ function historyRequests(collector: { requests: string[] }): string[] {
   return collector.requests.filter((path) => path.startsWith("/api/history"));
 }
 
+/** The event requests among everything asked for, in order. */
+function eventRequests(collector: { requests: string[] }): string[] {
+  return collector.requests.filter((path) => path.startsWith("/api/events"));
+}
+
 function snapshot(): SessionsSnapshot {
   return {
     generatedAt: Date.now(),
@@ -946,6 +951,61 @@ test("a restarted collector replaces the event list instead of adding to it", as
   stop();
 });
 
+test("after a restart the page holds what a page loaded then does, the events kept from before and the new ones", async () => {
+  const collector = fakeCollector();
+  collector.events = [event(1, T0 - 9_000), event(2, T0 - 4_000)];
+  setApiHost(collector.host);
+  const store = createCollectorStore();
+  const stop = store.subscribe(() => {});
+  await settle();
+
+  // The log is kept on disk, and a session changed while nothing was watching.
+  collector.startedAt = T0 + 500;
+  collector.events.push(event(3, T0 + 600));
+  collector.requests.length = 0;
+  await beat();
+  expect(store.getState().events.map((e) => e.id)).toEqual(["event-3", "event-2", "event-1"]);
+  expect(eventRequests(collector)).toEqual([
+    `/api/events?since=${T0 - 4_000}`,
+    "/api/events?since=0",
+  ]);
+
+  // Later beats ask only for what is new again.
+  collector.events.push(event(4, T0 + 3_000));
+  collector.requests.length = 0;
+  await beat();
+  expect(eventRequests(collector)).toEqual([`/api/events?since=${T0 + 600}`]);
+  const fresh = createCollectorStore();
+  const stopFresh = fresh.subscribe(() => {});
+  await settle();
+  expect(store.getState().events).toEqual(fresh.getState().events);
+  stopFresh();
+  stop();
+});
+
+test("a restart whose events could not be asked for again is made good on the next beat", async () => {
+  const collector = fakeCollector();
+  collector.events = [event(1, T0 - 9_000)];
+  let failing = false;
+  setApiHost((path, init) =>
+    failing && path === "/api/events?since=0"
+      ? Promise.reject(new TypeError("Failed to fetch"))
+      : collector.host(path, init),
+  );
+  const store = createCollectorStore();
+  const stop = store.subscribe(() => {});
+  await settle();
+
+  collector.startedAt = T0 + 500;
+  collector.events.push(event(2, T0 + 600));
+  failing = true;
+  await beat();
+  failing = false;
+  await beat();
+  expect(store.getState().events.map((e) => e.id)).toEqual(["event-2", "event-1"]);
+  stop();
+});
+
 test("once the history has been cleared, what the page held from before goes, events and history alike", async () => {
   const collector = fakeCollector();
   collector.events = [event(1, T0 - 9_000)];
@@ -972,6 +1032,29 @@ test("once the history has been cleared, what the page held from before goes, ev
   collector.points = [point(T0 + 1_000), point(T0 + 3_000)];
   await beat();
   expect(store.getState().history?.points.map((held) => held.at)).toEqual([T0 + 1_000, T0 + 3_000]);
+  stop();
+});
+
+test("an event read just before the history was cleared goes with it", async () => {
+  const collector = fakeCollector();
+  collector.events = [event(1, T0 - 9_000)];
+  let clearing = false;
+  setApiHost((path, init) => {
+    // Cleared after the events of this beat were read, and before its history is.
+    if (clearing && path.startsWith("/api/history")) {
+      collector.since = { at: T0 + 500, by: "cleared" };
+      collector.events = [];
+    }
+    return collector.host(path, init);
+  });
+  const store = createCollectorStore();
+  const stop = store.subscribe(() => {});
+  await settle();
+
+  collector.events.push(event(2, T0 + 400));
+  clearing = true;
+  await beat();
+  expect(store.getState().events).toEqual([]);
   stop();
 });
 

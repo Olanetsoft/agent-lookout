@@ -64,13 +64,19 @@ export function UpdatesCard() {
               ? "Whether a newer version is out could not be read."
               : words?.state}
           </p>
+          {/* Two buttons, so a double click on one does not press the other. */}
           {words !== null &&
             (words.install ? (
-              <Button size='sm' onClick={install} disabled={pressed !== null}>
+              <Button key='install' size='sm' onClick={install} disabled={pressed !== null}>
                 Install and Restart
               </Button>
             ) : (
-              <Button size='sm' onClick={check} disabled={!words.canCheck || pressed !== null}>
+              <Button
+                key='check'
+                size='sm'
+                onClick={check}
+                disabled={!words.canCheck || pressed !== null}
+              >
                 Check for Updates…
               </Button>
             ))}

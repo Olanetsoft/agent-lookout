@@ -2,6 +2,7 @@ import { expect, test, vi } from "vitest";
 import { render } from "vitest-browser-react";
 
 import { ErrorBoundary } from "@dashboard/components/ui/feedback/ErrorBoundary";
+import { forgetPresses } from "@tests/support/browser/browser";
 import { rgbOf, warmPaint } from "@tests/support/browser/colours";
 
 test("when drawing fails, the page says so in the error presentation and can try again", async () => {
@@ -42,6 +43,7 @@ test("when drawing fails, the page says so in the error presentation and can try
   await expect.element(screen.getByRole("alert")).toBeVisible();
 
   broken = false;
+  forgetPresses();
   await screen.getByRole("button", { name: "Try again" }).click();
   await expect.element(screen.getByText("Drawn")).toBeVisible();
   expect(screen.container.querySelector('[role="alert"]')).toBeNull();

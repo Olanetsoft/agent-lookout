@@ -31,7 +31,7 @@ import { resetThemeForTests, THEME_STORAGE_KEY } from "@dashboard/lib/shell/them
 import type { ViewId } from "@dashboard/lib/shell/view";
 import { makeSession } from "@tests/fixtures/session";
 import { quietWaits } from "@tests/fixtures/waits";
-import { pointAway, startAtTop } from "@tests/support/browser/browser";
+import { forgetPresses, pointAway, startAtTop } from "@tests/support/browser/browser";
 import { rgbOf, warmElements, warmPaint } from "@tests/support/browser/colours";
 import { preferColorScheme, preferReducedMotion } from "@tests/support/browser/media";
 import {
@@ -1859,6 +1859,7 @@ test("turning notifications off in Settings closes the one on show, and turning 
   expect(host.shown[0]?.closes).toBe(1);
 
   // On again while the same wait goes on: it had already begun, so nothing is sent.
+  forgetPresses();
   await card.getByRole("button", { name: "Turn on notifications" }).click();
   await expect.element(card.getByRole("button", { name: "Turn off notifications" })).toBeVisible();
   store.set(liveState());
@@ -1904,6 +1905,7 @@ test("pressing the button in Settings tells the app at once, in one request that
   await expect.element(card.getByRole("button", { name: "Turn on notifications" })).toBeVisible();
   expect(told).toEqual([["/api/health", "off", true]]);
 
+  forgetPresses();
   await card.getByRole("button", { name: "Turn on notifications" }).click();
   await expect.element(card.getByRole("button", { name: "Turn off notifications" })).toBeVisible();
   expect(told).toEqual([

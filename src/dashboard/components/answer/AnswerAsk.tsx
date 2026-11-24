@@ -165,8 +165,9 @@ function NoAsk({
  * the same place whether Allow is offered or not, and Allow is never where
  * Deny was a moment before. Both are the quiet button, side by side, neither
  * has focus first, and neither takes a press for a second after a request is
- * drawn: an answer is a deliberate press on what is shown, never a key held
- * from somewhere else or a click meant for what was there before. Nothing in
+ * drawn, its buttons move or the page comes back into sight: an answer is a
+ * deliberate press on what is shown, never a key held from somewhere else or a
+ * click meant for what was there before. Nothing in
  * it is warm. What a press came to is one line, a status that takes focus. It
  * stays said once the request has gone, and above a newer request of the
  * session's. When the block leaves the page with focus in it, as a hero row
@@ -346,7 +347,7 @@ export function AnswerBlock({
       {offered !== null && (
         <>
           <Asked ask={offered} again={answered !== null} />
-          <div className='mt-2.5 flex flex-wrap items-center gap-3'>
+          <div id={answer.buttonsId} className='mt-2.5 flex flex-wrap items-center gap-3'>
             <Button
               size='sm'
               data-part='deny'

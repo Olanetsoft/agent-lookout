@@ -1,3 +1,5 @@
+import { useCallback, useRef } from "react";
+
 import type { HistoryResponse, PhoneChannel } from "@core/api";
 import type { AnsweringStatus } from "@core/sessions/session";
 import { NOTICE_EVENTS, type NoticeEvent } from "@core/notices/sessionChanges";
@@ -234,6 +236,14 @@ function NotificationsCard({ inApp, now }: { inApp: boolean; now: number }) {
   const { on, permission, events, turnOn, turnOff, chooseEvent } = useNotificationSetting();
   const test = useNotificationTest(inApp);
   const refused = inApp && refusedByMacOS(test);
+  // Focus on the button goes to the one drawn in its place.
+  const focused = useRef(false);
+  const keepFocus = useCallback((button: HTMLButtonElement | null) => {
+    if (focused.current) button?.focus();
+    return () => {
+      focused.current = button === document.activeElement;
+    };
+  }, []);
 
   const turnOnHere = () => {
     turnOn();
@@ -265,7 +275,13 @@ function NotificationsCard({ inApp, now }: { inApp: boolean; now: number }) {
             {state}
           </p>
           {permission !== "unsupported" && (
-            <Button size='sm' onClick={on ? turnOffHere : turnOnHere}>
+            <Button
+              // Two buttons, so a double click on one does not press the other.
+              key={on ? "off" : "on"}
+              ref={keepFocus}
+              size='sm'
+              onClick={on ? turnOffHere : turnOnHere}
+            >
               {on ? "Turn off notifications" : "Turn on notifications"}
             </Button>
           )}
