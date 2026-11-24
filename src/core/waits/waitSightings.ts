@@ -24,7 +24,8 @@ export interface WaitSighting {
   /**
    * Present when a session out of sight was listed waiting again with a status
    * time later than the last poll that listed it: that time. The wait it was
-   * lost in ended unseen, and this one began then.
+   * lost in ended unseen, and this one began then. Beside `lastSeen` it repeats
+   * what the sighting before it said, and cuts nothing.
    */
   began?: number;
 }

@@ -228,7 +228,8 @@ interface LastSeen {
   sighting?: WaitSighting;
   /**
    * With it: the last poll that listed the session, or when the run after the
-   * one that last did began. Left out when that run is this one.
+   * one that last did began. Left out when that run is this one, whose start it
+   * then is.
    */
   lastListed?: number;
 }
@@ -287,6 +288,7 @@ function againstHistory(
   kept: readonly LastSeen[],
   sessions: readonly Session[],
   reported: ReportedStatuses,
+  runStart: number,
   at: number,
 ): SessionEvent[] {
   const known = new Set(kept.map((session) => session.id));
@@ -295,7 +297,9 @@ function againstHistory(
   );
   const after = sessions.filter((session) => known.has(session.id));
   for (const session of after) reported.set(session.id, session.status);
-  const lastListed = new Map(before.map((session) => [session.id, session.lastListed]));
+  const lastListed = new Map(
+    before.map((session) => [session.id, session.sighting && (session.lastListed ?? runStart)]),
+  );
   return diffSessions(before, after, at).map((event) =>
     withLastSeen(event, lastListed.get(event.sessionId)),
   );
@@ -643,6 +647,7 @@ export function createPoller(options: PollerOptions): Poller {
             kept.filter((session) => !unread(session.id)),
             result.sessions.filter((session) => !waits.has(session.id)),
             reported,
+            startedAt,
             at,
           ),
         );
@@ -663,6 +668,7 @@ export function createPoller(options: PollerOptions): Poller {
             ready,
             result.sessions.filter((session) => !waits.has(session.id)),
             reported,
+            startedAt,
             at,
           ),
         );

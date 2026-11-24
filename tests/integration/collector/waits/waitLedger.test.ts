@@ -276,6 +276,26 @@ describe("a wait whose session a way of reading leaves out, over a history folde
     const waits = await waitsFrom(second.port);
     expect(waits.today).toMatchObject({ waitedMs: 10 * MINUTE - 2 * SECOND, openMs: 0, waits: 1 });
   });
+
+  test("listed again with a later status time it is two waits, and no more after a restart that leaves it out", async () => {
+    const { dir, clock, read, sessions, first } = await lostForTwentyMinutes();
+    read.way = "main";
+    sessions[0] = { ...waiting, statusSince: clock.now - 2 * MINUTE };
+    await first.pollFor(30 * MINUTE);
+    const counted = { waitedMs: 42 * MINUTE - 2 * SECOND, waits: 2 };
+    expect((await waitsFrom(first.port)).today).toMatchObject(counted);
+    first.stop();
+
+    read.way = "fallback";
+    sessions.length = 0;
+    for (const _ of [1, 2]) {
+      clock.now += MINUTE;
+      const later = await startIn(dir, sessions, {}, clock, read);
+      await later.pollFor(MINUTE);
+      expect((await waitsFrom(later.port)).today).toMatchObject({ ...counted, openMs: 0 });
+      later.stop();
+    }
+  });
 });
 
 describe("a wait whose source is away, over a history folder on disk", () => {
@@ -314,6 +334,27 @@ describe("a wait whose source is away, over a history folder on disk", () => {
       sessions[0] = busy;
       await run.pollFor(MINUTE);
       expect((await waitsFrom(run.port)).today).toMatchObject(counted);
+    },
+  );
+
+  test.each([
+    ["the run after it was seen", ["unavailable"]],
+    ["a later one", ["unavailable", "unavailable"]],
+  ] as const)(
+    "with its source read again at last in %s, the Events log's line stops where the count does",
+    async (_, states) => {
+      const { run, read, sessions } = await runs(...states);
+      read.state = "ok";
+      sessions[0] = busy;
+      await run.pollFor(MINUTE);
+      expect((await waitsFrom(run.port)).today).toMatchObject({ waitedMs: 5 * MINUTE, waits: 1 });
+      const { events } = (await request(run.port, "/api/events")).json<{
+        events: SessionEvent[];
+      }>();
+      const [ended, began] = events.filter((event) => event.sessionId === id(5));
+      expect([began?.to, ended?.from]).toEqual(["needs-you", "needs-you"]);
+      // The minute it was stopped is in the line's length, and was not measured.
+      expect((ended?.lastSeen ?? ended?.at ?? 0) - (began?.at ?? 0)).toBe(6 * MINUTE);
     },
   );
 

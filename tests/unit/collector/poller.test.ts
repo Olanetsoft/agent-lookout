@@ -543,6 +543,16 @@ describe("events after a restart, with history kept from before it", () => {
     expect(events.list()).toEqual([]);
   });
 
+  test("a wait in a history from before there were sightings ends with no word of when it was last seen", async () => {
+    const a = makeSession({ id: "claude-code:a", name: "demo-a", status: "idle" });
+    const { adapter } = scriptedAdapter(result([a]));
+    const { poller, events } = setUp(adapter);
+    poller.resume([kept("claude-code:a", "status-changed", "needs-you")]);
+    await poller.pollOnce();
+    expect(events.list()).toMatchObject([{ from: "needs-you", to: "idle" }]);
+    expect(events.list()[0]?.lastSeen).toBeUndefined();
+  });
+
   test("a part the first poll did not read gets no event then, and is compared with the history at its first read", async () => {
     const read = makeSession({ id: "claude-code:read/a", status: "idle" });
     const refused = makeSession({ id: "claude-code:refused/b", status: "working" });

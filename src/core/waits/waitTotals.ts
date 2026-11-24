@@ -203,7 +203,8 @@ export function waitsOf(input: WaitTotalsInput): { waits: Wait[]; names: Map<str
       if (!wait) {
         const from = mark.lastSeen === undefined ? at : unbegun(sessionId).from;
         wait = { from, found: true };
-      } else if (mark.began !== undefined && gone !== undefined) {
+      } else if (mark.began !== undefined && mark.lastSeen === undefined && gone !== undefined) {
+        // One that says it was lost repeats the cut its wait began with.
         waits.push({ sessionId, from: wait.from, to: gone, open: false });
         wait.from = mark.began;
       }

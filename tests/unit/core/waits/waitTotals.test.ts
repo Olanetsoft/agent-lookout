@@ -552,6 +552,20 @@ describe("a wait whose session left every listing", () => {
         [at(6, 12), at(6, 14), false],
       ]);
     });
+
+    test("said again by a sighting that says it was lost, as after a restart, it cuts nothing more", () => {
+      const repeated = { ...again(1, at(6, 14), at(6, 12)), lastSeen: at(6, 14) };
+      expect(
+        spans({
+          events: [into(1, at(6, 10))],
+          sightings: [...sightings, repeated],
+          runStarts: [START, at(6, 14)],
+        }),
+      ).toEqual([
+        [at(6, 10), at(6, 11), false],
+        [at(6, 12), at(6, 14), false],
+      ]);
+    });
   });
 
   test("with nothing to say it was lost it runs to now, as for a session a fallback lists as working", () => {
@@ -668,6 +682,20 @@ describe("a wait whose session left every listing", () => {
       ).toEqual([
         [at(6, 10), at(6, 12), false],
         [at(6, 12, 30), NOW, true],
+      ]);
+    });
+
+    test("a move into needs-you that a later run sees begins another, and a lost one stopped where it was lost", () => {
+      const events = [...runs.events, into(1, at(6, 14, 30))];
+      const sightings = [seen(1, at(6, 10)), lost(1, at(6, 11, 0, 2), at(6, 11))];
+      expect(spans({ ...runs, events, sightings })).toEqual([
+        [at(6, 10), at(6, 11), false],
+        [at(6, 14, 30), NOW, false],
+      ]);
+      expect(spans({ ...runs, events, sightings: sightings.slice(0, 1) })[0]).toEqual([
+        at(6, 10),
+        at(6, 12),
+        false,
       ]);
     });
 

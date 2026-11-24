@@ -922,10 +922,10 @@ export interface SessionEvent {
    */
   rule?: EventRule;
   /**
-   * For a move out of a wait whose session was out of the list as it ended:
-   * the last poll that listed it, or for one an earlier run still listed, when
-   * the run after that began. The wait is known only up to here, and `at` is
-   * when its end was seen.
+   * For a move out of a wait whose session was out of the list as it ended, or
+   * that ended while Agent Lookout was stopped: the last poll that listed it,
+   * or for one an earlier run still listed, when the run after that began. The
+   * wait is known only up to here, and `at` is when its end was seen.
    */
   lastSeen?: number;
 }
