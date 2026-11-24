@@ -8,6 +8,7 @@ import {
 } from "../../../../core/mapping/antigravityLog.ts";
 import type { AgySessionProcess } from "../../../../core/mapping/antigravityLiveness.ts";
 import type { FileInfo, ReadOnlyIo } from "../../../files/readOnlyIo.ts";
+import type { AgyRemoteAgent } from "./agyProcesses.ts";
 
 /**
  * Reading each running agy program's own log, for the few lines that say what
@@ -18,7 +19,10 @@ import type { FileInfo, ReadOnlyIo } from "../../../files/readOnlyIo.ts";
  * named for the local time it started, a second or so after it did. A log is
  * read only when one agy program that runs a session, and no other, started
  * in the seconds before its name's time, so a log is tied to the program
- * running now that wrote it. The logs of programs that have ended are not read.
+ * running now that wrote it. A program started with `--remote-agent` runs no
+ * session on this computer and may write a log all the same, so one started in
+ * those seconds leaves a log untied too, and its own is not read. The logs of
+ * programs that have ended are not read.
  *
  * Each line is matched against the few kinds used and dropped at once: nothing
  * else of it is kept. A log is read from its start, then only what was added.
@@ -67,14 +71,18 @@ export function logStartOf(name: string): number | null {
 /**
  * Which log each program wrote: the one named in the seconds after it
  * started, or a moment before the start `ps` gives. A log two programs could
- * have written, or a program two logs could be, is left out, so a log is
- * never taken for another program's. A program started in the hour a clock
- * set back repeats has a log whose name gives the first such hour, and is
- * matched to none.
+ * have written, `others` among them, or a program two logs could be, is left
+ * out, so a log is never taken for the log of another of these programs. A
+ * program started in the hour a clock set back repeats has a log whose name
+ * gives the first such hour, and is matched to none.
+ *
+ * `others` are the programs started with `--remote-agent`: each counts as one
+ * that could have written a log, and is given none.
  */
 export function matchLogs(
   processes: readonly AgySessionProcess[],
   logs: ReadonlyMap<string, number>,
+  others: readonly AgyRemoteAgent[] = [],
 ): (string | null)[] {
   const candidates = (startedAt: number | null) =>
     startedAt === null
@@ -83,7 +91,7 @@ export function matchLogs(
           ([, at]) => at >= startedAt - PS_LATE_MS && at - startedAt <= LOG_NAMED_WITHIN_MS,
         );
   const owners = new Map<string, number>();
-  for (const { startedAt } of processes) {
+  for (const { startedAt } of [...processes, ...others]) {
     for (const [name] of candidates(startedAt)) owners.set(name, (owners.get(name) ?? 0) + 1);
   }
   return processes.map(({ startedAt }) => {
@@ -110,9 +118,14 @@ interface Cursor {
 export interface AgyLogReader {
   /**
    * What the log of each of these programs says, in the same order, or null
-   * for a program whose log is not known or could not be read. Never throws.
+   * for a program whose log is not known or could not be read. `others` are
+   * the programs whose log is not read, but could be taken for one of theirs.
+   * Never throws.
    */
-  read(processes: readonly AgySessionProcess[]): Promise<(AgyLogState | null)[]>;
+  read(
+    processes: readonly AgySessionProcess[],
+    others?: readonly AgyRemoteAgent[],
+  ): Promise<(AgyLogState | null)[]>;
 }
 
 export function createAgyLogReader(options: {
@@ -130,8 +143,13 @@ export function createAgyLogReader(options: {
   let listedFor = "";
   let listedAt = -Infinity;
 
-  async function list(processes: readonly AgySessionProcess[]): Promise<void> {
-    const key = processes.map((p) => p.startedAt ?? "?").join(",");
+  async function list(
+    processes: readonly AgySessionProcess[],
+    others: readonly AgyRemoteAgent[],
+  ): Promise<void> {
+    const key = [processes, others]
+      .map((programs) => programs.map((p) => p.startedAt ?? "?").join(","))
+      .join(";");
     // Listed again when the programs change, and every 10 seconds, so a log
     // named a moment after `ps` first shows its program is found, and a second
     // log that makes a match unsure is seen. A clock set back counts as due.
@@ -224,13 +242,16 @@ export function createAgyLogReader(options: {
     }
   }
 
-  async function read(processes: readonly AgySessionProcess[]): Promise<(AgyLogState | null)[]> {
+  async function read(
+    processes: readonly AgySessionProcess[],
+    others: readonly AgyRemoteAgent[],
+  ): Promise<(AgyLogState | null)[]> {
     if (processes.length === 0) {
       cursors.clear();
       return [];
     }
-    await list(processes);
-    const names = matchLogs(processes, listed);
+    await list(processes, others);
+    const names = matchLogs(processes, listed, others);
     const kept = new Set<string>();
     const states: (AgyLogState | null)[] = [];
     for (const name of names) {
@@ -254,9 +275,9 @@ export function createAgyLogReader(options: {
   }
 
   return {
-    async read(processes) {
+    async read(processes, others = []) {
       try {
-        return await read(processes);
+        return await read(processes, others);
       } catch {
         return processes.map(() => null);
       }

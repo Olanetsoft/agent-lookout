@@ -27,6 +27,7 @@ import {
 import type {
   AgyProcessList,
   AgyProcessReader,
+  AgyRemoteAgent,
 } from "@collector/adapters/antigravity/cli/agyProcesses";
 import type { AgySessionProcess } from "@core/mapping/antigravityLiveness";
 import { APP_HOME, HOME, NOW, sqliteJson, type SummaryRow } from "@tests/fixtures/antigravity";
@@ -38,19 +39,19 @@ export { handClock, memoryFiles, type MemoryFiles };
 
 /** A stand-in for `ps`: the agy programs it says run, which the test changes, and how often it was asked. */
 export function standInProcesses(initial: AgySessionProcess[] = []) {
-  let answer: AgyProcessList = { ok: true, sessions: initial };
+  let answer: AgyProcessList = { ok: true, sessions: initial, remoteAgents: [] };
   let asked = 0;
   const reader: AgyProcessReader = {
     async read() {
       asked += 1;
-      return answer.ok ? { ok: true, sessions: [...answer.sessions] } : { ok: false };
+      return answer.ok ? { ...answer, sessions: [...answer.sessions] } : { ok: false };
     },
   };
   return {
     reader,
-    /** The agy programs that run from now on. */
-    set(sessions: AgySessionProcess[]) {
-      answer = { ok: true, sessions };
+    /** The agy programs that run from now on: those that run sessions, and those started with `--remote-agent`. */
+    set(sessions: AgySessionProcess[], remoteAgents: AgyRemoteAgent[] = []) {
+      answer = { ok: true, sessions, remoteAgents };
     },
     /** `ps` fails from now on. */
     fail() {

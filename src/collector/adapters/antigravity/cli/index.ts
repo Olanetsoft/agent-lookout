@@ -506,7 +506,8 @@ export function createAntigravityAdapter(
     // Null only when no conversation is to be shown, and so none is listed below.
     const list = await processesFor(conversations, checkedAt);
     // Each running program's log, read on every poll, so a wait shows at once.
-    const logStates = list?.ok ? await logs.read(list.sessions) : [];
+    // A `--remote-agent` program's could be taken for one of theirs, so it counts too.
+    const logStates = list?.ok ? await logs.read(list.sessions, list.remoteAgents) : [];
     const programs = list?.ok ? withLoggedConversations(list.sessions, logStates) : [];
     // A conversation written since `ps` was last asked, or up to 2 seconds
     // before, as a disk can keep a write's time rounded down, may be open in an

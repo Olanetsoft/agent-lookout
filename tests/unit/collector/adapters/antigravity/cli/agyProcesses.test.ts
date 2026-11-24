@@ -12,6 +12,7 @@ import {
 import { conversationId, lstart, MINUTE, NOW } from "@tests/fixtures/antigravity";
 
 const A = conversationId("a1");
+const B = conversationId("b2");
 
 /** A line of `ps -A -o pid=,ppid=,lstart=,comm=` as macOS prints it. */
 const row = (pid: number, ppid: number, startedAt: number, program: string) =>
@@ -81,6 +82,88 @@ describe("readAgyCommandLine", () => {
   test("a conversation that is not an id is not one", () => {
     expect(readAgyCommandLine("agy --conversation latest")).toEqual({ session: true });
     expect(readAgyCommandLine("agy --conversation")).toEqual({ session: true });
+  });
+
+  test.each([
+    ["-r", `agy -r ${A}`],
+    ["--resume", `agy --resume ${A}`],
+    ["-resume", `agy -resume ${A}`],
+    ["--resume=", `agy --model auto --resume=${A.toUpperCase()}`],
+    ["-resume=", `agy -resume=${A} -p again`],
+    ["-r, its id in capitals", `/Users/example/.local/bin/agy -r ${A.toUpperCase()}`],
+    ["-r after another option's value", `agy --project demo-project -r ${A} --mode plan`],
+    ["-r after a prompt", `agy -p summarise the notes -r ${A}`],
+    ["--resume after a prompt", `agy -i go on with the notes --resume=${A}`],
+  ])("%s names the conversation, as --conversation does", (_what, line) => {
+    expect(readAgyCommandLine(line)).toEqual({ session: true, conversation: A });
+  });
+
+  test.each([
+    ["-r with no id", "agy -r"],
+    ["-r with a word that is no id", "agy -r latest"],
+    ["-r with only the start of an id", `agy -r ${A.slice(0, 8)}`],
+    ["-r with more than an id", `agy -r ${A}-x`],
+    ["--resume with no id", "agy --resume"],
+    ["--resume with a word that is no id", "agy --resume=latest"],
+    ["-r as another option's value", "agy --project -r --mode plan"],
+    ["-r in a prompt", "agy -p remove the folder with rm -r build"],
+    ["--resume in a prompt", "agy -i say what --resume does to a conversation"],
+    ["an id in a prompt after another word", `agy -p look for -r or ${A} in the notes`],
+    ["another option that begins as one of them", `agy -rf ${A} --resumed ${A} --resume-all=${A}`],
+    // Nothing agy publishes writes it so, and it is not guessed.
+    ["-r with a =", `agy -r=${A}`],
+  ])("%s names no conversation", (_what, line) => {
+    expect(readAgyCommandLine(line)).toEqual({ session: true });
+  });
+
+  test("an option with a whole id after it in a prompt cannot be told from the option, however it is spelt", () => {
+    for (const option of ["--conversation", "--resume", "-r"]) {
+      expect(readAgyCommandLine(`agy -p say what ${option} ${A} opens`), option).toEqual({
+        session: true,
+        conversation: A,
+      });
+    }
+    // The first one stands.
+    expect(readAgyCommandLine(`agy -r ${A} -p say what --conversation ${B} opens`)).toEqual({
+      session: true,
+      conversation: A,
+    });
+  });
+
+  test("--remote-agent as the first word is not a session on this computer", () => {
+    for (const rest of [
+      "--remote-agent",
+      "-remote-agent",
+      "--remote-agent --project=demo-project",
+      "--remote-agent -c",
+      `--remote-agent --conversation=${A}`,
+      `--remote-agent -r ${A}`,
+      "--remote-agent -i tidy the notes",
+    ]) {
+      expect(readAgyCommandLine(`/Users/example/.local/bin/agy ${rest}`), rest).toEqual({
+        session: false,
+        remoteAgent: true,
+      });
+    }
+  });
+
+  test("--remote-agent anywhere else in the line, or another option like it, is a session", () => {
+    for (const rest of [
+      "--model auto --remote-agent",
+      "-c --remote-agent",
+      "-p explain what --remote-agent does",
+      "-i --remote-agent",
+      "--remote-agents",
+      "--remote-agent=false",
+      "--remote-control",
+      "remote-agent",
+    ]) {
+      expect(readAgyCommandLine(`agy ${rest}`), rest).toEqual({ session: true });
+    }
+    expect(readAgyCommandLine(`agy -r ${A} --remote-agent`)).toEqual({
+      session: true,
+      conversation: A,
+    });
   });
 
   test("agy's own commands, and options that print and end, are not sessions", () => {
@@ -166,6 +249,7 @@ describe("createAgyProcessReader", () => {
         { startedAt: NOW - 4 * MINUTE },
         { startedAt: NOW - MINUTE },
       ],
+      remoteAgents: [],
     });
     expect(ps.runs).toEqual([
       { args: AGY_TABLE_ARGS, utc: true },
@@ -193,7 +277,34 @@ describe("createAgyProcessReader", () => {
     expect(await reader.read()).toEqual({
       ok: true,
       sessions: [{ startedAt: NOW - 5 * MINUTE }, { startedAt: NOW - 2 * MINUTE, conversation: A }],
+      remoteAgents: [],
     });
+  });
+
+  test("a program started with --remote-agent is named apart, and one resumed with -r or --resume names its conversation", async () => {
+    const ps = standInPs(table, {
+      812: `agy -r ${A}`,
+      813: `agy --remote-agent --conversation=${B}`,
+      814: `agy --resume ${B}`,
+      // Started by the agy in 812, whose session it belongs to.
+      900: "agy --remote-agent",
+      901: "agy --model auto",
+    });
+    const reader = createAgyProcessReader({ run: ps.run, platform: "darwin" });
+    expect(await reader.read()).toEqual({
+      ok: true,
+      sessions: [
+        { startedAt: NOW - 5 * MINUTE, conversation: A },
+        { startedAt: NOW - 3 * MINUTE, conversation: B },
+      ],
+      // By its start alone: it names no conversation kept on this computer.
+      remoteAgents: [{ startedAt: NOW - 4 * MINUTE }],
+    });
+    // The same two runs as for any other line, and nothing more is asked of ps.
+    expect(ps.runs).toEqual([
+      { args: AGY_TABLE_ARGS, utc: true },
+      { args: agyCommandLineArgs([812, 813, 814, 900, 901]), utc: false },
+    ]);
   });
 
   test("a program whose parent ended between the two runs is a session of its own", async () => {
@@ -202,7 +313,11 @@ describe("createAgyProcessReader", () => {
       { 900: "agy" },
     );
     const reader = createAgyProcessReader({ run: ps.run, platform: "darwin" });
-    expect(await reader.read()).toEqual({ ok: true, sessions: [{ startedAt: NOW - 2 * MINUTE }] });
+    expect(await reader.read()).toEqual({
+      ok: true,
+      sessions: [{ startedAt: NOW - 2 * MINUTE }],
+      remoteAgents: [],
+    });
   });
 
   test("reads a program's command line once, for as long as it runs", async () => {
@@ -219,6 +334,7 @@ describe("createAgyProcessReader", () => {
     expect(await reader.read()).toEqual({
       ok: true,
       sessions: [{ startedAt: NOW - 5 * MINUTE, conversation: A }],
+      remoteAgents: [],
     });
   });
 
@@ -232,13 +348,14 @@ describe("createAgyProcessReader", () => {
         { startedAt: NOW - 4 * MINUTE },
         { startedAt: NOW - 3 * MINUTE },
       ],
+      remoteAgents: [],
     });
   });
 
   test("with no agy program, only the table is asked for", async () => {
     const ps = standInPs(row(501, 1, NOW, "-zsh"), {});
     const reader = createAgyProcessReader({ run: ps.run, platform: "linux" });
-    expect(await reader.read()).toEqual({ ok: true, sessions: [] });
+    expect(await reader.read()).toEqual({ ok: true, sessions: [], remoteAgents: [] });
     expect(ps.runs).toHaveLength(1);
   });
 

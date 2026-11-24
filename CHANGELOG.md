@@ -2,6 +2,12 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
+## Unreleased
+
+### Fixed
+
+- An Antigravity CLI conversation opened with `agy -r <id>` or `agy --resume <id>`, as agy 1.5.16 also spells `--conversation`, is taken as open from the start. Before, it could show as finished while it was open, once another agy wrote to a conversation of its own. An agy started with `--remote-agent` as its first option, whose conversations are kept with a remote project, no longer keeps conversations on this computer from showing as finished. (#437)
+
 ## 0.2.30 - 2026-11-24
 
 Copilot CLI and Kiro CLI sessions show, Kilo Code, MiMo Code and Mistral Vibe sessions give their last message, Mistral Vibe 3.1.4, Qwen Code and Hermes Agent sessions keep the right status, a Codex side chat no longer shows as a session, and most names Codex makes from a session's first prompt give way to its folder's name.
