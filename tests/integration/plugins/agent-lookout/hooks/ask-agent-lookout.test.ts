@@ -45,7 +45,8 @@ function runHook(env: Record<string, string>): Promise<Run> {
     let stderr = "";
     child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString("utf8")));
     child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString("utf8")));
-    child.once("exit", (code) => resolve({ code, stdout, stderr, ms: Date.now() - started }));
+    // Once its output has been read: Node can say it has exited before that.
+    child.once("close", (code) => resolve({ code, stdout, stderr, ms: Date.now() - started }));
     // With no socket the script leaves before it reads its input, as it should,
     // so writing that input can find the pipe already closed.
     child.stdin.on("error", (error: NodeJS.ErrnoException) => {

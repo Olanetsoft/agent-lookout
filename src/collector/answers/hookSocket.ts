@@ -1,4 +1,4 @@
-import { chmod, lstat, mkdir, stat, unlink } from "node:fs/promises";
+import { chmod, lstat, mkdir, rm } from "node:fs/promises";
 import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import net from "node:net";
 import path from "node:path";
@@ -16,7 +16,8 @@ import { readHookRequest, type HeldAsks, type HookReply } from "./heldAsks.ts";
  * Unix socket. Its folder is this user's alone, mode 0700, and the socket
  * itself is 0600, so only this user's programs can connect. One copy of
  * Agent Lookout listens at a time: a copy that finds another answering there
- * leaves it be, and a socket nobody answers on is a leftover, replaced.
+ * leaves it be, and tries again later (`answering.ts`), and a socket nobody
+ * answers on is a leftover, replaced.
  *
  * It takes one kind of request: `POST /hooks/permission-request`, with the
  * header `X-Agent-Lookout-Hook: permission-request`, a JSON body of at most 1
@@ -40,6 +41,10 @@ export const HOOK_BODY_TIMEOUT_MS = 10_000;
 const MAX_CONNECTIONS = 64;
 
 export type SocketStart = { ok: true } | { ok: false; problem: string };
+
+/** The problem while another copy has the socket, which goes once that copy has quit. */
+export const ANOTHER_COPY =
+  "Another copy of Agent Lookout answers permission prompts on this computer.";
 
 export interface HookSocketOptions {
   socketPath: string;
@@ -146,8 +151,6 @@ export function createHookSocket(options: HookSocketOptions): HookSocket {
   const uid = options.uid ?? process.getuid?.() ?? -1;
   const folder = path.dirname(socketPath);
   let server: http.Server | null = null;
-  /** The socket file this copy made, to remove only that one. */
-  let made: number | null = null;
 
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (!isHookRequest(req)) {
@@ -210,11 +213,10 @@ export function createHookSocket(options: HookSocketOptions): HookSocket {
     }
     if (!info.isSocket())
       return `Something other than a socket is at ${socketPath}, so answering is off.`;
-    if (await answers(socketPath)) {
-      return "Another copy of Agent Lookout answers permission prompts on this computer.";
-    }
+    if (await answers(socketPath)) return ANOTHER_COPY;
     try {
-      await unlink(socketPath);
+      // With `force`, one its own copy removed meanwhile is gone all the same.
+      await rm(socketPath, { force: true });
       return null;
     } catch {
       return `The leftover socket at ${socketPath} could not be removed, so answering is off.`;
@@ -237,7 +239,7 @@ export function createHookSocket(options: HookSocketOptions): HookSocket {
         listening.once("error", (error) =>
           resolve(
             errorCode(error) === "EADDRINUSE"
-              ? "Another copy of Agent Lookout answers permission prompts on this computer."
+              ? ANOTHER_COPY
               : `Agent Lookout could not listen at ${socketPath}, so answering is off.`,
           ),
         );
@@ -249,7 +251,6 @@ export function createHookSocket(options: HookSocketOptions): HookSocket {
       });
       try {
         await chmod(socketPath, 0o600);
-        made = (await stat(socketPath)).ino;
       } catch {
         listening.close();
         return { ok: false, problem: `The socket at ${socketPath} could not be made private.` };
@@ -263,17 +264,11 @@ export function createHookSocket(options: HookSocketOptions): HookSocket {
       const closing = server;
       server = null;
       if (closing === null) return;
+      // Node removes the socket file as it closes it, and only then: one there later is another copy's.
       await new Promise<void>((resolve) => {
         closing.close(() => resolve());
         closing.closeAllConnections();
       });
-      // Node removes the socket file as it closes. Should it be there still, it goes, if it is ours.
-      try {
-        if (made !== null && (await stat(socketPath)).ino === made) await unlink(socketPath);
-      } catch {
-        // Already gone.
-      }
-      made = null;
     },
   };
 }

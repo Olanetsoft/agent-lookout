@@ -19,7 +19,7 @@ const ALLOW_TESTS: PermissionRule = {
 const ASK_ALL: PermissionRule = { id: "bbbbbbbbbbbb", decision: "ask", tool: "*" };
 const DENY_FETCH: PermissionRule = { id: "cccccccccccc", decision: "deny", tool: "WebFetch" };
 
-function over(rules: PermissionRule[]) {
+function over(rules: PermissionRule[], ownPaths: string[] = []) {
   const events: SessionEvent[] = [];
   let at = T0;
   const snapshot: SessionsSnapshot = {
@@ -30,6 +30,7 @@ function over(rules: PermissionRule[]) {
   const poller = { getSnapshot: () => snapshot, pollOnce: vi.fn(async () => snapshot) };
   const answers = createRuleAnswers({
     rules: () => rules,
+    ownPaths,
     poller,
     events: { add: (added) => events.push(...added) },
     now: () => (at += 1),
@@ -56,6 +57,18 @@ describe("what the rules make of a held request", () => {
     expect(
       answers.verdictFor(request("Bash", { command: "npm test", run_in_background: true })),
     ).toMatchObject({ decision: "allow" });
+  });
+
+  test("an allow rule answers no command of a session whose folder is not known", () => {
+    const { answers, poller } = over(
+      [ALLOW_TESTS],
+      ["/Users/example/.agent-lookout/settings.json"],
+    );
+    const tests = request("Bash", { command: "npm test" });
+    expect(answers.verdictFor(tests)).toMatchObject({ decision: "allow" });
+    const [session] = poller.getSnapshot().sessions;
+    session!.cwd = null;
+    expect(answers.verdictFor(tests)).toBeNull();
   });
 
   test("an allow rule never answers what the dashboard offers Deny alone for, whatever its words", () => {

@@ -1,7 +1,7 @@
 import { EDIT_TOOLS, NOT_YES_OR_NO_TOOLS } from "../sessions/session.ts";
 import {
   ASSIGNMENT,
-  namesOwnFiles,
+  namesOwnFolder,
   needsItsSubcommand,
   plainCommandWords,
   PREFIX_MARK,
@@ -187,7 +187,7 @@ function commandProblem(command: string, decision: RuleDecision): string | null 
   if (decision === "allow" && runsCodeBySubcommand(words.split(" "))) {
     return `${words} fetches or runs code that Claude Code can choose, so an allow rule for it would let it run anything without asking you. Name the script it should run instead, or answer such commands by hand.`;
   }
-  if (decision === "allow" && namesOwnFiles(words.split(" "))) {
+  if (decision === "allow" && namesOwnFolder(words.split(" "))) {
     return "An allow rule may not name Agent Lookout's own folder, ~/.agent-lookout, which holds its settings and its rules.";
   }
   return null;

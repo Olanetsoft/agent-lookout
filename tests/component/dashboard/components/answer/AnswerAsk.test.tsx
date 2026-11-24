@@ -553,6 +553,23 @@ test("a newer request of the session takes no press for a moment either", async 
   expect(request).toHaveBeenCalledWith(`claude-code:${UUID}`, NEWER, "allow");
 });
 
+test("a request drawn again after it had gone takes no press for a moment either", async () => {
+  const { request } = heldAnswer();
+  const screen = await renderAt(1280, waiting(), request, undefined, 300);
+  await expect
+    .poll(() => part("allow")?.getAttribute("aria-disabled") ?? null, { timeout: 3_000 })
+    .toBeNull();
+  await screen.rerender(block(1280, waiting(null), request, undefined, 300));
+  expect(part("allow")).toBeNull();
+  await screen.rerender(block(1280, waiting(), request, undefined, 300));
+  expect(allow().element().getAttribute("aria-disabled")).toBe("true");
+  (allow().element() as HTMLButtonElement).click();
+  expect(request).not.toHaveBeenCalled();
+  await expect
+    .poll(() => part("allow")?.getAttribute("aria-disabled") ?? null, { timeout: 3_000 })
+    .toBeNull();
+});
+
 test("a newer request after an answer is offered afresh, under what the last answer came to", async () => {
   const { request, answer } = heldAnswer();
   const screen = await renderAt(1280, waiting(), request);

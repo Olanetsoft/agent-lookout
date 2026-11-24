@@ -38,8 +38,21 @@ export interface AnsweredWait {
   source: SourceId;
   /** The wait's status time, as the session's registry file gave it, or null when it gave none. */
   since: number | null;
+  /** The process that waited, when it is known. */
+  pid?: number;
   /** When the answer was given, on the collector's clock. */
   at: number;
+  /**
+   * For a request answered while the file still said the wait before its own,
+   * the earliest its own can have begun: a wait since then, and not since the
+   * answer, is the one that was answered.
+   */
+  from?: number;
+  /**
+   * While another prompt of the session may be open, the moment past which
+   * the wait since `since` is taken as that one's.
+   */
+  until?: number;
 }
 
 /** Whether a session needs the person now: it waits, in a wait Agent Lookout has not answered. */
@@ -49,17 +62,24 @@ export function needsYou(session: Pick<Session, "status" | "answered">): boolean
 
 /**
  * Whether a session, as a poll found it, is still in the wait an answer was
- * for: waiting for permission, since the same status time. A wait since
- * another time is another wait, and a wait for anything else is not the
- * prompt that was answered. A time that either side does not know says
+ * for: waiting for permission, since the same status time, before `until`. A
+ * wait since another time is another wait, unless it began from `from` to the
+ * answer, and past `until` in that same process. A wait for anything else is
+ * not the prompt that was answered. A time that either side does not know says
  * nothing about the wait, as in `waitChanges`.
  */
 export function inAnsweredWait(
-  session: Pick<Session, "status" | "waitingReason" | "statusSince">,
-  wait: Pick<AnsweredWait, "since">,
+  session: Pick<Session, "status" | "waitingReason" | "statusSince" | "pid">,
+  wait: Pick<AnsweredWait, "since"> & Partial<AnsweredWait>,
+  now = 0,
 ): boolean {
   if (session.status !== "needs-you" || session.waitingReason !== "permission") return false;
-  return wait.since === null || session.statusSince === null || session.statusSince === wait.since;
+  const { since, at = 0, from = Infinity, until = Infinity } = wait;
+  const { statusSince } = session;
+  if (since === null || statusSince === null || statusSince === since) return now < until;
+  // Of two processes that have the session open, the one it was not given to may be the other prompt's.
+  if (wait.pid !== undefined && wait.pid !== session.pid && now >= until) return false;
+  return statusSince >= from && statusSince <= at;
 }
 
 export interface AnsweredNow {
@@ -76,7 +96,7 @@ export interface AnsweredNow {
  * source finds the session in any other status or wait, or does not find it,
  * and in any case `ANSWER_HOLDS_MS` after it was given, or once the clock is
  * set that far back. One whose source could not be read this time is kept as
- * it is until then.
+ * it is until then, and so is one with `from`, whose own wait may be yet to show.
  */
 export function answeredNow(
   answers: ReadonlyMap<string, AnsweredWait>,
@@ -98,9 +118,9 @@ export function answeredNow(
       continue;
     }
     const session = listed.get(id);
-    if (session === undefined || !inAnsweredWait(session, wait)) continue;
-    ids.add(id);
-    kept.set(id, wait);
+    const inIt = session !== undefined && inAnsweredWait(session, wait, now);
+    if (inIt) ids.add(id);
+    if (inIt || (session !== undefined && wait.from !== undefined)) kept.set(id, wait);
   }
   return { ids, kept };
 }

@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, realpath, symlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -35,9 +35,10 @@ const SESSION_ID = `claude-code:${ids.busy}`;
 /** Words that must never reach an event, the history, the settings answer or the list. */
 const PRIVATE = "keep-this-private";
 
-function entryFor(standIn: Pick<StandIn, "pid" | "procStart">) {
+function entryFor(standIn: Pick<StandIn, "pid" | "procStart">, cwd?: string) {
   const now = Date.now();
   return registryFile({
+    ...(cwd !== undefined && { cwd }),
     pid: standIn.pid,
     sessionId: ids.busy,
     name: "checkout-flow",
@@ -51,12 +52,22 @@ function entryFor(standIn: Pick<StandIn, "pid" | "procStart">) {
   });
 }
 
-/** The collector over a session that waits for permission, with these rules in its settings file. */
-async function serve(rules: RuleWords[], env: Record<string, string> = {}) {
+/**
+ * The collector over a session that waits for permission, with these rules in
+ * its settings file. The session's folder and the settings file's can be named.
+ */
+async function serve(
+  rules: RuleWords[],
+  env: Record<string, string> = {},
+  folders: { session?: string; settings?: string } = {},
+) {
   const standIn = await startStandIn();
-  const claudeHome = await makeClaudeHome({ [`${standIn.pid}.json`]: entryFor(standIn) });
-  const socketPath = path.join(await tempDir(), "al", "answer.sock");
-  const settingsFile = path.join(await tempDir(), "settings.json");
+  const claudeHome = await makeClaudeHome({
+    [`${standIn.pid}.json`]: entryFor(standIn, folders.session),
+  });
+  const socketPath =
+    env.AGENT_LOOKOUT_ANSWER_SOCKET ?? path.join(await tempDir(), "al", "answer.sock");
+  const settingsFile = path.join(folders.settings ?? (await tempDir()), "settings.json");
   await writeFile(
     settingsFile,
     JSON.stringify({
@@ -165,8 +176,9 @@ function hook(socketPath: string, toolName: string, toolInput: unknown) {
   let stdout = "";
   let exited = false;
   child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString("utf8")));
+  // Once its output has been read: Node can say it has exited before that.
   const done = new Promise<{ code: number | null; stdout: string }>((resolve) =>
-    child.once("exit", (code) => {
+    child.once("close", (code) => {
       exited = true;
       resolve({ code, stdout });
     }),
@@ -408,6 +420,52 @@ test("an allow rule never answers a command that names the settings file the rul
   const ask = (await server.session())?.ask;
   expect((await server.answer(ask?.requestId ?? "", "deny")).status).toBe(200);
   expect(await asked.done).toEqual({ code: 0, stdout: `${DENY_OUTPUT}\n` });
+});
+
+test("an allow rule never answers a path attached to an option that is a folder above the settings file, though a link leads there", async () => {
+  // The settings are named through a link, and the session is in the folder it leads to.
+  const home = await realpath(await tempDir());
+  const link = path.join(await tempDir(), "home");
+  await symlink(home, link);
+  await mkdir(path.join(home, "rules"));
+  const allowTar: RuleWords = { decision: "allow", tool: "Bash", command: "tar:*" };
+  const server = await serve(
+    [allowTar],
+    {},
+    { session: path.join(home, "code", "demo"), settings: path.join(link, "rules") },
+  );
+  const asked = hook(server.socketPath, "Bash", { command: "tar -xf a.tar -C../.." });
+  await vi.waitFor(async () => expect((await server.session())?.ask).toBeDefined(), {
+    timeout: 5_000,
+  });
+  await new Promise((resolve) => setTimeout(resolve, 1_200));
+  expect(asked.running()).toBe(true);
+  expect((await server.settings()).ruleAnswers).toEqual([]);
+  const ask = (await server.session())?.ask;
+  expect((await server.answer(ask?.requestId ?? "", "deny")).status).toBe(200);
+  expect(await asked.done).toEqual({ code: 0, stdout: `${DENY_OUTPUT}\n` });
+
+  // The rule itself is in force.
+  const own = hook(server.socketPath, "Bash", { command: "tar -xf a.tar -Cbuild" });
+  expect(await own.done).toEqual({ code: 0, stdout: `${ALLOW_OUTPUT}\n` });
+});
+
+test("an allow rule never answers a path to the folder the socket is in, though a link leads there and it was not there at start", async () => {
+  const home = await realpath(await tempDir());
+  const link = path.join(await tempDir(), "home");
+  await symlink(home, link);
+  const server = await serve(
+    [{ decision: "allow", tool: "Bash", command: "tar:*" }],
+    { AGENT_LOOKOUT_ANSWER_SOCKET: path.join(link, "al", "answer.sock") },
+    { session: path.join(home, "code", "demo") },
+  );
+  const asked = hook(server.socketPath, "Bash", { command: "tar -xf a.tar -C../../al" });
+  await vi.waitFor(async () => expect((await server.session())?.ask).toBeDefined(), {
+    timeout: 5_000,
+  });
+  await new Promise((resolve) => setTimeout(resolve, 1_200));
+  expect(asked.running()).toBe(true);
+  expect((await server.settings()).ruleAnswers).toEqual([]);
 });
 
 test("with AGENT_LOOKOUT_ANSWER off, no rule answers anything and the hook prints nothing", async () => {

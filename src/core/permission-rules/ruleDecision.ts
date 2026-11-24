@@ -72,7 +72,7 @@ export interface RuleRequest {
   allowable: boolean;
   /** Agent Lookout's own settings file and socket, which no allowed command may name. */
   ownPaths?: readonly string[];
-  /** The session's folder, when known: paths in the command are read from there too. */
+  /** The session's folder, when known: a path in the command that climbs is read from there too. */
   folder?: string;
 }
 
@@ -104,26 +104,36 @@ function holdsBack(rule: PermissionRule, request: RuleRequest): boolean {
 }
 
 /**
- * Whether an allow rule takes the request: strictly, and only what could be
- * allowed by hand. Its tool is the request's own: an MCP server alone never
- * allows, should a file hold such a rule.
+ * Whether an allow rule's words are the request's: strictly. Its tool is the
+ * request's own: an MCP server alone never allows, should a file hold such a
+ * rule.
  */
 function lets(rule: PermissionRule, request: RuleRequest): boolean {
-  if (!request.allowable || rule.tool === EVERY_TOOL || isServerName(rule.tool)) return false;
+  if (rule.tool === EVERY_TOOL || isServerName(rule.tool)) return false;
   if (rule.tool !== request.tool) return false;
   if (request.tool !== COMMAND_TOOL) return rule.command === undefined;
   if (rule.command === undefined || request.command === undefined) return false;
-  if (!request.inputNames.every((name) => INPUTS_AN_ALLOW_RULE_TAKES.includes(name))) return false;
   const wanted = ruleCommandOf(rule.command);
   const [program = ""] = wanted.words;
   if (runsAnotherCommand(program) || sendsOrRunsCode(program)) return false;
   if (needsItsSubcommand(wanted.words)) return false;
+  return wordsMatch(wanted, request.command.split(" "));
+}
+
+/**
+ * Whether any allow rule may answer the request, whatever it says: only what
+ * could be allowed by hand, and of commands only a plain one that could not
+ * change the rules.
+ */
+function mayBeLet(request: RuleRequest): boolean {
+  if (!request.allowable) return false;
+  if (request.tool !== COMMAND_TOOL || request.command === undefined) return true;
+  if (!request.inputNames.every((name) => INPUTS_AN_ALLOW_RULE_TAKES.includes(name))) return false;
   const words = plainCommandWords(request.command);
   if (words === null || runsCodeBySubcommand(words) || runsAProgramByOption(words)) return false;
   const own = request.ownPaths ?? [];
   if (request.folder !== undefined && folderReachesOwnFiles(request.folder, own)) return false;
-  if (namesOwnFiles(words, own, request.folder)) return false;
-  return wordsMatch(wanted, words);
+  return !namesOwnFiles(words, own, request.folder);
 }
 
 /** The rule that decides the request, deny first, then ask, then allow, or null when none does. */
@@ -136,7 +146,9 @@ export function decideByRules(
     const rule = rules.find(
       (candidate) => candidate.decision === decision && matches(candidate, request),
     );
-    if (rule !== undefined) return { decision, rule };
+    // Last, and once for all the rules, since it reads every path of the command.
+    if (rule !== undefined && (decision !== "allow" || mayBeLet(request)))
+      return { decision, rule };
   }
   return null;
 }

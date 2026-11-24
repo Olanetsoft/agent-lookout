@@ -14,7 +14,7 @@ import type { HookRequest } from "./heldAsks.ts";
  * said it waits for permission, the moment it would be shown on the dashboard
  * (`heldAsks.ts`). When a deny or an allow rule decides it, it is answered at
  * once through the same path as a press of Deny or Allow, which reads the
- * registry file again, answers only in the same wait, allows only what the
+ * registry file again, answers only in the wait it is in, allows only what the
  * person could allow by hand, and writes only one of the two fixed outputs.
  * An ask rule, and no rule, leave it for the person, as before there were
  * rules.
@@ -81,8 +81,8 @@ export function createRuleAnswers(options: RuleAnswersOptions): RuleAnswers {
     verdictFor({ sessionId, shown }) {
       const rules = options.rules();
       if (rules.length === 0) return null;
-      // The session's folder, from Claude Code's own file, so paths in the
-      // command are read from where it runs.
+      // The session's folder, from Claude Code's own file, which the command
+      // runs in, or in one under it. One not known could be any.
       const folder = poller.getSnapshot().sessions.find((listed) => listed.id === sessionId)?.cwd;
       const verdict = decideByRules(rules, {
         tool: shown.tool,
@@ -92,7 +92,7 @@ export function createRuleAnswers(options: RuleAnswersOptions): RuleAnswers {
         // The one rule for what may be allowed: what the dashboard would offer Allow for.
         allowable: shown.allow,
         ownPaths: options.ownPaths ?? [],
-        ...(folder && { folder }),
+        folder: folder || "/",
       });
       if (verdict === null || verdict.decision === "ask") return null;
       return { decision: verdict.decision, rule: verdict.rule };

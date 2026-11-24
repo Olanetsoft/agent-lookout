@@ -6,7 +6,12 @@ import path from "node:path";
 
 import { expect, onTestFinished, test as anyTest, vi } from "vitest";
 
-import { createHookSocket, HOOK_PATH, MAX_HOOK_BODY_BYTES } from "@collector/answers/hookSocket";
+import {
+  ANOTHER_COPY,
+  createHookSocket,
+  HOOK_PATH,
+  MAX_HOOK_BODY_BYTES,
+} from "@collector/answers/hookSocket";
 import type { HookReply, HookRequest } from "@collector/answers/heldAsks";
 import { tempDir } from "@tests/support/node/tempFiles";
 
@@ -176,6 +181,20 @@ test("a second copy leaves the socket of one that answers be", async () => {
   expect(await send(first.socketPath, { path: "/elsewhere" })).toEqual({ status: 200, body: "" });
 });
 
+test("a second copy listens once the first has closed", async () => {
+  const first = await started();
+  const second = createHookSocket({ socketPath: first.socketPath, asks: standInAsks().asks });
+  expect((await second.start()).ok).toBe(false);
+  // Tried while the first closes, it listens, or is told another copy answers and is free to try again.
+  const closing = first.socket.close();
+  const during = await second.start();
+  if (!during.ok) expect(during.problem).toBe(ANOTHER_COPY);
+  await closing;
+  expect(await second.start()).toEqual({ ok: true });
+  onTestFinished(() => second.close());
+  expect(await send(first.socketPath, { path: "/elsewhere" })).toEqual({ status: 200, body: "" });
+});
+
 test("a leftover socket nobody answers on is replaced", async () => {
   const dir = path.join(await tempDir(), "al");
   await mkdir(dir, { mode: 0o700 });
@@ -207,6 +226,16 @@ test("something other than a socket at the path is never removed", async () => {
   const { start } = await started(dir);
   expect(start.ok).toBe(false);
   expect((await lstat(path.join(dir, "answer.sock"))).isFile()).toBe(true);
+});
+
+test("closing never removes a socket another copy has made there since", async () => {
+  const { socket, socketPath } = await started();
+  const closing = socket.close();
+  const next = net.createServer();
+  await new Promise<void>((resolve) => next.listen(socketPath, () => resolve()));
+  onTestFinished(() => void next.close());
+  await closing;
+  expect((await lstat(socketPath)).isSocket()).toBe(true);
 });
 
 test("closing lets every held request go and removes the socket", async () => {

@@ -1757,18 +1757,18 @@ sequenceDiagram
 1. Claude Code runs the plugin's `PermissionRequest` hook (`plugins/agent-lookout/hooks/hooks.json`, which runs `ask-agent-lookout.sh`), with the request on stdin. At the same time it draws its own prompt.
 2. If there is no socket at `~/.agent-lookout/answer.sock`, or at the path in `AGENT_LOOKOUT_ANSWER_SOCKET`, the script exits at once and prints nothing. Otherwise it sends the request with `curl` over that Unix socket and waits up to 580 seconds.
 3. `createHookSocket` in `src/collector/answers/hookSocket.ts` accepts only `POST /hooks/permission-request` that carries `X-Agent-Lookout-Hook: permission-request`, has a body of at most 1 MiB and has no `Origin`. Anything else gets an empty 200, and the session's own prompt decides.
-4. `createHeldAsks` in `heldAsks.ts` holds the open response, one per session. `shownAsk` in `shownAsk.ts` works out what to show and whether to offer Allow.
+4. `createHeldAsks` in `heldAsks.ts` holds the open response, one per session, beside older ones a permission rule will answer. `shownAsk` in `shownAsk.ts` works out what to show and whether to offer Allow.
 5. `createRegistryStatus` in `registryStatus.ts` re-reads the session's registry file every 500 ms. A request is shown only after the file says the session is waiting for permission. It is let go with no answer in four cases:
-   - the file stops saying that, because you answered in the session
+   - the file stops saying that, or says it of a later wait, because you answered in the session (for up to 3 seconds after an answer it can still say the wait before, and the request is kept for its own)
    - the hook's connection closes
-   - a newer request from the same session arrives
+   - a newer request from the same session arrives, and no permission rule answers this one
    - `AGENT_LOOKOUT_ANSWER_WAIT` runs out (300 seconds by default)
 6. The handler's `serveSnapshot` attaches the held request to its session as `ask`, and only while `GET /api/sessions` is being served. So the poller, the events, the history, the notifications, email, the webhook and the pushes never see what was asked.
 7. A press sends `{ sessionId, requestId, decision }`. `createAnswerRoute` passes it to `createAnswerer` in `answerRoute.ts`, which calls `answer` inside `createHeldAsks`. That function checks four things:
    - the request is held under that ID and was confirmed
    - Allow was offered, if the press was Allow
    - it is not already being answered
-   - the registry, read once more, shows the same wait
+   - the registry, read once more, shows the same wait, or the request's own when it was shown in the one before it
 
    It then writes `ALLOW_OUTPUT` or `DENY_OUTPUT`, adds an `answered` event and polls before replying (`pollAfterAnswer`).
 
@@ -1809,7 +1809,7 @@ sequenceDiagram
 
 **Why it works this way.**
 
-- **A rule answers the same way a press does.** It goes through the same `answer` in `createHeldAsks`, so every check on a press applies: the same wait, Allow only for what is shown in full, and the two fixed outputs.
+- **A rule answers the same way a press does.** It goes through the same `answer` in `createHeldAsks`, so every check on a press applies: the same wait or the request's own, Allow only for what is shown in full, and the two fixed outputs.
 - **Deny beats ask, and ask beats allow,** as in Claude Code's own rules. Claude Code's own allow and deny rules still decide first, because the hook only runs when Claude Code shows a prompt. [Claude Code's own rules come first](GUIDE.md#claude-codes-own-rules-come-first) says how far this was checked.
 - **Allow rules match narrowly, deny and ask rules loosely.**
   - An allow rule matches only one plain command, word by word, every word in its place (`wordsMatch`): `npm test:*` matches `npm test` and `npm test --watch`, and not `npm testing`.

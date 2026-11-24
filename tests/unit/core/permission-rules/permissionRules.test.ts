@@ -307,6 +307,15 @@ describe("the rules a file holds", () => {
     expect(readPermissionRules(value)).toEqual({ ok: false });
   });
 
+  test("an allow rule for a file of the project's keeps no rule from being read, whatever its path's names", () => {
+    const list: PermissionRule[] = [
+      rule({ decision: "deny", tool: "Bash", command: "rm:*" }, "a1"),
+      rule({ decision: "allow", tool: "Bash", command: "npm test src/proc/root.test.ts" }, "a2"),
+      rule({ decision: "allow", tool: "Bash", command: "cat /proc/cpuinfo" }, "a3"),
+    ];
+    expect(readPermissionRules(list)).toEqual({ ok: true, rules: list });
+  });
+
   test(`${MAX_RULES} rules are read`, () => {
     const rules = Array.from({ length: MAX_RULES }, (_, index) =>
       rule({ decision: "deny", tool: "Bash", command: `rm${index}` }, `r${index}`),

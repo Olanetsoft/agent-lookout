@@ -1,4 +1,6 @@
+import { realpathSync } from "node:fs";
 import type { IncomingMessage } from "node:http";
+import path from "node:path";
 
 import type { RuleAnswer } from "../../core/api.ts";
 import type { PermissionRule } from "../../core/permission-rules/permissionRules.ts";
@@ -18,7 +20,7 @@ import {
   type HeldAsks,
   type StatusReader,
 } from "./heldAsks.ts";
-import { createHookSocket, type HookSocket } from "./hookSocket.ts";
+import { ANOTHER_COPY, createHookSocket, type HookSocket } from "./hookSocket.ts";
 import { createRegistryStatus } from "./registryStatus.ts";
 import { createRuleAnswers } from "./ruleAnswers.ts";
 
@@ -96,6 +98,19 @@ export interface AnsweringOptions {
   settingsFile?: string;
 }
 
+/** How often a copy that found another answering looks whether that one has quit. */
+export const TRY_AGAIN_MS = 10_000;
+
+/** A path with every link in its folders followed, as far as they are there. */
+function realPath(file: string): string {
+  try {
+    return realpathSync(file);
+  } catch {
+    const folder = path.dirname(file);
+    return folder === file ? file : path.join(realPath(folder), path.basename(file));
+  }
+}
+
 export function createAnswering(options: AnsweringOptions): Answering {
   const { env, poller, events } = options;
   const setup = readAnswerSetup(env, options.homeDir, options.platform);
@@ -119,8 +134,12 @@ export function createAnswering(options: AnsweringOptions): Answering {
   const ruleAnswers = createRuleAnswers({
     rules: options.rules ?? (() => []),
     // A command that names the settings file or the socket could change the
-    // rules or answer prompts, so no rule allows it, wherever they are.
-    ownPaths: [options.settingsFile ?? "", setup.socketPath],
+    // rules or answer prompts, so no rule allows it, wherever they are, by
+    // the path they were named by or, past a link, the one they have.
+    ownPaths: [options.settingsFile ?? setup.socketPath, setup.socketPath].flatMap((file) => [
+      file,
+      realPath(file),
+    ]),
     poller,
     events,
     now: options.now,
@@ -140,17 +159,39 @@ export function createAnswering(options: AnsweringOptions): Answering {
   });
   let problem: string | null = null;
   let listening = false;
+  let stopped = false;
+  let triedAt = 0;
+  /** The try at opening the socket under way, if any. */
+  let trying: Promise<void> | null = null;
+  const now = options.now ?? Date.now;
+
+  async function open(): Promise<void> {
+    const started = await socket.start();
+    triedAt = now();
+    const before = problem;
+    listening = started.ok;
+    problem = started.ok ? null : started.problem;
+    // A wait that began while the other copy had the socket sent its request there.
+    if (started.ok && before !== null) asks.listensNow();
+    if (problem !== null && problem !== before) options.warn?.(problem);
+  }
+
+  function tryToOpen(): Promise<void> {
+    trying ??= open().finally(() => {
+      trying = null;
+    });
+    return trying;
+  }
+
   const answerRoute = createAnswerRoute({ poller, events, asks, now: options.now });
   const answer = createAnswerer({ poller, events, asks, now: options.now });
 
   return {
-    async start() {
-      const started = await socket.start();
-      listening = started.ok;
-      problem = started.ok ? null : started.problem;
-      if (problem !== null) options.warn?.(problem);
-    },
+    start: tryToOpen,
     async stop() {
+      stopped = true;
+      // A socket opened as this stops is closed all the same.
+      if (trying !== null) await trying;
       listening = false;
       await socket.close();
     },
@@ -165,6 +206,10 @@ export function createAnswering(options: AnsweringOptions): Answering {
     },
     observe(snapshot) {
       if (listening) asks.observe(snapshot);
+      // Once the copy that had the socket quits, this one answers in its place.
+      else if (!stopped && problem === ANOTHER_COPY && Math.abs(now() - triedAt) >= TRY_AGAIN_MS) {
+        void tryToOpen();
+      }
     },
     answeredIn: (snapshot) => asks.answeredIn(snapshot),
     // A socket that could not be opened holds no request, so there is nothing

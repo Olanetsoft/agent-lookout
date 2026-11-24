@@ -63,6 +63,43 @@ describe("whether a session is still in the wait that was answered", () => {
     expect(inAnsweredWait(waiting({ statusSince: T0 + 1_500 }), { since: T0 })).toBe(false);
   });
 
+  test("a wait that began from `from` to the answer is its own wait too, and no other is", () => {
+    const wait = { since: T0, from: T0 + 1_000, at: T0 + 2_000 };
+    for (const [since, own] of [
+      [T0, true],
+      [T0 + 999, false],
+      [T0 + 1_000, true],
+      [T0 + 2_000, true],
+      [T0 + 2_001, false],
+    ] as const) {
+      expect(inAnsweredWait(waiting({ statusSince: since }), wait), `${since - T0}`).toBe(own);
+    }
+    expect(inAnsweredWait(waiting({ status: "working" }), wait)).toBe(false);
+  });
+
+  test("past `until` a wait of another process that has the session open is not its own, whenever it began", () => {
+    const wait = { since: T0, pid: 4241, from: T0 + 1_000, at: T0 + 2_000, until: T0 + 5_000 };
+    const own = (pid: number, now: number, of: typeof wait = wait) =>
+      inAnsweredWait(waiting({ statusSince: T0 + 1_500, pid }), of, now);
+    expect([own(4241, T0 + 4_999), own(4242, T0 + 4_999)]).toEqual([true, true]);
+    expect([own(4241, T0 + 5_000), own(4242, T0 + 5_000)]).toEqual([true, false]);
+    // With no other prompt open, and with the process not known.
+    expect(own(4242, T0 + 5_000, { ...wait, until: Infinity })).toBe(true);
+    const { pid: _, ...untold } = wait;
+    expect(inAnsweredWait(waiting({ statusSince: T0 + 1_500 }), untold, T0 + 5_000)).toBe(true);
+  });
+
+  test("past `until` the wait it was given in is another's, and its own wait is not", () => {
+    const wait = { since: T0, from: T0 + 1_000, at: T0 + 2_000, until: T0 + 5_000 };
+    for (const since of [T0, null]) {
+      expect(inAnsweredWait(waiting({ statusSince: since }), wait, T0 + 4_999)).toBe(true);
+      expect(inAnsweredWait(waiting({ statusSince: since }), wait, T0 + 5_000)).toBe(false);
+    }
+    expect(inAnsweredWait(waiting({ statusSince: T0 + 1_500 }), wait, T0 + 5_000)).toBe(true);
+    const untold = { ...wait, since: null };
+    expect(inAnsweredWait(waiting(), untold, T0 + 5_000)).toBe(false);
+  });
+
   test("a time that either side does not know says nothing about the wait", () => {
     expect(inAnsweredWait(waiting({ statusSince: null }), { since: T0 })).toBe(true);
     expect(inAnsweredWait(waiting({ statusSince: T0 + 1_500 }), { since: null })).toBe(true);
@@ -76,6 +113,13 @@ describe("whether a session is still in the wait that was answered", () => {
 });
 
 describe("the answers put to a poll", () => {
+  test("a session in a wait that another prompt may be open in is marked until `until`, and no longer", () => {
+    const answers = new Map([[ID, { ...answeredAt(T0), until: POLL + 1 }]]);
+    expect([...answeredNow(answers, snapshot([waiting()]), POLL).ids]).toEqual([ID]);
+    const { ids, kept } = answeredNow(answers, snapshot([waiting()]), POLL + 1);
+    expect([ids.size, kept.size]).toEqual([0, 0]);
+  });
+
   test("a session still in the wait that was answered is marked, and the answer kept", () => {
     const answers = new Map([[ID, answeredAt(T0)]]);
     const { ids, kept } = answeredNow(answers, snapshot([waiting()]), POLL);
@@ -94,6 +138,14 @@ describe("the answers put to a poll", () => {
       expect(ids.size, JSON.stringify(sessions)).toBe(0);
       expect(kept.size, JSON.stringify(sessions)).toBe(0);
     }
+  });
+
+  test("an answer with `from` is kept past a poll that finds its session working, and let go with the session", () => {
+    const answers = new Map([[ID, { ...answeredAt(T0), from: T0 + 1_000 }]]);
+    const working = waiting({ status: "working", waitingReason: undefined });
+    const { ids, kept } = answeredNow(answers, snapshot([working]), POLL);
+    expect([ids.size, kept]).toEqual([0, answers]);
+    expect(answeredNow(answers, snapshot([]), POLL).kept.size).toBe(0);
   });
 
   test("an answer whose source could not be read this time is kept, and marks nothing", () => {
