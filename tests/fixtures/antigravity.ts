@@ -136,10 +136,10 @@ export function failedTurn(firstIndex: number, start: number): string[] {
 }
 
 /**
- * The counts on a checkpoint's line, of the call that made its summary. The
- * adapter must never show them as the session's.
+ * The counts on a checkpoint's line, which are not a reply's. The adapter must
+ * never show them as the session's.
  */
-export const SUMMARY_COUNTS: ReplyCounts = {
+export const CHECKPOINT_COUNTS: ReplyCounts = {
   input_tokens: 171_000,
   cache_read_tokens: 11_000,
   output_tokens: 5_100,
@@ -157,7 +157,7 @@ export function checkpoint(index: number, ms: number, status = "DONE"): string {
     status,
     source: "SYSTEM",
     at: ms,
-    counts: SUMMARY_COUNTS,
+    counts: CHECKPOINT_COUNTS,
   });
 }
 

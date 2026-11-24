@@ -6,6 +6,7 @@ import {
   readStepLine,
   TAIL_LIMIT_BYTES,
 } from "@collector/adapters/antigravity/shared/transcriptFile";
+import { ANTIGRAVITY_STEP_TYPES } from "@core/mapping/antigravityMapping";
 import {
   AGY_HOME,
   checkpoint,
@@ -738,6 +739,27 @@ describe("a finished checkpoint", () => {
     expect(state.tokens).toEqual(COUNTS_A);
     const fresh = setUp([...turn, line].join(""));
     expect(await fresh.read()).toEqual(state);
+  });
+
+  test("is the only finished step that clears the counts", async () => {
+    const types = [
+      ...ANTIGRAVITY_STEP_TYPES.filter(
+        (type) => type !== "CHECKPOINT" && type !== "PLANNER_RESPONSE",
+      ),
+      "CHECKPOINTS",
+      "CHECKPOINT_REVERTED",
+      "PRE_CHECKPOINT",
+    ];
+    for (const type of types) {
+      const line = step({ index: 2, type, at: START + 10 * SECOND, counts: B });
+      const onward = setUp(turn.join(""));
+      await onward.read();
+      onward.files.append(FILE, line);
+      const state = await onward.read();
+      expect(state.tokens, type).toEqual(COUNTS_A);
+      const fresh = setUp([...turn, line].join(""));
+      expect(await fresh.read(), type).toEqual(state);
+    }
   });
 
   test("is still passed over for the status, and counts for when agy last wrote a step", async () => {

@@ -33,8 +33,8 @@ import type { FileInfo, OpenFile, ReadOnlyIo } from "../../../files/readOnlyIo.t
  *   line. They are held apart from the last step, so a tool step after the
  *   reply keeps the reply's counts. A finished checkpoint, as a compaction
  *   writes, clears them until the next reply that names its counts
- *   (`clearsCounts`). Its own line carries counts too, of the call that made
- *   its summary, and those are never taken.
+ *   (`clearsCounts`). Its own line carries counts too, not a reply's, and
+ *   those are never taken.
  *
  * `content`, `thinking`, `media`, `source` and the tool calls themselves are
  * never kept: each line is parsed, those fields and the three counts are
@@ -214,9 +214,9 @@ function countsForIndex(step: TranscriptStep): boolean {
  * that is done. A compaction, the person's `/compact` or agy's own, ends in
  * one, and the context those replies were given is then no longer the one in
  * use. A bare `/compact` stops there, so until the next reply there are no
- * counts. Told by its type and status alone: the counts on its line are the
- * summary's, not a reply's. A checkpoint still under way, stopped or failed
- * takes back nothing, nor does one agy cleared.
+ * counts. Told by its type and status alone: the counts on its line are not a
+ * reply's. A checkpoint still under way, stopped or failed takes back nothing,
+ * nor does one agy cleared.
  */
 function clearsCounts(step: TranscriptStep): boolean {
   return step.type === "CHECKPOINT" && step.status === "DONE";
