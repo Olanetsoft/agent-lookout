@@ -43,6 +43,7 @@ import {
   codexAdapterFor,
   handClock,
   healthy,
+  inTimeZone,
   memoryFiles,
   noLockFolder,
   watching,
@@ -1274,25 +1275,172 @@ describe("which sessions are listed, and for how long", () => {
     const clock = handClock();
     const adapter = codexAdapterFor(files, { now: clock.now });
 
+    // The first poll lists every folder, whatever is open.
     await adapter.poll();
     expect(listings(files)).toBe(1);
-    for (let after = 2_000; after < INDEX_REFRESH_MS; after += 2_000) {
-      clock.set(NOW + after);
-      await adapter.poll();
-    }
-    expect(listings(files)).toBe(1);
-    clock.set(NOW + INDEX_REFRESH_MS);
+    const listed = NOW + INDEX_PROMPT_REFRESH_MS;
+    clock.set(listed);
     await adapter.poll();
     expect(listings(files)).toBe(2);
+    for (let after = 2_000; after < INDEX_REFRESH_MS; after += 2_000) {
+      clock.set(listed + after);
+      await adapter.poll();
+    }
+    expect(listings(files)).toBe(2);
+    clock.set(listed + INDEX_REFRESH_MS);
+    await adapter.poll();
+    expect(listings(files)).toBe(3);
 
     // A second session opens two seconds later: listed again once the shorter wait has passed.
     files.write(lockPath(CODEX_HOME, threadId("e2")), "");
-    clock.set(NOW + INDEX_REFRESH_MS + 2_000);
-    await adapter.poll();
-    expect(listings(files)).toBe(2);
-    clock.set(NOW + INDEX_REFRESH_MS + INDEX_PROMPT_REFRESH_MS);
+    clock.set(listed + INDEX_REFRESH_MS + 2_000);
     await adapter.poll();
     expect(listings(files)).toBe(3);
+    clock.set(listed + INDEX_REFRESH_MS + INDEX_PROMPT_REFRESH_MS);
+    await adapter.poll();
+    expect(listings(files)).toBe(4);
+  });
+
+  describe("past the day its folder is listed", () => {
+    /** A time on these days of November 2026, in UTC. The 16th is a Monday. */
+    const on = (day: number, hour: number, minute = 0, second = 0) =>
+      Date.UTC(2026, 10, day, hour, minute, second);
+    const meta = (time: number, thread: string) =>
+      metaLine(time, { id: thread, cwd: "/Users/example/code/demo" });
+
+    test("a finished session stays until 24 hours after its last line, and after a restart too", async () => {
+      await inTimeZone("UTC", async () => {
+        const files = emptyCodex();
+        const last = on(17, 23);
+        addSession(files, {
+          thread: ids.finished,
+          created: "2026-11-16T09-00-00",
+          lines: [meta(on(16, 9), ids.finished), turnLine(last, "task_complete")],
+          mtimeMs: last,
+        });
+        const clock = handClock(on(17, 23, 30));
+        const adapter = codexAdapterFor(files, { now: clock.now });
+        const shown = async (time: number, one = adapter) => {
+          clock.set(time);
+          return statuses((await one.poll()).sessions);
+        };
+        const finished = { [ids.finished]: "finished" };
+        expect(await shown(on(17, 23, 30))).toEqual(finished);
+        // Its file is two dates old from here on.
+        expect(await shown(on(18, 0, 0, 2))).toEqual(finished);
+        expect(await shown(last + FINISHED_RETENTION_MS - 1)).toEqual(finished);
+        expect(
+          await shown(last + FINISHED_RETENTION_MS - 1, codexAdapterFor(files, { now: clock.now })),
+        ).toEqual(finished);
+        expect(await shown(last + FINISHED_RETENTION_MS)).toEqual({});
+      });
+    });
+
+    test("a resumed session that was reverted keeps its newest file", async () => {
+      await inTimeZone("UTC", async () => {
+        const files = emptyCodex();
+        // Begun on Thursday, and resumed on Monday, when its file is found by its lock.
+        addSession(files, {
+          thread: ids.reverted,
+          created: "2026-11-12T09-00-00",
+          lines: [meta(on(12, 9), ids.reverted), turnLine(on(12, 9, 5), "task_complete")],
+          mtimeMs: on(12, 9, 5),
+          lock: true,
+        });
+        const clock = handClock(on(16, 9));
+        const adapter = codexAdapterFor(files, { now: clock.now });
+        const shown = async (time: number) => {
+          clock.set(time);
+          return (await adapter.poll()).sessions.map((one) => [one.status, one.statusSince]);
+        };
+        expect(await shown(on(16, 9))).toEqual([["idle", on(12, 9, 5)]]);
+
+        // Reverted there, which starts a file in Monday's folder.
+        const newest = addSession(files, {
+          thread: ids.reverted,
+          created: "2026-11-16T10-00-00",
+          rolloutId: revertedRolloutId,
+          lines: [meta(on(16, 10), ids.reverted), turnLine(on(16, 10), "task_started")],
+          mtimeMs: on(16, 10),
+        });
+        expect(await shown(on(16, 10, 0, 2))).toEqual([["working", on(16, 10)]]);
+        const started = on(17, 23, 59);
+        files.append(newest, rollout(turnLine(started, "task_started")), { mtimeMs: started });
+        expect(await shown(on(17, 23, 59, 2))).toEqual([["working", started]]);
+        expect(await shown(on(18, 0, 0, 2))).toEqual([["working", started]]);
+        // Closed, it finishes, and does not go back to the older file or leave the list.
+        files.remove(lockPath(CODEX_HOME, ids.reverted));
+        expect(await shown(on(18, 0, 5))).toEqual([["finished", started]]);
+      });
+    });
+
+    test("one opened again days later is shown from its newest file, made after the folders were listed", async () => {
+      await inTimeZone("UTC", async () => {
+        const files = emptyCodex();
+        addSession(files, {
+          thread: ids.reverted,
+          created: "2026-11-16T09-00-00",
+          lines: [meta(on(16, 9), ids.reverted), turnLine(on(16, 9), "task_complete")],
+          mtimeMs: on(16, 9),
+        });
+        const clock = handClock(on(16, 9, 30));
+        const adapter = codexAdapterFor(files, { now: clock.now });
+        await adapter.poll();
+        const newest = addSession(files, {
+          thread: ids.reverted,
+          created: "2026-11-16T10-00-00",
+          rolloutId: revertedRolloutId,
+          lines: [meta(on(16, 10), ids.reverted), turnLine(on(16, 10), "task_complete")],
+          mtimeMs: on(16, 10),
+        });
+        for (const time of [on(16, 10, 1), on(19, 9)]) {
+          clock.set(time);
+          await adapter.poll();
+        }
+        // Nothing was written for days, so nothing is listed. Then it is resumed.
+        files.append(newest, rollout(turnLine(on(19, 10), "task_started")), {
+          mtimeMs: on(19, 10),
+        });
+        files.write(lockPath(CODEX_HOME, ids.reverted), "");
+        clock.set(on(19, 10, 0, 2));
+        expect((await adapter.poll()).sessions).toMatchObject([
+          { status: "working", statusSince: on(19, 10) },
+        ]);
+      });
+    });
+
+    test("a subagent's file counts as its session's write past it too", async () => {
+      await inTimeZone("UTC", async () => {
+        const files = emptyCodex();
+        addSession(files, {
+          thread: ids.working,
+          created: "2026-11-16T09-00-00",
+          lines: [meta(on(16, 9), ids.working), turnLine(on(16, 9), "task_started")],
+          mtimeMs: on(16, 9),
+          lock: true,
+        });
+        const subagent = addSession(files, {
+          thread: ids.subagent,
+          created: "2026-11-16T09-01-00",
+          lines: [
+            metaLine(on(16, 9, 1), {
+              id: ids.subagent,
+              source: { subagent: { thread_spawn: { parent_thread_id: ids.working, depth: 1 } } },
+              parent_thread_id: ids.working,
+            }),
+          ],
+          mtimeMs: on(16, 9, 1),
+        });
+        const clock = handClock(on(16, 9, 2));
+        const adapter = codexAdapterFor(files, { now: clock.now });
+        const wrote = async (time: number) => {
+          files.append(subagent, rollout(messageLine(time)), { mtimeMs: time });
+          clock.set(time + 1_000);
+          expect((await adapter.poll()).sessions).toMatchObject([{ lastWriteAt: time }]);
+        };
+        for (const time of [on(16, 9, 2), on(17, 8), on(17, 23), on(18, 1)]) await wrote(time);
+      });
+    });
   });
 });
 

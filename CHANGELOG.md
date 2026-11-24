@@ -28,6 +28,7 @@ Changes that a user of Agent Lookout would notice, newest first.
 - When two Claude Code processes have one session open, its row follows the one that needs you, then one that works, then the rest, the newest first, and Jump, Stop, Allow and Deny act on that process. Before, it followed the one whose file came first by name, so a wait in the other could go unseen, unannounced and without Allow and Deny. (#456)
 - A Claude Code session that needs you says what it asks only when that is known. The line, and the notification, no longer name a command that is already running while a background subagent asks, or another tool of the same message, and the Mac app's menu shows a held request's own text alone. (#458)
 - Agent Lookout reads Claude Code's folder from Claude Code's own `CLAUDE_CONFIG_DIR` when it is set where Agent Lookout starts and `AGENT_LOOKOUT_CLAUDE_HOME` is not: its sessions, with their app, what they ask, their last message, Stop, Allow and Deny. Before, only the `claude` command followed it, so those were missing, and sessions under `~/.claude` could disappear. Only one folder is read. (#457)
+- A Codex session stays listed until 24 hours after Codex last wrote to it, also past the second midnight after it began and after Agent Lookout is restarted, and a resumed session that was reverted keeps its newest file, with its own status and time. On the night after a clock change, yesterday's sessions stay listed too. (#459)
 
 ## 0.2.30 - 2026-11-24
 

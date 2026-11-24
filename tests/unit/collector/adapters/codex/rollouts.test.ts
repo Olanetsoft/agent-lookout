@@ -92,12 +92,19 @@ describe("recentDayFolders", () => {
     }
   });
 
-  test("on a day with an extra hour, a folder is not listed twice", async () => {
+  test("on a day with an extra hour, or after one an hour short, yesterday is the date before", async () => {
     await inTimeZone("America/New_York", () => {
       // 1 November 2026 has 25 hours in New York, so 24 hours before 23:30 is the same date.
       const lateOnTheLongDay = new Date(2026, 10, 1, 23, 30).getTime();
       expect(recentDayFolders(SESSIONS, lateOnTheLongDay).map(asWritten)).toEqual([
         `${SESSIONS}/2026/11/01`,
+        `${SESSIONS}/2026/10/31`,
+      ]);
+      // 8 March 2026 has 23, so 24 hours before half past midnight on the 9th is the 7th.
+      const afterTheShortDay = new Date(2026, 2, 9, 0, 30).getTime();
+      expect(recentDayFolders(SESSIONS, afterTheShortDay).map(asWritten)).toEqual([
+        `${SESSIONS}/2026/03/09`,
+        `${SESSIONS}/2026/03/08`,
       ]);
     });
   });
@@ -202,18 +209,48 @@ describe("createRolloutFinder", () => {
     expect(files.calls).toEqual([]);
   });
 
-  test("a thread already in the list is found again without listing anything", async () => {
+  test("a thread already in the list is found again without listing anything, for 30 seconds", async () => {
     const files = codexFolder();
     const finder = createRolloutFinder({ sessionsDir: SESSIONS, io: files.io });
     await finder.locate([ids.resumed], NOW);
     files.forget();
 
-    expect(await finder.locate([ids.resumed], NOW + 10 * INDEX_REFRESH_MS)).toHaveLength(1);
+    expect(await finder.locate([ids.resumed], NOW + INDEX_REFRESH_MS - 1)).toHaveLength(1);
     expect(files.calls).toEqual([]);
   });
 
   /** How many times every day folder was listed: once per listing of the year folder. */
   const listings = (files: MemoryFiles) => files.count("readdir", (dir) => dir === SESSIONS);
+
+  test("a thread newly asked for, whose newer file was made since the list, is found in both", async () => {
+    const files = codexFolder();
+    const finder = createRolloutFinder({ sessionsDir: SESSIONS, io: files.io });
+    await finder.locate([ids.old], NOW);
+    const newer = rolloutPath(CODEX_HOME, "2026-09-25T08-00-00", ids.resumed, revertedRolloutId);
+    files.write(newer, "");
+    const found = async (after: number) =>
+      written(await finder.locate([ids.resumed], NOW + after)).map((ref) => ref.path);
+    const older = rolloutPath(CODEX_HOME, "2026-09-20T08-00-00", ids.resumed);
+    expect(await found(INDEX_PROMPT_REFRESH_MS - 1)).toEqual([older]);
+    expect(await found(INDEX_PROMPT_REFRESH_MS)).toEqual([older, newer]);
+    expect(listings(files)).toBe(2);
+  });
+
+  test("all gives the files in every day folder, opens none of them, and leaves the list as it is", async () => {
+    const files = codexFolder();
+    const finder = createRolloutFinder({ sessionsDir: SESSIONS, io: files.io });
+    expect(written(await finder.all(NOW)).map((ref) => ref.path)).toEqual([
+      rolloutPath(CODEX_HOME, "2025-12-31T08-00-00", ids.old),
+      rolloutPath(CODEX_HOME, "2026-09-20T08-00-00", ids.resumed),
+      rolloutPath(CODEX_HOME, "2026-09-30T22-00-00", ids.idle),
+      rolloutPath(CODEX_HOME, "2026-10-01T07-00-00", ids.reverted),
+      rolloutPath(CODEX_HOME, "2026-10-01T10-30-00", ids.reverted, revertedRolloutId),
+      rolloutPath(CODEX_HOME, "2026-10-01T09-00-00", ids.working),
+    ]);
+    expect(files.calls.every((call) => call.method === "readdir")).toBe(true);
+    expect(await finder.locate([ids.old], NOW)).toHaveLength(1);
+    expect(listings(files)).toBe(1);
+  });
 
   test("a thread that is not found makes the list again at most every 30 seconds", async () => {
     const files = codexFolder();

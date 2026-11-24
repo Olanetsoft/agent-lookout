@@ -227,8 +227,10 @@ export function createCodexAdapter(options: CodexAdapterOptions = {}): CodexAdap
   let absentAt: number | null = null;
   /** True once the Codex folder has been seen, until the sessions folder goes missing. */
   let homeSeen = false;
-  /** Session files found through a lock in an older day folder, kept while they matter. By path. */
+  /** Session files found, kept while they matter, past the day their folder is listed. By path. */
   const tracked = new Map<string, RolloutRef>();
+  /** Whether every day folder has been looked in for the files written to in the last day. */
+  let lookedBack = false;
   /** What Sources says of the last-message read: when it reads the end of a session's file, or Off. */
   const lastMessageRead =
     lastMessagesOff === null ? "end of a session's file, while its details are open" : "Off";
@@ -345,18 +347,19 @@ export function createCodexAdapter(options: CodexAdapterOptions = {}): CodexAdap
     const locks = await readWriterLocks(locksDir, io);
     const locked = (threadId: string) => locks.supported && locks.open.has(threadId);
 
-    // The files to look at: today's and yesterday's, and those of open
-    // sessions that sit in older folders, as a resumed session's does.
+    // The files to look at: today's and yesterday's, the ones found before that
+    // were written to in the last day, and those of open sessions that sit in
+    // older folders, as a resumed session's does. The first poll looks at them
+    // all, once, so what was listed before a restart is listed after it.
     const candidates = new Map<string, RolloutRef>();
+    for (const ref of lookedBack ? [] : await finder.all(checkedAt)) candidates.set(ref.path, ref);
+    lookedBack = true;
     for (const ref of await finder.recent(checkedAt)) candidates.set(ref.path, ref);
     for (const ref of tracked.values()) candidates.set(ref.path, ref);
     if (locks.supported) {
       const found = new Set([...candidates.values()].map((ref) => ref.threadId));
       const elsewhere = [...locks.open].filter((threadId) => !found.has(threadId)).sort();
-      for (const ref of await finder.locate(elsewhere, checkedAt)) {
-        tracked.set(ref.path, ref);
-        candidates.set(ref.path, ref);
-      }
+      for (const ref of await finder.locate(elsewhere, checkedAt)) candidates.set(ref.path, ref);
     }
 
     const names = await sessionIndex.names();
@@ -387,6 +390,7 @@ export function createCodexAdapter(options: CodexAdapterOptions = {}): CodexAdap
         tracked.delete(ref.path);
         continue;
       }
+      tracked.set(ref.path, ref);
 
       let state: RolloutState;
       try {
