@@ -1363,14 +1363,14 @@ function entityAt(bytes: Buffer, at: number): { code: number; end: number } | nu
  * reference's label ends, `[`, a label one of `labels` defines and `]`. A
  * collapsed reference's `[]` ends there too, when the text since `opened`,
  * the byte after the last `[` outside code, is a label `labels` defines. `at`
- * when none does.
+ * when none does, or when `opened` is -1, since no `[` comes before the `]`.
  */
 function linkPartEnd(bytes: Buffer, at: number, labels: readonly Buffer[], opened: number): number {
+  if (opened === -1) return at;
   const next = byteAt(bytes, at + 1);
   if (next === OPENING_BRACKET) {
     if (byteAt(bytes, at + 2) === CLOSING_BRACKET) {
-      const key =
-        opened === -1 || at - opened > MOST_LABEL_BYTES ? null : labelKey(bytes, opened, at);
+      const key = at - opened > MOST_LABEL_BYTES ? null : labelKey(bytes, opened, at);
       return key !== null && labels.some((defined) => defined.equals(key)) ? at + 3 : at;
     }
     const label = labelEnd(bytes, at + 1);
@@ -1604,9 +1604,9 @@ function isPromptName(walked: Buffer, name: string): boolean {
 /**
  * Whether `name` is the first prompt that is not whitespace alone among the
  * whole lines of `head`, the bytes read from the start of a session's file,
- * whole or cut with `…`. False when no such prompt is whole in them.
+ * whole or cut with `…`. Null when no such prompt is whole in them.
  */
-export function isFirstPromptName(head: Buffer, name: string): boolean {
+export function isFirstPromptName(head: Buffer, name: string): boolean | null {
   let start = 0;
   let newline = head.indexOf(NEWLINE);
   while (newline !== -1) {
@@ -1620,5 +1620,5 @@ export function isFirstPromptName(head: Buffer, name: string): boolean {
     start = newline + 1;
     newline = head.indexOf(NEWLINE, start);
   }
-  return false;
+  return null;
 }

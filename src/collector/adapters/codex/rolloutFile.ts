@@ -32,7 +32,8 @@ import { isFirstPromptName } from "./firstPrompt.ts";
  * - When the session has a name, whether it is the first prompt in the bytes
  *   the head was searched in, whole or cut with `…`, compared as bytes
  *   (`firstPrompt.ts`). The head is read again for it only when the name
- *   changes.
+ *   changes, or when the file grows within those bytes before they hold a
+ *   whole prompt.
  *
  * Nothing else is kept: no prompt, reply, command or file content. `JSON.parse`
  * runs only on a line that names `session_meta`, or names `event_msg` and looks
@@ -40,8 +41,8 @@ import { isFirstPromptName } from "./firstPrompt.ts";
  *
  * Every read is bounded: 2 MiB for the head and 8 MiB for the tail. After the
  * first read, only what was appended since is read, and the head again, as far
- * as before, when the name changes. A last line that is still being written is
- * left for the next read.
+ * as before, for a name. A last line that is still being written is left for
+ * the next read.
  */
 
 /** The most of a file's start that is searched for its `session_meta` line. */
@@ -113,8 +114,9 @@ export interface RolloutState {
   tokens: TokenCounts | null;
   /**
    * Set when the name `read` was given is the session's first prompt, whole
-   * or cut with `…`, as Codex saves one when its model gives no title. Such a
-   * name is not shown.
+   * or cut with `…`, as Codex saves one when its model gives no title, or may
+   * be: its head could not be read to compare them, or holds no whole prompt
+   * and ends with a line still being written. Such a name is not shown.
    */
   nameIsPrompt?: true;
 }
@@ -405,9 +407,25 @@ interface Cached extends Omit<RolloutState, "nameIsPrompt"> {
   offset: number | null;
   /** How far the head was read to find the `session_meta` line, and is read again to compare a name. */
   headLimit: number;
-  /** The name last compared with the first prompt, and whether it is that prompt. */
+  /** The name last compared with the first prompt, and whether it is that prompt or may be. */
   name: string | undefined;
   nameIsPrompt: boolean;
+  /** How much of the head was compared when it held no whole prompt. Null when it held one, or with no name. */
+  noPromptWithin: number | null;
+}
+
+/** A name compared with the first prompt in `head`, the file's start as far as `limit`. */
+function compared(head: Buffer, limit: number, name: string | undefined) {
+  const verdict = name === undefined ? false : isFirstPromptName(head, name);
+  if (verdict !== null) return { name, nameIsPrompt: verdict, noPromptWithin: null };
+  // The line being written can be the prompt, so the name waits for its end.
+  const writing = head.byteLength < limit && head.at(-1) !== NEWLINE;
+  return { name, nameIsPrompt: writing, noPromptWithin: head.byteLength };
+}
+
+/** Whether a file has grown, within the bytes its head is read to, since they were found to hold no whole prompt. */
+function mayHoldPromptNow({ noPromptWithin, headLimit, size }: Cached): boolean {
+  return noPromptWithin !== null && noPromptWithin < Math.min(headLimit, size);
 }
 
 function stateOf(cached: Cached): RolloutState {
@@ -427,8 +445,9 @@ export interface RolloutReader {
   /**
    * What is known about a file, read only as far as it changed since the last
    * call. `info` is what a `lstat` of it said this poll. `name` is the
-   * session's name, compared with its first prompt when it changes. Throws
-   * when the file cannot be read; the caller skips it for this poll.
+   * session's name, compared with its first prompt when it changes, and again
+   * as the file grows until its head holds one. Throws when the file cannot be
+   * read; the caller skips it for this poll.
    */
   read(file: string, info: FileInfo, name?: string): Promise<RolloutState>;
   /** Forgets every file not in this set. */
@@ -443,13 +462,12 @@ export function createRolloutReader(io: ReadOnlyIo): RolloutReader {
     try {
       const { info } = handle;
       const head = await readHead(handle, info.size);
-      const promptName = name !== undefined && isFirstPromptName(head.bytes, name);
+      const named = compared(head.bytes, head.limit, name);
       const tail = await scanTail(handle, info.size);
       return {
+        ...named,
         meta: head.meta,
         headLimit: head.limit,
-        name,
-        nameIsPrompt: promptName,
         lastTurn: tail.lastTurn,
         lastTurnAt: tail.lastTurnAt,
         lastTurnImported: tail.lastTurnImported,
@@ -520,21 +538,40 @@ export function createRolloutReader(io: ReadOnlyIo): RolloutReader {
     }
   }
 
-  /**
-   * Compares a name that changed with the first prompt, in the head read
-   * again as far as before: the name comes after the prompt, often polls later.
-   */
-  async function compareName(file: string, cached: Cached, name: string | undefined) {
-    if (cached.meta === null || name === undefined) return { ...cached, name, nameIsPrompt: false };
+  /** The head of a file read before, as far as before, or null when another file is there now. */
+  async function headAgain(file: string, cached: Cached): Promise<Buffer | null> {
     const handle = await io.openRegular(file);
     try {
       const { info } = handle;
-      if (info.ino !== cached.ino) throw new Error("The file changed while it was read.");
-      const bytes = await readExactly(handle, 0, Math.min(cached.headLimit, info.size));
-      return { ...cached, name, nameIsPrompt: isFirstPromptName(bytes, name) };
+      if (info.ino !== cached.ino) return null;
+      return await readExactly(handle, 0, Math.min(cached.headLimit, info.size));
     } finally {
       await handle.close();
     }
+  }
+
+  /**
+   * Compares a name with the first prompt, in the head read again as far as
+   * before: the name comes after the prompt, often polls later, and can come
+   * before the prompt's line is whole. A head that cannot be read leaves the
+   * rest of what is known, and the name not shown, until the next poll.
+   */
+  async function compareName(
+    file: string,
+    cached: Cached,
+    name: string | undefined,
+  ): Promise<Cached> {
+    if (cached.meta === null || name === undefined) {
+      return { ...cached, name, nameIsPrompt: false, noPromptWithin: null };
+    }
+    let head: Buffer | null;
+    try {
+      head = await headAgain(file, cached);
+    } catch {
+      return { ...cached, name: undefined, nameIsPrompt: true, noPromptWithin: null };
+    }
+    if (head === null) throw new Error("The file changed while it was read.");
+    return { ...cached, ...compared(head, cached.headLimit, name) };
   }
 
   return {
@@ -547,7 +584,7 @@ export function createRolloutReader(io: ReadOnlyIo): RolloutReader {
         cached.mtimeMs === info.mtimeMs
           ? cached
           : (cached && (await readOnward(file, cached, info))) || (await readFresh(file, name));
-      if (next.name !== name) next = await compareName(file, next, name);
+      if (next.name !== name || mayHoldPromptNow(next)) next = await compareName(file, next, name);
       cache.set(file, next);
       return stateOf(next);
     },

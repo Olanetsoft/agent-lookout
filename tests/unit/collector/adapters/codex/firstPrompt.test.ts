@@ -992,6 +992,15 @@ describe("a name that is not the first prompt, whole or cut with …, is kept", 
     expect(isFirstPromptName(head(...lines), "Fix the demo note")).toBe(true);
   });
 
+  test("what follows a `]` with no `[` before it, which is no link, so its text counts", () => {
+    const lines = legacy("Fix ](cache) the build");
+    expect(isFirstPromptName(head(...lines), "Fix the build")).toBe(false);
+    expect(isFirstPromptName(head(...lines), "Fix ](cache) the build")).toBe(true);
+    const escaped = paginated("Fix \\[a](cache) the [docs](/docs) build");
+    expect(isFirstPromptName(head(...escaped), "Fix [a] the docs build")).toBe(false);
+    expect(isFirstPromptName(head(...escaped), "Fix [a](cache) the docs build")).toBe(true);
+  });
+
   test("a first prompt of a fence alone, from which Codex makes no title, is still the one compared", () => {
     const lines = [...legacy("```"), ...legacy("Fix it")];
     expect(isFirstPromptName(head(...lines), "Fix it")).toBe(false);
@@ -1033,9 +1042,9 @@ describe("a name made from text Codex takes out or changes in a way not followed
   });
 });
 
-describe("with no prompt in reach, the name is kept", () => {
+describe("with no prompt in reach, there is no verdict", () => {
   test("no prompt line in the bytes read", () => {
-    expect(isFirstPromptName(head(), "Fix the flaky demo test")).toBe(false);
+    expect(isFirstPromptName(head(), "Fix the flaky demo test")).toBeNull();
   });
 
   test("the response_item copy alone is never compared", () => {
@@ -1044,30 +1053,28 @@ describe("with no prompt in reach, the name is kept", () => {
         head(messageLine(START, "Fix the flaky demo test")),
         "Fix the flaky demo test",
       ),
-    ).toBe(false);
+    ).toBeNull();
   });
 
   test("a prompt line cut off where the bytes read end", () => {
     const whole = head(...legacy("Fix the flaky demo test"));
     expect(
       isFirstPromptName(whole.subarray(0, whole.byteLength - 1), "Fix the flaky demo test"),
-    ).toBe(false);
-    expect(isFirstPromptName(whole.subarray(0, whole.byteLength - 10), "Fix the flaky")).toBe(
-      false,
-    );
+    ).toBeNull();
+    expect(isFirstPromptName(whole.subarray(0, whole.byteLength - 10), "Fix the flaky")).toBeNull();
   });
 
   test("a prompt line written inside another line, escaped, is never taken for one", () => {
     const inside = messageLine(START, `${userMessageLine(START, "Fix the flaky demo test")}\n`);
-    expect(isFirstPromptName(head(inside), "Fix the flaky demo test")).toBe(false);
+    expect(isFirstPromptName(head(inside), "Fix the flaky demo test")).toBeNull();
   });
 
   test("a line that begins as a prompt line but is not one, or not whole JSON", () => {
     const name = "Fix the flaky demo test";
     const broken = `${userMessageLine(START, name).slice(0, -1)},}`;
     const reply = userItemLine(START, name).replace('"UserMessage"', '"AgentMessage"');
-    expect(isFirstPromptName(head(broken), name)).toBe(false);
-    expect(isFirstPromptName(head(reply), name)).toBe(false);
+    expect(isFirstPromptName(head(broken), name)).toBeNull();
+    expect(isFirstPromptName(head(reply), name)).toBeNull();
   });
 
   test("a line not laid out as Codex writes one, or of another kind with a prompt's start inside it", () => {
@@ -1083,7 +1090,7 @@ describe("with no prompt in reach, the name is kept", () => {
       type: "response_item",
       payload: { type: "user_message", message: name },
     });
-    expect(isFirstPromptName(head(reordered), name)).toBe(false);
-    expect(isFirstPromptName(head(nested), name)).toBe(false);
+    expect(isFirstPromptName(head(reordered), name)).toBeNull();
+    expect(isFirstPromptName(head(nested), name)).toBeNull();
   });
 });

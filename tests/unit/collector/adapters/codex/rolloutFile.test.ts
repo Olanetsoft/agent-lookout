@@ -726,6 +726,84 @@ describe("a name that is the first prompt", () => {
     expect(files.opened()).toEqual([]);
   });
 
+  test("a name that comes before the prompt's line is written is compared once it is, and then no more", async () => {
+    const files = memoryFiles();
+    files.write(FILE, rollout(metaLine(START), turnLine(START, "task_started")));
+    const reader = createRolloutReader(files.io);
+    expect(await reader.read(FILE, await infoOf(files), PROMPT)).not.toHaveProperty("nameIsPrompt");
+
+    // Nothing was added, so nothing is read.
+    files.forget();
+    expect(await reader.read(FILE, await infoOf(files), PROMPT)).not.toHaveProperty("nameIsPrompt");
+    expect(files.opened()).toEqual([]);
+
+    // The response_item copy is not the prompt, and the line after it is.
+    files.append(FILE, rollout(messageLine(START, PROMPT)));
+    expect(await reader.read(FILE, await infoOf(files), PROMPT)).not.toHaveProperty("nameIsPrompt");
+    files.append(FILE, rollout(userMessageLine(START, PROMPT)));
+    expect((await reader.read(FILE, await infoOf(files), PROMPT)).nameIsPrompt).toBe(true);
+
+    files.forget();
+    files.append(FILE, rollout(turnLine(START + MINUTE, "task_complete")));
+    expect((await reader.read(FILE, await infoOf(files), PROMPT)).nameIsPrompt).toBe(true);
+    expect(files.reads.some((read) => read.position === 0)).toBe(false);
+  });
+
+  test.each([
+    ["the first prompt", PROMPT, true],
+    ["another name", "Demo test fix", undefined],
+  ])(
+    "%s is not shown while the prompt's line is being written, and is compared once it ends",
+    async (_, name, verdict) => {
+      const files = memoryFiles();
+      const whole = promptFile();
+      files.write(FILE, whole.slice(0, -1));
+      const reader = createRolloutReader(files.io);
+      const during = await reader.read(FILE, await infoOf(files), name);
+      expect(during).toMatchObject({ lastTurn: "task_started", nameIsPrompt: true });
+      expect((await reader.read(FILE, await infoOf(files), name)).nameIsPrompt).toBe(true);
+
+      files.append(FILE, whole.slice(-1));
+      expect((await reader.read(FILE, await infoOf(files), name)).nameIsPrompt).toBe(verdict);
+
+      // A whole prompt was compared, so a line being written after it hides nothing.
+      files.forget();
+      files.append(FILE, turnLine(START + MINUTE, "task_complete"));
+      expect((await reader.read(FILE, await infoOf(files), name)).nameIsPrompt).toBe(verdict);
+      expect(files.reads.some((read) => read.position === 0)).toBe(false);
+    },
+  );
+
+  test("a name with no prompt in the whole of the head is shown, and the head is not read again as the file grows past it", async () => {
+    const files = memoryFiles();
+    const context = messageLine(START, "z".repeat(300 * 1024), "developer");
+    files.write(FILE, rollout(metaLine(START), context).slice(0, 256 * 1024));
+    const reader = createRolloutReader(files.io);
+    // The head's last line is cut off, but it has no room for the prompt.
+    expect(await reader.read(FILE, await infoOf(files), PROMPT)).not.toHaveProperty("nameIsPrompt");
+    files.forget();
+    files.append(FILE, "z");
+    expect(await reader.read(FILE, await infoOf(files), PROMPT)).not.toHaveProperty("nameIsPrompt");
+    expect(files.reads.some((read) => read.position === 0)).toBe(false);
+  });
+
+  test("a head that cannot be read for a name leaves the rest of the session, with no name until it can", async () => {
+    const files = memoryFiles();
+    files.write(FILE, promptFile());
+    const reader = createRolloutReader(files.io);
+    const before = await reader.read(FILE, await infoOf(files));
+
+    files.failOpen(FILE);
+    for (const name of [PROMPT, "Demo test fix", "Demo test fix"]) {
+      const state = await reader.read(FILE, await infoOf(files), name);
+      expect(state).toEqual({ ...before, nameIsPrompt: true });
+    }
+    files.heal(FILE);
+    expect(await reader.read(FILE, await infoOf(files), "Demo test fix")).toEqual(before);
+    expect((await reader.read(FILE, await infoOf(files), PROMPT)).nameIsPrompt).toBe(true);
+    expect(files.openHandles()).toBe(0);
+  });
+
   test("a file put in place of the one read is not compared, and the poll skips it", async () => {
     const files = memoryFiles();
     files.write(FILE, promptFile());
