@@ -191,6 +191,11 @@ function parseEvents(data: unknown): SessionEvent[] {
   return events;
 }
 
+/** The events after a moment, or every one for 0. */
+function eventsSince(since: number): Promise<SessionEvent[]> {
+  return getJson(`/api/events?since=${since}`).then(parseEvents);
+}
+
 function parseHistory(data: unknown): CollectorHistory {
   const history = readHistory(data);
   if (!history) {
@@ -277,28 +282,31 @@ export function createCollectorStore(options: CollectorStoreOptions = {}): Colle
     if (inFlight) return;
     inFlight = true;
     try {
-      const since = state.events[0]?.at ?? 0;
       const askedAt = now();
       const wholeHour =
         hourCurrentAt === null || askedAt - hourCurrentAt > HISTORY_WINDOW_MS - STALE_AFTER_MS;
-      const [sessions, events, history] = await Promise.allSettled([
+      const [sessions, newer, history] = await Promise.allSettled([
         getJson("/api/sessions").then(parseSnapshot),
-        getJson(`/api/events?since=${since}`).then(parseEvents),
+        eventsSince(state.events[0]?.at ?? 0),
         getJson(`/api/history?windowMs=${wholeHour ? HISTORY_KEPT_MS : HISTORY_WINDOW_MS}`).then(
           parseHistory,
         ),
       ]);
 
       let next: CollectorState = state;
+      let events = newer;
 
       if (history.status === "fulfilled") {
         // A new start time means the collector restarted. Its event ids start
         // again, so the old list is dropped rather than merged into. So it is
-        // once the history has been cleared: what came before is gone.
+        // once the history has been cleared: what came before is gone. This
+        // poll asked only for what followed the old list, so the events kept
+        // from before the restart are asked for with the rest, now.
         const newRun =
           state.history !== null && state.history.startedAt !== history.value.startedAt;
         const restarted =
           newRun || (state.history !== null && clearedSince(state.history, history.value));
+        if (restarted) [events] = await Promise.allSettled([eventsSince(0)]);
         let held: CollectorHistory;
         if (wholeHour) {
           held = history.value;
