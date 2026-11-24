@@ -1,7 +1,11 @@
 import { describe, expect, test } from "vitest";
 
 import { encodeRecord, type HistoryRecord } from "@collector/history/historyFormat";
-import { createHistoryKeeper, type HistoryKeeperOptions } from "@collector/history/historyKeeper";
+import {
+  createHistoryKeeper,
+  MAX_QUEUED_LINES,
+  type HistoryKeeperOptions,
+} from "@collector/history/historyKeeper";
 import type { HistoryPoint, SessionEvent } from "@core/sessions/session";
 import { fakeHistoryFs } from "@tests/support/node/historyFs";
 
@@ -251,6 +255,178 @@ describe("writing", () => {
     expect(keeper.status().problem).toBeNull();
     expect(fs.text(file("v1-2026-10-06.jsonl"))).toContain(`${T0 + 6_000}`);
     keeper.stop();
+  });
+
+  describe("while it cannot be written", () => {
+    const TODAY = file("v1-2026-10-06.jsonl");
+    const pointAt = (seconds: number): HistoryRecord => ({
+      kind: "point",
+      point: point(T0 + seconds * 1_000),
+    });
+    const START: HistoryRecord = { kind: "start", at: T0 };
+
+    test("what was added waits, and is written in order, each once, the start before it", async () => {
+      const { fs, keeper } = setUp();
+      await keeper.restore(LIMITS);
+      const append = fs.append;
+      fs.append = () => Promise.reject(Object.assign(new Error("Full."), { code: "ENOSPC" }));
+      keeper.start();
+      for (const seconds of [2, 4, 6]) {
+        keeper.addPoint(point(T0 + seconds * 1_000));
+        await keeper.flush();
+      }
+      keeper.addEvents([event(T0 + 8_000)]);
+      expect(fs.text(TODAY)).toBeUndefined();
+
+      fs.append = append;
+      await keeper.flush();
+      await keeper.flush();
+      expect(fs.text(TODAY)).toBe(
+        lines(START, pointAt(2), pointAt(4), pointAt(6), {
+          kind: "event",
+          event: event(T0 + 8_000),
+        }),
+      );
+      keeper.stop();
+    });
+
+    test.each([
+      ["the line break before them", 1],
+      ["part of the first", 10],
+      ["two and part of the next", lines(START, pointAt(2)).length + 11],
+      ["all of them", lines(START, pointAt(2), pointAt(4)).length + 1],
+    ])(
+      "a write that stops after %s does not write what reached the file again",
+      async (_, kept) => {
+        const { fs, keeper, copy } = setUp();
+        const before = lines({ kind: "point", point: point(T0 - 60_000) });
+        fs.put(TODAY, before);
+        await keeper.restore(LIMITS);
+        const append = fs.append;
+        fs.append = async (path, text) => {
+          await append(path, text.slice(0, kept));
+          throw Object.assign(new Error("Full."), { code: "ENOSPC" });
+        };
+        keeper.start();
+        keeper.addPoint(point(T0 + 2_000));
+        keeper.addPoint(point(T0 + 4_000));
+        await keeper.flush();
+        fs.append = append;
+        keeper.addPoint(point(T0 + 6_000));
+        await keeper.flush();
+        keeper.stop();
+
+        const whole = (fs.text(TODAY) ?? "").split("\n").filter((line) => line.endsWith("}"));
+        expect(whole.map((line) => `${line}\n`).join("")).toBe(
+          before + lines(START, pointAt(2), pointAt(4), pointAt(6)),
+        );
+        expect(keeper.status().bytes).toBe((fs.text(TODAY) ?? "").length);
+        const restored = await copy(300).restore(LIMITS);
+        expect(restored.points).toHaveLength(4);
+        expect(restored.restarts).toEqual([{ at: T0, lastBefore: T0 - 60_000 }]);
+      },
+    );
+
+    test("the most it holds is kept, and the oldest go", async () => {
+      const { fs, keeper } = setUp();
+      await keeper.restore(LIMITS);
+      keeper.start();
+      await keeper.flush();
+      fs.broken = true;
+      for (let n = 1; n <= MAX_QUEUED_LINES; n += 1) keeper.addPoint(point(T0 + n));
+      await keeper.flush();
+      keeper.addPoint(point(T0 + MAX_QUEUED_LINES + 1));
+      await keeper.flush();
+      fs.broken = false;
+      await keeper.flush();
+      keeper.stop();
+      const kept = written(fs).split("\n").filter(Boolean).slice(1);
+      expect(kept).toHaveLength(MAX_QUEUED_LINES);
+      expect(kept[0]).toContain(`[${T0 + 2},`);
+      expect(kept.at(-1)).toContain(`[${T0 + MAX_QUEUED_LINES + 1},`);
+    });
+
+    test("stopping as a write fails writes each line once", async () => {
+      const { fs, keeper } = setUp();
+      await keeper.restore(LIMITS);
+      const append = fs.append;
+      let fail = (_: Error) => {};
+      let called = () => {};
+      const underWay = new Promise<void>((resolve) => {
+        called = resolve;
+      });
+      fs.append = () => {
+        called();
+        return new Promise((_, reject) => {
+          fail = reject;
+        });
+      };
+      keeper.start();
+      keeper.addPoint(point(T0 + 2_000));
+      await underWay;
+      keeper.stop();
+      fail(Object.assign(new Error("Full."), { code: "ENOSPC" }));
+      fs.append = append;
+      // Started again, as a host can, it holds nothing the stop has written.
+      keeper.start();
+      await keeper.flush();
+      keeper.stop();
+      expect(fs.text(TODAY)).toBe(lines(START, pointAt(2), START));
+    });
+
+    test("a lock that cannot be made is made once it can, and what waited is written", async () => {
+      const { fs, keeper, warnings } = setUp();
+      await keeper.restore(LIMITS);
+      fs.broken = true;
+      keeper.start();
+      keeper.addPoint(point(T0 + 2_000));
+      await keeper.flush();
+      expect(warnings).toEqual([expect.stringContaining("could not write")]);
+      expect(keeper.status()).toMatchObject({ problem: warnings[0], canClear: false });
+
+      fs.broken = false;
+      await keeper.flush();
+      expect(keeper.status()).toMatchObject({ problem: null, canClear: true });
+      expect(fs.text(TODAY)).toBe(lines(START, pointAt(2)));
+      keeper.stop();
+    });
+
+    test("what waits goes when another copy writes meanwhile", async () => {
+      const { fs, keeper, alive } = setUp();
+      await keeper.restore(LIMITS);
+      fs.broken = true;
+      keeper.start();
+      keeper.addPoint(point(T0 + 2_000));
+      await keeper.flush();
+      fs.broken = false;
+      alive.add(200);
+      fs.put(file("writer.lock"), JSON.stringify({ pid: 200, token: "another" }));
+      await keeper.flush();
+      expect(keeper.status().problem).toContain("Another copy");
+      fs.removeNow(file("writer.lock"));
+      await keeper.flush();
+      keeper.stop();
+      expect(written(fs)).toBe("");
+    });
+
+    test("the record of a clearing waits with the rest, before what came after it", async () => {
+      const { fs, keeper } = setUp();
+      await keeper.restore(LIMITS);
+      keeper.start();
+      keeper.addPoint(point(T0 + 2_000));
+      await keeper.flush();
+      const append = fs.append;
+      fs.append = () => Promise.reject(Object.assign(new Error("Full."), { code: "ENOSPC" }));
+      keeper.addPoint(point(T0 + 4_000));
+      await keeper.flush();
+      await keeper.clear(() => {});
+      keeper.addPoint(point(T0 + 6_000));
+      await keeper.flush();
+      fs.append = append;
+      await keeper.flush();
+      keeper.stop();
+      expect(fs.text(TODAY)).toBe(lines({ kind: "cleared", at: T0 }, pointAt(6)));
+    });
   });
 
   test("a day's file that a crash left ending in half a line goes on from a line of its own", async () => {

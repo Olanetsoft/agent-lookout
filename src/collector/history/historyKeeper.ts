@@ -49,8 +49,11 @@ export const FLUSH_INTERVAL_MS = 5_000;
  */
 export const RESTORE_DEADLINE_MS = 10_000;
 
-/** The most lines held back between two writes. A poll adds one line, and a busy one a few more. */
-const MAX_QUEUED_LINES = 50_000;
+/**
+ * The most lines held while they cannot be written, about a day of polls. A
+ * poll adds one line, and a busy one a few more. The oldest go first.
+ */
+export const MAX_QUEUED_LINES = 50_000;
 
 /** The highest number a day's file can have. */
 const MAX_PART = 9_999;
@@ -128,7 +131,8 @@ export type ClearOutcome =
  *
  * - Nothing is written during a poll. What is added waits in memory and is
  *   written every 5 seconds, by another turn of the event loop, and what is
- *   left is written as Agent Lookout stops.
+ *   left is written as Agent Lookout stops. What could not be written, as on a
+ *   full disk, waits for the next beat.
  * - Only what the stores and the waits hold is written: events, points and
  *   how a session in a wait was seen, and when watching started or the history
  *   was cleared. An event or a sighting holds its session's name as the
@@ -264,7 +268,7 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
   let failing: string | null = null;
   /** When the history was last cleared by this copy, for as long as its record could not be written. */
   let clearedAt: number | null = null;
-  /** Whether this copy holds the lock, once it has been asked. */
+  /** Whether this copy holds the lock or another does, once asked. Null while the lock cannot be made. */
   let writer: boolean | null = null;
   let running = false;
   let timer: ReturnType<typeof setInterval> | null = null;
@@ -284,7 +288,7 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
     const line = encodeRecord(record);
     if (line.length > MAX_LINE_LENGTH || byteLength(line) > maxFileBytes) return;
     queue.push(line);
-    if (queue.length > MAX_QUEUED_LINES) queue = queue.slice(queue.length - MAX_QUEUED_LINES);
+    queue = newest(queue, MAX_QUEUED_LINES);
   }
 
   /** What reading the folder found: what goes into memory, and the files as they are. */
@@ -552,7 +556,16 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
           step = steps.next("blocked");
           continue;
         }
+        const before = files.get(name)?.size ?? 0;
+        await rescan();
+        // Stopped meanwhile: the stop wrote what was left.
+        if (writing !== job) return false;
         writing = null;
+        // What it still holds is written first once it can be, but not the
+        // lines that reached the file whole before the write failed.
+        const reached = (files.get(name)?.size ?? 0) - before;
+        const landed = Buffer.from(text).toString("utf8", 0, reached).trimStart().split("\n");
+        queue = [...job.lines.slice(landed.length - 1), ...queue];
         writeFailed();
         return false;
       }
@@ -616,9 +629,16 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
         lock.releaseNow();
         return;
       }
+      if (!holds && !lock.heldByAnother) {
+        // The lock could not be made, as on a full disk.
+        writer = null;
+        writeFailed();
+        return;
+      }
       if (!holds) {
         // Another copy writes what it sees, which is what this one sees too.
         writer = false;
+        failing = null;
         queue = [];
         startedAt = null;
         // What that copy writes and deletes changes what the folder holds,
@@ -687,11 +707,11 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
       if (unusable !== null) return;
       // Decided at once, so that a stop that comes before the first beat still
       // writes what was added.
-      writer = lock.takeNow();
+      writer = lock.takeNow() || (lock.heldByAnother ? false : null);
       pruned = false;
       // Only the copy that writes says that watching started: another copy's
       // start is not one the files saw.
-      startedAt = writer ? now() : null;
+      startedAt = writer === false ? null : now();
       void beat();
       timer = setInterval(() => void beat(), flushIntervalMs);
       // The keeper alone should not keep a process alive.

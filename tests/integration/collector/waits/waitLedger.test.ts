@@ -6,6 +6,7 @@ import { afterAll, describe, expect, onTestFinished, test, vi } from "vitest";
 
 import type { Adapter, AdapterResult } from "@collector/adapters/adapter";
 import { createCollector } from "@collector/collector";
+import { nodeHistoryFs } from "@collector/history/historyFiles";
 import {
   dayOf,
   encodeRecord,
@@ -122,8 +123,8 @@ function threeDays(): HistoryRecord[] {
  * A collector over a stand-in Claude Code, started as a host starts it, with
  * its history in `dir`, and polled once. The clock stands at `NOW` unless the
  * test moves it. `read` names the way the sessions are read and what the source
- * answers, which a test can change, and `sessions` is read at each poll. A
- * second source always answers, and lists none, so time is measured without
+ * answers, and whether the disk is full, which a test can change, and
+ * `sessions` is read at each poll. A second source always answers, and lists none, so time is measured without
  * the first.
  */
 async function startIn(
@@ -131,7 +132,7 @@ async function startIn(
   sessions: Session[],
   env: Record<string, string> = {},
   clock = { now: NOW },
-  read: { way?: string; state?: SourceState } = {},
+  read: { way?: string; state?: SourceState; full?: boolean } = {},
 ) {
   const answering = (id: SourceId, answer: () => Omit<AdapterResult, "health">): Adapter => ({
     id,
@@ -152,6 +153,14 @@ async function startIn(
     adapters: [adapter, answering("opencode", () => ({ sessions: [] }))],
     env: { AGENT_LOOKOUT_HISTORY_DIR: dir, AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE, ...env },
     notifier: fakeSystemNotifier(),
+    historyFs: {
+      ...nodeHistoryFs,
+      append: (file, text) =>
+        read.full
+          ? Promise.reject(Object.assign(new Error("Full."), { code: "ENOSPC" }))
+          : nodeHistoryFs.append(file, text),
+    },
+    warn: () => {},
     now: () => clock.now,
     intervalMs: 1_000_000_000,
   });
@@ -167,7 +176,8 @@ async function startIn(
       await collector.poller.pollOnce();
     }
   };
-  return { port, pollFor, stop: () => collector.stop() };
+  const flush = async () => collector.history?.flush();
+  return { port, pollFor, flush, stop: () => collector.stop() };
 }
 
 /** What the Events log holds of a session, oldest first. */
@@ -440,6 +450,38 @@ describe("a wait found by a run's first poll, over a history folder on disk", ()
     await run.pollFor(MINUTE);
     expect(await eventsOf(run.port, id(5))).toEqual([]);
     expect((await waitsFrom(run.port)).sevenDays).toMatchObject({ waitedMs: 0, waits: 0 });
+  });
+});
+
+describe("a wait that ends while the disk is full", () => {
+  test("is counted the same after a restart, with its end where it was seen", async () => {
+    const dir = await tempDir();
+    const clock = { now: at(6, 9) };
+    const read = { full: false };
+    const busy = makeSession({ id: id(5), name: "demo-project-5", status: "working" });
+    const sessions: Session[] = [busy];
+    const first = await startIn(dir, sessions, {}, clock, read);
+    sessions[0] = { ...busy, status: "needs-you" };
+    await first.pollFor(MINUTE);
+    await first.flush();
+    read.full = true;
+    sessions[0] = busy;
+    await first.pollFor(MINUTE);
+    await first.flush();
+    read.full = false;
+    await first.pollFor(HOUR);
+    await first.flush();
+    const ended = [
+      ["status-changed", "working", "needs-you"],
+      ["status-changed", "needs-you", "working"],
+    ];
+    const counted = { waitedMs: MINUTE, waits: 1, measuredMs: HOUR + 2 * MINUTE };
+    expect((await waitsFrom(first.port)).today).toMatchObject(counted);
+    first.stop();
+
+    const again = await startIn(dir, sessions, {}, clock, read);
+    expect((await waitsFrom(again.port)).today).toMatchObject(counted);
+    expect(await eventsOf(again.port, id(5))).toEqual(ended);
   });
 });
 

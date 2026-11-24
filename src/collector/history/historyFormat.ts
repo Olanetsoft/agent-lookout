@@ -3,7 +3,9 @@
 //
 // The files are JSON lines, one record a line, appended to and never rewritten.
 // A file holds one UTC day, `v1-2026-10-06.jsonl`, and a day that outgrows a
-// file goes on in `v1-2026-10-06-2.jsonl`, and so on. The `v1` is the format:
+// file goes on in `v1-2026-10-06-2.jsonl`, and so on. A record that waited, as
+// on a full disk, is in the file of the day it was written, and every version
+// goes by the record's own time. The `v1` is the format:
 // a later format writes names of its own, which this one leaves alone.
 //
 // A record is one of five, each an object with one field:
