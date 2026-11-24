@@ -629,6 +629,36 @@ describe("a name Codex made from the first prompt is passed over", () => {
     },
   );
 
+  test.each([
+    [
+      "Fix the ` typo.\n\nSee [`config.ts`](https://example.com/docs)",
+      "Fix the ` typo. See config.ts",
+    ],
+    ["# Escape the ` key\nsee [`README`](docs/README.md) too", "Escape the ` key see README too"],
+    ["- Escape the ` key\n- Update [`README`](docs/README.md)", "Escape the ` key Update README"],
+    ["Run:\n\n    echo `\n\nthen fix [`a.ts`](src/a.ts)", "Run: echo ` then fix a.ts"],
+    ["Fix the ` typo.\n\n![`shot`](img/shot.png)", "Fix the ` typo. shot"],
+    [
+      "Fix the ` typo.\n\nSee [`config.ts`][cfg]\n\n[cfg]: https://example.com",
+      "Fix the ` typo. See config.ts",
+    ],
+    ["Fix <https://example.com/`a> and [`b`](src/b.ts)", "Fix https://example.com/`a and b"],
+    ['Fix <b title="`"> and [`b`](src/b.ts)', "Fix and b"],
+  ])("a link whose `[` a lone backtick before it seems to put in code: %j", (prompt, title) => {
+    expect(isFirstPromptName(head(...legacy(prompt)), title)).toBe(true);
+  });
+
+  test.each([
+    ["Fix ](x) in [the docs](/docs)", "Fix ](x) in the docs"],
+    ["Fix \\[a](x) in [the docs](/docs)", "Fix [a](x) in the docs"],
+    ["Fix a](x) and b](y) in ![the](/icon) docs", "Fix a](x) and b](y) in the docs"],
+    ["Fix [a] b](x) in [the docs](/docs)", "Fix [a] b](x) in the docs"],
+    ["Fix &lt;x>](y) in [the docs](/docs)", "Fix <x>](y) in the docs"],
+    ["Fix ][g] in [the docs][g]\n\n[g]: https://example.com", "Fix ]g in the docs"],
+  ])("what follows a `]` with no `[` to pair with, which Codex keeps: %j", (prompt, title) => {
+    expect(isFirstPromptName(head(...legacy(prompt)), title)).toBe(true);
+  });
+
   test("the prompt's 2,000th character is in its excerpt and the 2,001st is not, counted by characters, not bytes", () => {
     // U+3000, an ideographic space, is whitespace of three bytes, which Codex keeps out of the title.
     const within = `Fix the demo${"\u3000".repeat(1987)}x`;
@@ -990,15 +1020,6 @@ describe("a name that is not the first prompt, whole or cut with …, is kept", 
     const lines = paginated("> Fix the demo\n> <Button />\n<Card>\n  note\n</Card>");
     expect(isFirstPromptName(head(...lines), "Fix the demo")).toBe(false);
     expect(isFirstPromptName(head(...lines), "Fix the demo note")).toBe(true);
-  });
-
-  test("what follows a `]` with no `[` before it, which is no link, so its text counts", () => {
-    const lines = legacy("Fix ](cache) the build");
-    expect(isFirstPromptName(head(...lines), "Fix the build")).toBe(false);
-    expect(isFirstPromptName(head(...lines), "Fix ](cache) the build")).toBe(true);
-    const escaped = paginated("Fix \\[a](cache) the [docs](/docs) build");
-    expect(isFirstPromptName(head(...escaped), "Fix [a] the docs build")).toBe(false);
-    expect(isFirstPromptName(head(...escaped), "Fix [a](cache) the docs build")).toBe(true);
   });
 
   test("a first prompt of a fence alone, from which Codex makes no title, is still the one compared", () => {

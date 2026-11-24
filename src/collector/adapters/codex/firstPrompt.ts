@@ -106,7 +106,9 @@ import { walkLine, type Token, type WantedKey } from "../muse-code/jsonWalker.ts
  * of these. And one leaves out such a fence and its language in the text of a
  * fenced block whose fence is indented too, as in a list item, since Codex
  * closes that block where the item ends and can read a later line as a new
- * fence.
+ * fence. Links and all of these are each left out once more, but only after a
+ * `]` that pairs with a `[` before it, since Codex keeps what follows one that
+ * does not.
  *
  * A false match shows the folder's name in place of a name you gave that is
  * your prompt; a missed one shows your prompt. So the rule leans to passing
@@ -133,7 +135,7 @@ import { walkLine, type Token, type WantedKey } from "../muse-code/jsonWalker.ts
  *   empty in the view once its `…` is taken off.
  *
  * Only the lines given are looked at. When the prompt's line is not whole in
- * them, the name is kept. The prompt's escapes and entities are undone into
+ * them, there is no verdict. The prompt's escapes and entities are undone into
  * bytes in memory, for the comparison alone, and dropped with it. Nothing of
  * the prompt is turned into text, kept or logged.
  */
@@ -1363,14 +1365,14 @@ function entityAt(bytes: Buffer, at: number): { code: number; end: number } | nu
  * reference's label ends, `[`, a label one of `labels` defines and `]`. A
  * collapsed reference's `[]` ends there too, when the text since `opened`,
  * the byte after the last `[` outside code, is a label `labels` defines. `at`
- * when none does, or when `opened` is -1, since no `[` comes before the `]`.
+ * when none does.
  */
 function linkPartEnd(bytes: Buffer, at: number, labels: readonly Buffer[], opened: number): number {
-  if (opened === -1) return at;
   const next = byteAt(bytes, at + 1);
   if (next === OPENING_BRACKET) {
     if (byteAt(bytes, at + 2) === CLOSING_BRACKET) {
-      const key = at - opened > MOST_LABEL_BYTES ? null : labelKey(bytes, opened, at);
+      const key =
+        opened === -1 || at - opened > MOST_LABEL_BYTES ? null : labelKey(bytes, opened, at);
       return key !== null && labels.some((defined) => defined.equals(key)) ? at + 3 : at;
     }
     const label = labelEnd(bytes, at + 1);
@@ -1393,8 +1395,14 @@ interface Inline {
   escapes?: boolean;
   /** Entities turned into the bytes of their characters. */
   entities?: boolean;
-  /** Links' and images' destinations and titles, and references' labels, left out. */
-  links?: boolean;
+  /**
+   * Links' and images' destinations and titles, and references' labels, left
+   * out after every `]`, or only after one that pairs with a `[` before it.
+   * Code spans are paired across blocks here, so one can hide a link's `[`
+   * that Codex sees, and after every `]` catches that. Codex keeps what follows
+   * a `]` with no `[`, and the other catches that.
+   */
+  links?: "every" | "paired";
 }
 
 /**
@@ -1410,9 +1418,14 @@ function inlineCopy(copy: Copy, inline: Inline): Buffer {
   let length = 0;
   let at = 0;
   let opened = -1;
+  /** How many `[` outside code have no `]` yet. */
+  let open = 0;
   while (at < bytes.byteLength) {
     const byte = bytes[at] as number;
-    if (byte === OPENING_BRACKET && code[at] !== 1) opened = at + 1;
+    if (byte === OPENING_BRACKET && code[at] !== 1) {
+      opened = at + 1;
+      open += 1;
+    }
     const span = spans.get(at);
     if (code[at] === 1 || span !== undefined) {
       const end = span ?? at + 1;
@@ -1436,13 +1449,14 @@ function inlineCopy(copy: Copy, inline: Inline): Buffer {
       at = entity.end;
       continue;
     }
-    const link =
-      inline.links === true && byte === CLOSING_BRACKET
-        ? linkPartEnd(bytes, at, copy.labels, opened)
-        : at;
-    if (link > at) {
-      at = link;
-      continue;
+    if (byte === CLOSING_BRACKET) {
+      const links = inline.links === "every" || (inline.links === "paired" && open > 0);
+      const link = links ? linkPartEnd(bytes, at, copy.labels, opened) : at;
+      open = Math.max(0, open - 1);
+      if (link > at) {
+        at = link;
+        continue;
+      }
     }
     out[length] = byte;
     length += 1;
@@ -1544,13 +1558,18 @@ const ESCAPES: Inline = { escapes: true };
 /** The last copies of the prompt compared, each built only when none before it matched. */
 const MORE_COPIES: readonly { blocks: Blocks; inline: Inline }[] = [
   { blocks: { html: true }, inline: ESCAPES },
-  { blocks: { definitions: true }, inline: { escapes: true, links: true } },
+  { blocks: { definitions: true }, inline: { escapes: true, links: "every" } },
   { blocks: { fenceInfo: true }, inline: ESCAPES },
   {
     blocks: { html: true, definitions: true, fenceInfo: true },
-    inline: { escapes: true, entities: true, links: true },
+    inline: { escapes: true, entities: true, links: "every" },
   },
   { blocks: { fenceInfo: true, fenceInfoInCode: true }, inline: ESCAPES },
+  { blocks: { definitions: true }, inline: { escapes: true, links: "paired" } },
+  {
+    blocks: { html: true, definitions: true, fenceInfo: true },
+    inline: { escapes: true, entities: true, links: "paired" },
+  },
 ];
 
 /**
