@@ -17,7 +17,7 @@ import { setApiHost } from "@dashboard/lib/api/apiHost";
 import { readSession } from "@dashboard/lib/api/readApi";
 import { sessionHref } from "@dashboard/lib/shell/sessionDetails";
 import { makeSession } from "@tests/fixtures/session";
-import { pointAway, pressAt, startAtTop } from "@tests/support/browser/browser";
+import { middleOf, pointAway, pressAt, startAtTop } from "@tests/support/browser/browser";
 import { rgbOf, warmPaint } from "@tests/support/browser/colours";
 
 const SECOND = 1_000;
@@ -1617,9 +1617,7 @@ describe("what a waiting session is asking", () => {
       const settled = (n: number) =>
         expect.poll(() => allow(n).getAttribute("aria-disabled"), { timeout: 3_000 }).toBeNull();
       await settled(13);
-      const { left, top, width: wide, height } = allow(12).getBoundingClientRect();
-      const x = left + wide / 2;
-      const y = top + height / 2;
+      const [x, y] = middleOf(allow(12));
 
       // Answered in its own terminal, or by the first half of a double click.
       await screen.rerender(shown([held[0]!, held[2]!]));

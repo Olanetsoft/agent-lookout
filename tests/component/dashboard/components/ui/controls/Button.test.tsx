@@ -1,9 +1,17 @@
-import { afterEach, expect, test, vi } from "vitest";
+import { useLayoutEffect, useRef, useState } from "react";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
 import { Button } from "@dashboard/components/ui/controls/Button";
-import { pointAway, startAtTop } from "@tests/support/browser/browser";
+import {
+  assistivePress,
+  holdKey,
+  middleOf,
+  pointAway,
+  pressAt,
+  startAtTop,
+} from "@tests/support/browser/browser";
 import { rgbOf, warmPaint } from "@tests/support/browser/colours";
 
 afterEach(() => {
@@ -134,4 +142,98 @@ test("the icon size is a 28px circle", async () => {
 
   expect([box.width, box.height]).toEqual([28, 28]);
   expect(getComputedStyle(button).borderRadius).toBe("999px");
+});
+
+describe("where the next one comes up and takes focus as one is pressed", () => {
+  /** Three buttons down a list, each of which leaves it when pressed. */
+  function List({ onPress }: { onPress: (name: string) => void }) {
+    const [names, setNames] = useState(["First", "Second", "Third"]);
+    const list = useRef<HTMLDivElement>(null);
+    useLayoutEffect(() => {
+      if (names.length < 3) list.current?.querySelector("button")?.focus();
+    }, [names]);
+    return (
+      <div ref={list} className='flex flex-col items-start gap-5'>
+        {names.map((name) => (
+          <Button
+            key={name}
+            onClick={() => {
+              onPress(name);
+              setNames(names.filter((other) => other !== name));
+            }}
+          >
+            {name}
+          </Button>
+        ))}
+      </div>
+    );
+  }
+
+  async function drawn() {
+    const onPress = vi.fn<(name: string) => void>();
+    const screen = await render(<List onPress={onPress} />);
+    const button = (name: string) => screen.getByRole("button", { name }).element() as HTMLElement;
+    return { button, pressed: () => onPress.mock.calls.map(([name]) => name) };
+  }
+
+  test("a double click, or three in a row, presses the first, and a press a second later the next", async () => {
+    const { button, pressed } = await drawn();
+    const [x, y] = middleOf(button("First"));
+    await pressAt(x, y, 3);
+    expect(document.elementFromPoint(x, y)).toBe(button("Second"));
+    expect(pressed()).toEqual(["First"]);
+
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    await pressAt(x, y);
+    expect(pressed()).toEqual(["First", "Second"]);
+  });
+
+  test.each(["Enter", " "])("%j held, or pressed again, presses the first", async (key) => {
+    const { button, pressed } = await drawn();
+    button("First").focus();
+    await holdKey(key, 10);
+    await userEvent.keyboard(key === " " ? key : `{${key}}`);
+    expect(pressed()).toEqual(["First"]);
+    expect(document.activeElement).toBe(button("Second"));
+  });
+
+  test("a key pressed on one that Tab went to is taken at once", async () => {
+    const { button, pressed } = await drawn();
+    button("First").focus();
+    await userEvent.keyboard("{Enter}");
+    await userEvent.tab();
+    await userEvent.keyboard("{Enter}");
+    expect(pressed()).toEqual(["First", "Third"]);
+  });
+
+  test("a press of one that was there all along, or by assistive technology, is taken at once", async () => {
+    const { button, pressed } = await drawn();
+    await pressAt(...middleOf(button("First")));
+    assistivePress(button("Second"));
+    expect(pressed()).toEqual(["First", "Second"]);
+  });
+
+  test("a press somewhere else is taken at once", async () => {
+    const { button, pressed } = await drawn();
+    await pressAt(...middleOf(button("Third")));
+    await pressAt(...middleOf(button("First")));
+    expect(pressed()).toEqual(["Third", "First"]);
+  });
+});
+
+test("Enter in a form's field presses its button", async () => {
+  const submit = vi.fn();
+  const screen = await render(
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        submit();
+      }}
+    >
+      <input aria-label='Name' />
+      <Button type='submit'>Save</Button>
+    </form>,
+  );
+  await userEvent.type(screen.getByRole("textbox"), "a{Enter}");
+  expect(submit).toHaveBeenCalledOnce();
 });

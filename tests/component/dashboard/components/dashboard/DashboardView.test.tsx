@@ -19,7 +19,7 @@ import {
 import { SESSIONS_LAYOUT_STORAGE_KEY } from "@dashboard/lib/shell/sessionsLayout";
 import { makeSession } from "@tests/fixtures/session";
 import { quietWaits } from "@tests/fixtures/waits";
-import { pointAway } from "@tests/support/browser/browser";
+import { forgetPresses, pointAway } from "@tests/support/browser/browser";
 import { rgbOf, warmElements, warmPaint } from "@tests/support/browser/colours";
 import { atFullSize, contrastOf, textBackdrops } from "@tests/support/browser/pixels";
 import { fakeNotificationHost } from "@tests/support/notifications";
@@ -1131,6 +1131,7 @@ describe("the question about notifications", () => {
 
     // Dismissed, it leaves no gap over the cards.
     const grid = slot(screen.container, "overview-grid");
+    forgetPresses();
     await screen.getByRole("button", { name: "Dismiss", exact: true }).click();
     expect(slot(screen.container, "notification-prompt")).toBeNull();
     expect(grid.getBoundingClientRect().top).toBe(

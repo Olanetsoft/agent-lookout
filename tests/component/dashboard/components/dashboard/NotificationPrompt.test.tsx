@@ -18,7 +18,7 @@ import {
   NOTIFICATIONS_STORAGE_KEY,
   resetNotificationSettingForTests,
 } from "@dashboard/lib/notifications/notificationSetting";
-import { pointAway, startAtTop } from "@tests/support/browser/browser";
+import { forgetPresses, pointAway, startAtTop } from "@tests/support/browser/browser";
 import { rgbOf, warmPaint } from "@tests/support/browser/colours";
 import { fakeNotificationHost, type FakeNotificationHost } from "@tests/support/notifications";
 
@@ -341,6 +341,8 @@ test("the note can be dismissed, focus stays in the view, and neither it nor the
     .element(screen.getByText("macOS did not show the test notification", { exact: true }))
     .toBeVisible();
 
+  // A moment after Turn on, whose place it took.
+  forgetPresses();
   await screen.getByRole("button", { name: "Dismiss" }).click();
   expect(calloutIn(screen)).toBeNull();
   expect(screen.container.querySelector('[data-slot="notification-prompt"]')).toBeNull();
@@ -574,6 +576,8 @@ test("in a browser, when the browser blocks them, a quiet note in the question's
   await pointAway();
   expect(warmPaint(screen.container)).toEqual([]);
 
+  // A moment after Turn on, whose place it took.
+  forgetPresses();
   await screen.getByRole("button", { name: "Dismiss" }).click();
   expect(calloutIn(screen)).toBeNull();
   await screen.unmount();

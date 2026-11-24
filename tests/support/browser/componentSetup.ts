@@ -6,6 +6,7 @@ import "@dashboard/styles/index.css";
 import { beforeEach } from "vitest";
 import { commands } from "vitest/browser";
 
+import { forgetPresses } from "./browser";
 import "./media";
 
 // Every test starts on a computer that asks for no less motion than usual,
@@ -15,3 +16,7 @@ import "./media";
 beforeEach(async () => {
   await commands.emulateMedia({ reducedMotion: "no-preference" });
 });
+
+// Tests share one page, so a press of the last could be taken for the first half
+// of a double click whose other half is in this one.
+beforeEach(forgetPresses);

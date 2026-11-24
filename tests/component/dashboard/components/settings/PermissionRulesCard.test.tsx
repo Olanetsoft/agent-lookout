@@ -8,6 +8,7 @@ import { applyRulesChange, rulesChangeIn } from "@core/permission-rules/rulesCha
 import { DEFAULT_TIME_RULES } from "@core/time-rules/timeRules";
 import { PermissionRulesCard } from "@dashboard/components/settings/PermissionRulesCard";
 import { setApiHost } from "@dashboard/lib/api/apiHost";
+import { holdKey, middleOf, pressAt } from "@tests/support/browser/browser";
 import { rgbOf, warmPaint } from "@tests/support/browser/colours";
 
 const NOW = Date.now();
@@ -208,7 +209,8 @@ test("moving a rule sends its id, keeps focus on its button, and the first rule 
   await expect.element(up("Deny Bash(git push --force:*)")).toHaveFocus();
   expect(changes).toEqual([]);
 
-  down("Deny Bash(git push --force:*)").element().focus();
+  await userEvent.tab();
+  await expect.element(down("Deny Bash(git push --force:*)")).toHaveFocus();
   await userEvent.keyboard("{Enter}");
   await vi.waitFor(() =>
     expect(rowTexts()).toEqual([
@@ -275,6 +277,55 @@ test("removing a rule sends its id, and focus goes to the next rule's Remove, th
     .element(card().getByText("No rule yet, so every permission prompt waits for you."))
     .toBeVisible();
   await expect.element(card().getByRole("heading", { name: "Permission rules" })).toHaveFocus();
+});
+
+test.each([420, 1280])(
+  "at %i pixels a double click on Remove removes one rule, and the next a second later",
+  async (width) => {
+    await page.viewport(width, 900);
+    onTestFinished(() => page.viewport(1280, 900));
+    await shown();
+    const remove = (rule: string) =>
+      card()
+        .getByRole("button", { name: `Remove: ${rule}` })
+        .element();
+    const [x, y] = middleOf(remove("Deny Bash(git push --force:*)"));
+    await pressAt(x, y, 2);
+    await vi.waitFor(() => expect(rowTexts()).toEqual(["AllowBash(npm test:*)", "AskEvery tool"]));
+    // The next one is where the first was, and took no press.
+    expect(document.elementFromPoint(x, y)).toBe(remove("Allow Bash(npm test:*)"));
+    expect(changes).toHaveLength(1);
+
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    await pressAt(x, y);
+    await vi.waitFor(() => expect(rowTexts()).toEqual(["AskEvery tool"]));
+  },
+);
+
+test("Enter held on Remove, or pressed again, removes one rule", async () => {
+  await shown();
+  card().getByRole("button", { name: "Remove: Deny Bash(git push --force:*)" }).element().focus();
+  await userEvent.keyboard("{Enter}");
+  await expect
+    .element(card().getByRole("button", { name: "Remove: Allow Bash(npm test:*)" }))
+    .toHaveFocus();
+  await holdKey("Enter", 10);
+  expect(rowTexts()).toEqual(["AllowBash(npm test:*)", "AskEvery tool"]);
+  expect(changes).toHaveLength(1);
+});
+
+test("a double click on Move up moves one rule, and moves none back", async () => {
+  await shown();
+  const up = card().getByRole("button", { name: "Move up: Ask Every tool" });
+  await pressAt(...middleOf(up.element()), 2);
+  await vi.waitFor(() =>
+    expect(rowTexts()).toEqual([
+      "DenyBash(git push --force:*)",
+      "AskEvery tool",
+      "AllowBash(npm test:*)",
+    ]),
+  );
+  expect(changes).toHaveLength(1);
 });
 
 test("every control can be reached with Tab, in the order of the rules", async () => {

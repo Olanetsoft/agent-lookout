@@ -1,5 +1,5 @@
-import { afterEach, expect, test, vi } from "vitest";
-import { userEvent } from "vitest/browser";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { page, userEvent } from "vitest/browser";
 import { render } from "vitest-browser-react";
 
 import type { HistoryKept, HistoryResponse } from "@core/api";
@@ -9,6 +9,8 @@ import type { ClearOutcome } from "@dashboard/lib/api/keptHistory";
 import { pointAway } from "@tests/support/browser/browser";
 import { warmPaint } from "@tests/support/browser/colours";
 import { piecesDrawn } from "@tests/support/browser/lines";
+
+beforeEach(() => page.viewport(1280, 900));
 
 afterEach(() => {
   setApiHost();

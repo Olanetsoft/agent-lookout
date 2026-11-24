@@ -25,7 +25,7 @@ import {
   resetNotificationSettingForTests,
 } from "@dashboard/lib/notifications/notificationSetting";
 import { resetThemeForTests, THEME_STORAGE_KEY } from "@dashboard/lib/shell/theme";
-import { pointAway, startAtTop } from "@tests/support/browser/browser";
+import { forgetPresses, pointAway, startAtTop } from "@tests/support/browser/browser";
 import { rgbOf, warmPaint } from "@tests/support/browser/colours";
 import { preferColorScheme } from "@tests/support/browser/media";
 import { fakeNotificationHost, type FakeNotificationHost } from "@tests/support/notifications";
@@ -412,6 +412,7 @@ test("pressing the button asks the browser, and once allowed they are on, the bu
   // Remembered: the page is drawn afresh and they are still on, without asking again.
   await screen.unmount();
   resetNotificationSettingForTests();
+  forgetPresses();
   const again = await render(<SettingsView />);
   expect(stateOf(again).textContent).toBe("Notifications are on.");
   expect(host.asked).toBe(1);

@@ -39,11 +39,34 @@ export function assistivePress(control: HTMLElement): void {
   control.click();
 }
 
-/** Presses the pointer at a point of the window, whatever is there. */
-export async function pressAt(x: number, y: number): Promise<void> {
+/**
+ * Ends the run of presses the last one could be of, as a page drawn afresh
+ * would: with a touch that became a scroll, and a key that presses nothing.
+ */
+export function forgetPresses(): void {
+  document.dispatchEvent(new PointerEvent("pointercancel"));
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Shift" }));
+}
+
+/** Presses the pointer at a point of the window, whatever is there, so many times, about a fifth of a second apart. */
+export async function pressAt(x: number, y: number, times = 1): Promise<void> {
   const body = document.body.getBoundingClientRect();
   await userEvent.click(document.body, {
     position: { x: x - body.left, y: y - body.top },
     force: true,
+    clickCount: times,
+    delay: 100,
   });
+}
+
+/** The middle of an element, as a point of the window. */
+export function middleOf(element: Element): [x: number, y: number] {
+  const { left, top, width, height } = element.getBoundingClientRect();
+  return [left + width / 2, top + height / 2];
+}
+
+/** Holds a key down, as long as it takes a keyboard to repeat it so many times. */
+export async function holdKey(key: string, repeats: number): Promise<void> {
+  for (let press = 0; press <= repeats; press += 1) await userEvent.keyboard(`{${key}>}`);
+  await userEvent.keyboard(`{/${key}}`);
 }
