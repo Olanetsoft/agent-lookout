@@ -48,31 +48,46 @@ export function forgetPresses(): void {
   document.dispatchEvent(new KeyboardEvent("keydown", { key: "Shift" }));
 }
 
-/** Presses the pointer at a point of the window, whatever is there, so many times, about a fifth of a second apart. */
+/** Sends the browser an event of its own making, as a hand or a keyboard would. */
+async function send(method: string, params: object): Promise<void> {
+  await (cdp() as { send?: (method: string, params: object) => Promise<unknown> }).send?.(
+    method,
+    params,
+  );
+}
+
+/** A point of the window, as a point of the browser's page: the page under test is in a frame of it. */
+function inBrowser(x: number, y: number): { x: number; y: number } {
+  const frame = window.frameElement?.getBoundingClientRect();
+  const scale = frame ? frame.width / window.innerWidth : 1;
+  return { x: (frame?.left ?? 0) + x * scale, y: (frame?.top ?? 0) + y * scale };
+}
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Presses the pointer at a point of the window, whatever is there, so many
+ * times, about a fifth of a second apart. It scrolls nothing to get there.
+ */
 export async function pressAt(x: number, y: number, times = 1): Promise<void> {
-  const body = document.body.getBoundingClientRect();
-  await userEvent.click(document.body, {
-    position: { x: x - body.left, y: y - body.top },
-    force: true,
-    clickCount: times,
-    delay: 100,
-  });
+  const mouse = (type: string, more: object = {}) =>
+    send("Input.dispatchMouseEvent", { type, ...inBrowser(x, y), ...more });
+  await mouse("mouseMoved");
+  for (let clickCount = 1; clickCount <= times; clickCount += 1) {
+    if (clickCount > 1) await wait(100);
+    await mouse("mousePressed", { button: "left", clickCount });
+    await wait(100);
+    await mouse("mouseReleased", { button: "left", clickCount });
+  }
 }
 
 /** Taps a finger at a point of the window, as `pressAt` presses the pointer. */
 export async function tapAt(x: number, y: number, times = 1): Promise<void> {
-  // The page under test is in a frame of the one the browser is told of.
-  const frame = window.frameElement?.getBoundingClientRect();
-  const scale = frame ? frame.width / window.innerWidth : 1;
-  const point = { x: (frame?.left ?? 0) + x * scale, y: (frame?.top ?? 0) + y * scale };
   const touch = (type: string, touchPoints: object[]) =>
-    (cdp() as { send?: (method: string, params: object) => Promise<unknown> }).send?.(
-      "Input.dispatchTouchEvent",
-      { type, touchPoints },
-    );
+    send("Input.dispatchTouchEvent", { type, touchPoints });
   for (let tap = 0; tap < times; tap += 1) {
-    if (tap > 0) await new Promise((resolve) => setTimeout(resolve, 150));
-    await touch("touchStart", [point]);
+    if (tap > 0) await wait(150);
+    await touch("touchStart", [inBrowser(x, y)]);
     await touch("touchEnd", []);
   }
 }
@@ -83,8 +98,18 @@ export function middleOf(element: Element): [x: number, y: number] {
   return [left + width / 2, top + height / 2];
 }
 
-/** Holds a key down, as long as it takes a keyboard to repeat it so many times. */
-export async function holdKey(key: string, repeats: number): Promise<void> {
-  for (let press = 0; press <= repeats; press += 1) await userEvent.keyboard(`{${key}>}`);
+/** What the browser is told of a key that is held. */
+const HELD = {
+  Enter: { key: "Enter", code: "Enter", text: "\r", windowsVirtualKeyCode: 13 },
+  " ": { key: " ", code: "Space", text: " ", windowsVirtualKeyCode: 32 },
+};
+
+/** Holds a key down, as long as a keyboard that waits `delayMs` first takes to repeat it so many times. */
+export async function holdKey(key: keyof typeof HELD, repeats: number, delayMs = 0): Promise<void> {
+  await userEvent.keyboard(`{${key}>}`);
+  await wait(delayMs);
+  for (let repeat = 0; repeat < repeats; repeat += 1) {
+    await send("Input.dispatchKeyEvent", { type: "keyDown", autoRepeat: true, ...HELD[key] });
+  }
   await userEvent.keyboard(`{/${key}}`);
 }

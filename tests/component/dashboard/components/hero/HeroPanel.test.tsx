@@ -1583,9 +1583,13 @@ describe("what a waiting session is asking", () => {
     expect(hero(screen.container).contains(document.activeElement)).toBe(true);
   });
 
-  test.each([1280, 375])(
-    "at %i pixels, a click where the row above was when it left answers nothing for a second",
-    async (width) => {
+  test.each([
+    [1280, "elsewhere"],
+    [1280, "here"],
+    [375, "here"],
+  ])(
+    "at %i pixels, a click where the row above was, answered %s, answers nothing for a second",
+    async (width, answered) => {
       await page.viewport(width, 1600);
       const posted: unknown[] = [];
       setApiHost(async (_path, init) => {
@@ -1620,15 +1624,20 @@ describe("what a waiting session is asking", () => {
       const [x, y] = middleOf(allow(12));
 
       // Answered in its own terminal, or by the first half of a double click.
+      if (answered === "here") await pressAt(x, y);
+      const before = posted.length;
       await screen.rerender(shown([held[0]!, held[2]!]));
       expect(document.elementFromPoint(x, y)).toBe(allow(13));
       expect(allow(13).getAttribute("aria-disabled")).toBe("true");
       await pressAt(x, y);
-      expect(posted).toEqual([]);
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      await pressAt(x, y);
+      expect(posted).toHaveLength(before);
 
+      // Once it is drawn active it is taken, however lately one was not.
       await settled(13);
       await pressAt(x, y);
-      expect(posted).toEqual([
+      expect(posted.slice(before)).toEqual([
         expect.objectContaining({ sessionId: held[2]!.id, decision: "allow" }),
       ]);
     },

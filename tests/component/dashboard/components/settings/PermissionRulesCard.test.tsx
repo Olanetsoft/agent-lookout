@@ -249,6 +249,18 @@ test("editing fills the form with the rule, saves it in its place, and gives foc
   await expect.element(card().getByRole("heading", { name: "Add a rule" })).toBeVisible();
 });
 
+test("a double click on Save rule saves it, and adds none", async () => {
+  await shown();
+  await card().getByRole("button", { name: "Edit: Allow Bash(npm test:*)" }).click();
+  await expect.element(field(/^Tool/)).toHaveFocus();
+  const point = middleOf(card().getByRole("button", { name: "Save rule" }).element());
+  await pressAt(...point, 2);
+  await expect.element(card().getByText("Saved Allow Bash(npm test:*).")).toBeVisible();
+  expect(document.elementFromPoint(...point)).toBe(
+    card().getByRole("button", { name: "Add rule" }).element(),
+  );
+});
+
 test("Escape, or Cancel, stops editing and sends nothing", async () => {
   await shown();
   await card().getByRole("button", { name: "Edit: Ask Every tool" }).click();
@@ -302,17 +314,19 @@ test.each([420, 1280])(
   },
 );
 
-test("Enter held on Remove, or pressed again, removes one rule", async () => {
-  await shown();
-  card().getByRole("button", { name: "Remove: Deny Bash(git push --force:*)" }).element().focus();
-  await userEvent.keyboard("{Enter}");
-  await expect
-    .element(card().getByRole("button", { name: "Remove: Allow Bash(npm test:*)" }))
-    .toHaveFocus();
-  await holdKey("Enter", 10);
-  expect(rowTexts()).toEqual(["AllowBash(npm test:*)", "AskEvery tool"]);
-  expect(changes).toHaveLength(1);
-});
+test.each([0, 1_200])(
+  "Enter held on Remove, repeated after %i ms, removes one rule",
+  async (ms) => {
+    await shown();
+    card().getByRole("button", { name: "Remove: Deny Bash(git push --force:*)" }).element().focus();
+    await holdKey("Enter", 10, ms);
+    await expect
+      .element(card().getByRole("button", { name: "Remove: Allow Bash(npm test:*)" }))
+      .toHaveFocus();
+    expect(rowTexts()).toEqual(["AllowBash(npm test:*)", "AskEvery tool"]);
+    expect(changes).toHaveLength(1);
+  },
+);
 
 test("a double click on Move up moves one rule, and moves none back", async () => {
   await shown();

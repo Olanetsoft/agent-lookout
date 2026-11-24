@@ -25,7 +25,14 @@ import {
   resetNotificationSettingForTests,
 } from "@dashboard/lib/notifications/notificationSetting";
 import { resetThemeForTests, THEME_STORAGE_KEY } from "@dashboard/lib/shell/theme";
-import { forgetPresses, pointAway, startAtTop } from "@tests/support/browser/browser";
+import {
+  forgetPresses,
+  holdKey,
+  middleOf,
+  pointAway,
+  pressAt,
+  startAtTop,
+} from "@tests/support/browser/browser";
 import { rgbOf, warmPaint } from "@tests/support/browser/colours";
 import { preferColorScheme } from "@tests/support/browser/media";
 import { fakeNotificationHost, type FakeNotificationHost } from "@tests/support/notifications";
@@ -433,6 +440,7 @@ test('turning notifications off here stops the Overview\'s question for good: it
   await expect.element(card.getByRole("button", { name: "Turn off notifications" })).toBeVisible();
   expect(localStorage.getItem(NOTIFICATION_ASK_STORAGE_KEY)).toBeNull();
 
+  forgetPresses();
   await card.getByRole("button", { name: "Turn off notifications" }).click();
   await expect.element(card.getByRole("button", { name: "Turn on notifications" })).toBeVisible();
   expect(localStorage.getItem(NOTIFICATION_ASK_STORAGE_KEY)).toBe('{"stopped":true}');
@@ -450,18 +458,40 @@ test("drawing the view writes nothing under the question's key", async () => {
   expect(localStorage.getItem(NOTIFICATION_ASK_STORAGE_KEY)).toBeNull();
 });
 
-test("the button keeps the keyboard's focus as it changes from on to off", async () => {
+test("the keyboard's focus stays on the button as it changes from on to off", async () => {
   const screen = await render(<SettingsView />);
-  const button = notifications(screen).getByRole("button").element() as HTMLButtonElement;
-  button.focus();
+  const button = notifications(screen).getByRole("button");
+  (button.element() as HTMLButtonElement).focus();
 
   await userEvent.keyboard("{Enter}");
-  await vi.waitFor(() => expect(button.textContent).toBe("Turn off notifications"));
-  expect(document.activeElement).toBe(button);
+  await expect.element(button).toHaveTextContent("Turn off notifications");
+  await expect.element(button).toHaveFocus();
 
+  // With another key between, which a key held would not have.
+  await userEvent.keyboard("{Shift}");
   await userEvent.keyboard(" ");
-  await vi.waitFor(() => expect(button.textContent).toBe("Turn on notifications"));
-  expect(document.activeElement).toBe(button);
+  await expect.element(button).toHaveTextContent("Turn on notifications");
+  await expect.element(button).toHaveFocus();
+});
+
+test("a double click on Turn on notifications leaves them on, and so does Enter held on it", async () => {
+  const screen = await render(<SettingsView />);
+  const button = notifications(screen).getByRole("button");
+  await pressAt(...middleOf(button.element()), 2);
+  await expect.element(button).toHaveTextContent("Turn off notifications");
+  expect(localStorage.getItem(NOTIFICATIONS_STORAGE_KEY)).toBe("on");
+
+  await screen.unmount();
+  localStorage.clear();
+  resetNotificationSettingForTests();
+  forgetPresses();
+  const again = await render(<SettingsView />);
+  (notifications(again).getByRole("button").element() as HTMLButtonElement).focus();
+  await holdKey("Enter", 10);
+  await expect
+    .element(notifications(again).getByRole("button"))
+    .toHaveTextContent("Turn off notifications");
+  expect(localStorage.getItem(NOTIFICATION_ASK_STORAGE_KEY)).toBeNull();
 });
 
 test("when the browser refuses, they stay off and a note says they are blocked and what to do", async () => {
@@ -661,6 +691,7 @@ describe("in the Mac app", () => {
     );
 
     // Turning them off sends nothing.
+    forgetPresses();
     await notifications(screen).getByRole("button", { name: "Turn off notifications" }).click();
     await expect.element(stateOf(screen)).toHaveTextContent("Notifications are off in this app.");
     expect(macTests).toHaveLength(1);
@@ -672,6 +703,7 @@ describe("in the Mac app", () => {
     await expect.element(stateOf(screen)).toHaveTextContent("Notifications are on in this app.");
     expect(localStorage.getItem(NOTIFICATION_ASK_STORAGE_KEY)).toBeNull();
 
+    forgetPresses();
     await notifications(screen).getByRole("button", { name: "Turn off notifications" }).click();
     await expect.element(stateOf(screen)).toHaveTextContent("Notifications are off in this app.");
     expect(localStorage.getItem(NOTIFICATION_ASK_STORAGE_KEY)).toBe('{"stopped":true}');
@@ -1068,6 +1100,7 @@ test("once notifications are on, the four events are listed under the button, a 
   expect(notifications(screen).element().textContent).not.toContain("Once they are on");
 
   // Turning notifications off takes the list away again.
+  forgetPresses();
   await notifications(screen).getByRole("button", { name: "Turn off notifications" }).click();
   await expect.element(notifications(screen).getByRole("radiogroup")).not.toBeInTheDocument();
 });
@@ -1145,6 +1178,7 @@ test("the events are kept while notifications are off, and come back as they wer
 
   await card.getByRole("button", { name: "Turn off notifications" }).click();
   await expect.element(card.getByRole("radiogroup")).not.toBeInTheDocument();
+  forgetPresses();
   await card.getByRole("button", { name: "Turn on notifications" }).click();
   await expect.element(card.getByRole("radiogroup", { name: "Ended" })).toBeVisible();
 

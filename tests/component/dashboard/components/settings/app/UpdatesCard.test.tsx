@@ -6,7 +6,7 @@ import { ACTION_HEADER } from "@core/api";
 import type { AppUpdateStatus, UpdatePhase } from "@core/appUpdate";
 import { UpdatesCard } from "@dashboard/components/settings/app/UpdatesCard";
 import { setApiHost } from "@dashboard/lib/api/apiHost";
-import { assistivePress } from "@tests/support/browser/browser";
+import { assistivePress, forgetPresses, middleOf, pressAt } from "@tests/support/browser/browser";
 import { warmPaint } from "@tests/support/browser/colours";
 
 const RELEASES = "https://github.com/Olanetsoft/agent-lookout/releases";
@@ -175,6 +175,8 @@ test("a version found and ready offers Install and Restart and its release notes
   expect(notes.getAttribute("href")).toBe(NOTES);
   expect(asked.some((request) => request.path === "/api/app/update/install")).toBe(false);
 
+  // A moment after Check for Updates…, whose place it took.
+  forgetPresses();
   await card(screen).getByRole("button", { name: "Install and Restart" }).click();
   await vi.waitFor(() => expect(stateOf(screen).textContent).toBe("Installing version 0.2.1…"));
   expect(asked).toContainEqual({
@@ -188,6 +190,29 @@ test("a version found and ready offers Install and Restart and its release notes
     "disabled",
     true,
   );
+});
+
+test("a double click on Check for Updates… does not install the version it finds ready", async () => {
+  current = status({
+    phase: "downloading",
+    version: "0.2.1",
+    notesUrl: NOTES,
+    received: 20 * 1024 * 1024,
+    total: 100 * 1024 * 1024,
+  });
+  afterCheck = { phase: "ready", version: "0.2.1", notesUrl: NOTES };
+  const screen = await render(<UpdatesCard />);
+  const check = card(screen).getByRole("button", { name: "Check for Updates…" });
+  await expect.element(check).toBeVisible();
+  const point = middleOf(check.element());
+  await pressAt(...point, 2);
+
+  const install = card(screen).getByRole("button", { name: "Install and Restart" });
+  await expect.element(install).toBeVisible();
+  expect(document.elementFromPoint(...point)).toBe(install.element());
+  expect(asked.filter(({ method }) => method === "POST").map(({ path }) => path)).toEqual([
+    "/api/app/update/check",
+  ]);
 });
 
 test("while a version downloads, it says how far it has got", async () => {
