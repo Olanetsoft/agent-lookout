@@ -54,6 +54,7 @@ import {
   sessionFromRegistry,
   SOURCE_ID,
   uniqueById,
+  type FeedAnswer,
   type SessionContext,
 } from "./toSession.ts";
 import { createLastMessageReader } from "./transcript/lastMessages.ts";
@@ -342,6 +343,8 @@ function startedAfter(entry: RegistryEntry, since: number, now: number): boolean
  *
  * - It supplies the background jobs that have no live process: the finished and
  *   failed ones. The registry holds a file per live process and cannot.
+ * - It supplies how a live job that is idle stands, blocked, done or failed,
+ *   which the job's registry file does not hold.
  * - A registry session it did not list is left out, unless that session started
  *   too recently for the answer to have known about it.
  * - When it lists a running session the registry lacks, when a registry entry
@@ -465,6 +468,12 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
   let lastDue: number | null = null;
   /** What the last run came back with. It stands until the next run. */
   let lastRead: FeedRead | null = null;
+  /**
+   * The last answer it gave, which a run that fails leaves as it is. Only the
+   * states of live background jobs are taken from it, so a job that needs the
+   * person does not stop needing them, and need them anew, over one failed run.
+   */
+  let lastAnswer: FeedAnswer | null = null;
   /** Set once a background job has been stopped, so the command is run at the next poll. */
   let feedSoon = false;
   /** The registry files the last read parsed, for a file read while it was being written. */
@@ -692,7 +701,10 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
         // An answer is newer than a reading made before it. Reading again keeps
         // a session that started in between from being taken for one the
         // registry lacks.
-        if (lastRead.feed.ok) reading = null;
+        if (lastRead.feed.ok) {
+          reading = null;
+          lastAnswer = { askedAt: checkedAt, entries: lastRead.feed.entries };
+        }
       }
     }
     reading ??= await readRegistryNow(checkedAt);
@@ -783,7 +795,7 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
         });
 
       const sessions = [
-        ...fromRegistry.map((entry) => sessionFromRegistry(entry, context)),
+        ...fromRegistry.map((entry) => sessionFromRegistry(entry, context, lastAnswer)),
         ...jobs,
       ];
       const detail = `Sessions are read from Claude Code's session registry and checked against its own list of sessions.${
@@ -842,7 +854,9 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
           : COULD_NOT_RUN;
 
     if (registry.readable) {
-      const sessions = uniqueById(live.map((entry) => sessionFromRegistry(entry, context)));
+      const sessions = uniqueById(
+        live.map((entry) => sessionFromRegistry(entry, context, lastAnswer)),
+      );
       let detail: string;
       if (problem === "unknown-status") {
         detail = `${whyNoAnswer}, and ${oddStatus}. Sessions are read from the registry alone, and that status is shown as unknown.`;

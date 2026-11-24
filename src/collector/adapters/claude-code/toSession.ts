@@ -185,9 +185,45 @@ export function sessionFromFeed(
   );
 }
 
-/** A session from its registry file alone: the usual way a running session is read. */
-export function sessionFromRegistry(entry: RegistryEntry, context: SessionContext): Session {
-  return build(entry, "registry", context);
+/** The last answer the command gave, and when it was asked. */
+export interface FeedAnswer {
+  askedAt: number;
+  entries: readonly FeedEntry[];
+}
+
+/**
+ * How the command says a live background job stands, which the job's registry
+ * file does not hold. It is used only while the file has said idle since before
+ * the command was asked, and the command called the process idle too, so a
+ * state from before a newer turn is never used.
+ */
+function jobStateOf(
+  entry: RegistryEntry,
+  answer: FeedAnswer,
+  now: number,
+): Pick<FeedEntry, "state" | "waitingFor"> | undefined {
+  if (entry.status !== "idle" || entry.state !== undefined) return undefined;
+  const since = plausibleTime(entry.statusUpdatedAt, now);
+  if (since === null || since > answer.askedAt) return undefined;
+  const job = answer.entries.find(
+    (listed) => listed.pid === entry.pid && describesSameSession(listed, entry),
+  );
+  return job?.status === "idle" && job.state !== undefined
+    ? { state: job.state, waitingFor: job.waitingFor }
+    : undefined;
+}
+
+/**
+ * A session from its registry file, the usual way a running session is read,
+ * with the state of a background job from the command's last answer, if any.
+ */
+export function sessionFromRegistry(
+  entry: RegistryEntry,
+  context: SessionContext,
+  answer: FeedAnswer | null = null,
+): Session {
+  const state = answer === null ? undefined : jobStateOf(entry, answer, context.now);
+  return build({ ...entry, ...state }, "registry", context);
 }
 
 /**

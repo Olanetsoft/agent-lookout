@@ -24,6 +24,7 @@ Changes that a user of Agent Lookout would notice, newest first.
 - A double click or a double tap on Clear history asks, and no longer also answers the question in a narrow window, where the button that clears comes up in the same place. Cancel is inactive while the history is being cleared. (#450)
 - A page left open while Agent Lookout restarts keeps the Events log, the Timeline, the waits and Last wait, unless `AGENT_LOOKOUT_HISTORY=off` keeps them in memory only. Before, it lost everything from before the restart, until it was loaded again, when a session had changed meanwhile. (#449)
 - In the search, the session lit at the top stays lit when another moves above it, as when one starts waiting, so Enter goes to the session you saw. (#451)
+- A Claude Code background job that stops to ask you something, finishes or fails shows as needing you, finished or failed, and is announced, while its process still runs, at the next run of the `claude` command, at most about 30 seconds later. Before, it showed as idle until its process ended. (#455)
 
 ## 0.2.30 - 2026-11-24
 

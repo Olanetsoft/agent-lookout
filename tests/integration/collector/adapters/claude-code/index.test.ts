@@ -20,6 +20,7 @@ import { createEventStore } from "@collector/eventStore";
 import { createHistoryStore } from "@collector/historyStore";
 import { createPoller } from "@collector/poller";
 import { FINISHED_RETENTION_MS } from "@core/sessions/retention";
+import { EMPTY_CHANGE_MEMORY, sessionChanges } from "@core/notices/sessionChanges";
 import type { SourceFact } from "@core/sessions/session";
 import {
   feedEntries,
@@ -851,24 +852,113 @@ describe("background jobs, which the registry cannot hold once their process has
     expect(runs()).toBe(1);
   });
 
-  test("a failed job whose process is still there is read from the registry, as failed and not idle", async () => {
-    const home = await makeClaudeHome({
-      [`${pids.idle}.json`]: registryFile({
-        pid: pids.idle,
+  describe("whose process is still there", () => {
+    const jobPid = pids.idle;
+    /** The job's registry file, which holds its id and nothing of how it stands. */
+    const jobFile = (status: string, since: number) =>
+      registryFile({
+        pid: jobPid,
         sessionId: ids.background,
         kind: "bg",
+        entrypoint: "cli",
+        jobId: "job-0001",
         name: "nightly-report",
-        status: "idle",
-        state: "failed",
-      }),
+        startedAt: now - 60_000,
+        status,
+        statusUpdatedAt: since,
+      });
+
+    /** A job that works at the first poll, and what it does after it. */
+    async function working() {
+      const home = await makeClaudeHome({ [`${jobPid}.json`]: jobFile("busy", now - 50_000) });
+      const clock = handClock();
+      const command: { status: string; state: string; fails: boolean } = {
+        status: "busy",
+        state: "working",
+        fails: false,
+      };
+      const adapter = adapterFor(home, {
+        now: clock.now,
+        run: async () =>
+          command.fails
+            ? { ok: false, problem: "did not answer within 5 seconds" }
+            : {
+                ok: true,
+                stdout: JSON.stringify([
+                  job({
+                    pid: jobPid,
+                    status: command.status,
+                    state: command.state,
+                    startedAt: now - 60_000,
+                  }),
+                ]),
+              },
+      });
+      let memory = EMPTY_CHANGE_MEMORY;
+      /** One poll at this time: how it was read, the job's status, and what is told of it. */
+      const poll = async (at: number) => {
+        clock.moveTo(at);
+        const { health, basis, sessions } = await adapter.poll();
+        const { memory: next, changes } = sessionChanges(memory, {
+          generatedAt: clock.now(),
+          sources: [{ ...health, basis }],
+          sessions,
+        });
+        memory = next;
+        return [basis, sessions[0]?.status, ...changes.map((change) => change.event)];
+      };
+      const writes = (status: string, at: number) =>
+        writeFile(registryPath(home, `${jobPid}.json`), jobFile(status, now + at));
+      expect(await poll(0)).toEqual(["registry+feed", "working"]);
+      return { adapter, command, poll, writes };
+    }
+
+    test.each([
+      ["blocked", "needs-you"],
+      ["done", "finished"],
+      ["stopped", "finished"],
+      ["failed", "failed"],
+    ])("one the command calls %s is %s once it is idle, and is told of once", async (state, is) => {
+      const { adapter, command, poll, writes } = await working();
+
+      await writes("idle", 4_000);
+      Object.assign(command, { status: "idle", state });
+      // What the command last said was before the job went idle.
+      expect(await poll(4_000)).toEqual(["registry+feed", "idle"]);
+      expect(await poll(30_000)).toEqual(["registry+feed", is, is]);
+      expect((await adapter.poll()).sessions[0]).toMatchObject({
+        pid: jobPid,
+        alive: true,
+        statusSince: now + 4_000,
+      });
+      expect(await poll(32_000)).toEqual(["registry+feed", is]);
     });
-    const feed = JSON.stringify([
-      job({ pid: pids.idle, status: "idle", state: "failed", startedAt: now - 60_000 }),
-    ]);
-    const { sessions, basis } = await adapterFor(home, { run: prints(feed) }).poll();
-    expect(basis).toBe("registry+feed");
-    expect(sessions).toHaveLength(1);
-    expect(sessions[0]).toMatchObject({ status: "failed", pid: pids.idle, alive: true });
+
+    test("a state from before a newer turn is not used", async () => {
+      const { command, poll, writes } = await working();
+      await writes("idle", 4_000);
+      Object.assign(command, { status: "idle", state: "blocked" });
+      expect(await poll(30_000)).toEqual(["registry+feed", "needs-you", "needs-you"]);
+
+      // It is answered and works, and goes idle, before the command is run again.
+      await writes("busy", 32_000);
+      expect(await poll(34_000)).toEqual(["registry+feed", "working"]);
+      await writes("idle", 36_000);
+      expect(await poll(38_000)).toEqual(["registry+feed", "idle"]);
+      command.state = "done";
+      expect(await poll(60_000)).toEqual(["registry+feed", "finished", "finished"]);
+    });
+
+    test("a run that fails does not end its wait and begin it anew", async () => {
+      const { command, poll, writes } = await working();
+      await writes("idle", 4_000);
+      Object.assign(command, { status: "idle", state: "blocked" });
+      expect(await poll(30_000)).toEqual(["registry+feed", "needs-you", "needs-you"]);
+      command.fails = true;
+      expect(await poll(60_000)).toEqual(["registry", "needs-you"]);
+      command.fails = false;
+      expect(await poll(90_000)).toEqual(["registry+feed", "needs-you"]);
+    });
   });
 
   test("a job whose process ends between runs keeps its row, not alive, and then shows how it ended", async () => {
@@ -878,9 +968,9 @@ describe("background jobs, which the registry cannot hold once their process has
         pid: jobPid,
         sessionId: ids.background,
         kind: "bg",
+        jobId: "job-0001",
         name: "nightly-report",
         status: "busy",
-        state: "working",
       }),
     });
     const clock = handClock();
@@ -1038,9 +1128,9 @@ describe("through the poller", () => {
         pid: jobPid,
         sessionId: ids.background,
         kind: "bg",
+        jobId: "job-0001",
         name: "nightly-report",
         status: "busy",
-        state: "working",
       }),
     });
     const entry = {

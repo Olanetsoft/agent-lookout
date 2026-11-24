@@ -163,10 +163,11 @@ The second is `claude agents --json --all`, the listing command that Claude Code
 The command's answer outranks the registry.
 
 - It supplies the background jobs that are finished or failed and have no process left. The registry holds a file per live process and cannot.
+- It supplies the `state` of a background job whose process is idle, which the job's registry file does not hold (`jobStateOf` in `toSession.ts`). The state is used only while the file has said `idle` since before the command was asked, and the command called the process idle too, so one from before a newer turn is not used. Until the next run of the command such a job shows as idle.
 - A registry session that the answer did not list is left out, unless it started too recently for the answer to have known about it.
 - When the answer lists a running session the registry lacks, when a registry file has a status the mapping does not know, or when the folder cannot be read, sessions come from the command. It is then run every 5 seconds until the registry can be relied on again.
 
-When the command cannot be found, or fails, the registry is used alone and the health detail says so. If the registry cannot be read either, the source is `unavailable` and the detail names where the adapter looked.
+When the command cannot be found, or fails, the registry is used alone and the health detail says so. The states of the last answer still stand for the jobs that have been idle since before it, so a wait does not end and begin anew over one failed run. If the registry cannot be read either, the source is `unavailable` and the detail names where the adapter looked.
 
 The adapter looks for the `claude` binary on `PATH`, then at `~/.local/bin/claude`, `/opt/homebrew/bin/claude`, `/usr/local/bin/claude`, `~/.npm-global/bin/claude` and `/usr/bin/claude`. The fixed locations are there because an app started from the Finder does not inherit the shell's `PATH`. The last two are for Linux, and come after the Mac's so that the order on a Mac is unchanged. On Windows it looks on `PATH` for `claude.exe`, and for the `claude.exe` that npm keeps beside the `claude.cmd` it makes, then at `%USERPROFILE%\.local\bin\claude.exe` and in npm's folder, `%APPDATA%\npm`. It never starts a `.cmd`, which needs a shell, and which Node refuses to start without one.
 

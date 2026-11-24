@@ -609,6 +609,64 @@ describe("sessionFromRegistry", () => {
   });
 });
 
+describe("a live background job", () => {
+  const askedAt = now - 10_000;
+  const file = {
+    pid: pids.idle,
+    sessionId: ids.background,
+    kind: "bg",
+    status: "idle",
+    waitingFor: "permission prompt",
+    statusUpdatedAt: askedAt,
+  };
+  const listed = {
+    pid: pids.idle,
+    sessionId: ids.background,
+    id: "job-0001",
+    status: "idle",
+    state: "blocked",
+  };
+  const shown = (
+    fileChanges: Record<string, unknown> = {},
+    listedChanges: Record<string, unknown> = {},
+  ) =>
+    sessionFromRegistry({ ...file, ...fileChanges }, context, {
+      askedAt,
+      entries: [{ ...listed, ...listedChanges }],
+    });
+
+  test("takes the state the command gave it, and what it waits for", () => {
+    const blocked = shown();
+    expect(blocked).toMatchObject({
+      status: "needs-you",
+      waitingReason: "other",
+      statusSince: askedAt,
+    });
+    expect(blocked.waitingDetail).toBeUndefined();
+    expect(shown({}, { waitingFor: "input needed" })).toMatchObject({
+      waitingReason: "question",
+      waitingDetail: "input needed",
+    });
+    expect(shown({}, { state: "working" }).status).toBe("idle");
+  });
+
+  test.each<[string, Record<string, unknown>, Record<string, unknown>, string]>([
+    ["went idle after the command was asked", { statusUpdatedAt: askedAt + 1 }, {}, "idle"],
+    ["does not say when it went idle", { statusUpdatedAt: undefined }, {}, "idle"],
+    ["says it went idle at no real time", { statusUpdatedAt: 5 }, {}, "idle"],
+    ["works", { status: "busy" }, {}, "working"],
+    ["is in a shell", { status: "shell" }, {}, "working"],
+    ["holds a state of its own", { state: "done" }, {}, "finished"],
+    ["was busy when the command was asked", {}, { status: "busy" }, "idle"],
+    ["had no process when the command was asked", {}, { status: undefined }, "idle"],
+    ["is another process", {}, { pid: pids.busy }, "idle"],
+    ["was listed with no process", {}, { pid: undefined }, "idle"],
+    ["is another session's process", {}, { sessionId: ids.idle }, "idle"],
+  ])("that %s keeps what its file says", (_what, fileChanges, listedChanges, status) => {
+    expect(shown(fileChanges, listedChanges).status).toBe(status);
+  });
+});
+
 describe("uniqueById", () => {
   test("keeps one session per id, preferring the one whose process is alive", () => {
     const dead = makeSession({ id: "claude-code:a", pid: 1, alive: false });

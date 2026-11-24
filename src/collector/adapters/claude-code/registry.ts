@@ -59,7 +59,10 @@ export interface RegistryEntry {
   /** `busy`, `shell`, `idle` or `waiting`. */
   status?: string;
   waitingFor?: string;
-  /** Background sessions: `working`, `blocked`, `done`, `failed` or `stopped`. */
+  /**
+   * Background sessions: `working`, `blocked`, `done`, `failed` or `stopped`. The
+   * files in public reports hold no state, so the command's is used (`toSession.ts`).
+   */
   state?: string;
   /** Epoch milliseconds of the last status change. */
   statusUpdatedAt?: number;

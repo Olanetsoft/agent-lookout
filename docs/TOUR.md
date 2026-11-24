@@ -231,6 +231,7 @@ A session that is over leaves the list after a day. `FINISHED_RETENTION_MS` and 
 **The command's answer wins.**
 
 - It supplies the background jobs that finished or failed and have no process left. The registry has no file for them.
+- It supplies the `state` of a background job whose process is idle, which the registry file does not hold, while the file has said idle since before the command was asked (`jobStateOf`).
 - A registry session the command did not list is dropped, unless it started in the last 10 seconds (`NEW_SESSION_GRACE_MS`).
 - The registry is not trusted when the command lists a running session the registry lacks, when a registry status is one the mapping does not know, or when the folder cannot be read. Sessions then come from the command, run every 5 seconds (`FEED_FALLBACK_INTERVAL_MS`) until the two agree.
 - When the command is missing or fails, the registry is used alone, and the card says so. When neither works, the source is `unavailable`.
