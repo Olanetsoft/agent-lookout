@@ -1138,7 +1138,7 @@ export const OH_MY_PI_CAPABILITIES: SourceCapabilities = {
   "needs-you": {
     level: "partly",
     reason:
-      "While its ask tool waits for you, for up to 30 minutes, on macOS and Linux. A tool waiting for your approval shows as working.",
+      "While its ask tool or, from omp 19.1.0, an approval waits, not an ACP editor's, for up to 30 quiet minutes, on macOS and Linux.",
   },
   finished: {
     level: "partly",
@@ -2005,7 +2005,7 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         {
           label: "Files read",
           value:
-            "Line 1 and line 2 of each .jsonl, the start of line 3, and its newest lines back to the one that decides, at most 8 MiB, as bytes. Only the title, line 2 and three times become text",
+            "Line 1 and line 2 of each .jsonl, the start of line 3, and its newest lines back to the newest exit, at most 8 MiB, as bytes. Only the title, line 2 and four times become text",
         },
         { label: "Process check", value: "ps -A -o pid=,lstart=,comm=" },
         {

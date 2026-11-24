@@ -1,11 +1,12 @@
 import path from "node:path";
 
+import { QUIET_MS } from "../../../core/mapping/oh-my-pi/ohMyPiMapping.ts";
 import { WRITE_TIME_STEP_MS } from "../../../core/time.ts";
 import type { FileInfo, OpenFile, ReadOnlyIo } from "../../files/readOnlyIo.ts";
 import { bytesAt, literalOf } from "../autohand-code/jsonBytes.ts";
 import { MAX_HEAD_BYTES, parseHeader } from "../pi/sessionFile.ts";
 import type { SessionFileRef } from "../pi/sessionFiles.ts";
-import { readFromEnd, readOnwards, viewOf, type Tail, type TailView } from "./tail.ts";
+import { ownCopy, readFromEnd, readOnwards, viewOf, type Tail, type TailView } from "./tail.ts";
 
 /**
  * Reading the little this adapter needs from an Oh My Pi session file. Built
@@ -100,7 +101,7 @@ export interface OmpHeader {
 export interface OmpSessionFile extends OmpHeader {
   /** The title to show, or null for none. */
   title: string | null;
-  /** What its newest lines say: never `none`, as a file none of whose lines decides is not shown. */
+  /** What its newest lines say: never `none`, as a file none of whose lines decides, with no approval that waits, is not shown. */
   tail: Exclude<TailView, { state: "none" }>;
 }
 
@@ -118,7 +119,7 @@ export type OmpFileRead =
       /** False when the file changed since what it shows was read and could not be read again. */
       current: boolean;
     }
-  /** No session yet: gone, not in a real folder, not whole, or with no line that decides. */
+  /** No session yet: gone, not in a real folder, not whole, or with no line that decides and no approval that waits. */
   | { state: "none" }
   /** Not a session file this reads: no title slot, or no header it reads. */
   | { state: "other" }
@@ -369,10 +370,13 @@ export function createOmpSessionReader(
 
       // A file shorter than when it was last read, even by a half-written line
       // cut off again, is read from its end: a first read of it may reach further back.
+      // In one not written for 30 minutes no wait shows, so it is not read past its
+      // turn for one, and once it is written again it is read from its end.
+      const writtenAt = Math.max(ref.info.mtimeMs, info.mtimeMs);
       const tail =
         (!fresh && known.tail !== null && info.size >= known.info.size
           ? await readOnwards(file, info.size, known.tail)
-          : null) ?? (await readFromEnd(file, info.size));
+          : null) ?? (await readFromEnd(file, info.size, now - writtenAt < QUIET_MS));
 
       // A title is taken only from two reads in a row that agree, of one session's file.
       const sameSession = !fresh || known?.header?.id === header.id;
@@ -389,17 +393,16 @@ export function createOmpSessionReader(
         // A slot not as Oh My Pi writes it keeps the title from before.
         if (read !== undefined) {
           title = read;
-          titleFrom = { slot: Buffer.from(slot), codex };
+          titleFrom = { slot: ownCopy(slot), codex };
         }
       }
-      const writtenAt = Math.max(ref.info.mtimeMs, info.mtimeMs);
       const next: Known = {
         ...base,
         verdict: "ok",
         header,
         line3At,
         codex,
-        slot: Buffer.from(slot),
+        slot: ownCopy(slot),
         title,
         titleFrom,
         settled: agreed && now >= writtenAt + WRITE_TIME_STEP_MS,

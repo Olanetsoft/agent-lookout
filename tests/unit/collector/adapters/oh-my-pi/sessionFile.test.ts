@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import {
   codexImport,
@@ -12,6 +12,7 @@ import { MAX_TAIL_BYTES } from "@collector/adapters/oh-my-pi/tail";
 import { INSTANT, MAX_HEAD_BYTES } from "@collector/adapters/pi/sessionFile";
 import type { FileInfo, OpenFile, ReadOnlyIo } from "@collector/files/readOnlyIo";
 import {
+  approvalRequest,
   codexLines,
   CWD,
   header,
@@ -244,6 +245,20 @@ describe("the title slot", () => {
     expect(await readAt(reader, files, NOW + 6 * SECOND)).toMatchObject({ file: { title: "New" } });
   });
 
+  test("is kept in memory of its own, with none of the bytes copied beside it", async () => {
+    // `Buffer.from` takes a short copy from memory it shares with whatever else was copied lately.
+    const from = vi.spyOn(Buffer, "from");
+    try {
+      await shown(sessionText(undefined, { slot: { title: "Old", source: "user" } }));
+      const copied = from.mock.calls
+        .map(([bytes]) => bytes as unknown)
+        .filter((bytes) => bytes instanceof Uint8Array && bytes.byteLength === SLOT_BYTES);
+      expect(copied).toEqual([]);
+    } finally {
+      from.mockRestore();
+    }
+  });
+
   test("a read again after the clock was set back reads the slot again", async () => {
     const files = memoryFiles();
     files.write(FILE, sessionText(), { mtimeMs: WRITTEN });
@@ -333,6 +348,7 @@ describe("the header", () => {
           newest: { sort: "reply", at: NOW - MINUTE },
           behind: null,
           cutOff: null,
+          approvals: { open: [], unsure: null },
         },
       },
       writtenAt: WRITTEN,
@@ -552,6 +568,61 @@ describe("opening a file", () => {
     expect(await readAt(reader, files, NOW + 2 * SECOND)).toMatchObject({
       state: "ok",
       file: { tail: { state: "ok", newest: { sort: "ask" } } },
+    });
+  });
+
+  test("one not written for 30 minutes is not read past its turn for an approval, and is read from its end once it is written again", async () => {
+    const files = memoryFiles();
+    const pad = `{"type":"model_usage","pad":"${"x".repeat(256 * 1024)}"}\n`;
+    const text = sessionText(
+      message("user") +
+        approvalRequest(WRITTEN, { callId: "call-1:cmd:0" }) +
+        message("assistant") +
+        pad +
+        message("user") +
+        message("assistant"),
+    );
+    /** How many bytes of the file a read asked for, and the approvals it says wait. */
+    async function readAll(reader: ReturnType<typeof readerOf>, now: number) {
+      let bytes = 0;
+      const { openRegular } = files.io;
+      files.io.openRegular = async (target) => {
+        const file = await openRegular(target);
+        return {
+          ...file,
+          read: async (position: number, length: number) => {
+            const data = await file.read(position, length);
+            if (position > 0 && length > 64) bytes += data.byteLength;
+            return data;
+          },
+        };
+      };
+      const read = await readAt(reader, files, now);
+      files.io.openRegular = openRegular;
+      const { tail } = read.state === "ok" ? read.file : { tail: null };
+      return { bytes, open: tail?.state === "ok" ? tail.approvals.open : null };
+    }
+    files.write(FILE, text, { mtimeMs: WRITTEN });
+    const reader = readerOf(files);
+    const quiet = await readAll(reader, NOW);
+    expect(quiet.open).toEqual([]);
+    expect(quiet.bytes).toBeLessThan(256 * 1024);
+    // Written again: the wait is there, read from its end, and after that only what is added is read.
+    files.append(FILE, message("user"), { mtimeMs: NOW });
+    const again = await readAll(reader, NOW + SECOND);
+    expect(again.open).toMatchObject([{ at: WRITTEN, replied: true }]);
+    expect(again.bytes).toBeGreaterThan(256 * 1024);
+    files.append(FILE, message("assistant"), { mtimeMs: NOW + SECOND });
+    const onward = await readAll(reader, NOW + 2 * SECOND);
+    expect(onward.open).toMatchObject([{ at: WRITTEN, replied: true }]);
+    expect(onward.bytes).toBeLessThan(2 * 1024);
+    // A first read of a file written lately finds it too.
+    const other = memoryFiles();
+    other.write(FILE, text, { mtimeMs: NOW - MINUTE });
+    const lately = await readAt(readerOf(other), other);
+    expect(lately).toMatchObject({
+      state: "ok",
+      file: { tail: { approvals: { open: [{ at: WRITTEN, replied: true }] } } },
     });
   });
 });

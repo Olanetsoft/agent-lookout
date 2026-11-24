@@ -1,5 +1,14 @@
 import { spawn } from "node:child_process";
-import { lstat, mkdir, readdir, rename, symlink, utimes, writeFile } from "node:fs/promises";
+import {
+  appendFile,
+  lstat,
+  mkdir,
+  readdir,
+  rename,
+  symlink,
+  utimes,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 
 import { describe, expect, onTestFinished, test } from "vitest";
@@ -14,6 +23,8 @@ import { createCollector } from "@collector/collector";
 import { nodeIo } from "@collector/files/readOnlyIo";
 import { runPs } from "@collector/processes/ps";
 import {
+  approvalEnd,
+  approvalRequest,
   codexLines,
   CWD,
   message,
@@ -29,12 +40,13 @@ import {
 import { makeClaudeHome, NO_SETTINGS_FILE, tempDir } from "@tests/support/node/tempFiles";
 
 // The adapter end to end, on real files this test writes, laid out as Oh My
-// Pi's source at v19.0.0 writes them, and through the collector, which runs
-// the real `ps` on macOS and Linux. Whether an Oh My Pi, or on a Mac any
-// `bun`, runs on the machine under test is not known, so a test that goes
-// through the real `ps` takes any status, and the others give the adapter a
-// stand-in for it. Every time a file holds is set from the clock when the
-// test runs, so the real date does not matter.
+// Pi's source at v19.0.0 writes them, with an approval's lines as v19.1.1
+// writes them, and through the collector, which runs the real `ps` on macOS
+// and Linux. Whether an Oh My Pi, or on a Mac any `bun`, runs on the computer
+// under test is not known, so a test that goes through the real `ps` takes any
+// status, and the others give the adapter a stand-in for it. Every time a file
+// holds is set from the clock when the test runs, so the real date does not
+// matter.
 
 const FILE_NAME = `2026-10-01T11-00-00-000Z_${SESSION_ID}.jsonl`;
 const inProject = (name: string = FILE_NAME) => path.join(PROJECT_FOLDER_NAME, name);
@@ -248,6 +260,41 @@ describe("real files", () => {
         [`oh-my-pi:${sessionIdOf(3)}`, "failed"],
       ]),
     );
+  });
+
+  test("needing you while an approval waits, until it is answered, and never for a subagent's", async () => {
+    const file = inProject();
+    const home = await homeWith({
+      [file]: textNow(
+        (at) =>
+          message("user", { at }) +
+          message("assistant", { at }) +
+          toolStart("bash", at) +
+          approvalRequest(at),
+      ),
+      [inProject(`a_${sessionIdOf(2)}.jsonl`)]: textNow(
+        (at) => message("user", { at }) + message("assistant", { at }) + toolStart("task", at),
+        { header: { id: sessionIdOf(2) } },
+      ),
+      [inProject(path.join(`a_${sessionIdOf(2)}`, "agent-1.jsonl"))]: textNow(
+        (at) => toolStart("bash", at) + approvalRequest(at),
+        { header: { id: sessionIdOf(3) } },
+      ),
+    });
+    const adapter = adapterFor(home);
+    const shown = async () =>
+      new Map((await adapter.poll()).sessions.map(({ id, status }) => [id, status]));
+    expect(await shown()).toEqual(
+      new Map([
+        [`oh-my-pi:${SESSION_ID}`, "needs-you"],
+        [`oh-my-pi:${sessionIdOf(2)}`, "working"],
+      ]),
+    );
+    await appendFile(path.join(home, "sessions", file), approvalEnd(Date.now()));
+    expect((await shown()).get(`oh-my-pi:${SESSION_ID}`)).toBe("working");
+    // On Windows nothing can check that the omp that asked still runs.
+    const windows = await adapterFor(home, true, "win32").poll();
+    expect(new Set(windows.sessions.map(({ status }) => status))).toEqual(new Set(["unknown"]));
   });
 
   test("finished once no omp runs, by an answer asked late enough after the last write", async () => {

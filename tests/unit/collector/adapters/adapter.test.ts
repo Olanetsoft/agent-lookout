@@ -147,7 +147,11 @@ import {
   startV3Scan,
   type KiroLiveness,
 } from "@core/mapping/kiro-cli/kiroCliMapping";
-import { ohMyPiStatusOf, type OhMyPiFacts } from "@core/mapping/oh-my-pi/ohMyPiMapping";
+import {
+  NO_APPROVALS,
+  ohMyPiStatusOf,
+  type OhMyPiFacts,
+} from "@core/mapping/oh-my-pi/ohMyPiMapping";
 import { mapCodexStatus } from "@core/mapping/codexMapping";
 import {
   ENVIRONMENT_CONTEXT_ID,
@@ -1360,11 +1364,12 @@ describe("each declaration agrees with what its adapter does", () => {
     expect(GROK_BUILD_CAPABILITIES.answer.level).toBe("no");
   });
 
-  test("Oh My Pi: a session is working, needs you for a question, finished, failed or unknown, and never idle", () => {
+  test("Oh My Pi: a session is working, needs you for a question or an approval, finished, failed or unknown, and never idle", () => {
     const facts = (fields: Partial<OhMyPiFacts>): OhMyPiFacts => ({
       newest: { sort: "prompt" },
       behind: null,
       cutOff: null,
+      approvals: NO_APPROVALS,
       writtenAt: NOW - 1_000,
       startedAt: NOW - 60_000,
       writer: "backed",
@@ -1374,6 +1379,13 @@ describe("each declaration agrees with what its adapter does", () => {
     const mapped = [
       facts({}),
       facts({ newest: { sort: "ask", at: NOW - 5_000 } }),
+      facts({
+        newest: { sort: "tool" },
+        approvals: {
+          open: [{ start: 512, at: NOW - 5_000, replied: false, writer: "backed" }],
+          unsure: null,
+        },
+      }),
       facts({ newest: { sort: "exit", fatal: false, at: NOW - 5_000 } }),
       facts({
         newest: { sort: "reply", at: NOW - 1_000 },
@@ -1389,7 +1401,7 @@ describe("each declaration agrees with what its adapter does", () => {
       new Set(["working", "needs-you", "finished", "failed", "unknown"]),
     );
     expect(new Set(mapped.flatMap((status) => status.waitingReason ?? []))).toEqual(
-      new Set(["question"]),
+      new Set(["question", "permission"]),
     );
     expect(OH_MY_PI_CAPABILITIES["working-and-idle"].level).toBe("partly");
     expect(OH_MY_PI_CAPABILITIES["needs-you"].level).toBe("partly");
@@ -1404,7 +1416,13 @@ describe("each declaration agrees with what its adapter does", () => {
         cwd: "/Users/example/code/demo",
         startedAt: NOW - 60_000,
         title: null,
-        tail: { state: "ok", newest: { sort: "prompt" }, behind: null, cutOff: null },
+        tail: {
+          state: "ok",
+          newest: { sort: "prompt" },
+          behind: null,
+          cutOff: null,
+          approvals: NO_APPROVALS,
+        },
       },
       status: { status: "working", since: null, showsLastWrite: true },
       writtenAt: NOW - 1_000,

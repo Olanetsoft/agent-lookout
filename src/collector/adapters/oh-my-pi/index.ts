@@ -1,8 +1,14 @@
 import os from "node:os";
 
 import {
+  continuedDeepseekHarnessWait,
+  type DeepseekHarnessWait,
+} from "../../../core/mapping/deepseek-harness/deepseekHarnessMapping.ts";
+import {
+  askedAtOf,
   decidedAtOf,
   exitOf,
+  NO_APPROVALS,
   ohMyPiStatusOf,
 } from "../../../core/mapping/oh-my-pi/ohMyPiMapping.ts";
 import type {
@@ -52,7 +58,8 @@ import {
   type OmpSessionFile,
   type OmpSessionReader,
 } from "./sessionFile.ts";
-import { ohMyPiSession, SOURCE_ID } from "./toSession.ts";
+import { MAX_OPEN_APPROVALS } from "./tail.ts";
+import { ohMyPiId, ohMyPiSession, SOURCE_ID } from "./toSession.ts";
 
 export { OMP_HOME_ENV, ompSessionsDirsFor } from "./folders.ts";
 export { SOURCE_ID } from "./toSession.ts";
@@ -61,7 +68,8 @@ export { SOURCE_ID } from "./toSession.ts";
  * The Oh My Pi adapter. Oh My Pi, `omp`, is a terminal coding agent made from
  * Pi's source, which keeps each session in one JSONL file. See
  * docs/adapters/oh-my-pi.md. Built from Oh My Pi's source at v19.0.0 (MIT),
- * and not yet checked on a computer running Oh My Pi.
+ * with its approval lines read at v19.1.1, and not yet checked on a computer
+ * running Oh My Pi.
  *
  * It is an adapter of its own, not a profile of Pi's: its file begins with a
  * title slot that it rewrites in place, then the header, it names no session
@@ -71,7 +79,8 @@ export { SOURCE_ID } from "./toSession.ts";
  * reader of a header (`parseHeader` in `../pi/sessionFile.ts`), Autohand
  * Code's readers of bytes (`../autohand-code/jsonBytes.ts`), and DeepSeek
  * Harness's question to `ps` and its rules for the answer
- * (`../deepseek-harness/processes.ts`), with Oh My Pi's names.
+ * (`../deepseek-harness/processes.ts`), with Oh My Pi's names, and its way of
+ * keeping a wait across polls (`continuedDeepseekHarnessWait`).
  */
 
 const LABEL = "Oh My Pi";
@@ -118,12 +127,18 @@ export const BASIS = "files";
 export const BASIS_WITHOUT_PROCESSES = "files-without-processes";
 
 /** Said whenever Oh My Pi is watched, because it is what a person would otherwise expect to see. */
-export const STATUS_NOTE =
-  "An Oh My Pi session shows as finished or failed once Oh My Pi writes, at a time that can be right and not before the session began, that it stopped, unless a prompt follows the stop, as in a resumed session, or a tool's start follows it and the newest line is then a tool's start, or a reply or a result not written within 15 seconds of the stop, and on macOS and Linux as working while a turn is open and as needing you while its ask tool waits, while an omp that could have written it runs and it was written in the last 30 minutes, and as finished once no such program could still write it, by ps or since the computer started. Nothing it writes says a turn is over, so a session never shows as idle, and an approval it waits for is not written, so that shows as working. Anything else shows as unknown. No Oh My Pi program is run.";
+export const STATUS_NOTE = [
+  "An Oh My Pi session is finished or failed once Oh My Pi writes that it stopped and no later line shows it went on.",
+  "On macOS and Linux, while an omp that could have written it runs, it is working while a turn is open.",
+  "It needs you then while its ask tool or, from omp 19.1.0, an approval waits, but not one an ACP editor asks you for.",
+  "After 30 quiet minutes it is unknown, and once no such omp runs it is finished.",
+  "Idle never shows, and an approval from before 19.1.0, a subagent's or an ACP editor's shows as working.",
+  "Anything else is unknown. No Oh My Pi program is run.",
+].join(" ");
 
 /** Said whenever Oh My Pi is watched, until the adapter has been checked on a computer running it. */
 export const UNCHECKED_NOTE =
-  "This was built from Oh My Pi's source at v19.0.0 and not yet checked on a computer running Oh My Pi, so a status can be wrong.";
+  "This was built from Oh My Pi's source at v19.0.0, approvals at v19.1.1, not yet checked on one running, so a status can be wrong.";
 
 /** Said when a file in the sessions folder does not begin as an Oh My Pi session's does. */
 export const NOT_A_SESSION_NOTE =
@@ -133,17 +148,20 @@ export const NOT_A_SESSION_NOTE =
 export const NEWER_FORMAT_NOTE =
   "An Oh My Pi newer than this Agent Lookout wrote a session in a format it does not read, so that session is not shown.";
 
-/** Said when a session shown as unknown ends in a line this cannot read. */
+/** Said when a session is unknown because it ends in a line this cannot read, or holds one since its newest prompt or reply that could be an approval's. */
 export const UNREAD_NOTE =
-  "Some Oh My Pi sessions end in a line Agent Lookout cannot read, perhaps from a newer Oh My Pi, so they show as unknown.";
+  "Some Oh My Pi sessions' newest lines hold one Agent Lookout cannot read, perhaps from a newer Oh My Pi, so they show as unknown.";
 
-/** Said when a session shown as unknown has its newest line that decides too far back. */
+/** Said when a session is unknown because its newest line that decides, or the prompt or reply an approval could follow, is too far back. */
 export const TOO_FAR_NOTE =
-  "An Oh My Pi session's newest line that says what it does is more than 8 MiB from its file's end, or past a line longer than that, so it shows as unknown.";
+  "An Oh My Pi session's newest line that says what it does, or its open turn's start, is over 8 MiB back, so it shows as unknown.";
+
+/** Said when a session is unknown because more approvals waited at once than are kept. */
+export const TOO_MANY_NOTE = `An Oh My Pi session asked for more than ${MAX_OPEN_APPROVALS} approvals at once, so it shows as unknown until its next prompt or reply.`;
 
 /** Said on a Mac, where an `omp` installed with `bun install -g` runs as `bun`. */
 export const BUN_NOTE =
-  "On a Mac an omp installed with bun install -g runs as bun, which ps cannot tell from any other bun. While a bun that started before a session's last write, or within a minute after, runs, a session no omp backs shows as unknown, not as working or needing you, and not as finished until Oh My Pi writes that it stopped. A session's last write is judged by the time on its newest line when that is a reply or a result, or its header's when that is later.";
+  "On a Mac an omp installed with bun install -g runs as bun, which ps cannot tell from any other bun. While a bun that started before a session's last write, or within a minute after, runs, a session no omp backs shows as unknown, not as working or needing you, and not as finished until Oh My Pi writes that it stopped.";
 
 /** Said when `PI_CODING_AGENT_SESSION_DIR` is set to a folder that is not absolute. */
 export const SESSION_DIR_NOTE = `${OMP_SESSIONS_ENV} is not an absolute folder, so it is passed over: Oh My Pi finds it from the folder it was started in, which Agent Lookout cannot know.`;
@@ -171,8 +189,11 @@ const OTHER_SYSTEM_NOTE =
  * - Working while a prompt, a tool's result or a tool's start is its newest
  *   line, an `omp` that started before its last write runs and it was written
  *   in the last 30 minutes, on macOS and Linux. Idle never shows.
- * - Needs you while its `ask` tool waits, on the same terms. An approval is
- *   not written, so a tool waiting for one shows as working.
+ * - Needs you while its `ask` tool waits, on the same terms, or, from Oh My Pi
+ *   19.1.0, while a tool waits for an approval, whatever is written after it,
+ *   while an `omp` that started before it was asked runs. Before 19.1.0 an
+ *   approval is not written, nor is one an ACP client asks you for, so a tool
+ *   waiting for one shows as working.
  * - Finished when Oh My Pi writes that it stopped, as `exitOf` takes that
  *   line, by the times the lines carry and never the file's last write, or
  *   no `omp` that could have written it runs, by `ps`, or the computer
@@ -197,7 +218,7 @@ export const OH_MY_PI_CAPABILITIES: SourceCapabilities = {
   "needs-you": {
     level: "partly",
     reason:
-      "While its ask tool waits for you, for up to 30 minutes, on macOS and Linux. A tool waiting for your approval shows as working.",
+      "While its ask tool or, from omp 19.1.0, an approval waits, not an ACP editor's, for up to 30 quiet minutes, on macOS and Linux.",
   },
   finished: {
     level: "partly",
@@ -344,6 +365,8 @@ export function createOhMyPiAdapter(options: OhMyPiAdapterOptions = {}): Adapter
   let absentAt: number | null = null;
   /** What a clock set back keeps the start rule from finishing. */
   let clock = startDshClockGuard();
+  /** What each session that needs the person waits on, and since when, as the last poll found it. */
+  let waits = new Map<string, DeepseekHarnessWait>();
 
   const psRuns = platform === "darwin" || platform === "linux";
   const systemNote = psRuns ? null : platform === "win32" ? WINDOWS_NOTE : OTHER_SYSTEM_NOTE;
@@ -431,7 +454,7 @@ export function createOhMyPiAdapter(options: OhMyPiAdapterOptions = {}): Adapter
         {
           label: "Files read",
           value:
-            "Line 1 and line 2 of each .jsonl, the start of line 3, and its newest lines back to the one that decides, at most 8 MiB, as bytes. Only the title, line 2 and three times become text",
+            "Line 1 and line 2 of each .jsonl, the start of line 3, and its newest lines back to the newest exit, at most 8 MiB, as bytes. Only the title, line 2 and four times become text",
         },
         { label: "Process check", value: `ps ${DSH_TABLE_ARGS.join(" ")}` },
         { label: "Process check run", value: processCheckRun },
@@ -528,13 +551,21 @@ export function createOhMyPiAdapter(options: OhMyPiAdapterOptions = {}): Adapter
       const newest = tail.state === "ok" ? tail.newest : null;
       const behind = tail.state === "ok" ? tail.behind : null;
       const cutOff = tail.state === "ok" ? tail.cutOff : null;
+      const approvals = tail.state === "ok" ? tail.approvals : NO_APPROVALS;
       const writtenAt = plausibleTime(Math.floor(one.writtenAt), checkedAt);
       // By the same rule as its status: an exit cut off decides by the newest line's own time, never the file's last write, and one before the header, as a copy keeps, decides nothing.
       const { startedAt } = one.file;
       const { current } = one;
-      const exit = exitOf({ newest, behind, cutOff, startedAt, now: checkedAt });
-      // A newest reply's or result's own time, so a rename another omp writes later backs nothing.
-      const decidedAt = decidedAtOf({ newest, writtenAt, startedAt, current, now: checkedAt });
+      const exit = exitOf({ newest, behind, cutOff, approvals, startedAt, now: checkedAt });
+      // A newest reply's or result's own time, or an approval's asked since, so a rename another omp writes later backs nothing.
+      const decidedAt = decidedAtOf({
+        newest,
+        approvals,
+        writtenAt,
+        startedAt,
+        current,
+        now: checkedAt,
+      });
       // Whether `ps` could change its status: not once Oh My Pi wrote that it stopped, nor when it was last written before the computer started.
       const settled =
         (exit !== null && plausibleTime(exit.at, checkedAt) !== null) ||
@@ -547,7 +578,7 @@ export function createOhMyPiAdapter(options: OhMyPiAdapterOptions = {}): Adapter
           startFloor: clock.startFloor,
           lowAt: clock.lowAt,
         }) === "gone";
-      return { ...one, newest, behind, cutOff, writtenAt, decidedAt, settled };
+      return { ...one, newest, behind, cutOff, approvals, writtenAt, decidedAt, settled };
     });
 
     const unsettled = facts.filter(({ settled }) => !settled);
@@ -563,36 +594,55 @@ export function createOhMyPiAdapter(options: OhMyPiAdapterOptions = {}): Adapter
 
     let unread = false;
     let tooFar = false;
+    let tooMany = false;
+    const nextWaits = new Map<string, DeepseekHarnessWait>();
     const sessions = facts.map((fact) => {
       const { asRead, file, newest, behind, cutOff, writtenAt, decidedAt, current } = fact;
-      const writer = dshWriter({
-        platform,
-        writtenAt: decidedAt,
-        bootAt,
-        answer,
-        answerAt: asker.answerAt,
-        // A file read at another size, time or identity than when that answer was asked may have been written after it, even when its `lstat` this poll was not.
-        clockSetBack: asker.clockSetBack && asker.asAsked(asRead),
-        startFloor: clock.startFloor,
-        lowAt: clock.lowAt,
-      });
+      const writerAt = (at: number | null) =>
+        dshWriter({
+          platform,
+          writtenAt: at,
+          bootAt,
+          answer,
+          answerAt: asker.answerAt,
+          // A file read at another size, time or identity than when that answer was asked may have been written after it, even when its `lstat` this poll was not.
+          clockSetBack: asker.clockSetBack && asker.asAsked(asRead),
+          startFloor: clock.startFloor,
+          lowAt: clock.lowAt,
+        });
+      // Each approval by when it was asked, so an omp that opened the file since, and wrote more, does not back it.
+      const open = fact.approvals.open.map((one) => ({
+        ...one,
+        writer: writerAt(askedAtOf(one, { writtenAt, now: checkedAt })),
+      }));
       const { startedAt } = file;
       const status = ohMyPiStatusOf({
         newest,
         behind,
         cutOff,
+        approvals: { ...fact.approvals, open },
         writtenAt,
         startedAt,
         current,
-        writer,
+        writer: writerAt(decidedAt),
         now: checkedAt,
       });
+      // Each note only for what makes a session unknown: not one that is so as no omp backs it, it is quiet or on Windows.
       if (status.status === "unknown") {
-        if (newest === null) tooFar = true;
-        else if (newest.sort === "unreadable") unread = true;
+        if (file.tail.state === "too-far" || status.unseen === "too-far") tooFar = true;
+        else if (newest?.sort === "unreadable" || status.unseen === "unread") unread = true;
+        else if (status.unseen === "too-many") tooMany = true;
+      }
+      if (status.wait !== undefined) {
+        // A wait keeps its time while anything it waited on still stands.
+        const id = ohMyPiId(file.id);
+        const wait = continuedDeepseekHarnessWait(waits.get(id), status.wait);
+        nextWaits.set(id, wait);
+        status.since = wait.since;
       }
       return ohMyPiSession({ file, status, writtenAt, now: checkedAt });
     });
+    waits = nextWaits;
 
     let detail = `Sessions are read from the files Oh My Pi keeps in ${sessionsName}. ${alwaysNotes}`;
     let basis = unaskedBasis;
@@ -605,6 +655,7 @@ export function createOhMyPiAdapter(options: OhMyPiAdapterOptions = {}): Adapter
     }
     if (tooFar) detail += ` ${TOO_FAR_NOTE}`;
     if (unread) detail += ` ${UNREAD_NOTE}`;
+    if (tooMany) detail += ` ${TOO_MANY_NOTE}`;
     if (notASession) detail += ` ${NOT_A_SESSION_NOTE}`;
     if (newer) detail += ` ${NEWER_FORMAT_NOTE}`;
     detail += settingNotes;

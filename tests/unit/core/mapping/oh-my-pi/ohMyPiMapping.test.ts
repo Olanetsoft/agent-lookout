@@ -1,13 +1,19 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  askedAtOf,
   CUT_OFF_MS,
   decidedAtOf,
-  exitOf,
+  exitOf as exitOfRead,
+  NO_APPROVALS,
   ohMyPiStatusOf,
   QUIET_MS,
+  type OhMyPiApprovals,
   type OhMyPiFacts,
+  type OhMyPiJudgedApproval,
+  type OhMyPiJudgedApprovals,
   type OhMyPiLine,
+  type OhMyPiWriter,
 } from "@core/mapping/oh-my-pi/ohMyPiMapping";
 import { CLOCK_SLACK_MS } from "@core/time";
 
@@ -29,11 +35,33 @@ const exit = (fatal: boolean, at = NOW - 2 * MINUTE): Extract<OhMyPiLine, { sort
   at,
 });
 
+/** The approvals with no end, asked at these times, their lines 100 bytes apart, with none to be unsure of, each asked by an `omp` that runs, with no prompt or reply since unless given. */
+const waiting = (
+  times: (number | null)[],
+  unsure: OhMyPiApprovals["unsure"] = null,
+  each: Partial<Pick<OhMyPiJudgedApproval, "writer" | "replied">> = {},
+): OhMyPiJudgedApprovals => ({
+  open: times.map((at, index) => ({
+    start: 100 * (index + 1),
+    at,
+    replied: false,
+    writer: "backed",
+    ...each,
+  })),
+  unsure,
+});
+
+/** The exit that decides, with no approval open unless given. */
+const exitOf = (
+  facts: Omit<Parameters<typeof exitOfRead>[0], "approvals"> & { approvals?: OhMyPiApprovals },
+) => exitOfRead({ approvals: NO_APPROVALS, ...facts });
+
 function statusOf(facts: Partial<OhMyPiFacts>) {
   return ohMyPiStatusOf({
     newest: { sort: "prompt" },
     behind: null,
     cutOff: null,
+    approvals: NO_APPROVALS,
     writtenAt: WRITTEN,
     startedAt: STARTED,
     writer: "backed",
@@ -41,6 +69,265 @@ function statusOf(facts: Partial<OhMyPiFacts>) {
     ...facts,
   });
 }
+
+describe("an approval that waits", () => {
+  const at = NOW - 3 * MINUTE;
+  const permission = {
+    status: "needs-you",
+    since: at,
+    waitingReason: "permission",
+    wait: { since: at, ids: ["approval:100"] },
+    showsLastWrite: false,
+  };
+
+  test("needs you for permission, since it was asked, whatever line is newest and decides", () => {
+    for (const newest of [
+      { sort: "tool" },
+      result(),
+      result(null),
+      { sort: "prompt" },
+      reply(),
+      { sort: "unreadable" },
+      null,
+    ] as const) {
+      expect(statusOf({ newest, approvals: waiting([at]) })).toEqual(permission);
+    }
+  });
+
+  test("of several, since the first of them was asked", () => {
+    expect(statusOf({ approvals: waiting([at + MINUTE, at]) })).toMatchObject({
+      status: "needs-you",
+      since: at,
+      wait: { since: at, ids: ["approval:100", "approval:200"] },
+    });
+  });
+
+  test("with a time that is not known, or cannot be right, since the first that is, or none", () => {
+    expect(statusOf({ approvals: waiting([null]) })).toMatchObject({
+      status: "needs-you",
+      since: null,
+      waitingReason: "permission",
+    });
+    expect(statusOf({ approvals: waiting([null, at]) }).since).toBe(at);
+    const ahead = waiting([NOW + CLOCK_SLACK_MS + 1]);
+    expect(statusOf({ approvals: ahead })).toMatchObject({ status: "needs-you", since: null });
+    expect(statusOf({ approvals: ahead, now: NOW + 1 }).since).toBe(NOW + CLOCK_SLACK_MS + 1);
+  });
+
+  test("with its ask tool newest, for permission, since the earlier of the two", () => {
+    for (const [asked, since] of [
+      [at, at],
+      [NOW - 10 * MINUTE, NOW - 10 * MINUTE],
+    ] as const) {
+      expect(
+        statusOf({ newest: { sort: "ask", at: asked }, approvals: waiting([at]) }),
+      ).toMatchObject({
+        status: "needs-you",
+        since,
+        waitingReason: "permission",
+        wait: { since, ids: ["approval:100", `ask:${asked}`] },
+      });
+    }
+  });
+
+  test("whatever prompt or reply follows it, as while its command runs in the background", () => {
+    const approvals = waiting([at], null, { replied: true });
+    for (const newest of [
+      { sort: "prompt" },
+      reply(),
+      reply(null),
+      { sort: "tool" },
+      result(),
+    ] as const) {
+      expect(statusOf({ newest, approvals })).toEqual(permission);
+    }
+  });
+
+  test("asked by an omp that has gone, does not wait for one that opened the file since", () => {
+    for (const replied of [true, false]) {
+      const approvals = waiting([at], null, { writer: "gone", replied });
+      for (const newest of [{ sort: "prompt" }, result(), { sort: "tool" }] as const) {
+        expect(statusOf({ newest, approvals })).toEqual({
+          status: "working",
+          since: null,
+          showsLastWrite: true,
+        });
+      }
+      expect(statusOf({ newest: reply(), approvals }).status).toBe("unknown");
+      expect(statusOf({ newest: ask, approvals })).toMatchObject({
+        status: "needs-you",
+        waitingReason: "question",
+        wait: { ids: [`ask:${NOW - 5 * MINUTE}`] },
+      });
+    }
+    // Of two, the one whose omp runs.
+    const [left, live] = waiting([at, at + MINUTE]).open as [
+      OhMyPiJudgedApproval,
+      OhMyPiJudgedApproval,
+    ];
+    expect(
+      statusOf({ approvals: { open: [{ ...left, writer: "gone" }, live], unsure: null } }),
+    ).toMatchObject({ since: at + MINUTE, wait: { ids: ["approval:200"] } });
+  });
+
+  test("asked by an omp that may have gone, leaves an open turn unknown, not working", () => {
+    for (const replied of [true, false]) {
+      const approvals = waiting([at], null, { writer: "maybe", replied });
+      for (const newest of [{ sort: "prompt" }, result(), { sort: "tool" }, reply()] as const) {
+        expect(statusOf({ newest, approvals })).toEqual({
+          status: "unknown",
+          since: null,
+          showsLastWrite: false,
+        });
+      }
+      expect(statusOf({ newest: ask, approvals }).waitingReason).toBe("question");
+    }
+  });
+
+  test("with no time known, is judged as the session is, until a prompt or a reply another omp could have written", () => {
+    for (const none of [null, NOW + CLOCK_SLACK_MS + 1]) {
+      for (const [writer, replied, status] of [
+        ["backed", false, "needs-you"],
+        ["backed", true, "unknown"],
+        ["maybe", false, "unknown"],
+        ["maybe", true, "unknown"],
+        ["gone", false, "finished"],
+        ["gone", true, "finished"],
+      ] as const) {
+        // What ps says of the approval is not looked at.
+        const approvals = waiting([none], null, { writer: "backed", replied });
+        expect(statusOf({ newest: { sort: "tool" }, approvals, writer }).status).toBe(status);
+      }
+    }
+  });
+
+  test("with an exit before it, waits, since an omp ran again to ask", () => {
+    const approvals = waiting([at]);
+    const before = exit(true, at - SECOND);
+    for (const lines of [
+      { newest: before },
+      { newest: reply(), behind: before, cutOff: before },
+      // As --restore writes, within 15 seconds of the exit.
+      { newest: result(at + SECOND), cutOff: before },
+    ]) {
+      expect(statusOf({ ...lines, approvals })).toEqual(permission);
+      // Whether a prompt or a reply follows it, as while its command runs in the background, or none.
+      for (const replied of [true, false]) {
+        const open = waiting([at], null, { replied });
+        expect(
+          exitOf({
+            behind: null,
+            cutOff: null,
+            ...lines,
+            approvals: open,
+            startedAt: STARTED,
+            now: NOW,
+          }),
+        ).toBeNull();
+      }
+      // Nor is it ended by that exit while the omp that asked may run, or once it has gone.
+      const maybe = waiting([at], null, { writer: "maybe" });
+      expect(statusOf({ ...lines, approvals: maybe, writer: "maybe" }).status).toBe("unknown");
+      const gone = waiting([at], null, { writer: "gone" });
+      expect(statusOf({ ...lines, approvals: gone, writer: "gone" })).toMatchObject({
+        status: "finished",
+        since: decidedAtOf({
+          ...lines,
+          approvals: gone,
+          writtenAt: WRITTEN,
+          startedAt: STARTED,
+          now: NOW,
+        }),
+      });
+      // One copied from before the header is another session's, so the exit decides.
+      const copied = waiting([STARTED - SECOND]);
+      expect(statusOf({ ...lines, approvals: copied }).status).toBe("failed");
+    }
+  });
+
+  test("does not outlive the program that asked", () => {
+    const approvals = waiting([at], null, { writer: "gone" });
+    for (const newest of [{ sort: "tool" }, null] as const) {
+      expect(statusOf({ newest, approvals, writer: "gone" })).toEqual({
+        status: "finished",
+        since: at,
+        showsLastWrite: false,
+      });
+    }
+  });
+
+  test("while no omp is known to back it, or it wrote nothing for 30 minutes, is unknown", () => {
+    const approvals = waiting([at]);
+    const newest = { sort: "tool" } as const;
+    const maybe: OhMyPiWriter = "maybe";
+    expect(
+      statusOf({ newest, approvals: waiting([at], null, { writer: maybe }), writer: maybe }),
+    ).toEqual({ status: "unknown", since: null, showsLastWrite: false });
+    expect(statusOf({ newest, approvals, writtenAt: NOW - QUIET_MS }).status).toBe("unknown");
+    expect(statusOf({ newest, approvals, writtenAt: NOW - QUIET_MS + 1 }).status).toBe("needs-you");
+    expect(statusOf({ newest, approvals, writtenAt: null }).status).toBe("unknown");
+  });
+
+  test("asked before the header, as one a copy keeps, waits in the session copied, not in this one", () => {
+    const newest = { sort: "tool" } as const;
+    const copied = waiting([at]);
+    expect(statusOf({ newest, approvals: copied, startedAt: at + 1 })).toEqual({
+      status: "working",
+      since: null,
+      showsLastWrite: true,
+    });
+    // Nor does it hold up a turn when its omp cannot be told.
+    const maybe = waiting([at], null, { writer: "maybe" });
+    expect(statusOf({ newest, approvals: maybe, startedAt: at + 1 }).status).toBe("working");
+    expect(statusOf({ newest, approvals: copied, startedAt: at }).status).toBe("needs-you");
+    expect(
+      statusOf({ newest, approvals: waiting([at, at + MINUTE]), startedAt: at + 1 }),
+    ).toMatchObject({ since: at + MINUTE, wait: { ids: ["approval:200"] } });
+    // With no time of its own, or a header whose time cannot be right, it counts.
+    expect(statusOf({ newest, approvals: waiting([null]), startedAt: at + 1 }).status).toBe(
+      "needs-you",
+    );
+    for (const startedAt of [null, NOW + CLOCK_SLACK_MS + 1]) {
+      expect(statusOf({ newest, approvals: copied, startedAt }).status).toBe("needs-you");
+    }
+  });
+
+  test("that could wait unseen leaves an open turn unknown, and an ask, or one that is seen, needing you", () => {
+    for (const unsure of ["unread", "too-far", "too-many"] as const) {
+      const unknown = { status: "unknown", since: null, showsLastWrite: false };
+      for (const newest of [{ sort: "prompt" }, result(), { sort: "tool" }, null] as const) {
+        expect(statusOf({ newest, approvals: waiting([], unsure) })).toEqual({
+          ...unknown,
+          unseen: unsure,
+        });
+        // Not why it is unknown when something else would leave it so.
+        for (const other of [
+          { writer: "maybe" },
+          { writtenAt: NOW - QUIET_MS },
+          { writtenAt: null },
+          { approvals: waiting([at], unsure, { writer: "maybe" }) },
+        ] as const) {
+          if (newest === null && "approvals" in other) continue;
+          expect(statusOf({ newest, approvals: waiting([], unsure), ...other })).toEqual(unknown);
+        }
+      }
+      for (const newest of [reply(), { sort: "unreadable" }] as const) {
+        expect(statusOf({ newest, approvals: waiting([], unsure) })).toEqual(unknown);
+      }
+      expect(statusOf({ newest: ask, approvals: waiting([], unsure) })).toMatchObject({
+        status: "needs-you",
+        waitingReason: "question",
+      });
+      expect(statusOf({ newest: ask, approvals: waiting([], unsure) })).not.toHaveProperty(
+        "unseen",
+      );
+      expect(statusOf({ newest: result(), approvals: waiting([at], unsure) })).toEqual(permission);
+      expect(
+        statusOf({ newest: result(), approvals: waiting([], unsure), writer: "gone" }).status,
+      ).toBe("finished");
+    }
+  });
+});
 
 describe("each row", () => {
   test("1. an exit of kind fatal, newest or behind a reply: failed, since it was recorded", () => {
@@ -108,6 +395,7 @@ describe("each row", () => {
       status: "needs-you",
       since: NOW - 5 * MINUTE,
       waitingReason: "question",
+      wait: { since: NOW - 5 * MINUTE, ids: [`ask:${NOW - 5 * MINUTE}`] },
       showsLastWrite: false,
     });
   });
@@ -344,6 +632,7 @@ describe("the last write ps is judged against", () => {
   const judged = (facts: Partial<Parameters<typeof decidedAtOf>[0]>) =>
     decidedAtOf({
       newest: reply(at),
+      approvals: NO_APPROVALS,
       writtenAt: WRITTEN,
       startedAt: at - HOUR,
       now: NOW,
@@ -381,6 +670,55 @@ describe("the last write ps is judged against", () => {
       expect(judged({ newest: line(at), current: true })).toBe(at);
     }
     expect(judged({ current: false, writtenAt: null })).toBeNull();
+  });
+
+  test("while an approval waits, is when it was asked, or the newest reply's or result's time when that is later", () => {
+    const approvals = waiting([at + MINUTE, at]);
+    for (const newest of [{ sort: "tool" }, { sort: "prompt" }, ask, null] as const) {
+      expect(judged({ newest, approvals })).toBe(at + MINUTE);
+      expect(judged({ newest, approvals, current: false })).toBe(WRITTEN);
+    }
+    expect(judged({ newest: result(at + SECOND), approvals })).toBe(at + MINUTE);
+    expect(judged({ newest: result(at + HOUR), approvals })).toBe(at + HOUR);
+    // Never later than the file's last write.
+    expect(judged({ newest: { sort: "tool" }, approvals: waiting([WRITTEN + SECOND]) })).toBe(
+      WRITTEN,
+    );
+  });
+
+  test("passes over an approval a prompt or a reply follows, which another omp may have written", () => {
+    for (const asked of [at - MINUTE, null]) {
+      const approvals = waiting([asked], null, { replied: true });
+      for (const newest of [{ sort: "tool" }, { sort: "prompt" }, ask] as const) {
+        expect(judged({ newest, approvals })).toBe(WRITTEN);
+      }
+      expect(judged({ newest: result(at), approvals })).toBe(at);
+      expect(judged({ newest: reply(at), approvals })).toBe(at);
+    }
+  });
+
+  test("for an approval is when it was asked, never later than the file's last write, or none", () => {
+    const facts = { writtenAt: WRITTEN + 0.5, now: NOW };
+    expect(askedAtOf({ at }, facts)).toBe(at);
+    expect(askedAtOf({ at: WRITTEN + SECOND }, facts)).toBe(WRITTEN);
+    expect(askedAtOf({ at }, { ...facts, writtenAt: null })).toBe(at);
+    for (const none of [null, NOW + CLOCK_SLACK_MS + 1]) {
+      expect(askedAtOf({ at: none }, facts)).toBeNull();
+    }
+  });
+
+  test("is the file's last write while an approval waits with no time that can be right", () => {
+    for (const none of [null, NOW + CLOCK_SLACK_MS + 1]) {
+      expect(judged({ newest: { sort: "tool" }, approvals: waiting([none]) })).toBe(WRITTEN);
+      expect(judged({ newest: result(at), approvals: waiting([none]) })).toBe(WRITTEN);
+      expect(judged({ newest: result(none), approvals: waiting([at]) })).toBe(WRITTEN);
+    }
+  });
+
+  test("passes over an approval asked before the header", () => {
+    const facts = { approvals: waiting([at - MINUTE]), startedAt: at };
+    expect(judged({ newest: { sort: "tool" }, ...facts })).toBe(WRITTEN);
+    expect(judged({ newest: result(at + SECOND), ...facts })).toBe(at + SECOND);
   });
 
   test("is none when the file's last write cannot be right", () => {
