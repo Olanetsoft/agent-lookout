@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
 
@@ -8,6 +8,8 @@ import type { Remote } from "@collector/remotes/remoteSettings";
 import { SSH_BIN_ENV, sshArguments } from "@collector/remotes/sshProgram";
 import {
   createTunnel,
+  FIRST_READING_MS,
+  spawnSsh,
   STOP_WAIT_MS,
   type Tunnel,
   type TunnelOptions,
@@ -219,10 +221,17 @@ describe("the tunnel to another machine", () => {
     STAND_IN_TIMEOUT_MS,
   );
 
-  posixTest(
-    "an ssh that hangs while it signs in is ended, with the ProxyCommand it hangs in, and started again",
-    async () => {
-      const ssh = await makeStandInSsh(SIGNING_IN);
+  test("a run has three minutes to bring its first reading back, longer than a system tries to connect", () => {
+    expect(FIRST_READING_MS).toBe(180_000);
+  });
+
+  posixTest.each([
+    ["a ProxyCommand", {}],
+    ["a ProxyCommand that does not end on SIGTERM", { STAND_IN_SSH_PROXY_IGNORE_TERM: "1" }],
+  ])(
+    "an ssh that hangs while it signs in, in %s, is ended with it, and started again",
+    async (_, settings) => {
+      const ssh = await makeStandInSsh({ ...SIGNING_IN, ...settings });
       const tunnel = tunnelFor(
         { name: "devbox", target: "devbox", port: NOWHERE },
         { ...ssh.env, STAND_IN_SSH_PROXY: ssh.proxyLog },
@@ -265,9 +274,17 @@ describe("the tunnel to another machine", () => {
     "a program ssh started that outlives it does not hold up the next run",
     async () => {
       const ssh = await makeStandInSsh({ STAND_IN_SSH_PROXY_APART: "1" });
+      const children: ChildProcess[] = [];
       const tunnel = tunnelFor(
         { name: "devbox", target: "dev@refuse.example", port: NOWHERE },
         { ...ssh.env, STAND_IN_SSH_PROXY: ssh.proxyLog },
+        {
+          spawnSsh(...given) {
+            const child = spawnSsh(...given);
+            children.push(child);
+            return child;
+          },
+        },
       );
       tunnel.start();
       expect((await ended(tunnel, 1)).end.said).toBe(
@@ -275,6 +292,8 @@ describe("the tunnel to another machine", () => {
       );
       const [proxy] = await ssh.proxies();
       expect(isRunning(proxy as number)).toBe(true);
+      // What that program still holds open is not read any more.
+      expect(children[0]?.stderr?.destroyed).toBe(true);
       await running(tunnel, 2);
     },
     STAND_IN_TIMEOUT_MS,
@@ -351,6 +370,34 @@ describe("the tunnel to another machine", () => {
       await new Promise((resolve) => setTimeout(resolve, 400));
       expect(await ssh.runs()).toHaveLength(1);
       expect(tunnel.state().kind).toBe("off");
+    },
+    STAND_IN_TIMEOUT_MS,
+  );
+
+  posixTest(
+    "a process that exits without stopping it ends ssh, with the ProxyCommand it runs",
+    async () => {
+      const once = vi.spyOn(process, "once");
+      onTestFinished(() => once.mockRestore());
+      vi.resetModules();
+      const fresh = await import("@collector/remotes/tunnel");
+      const ssh = await makeStandInSsh(SIGNING_IN);
+      const tunnel = fresh.createTunnel({
+        remote: { name: "devbox", target: "devbox", port: NOWHERE },
+        env: { ...ssh.env, STAND_IN_SSH_PROXY: ssh.proxyLog },
+      });
+      onTestFinished(() => tunnel.stop());
+      tunnel.start();
+      await vi.waitFor(async () => expect(await ssh.runs()).toHaveLength(1), WAIT);
+      const [run] = await ssh.runs();
+      const [proxy] = await ssh.proxies();
+
+      const onExit = once.mock.calls.filter(([event]) => event === "exit");
+      expect(onExit).toHaveLength(1);
+      (onExit[0]?.[1] as () => void)();
+      for (const pid of [run?.pid, proxy]) {
+        await vi.waitFor(() => expect(isRunning(pid as number)).toBe(false), WAIT);
+      }
     },
     STAND_IN_TIMEOUT_MS,
   );

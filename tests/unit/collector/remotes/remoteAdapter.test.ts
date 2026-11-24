@@ -246,9 +246,9 @@ describe("a machine's card", () => {
     expect((await adapter.poll()).health.detail).toBe(
       "ssh could not connect to dev@devbox.local: ssh: Could not resolve hostname devbox.local: nodename nor servname provided, or not known. Trying again in 1 second.",
     );
-    set(ended({ said: "Nothing came back within 90 seconds.", code: null }, 1_000));
+    set(ended({ said: "Nothing came back within 180 seconds.", code: null }, 1_000));
     expect((await adapter.poll()).health.detail).toBe(
-      "ssh could not connect to dev@devbox.local: Nothing came back within 90 seconds. Trying again in 1 second.",
+      "ssh could not connect to dev@devbox.local: Nothing came back within 180 seconds. Trying again in 1 second.",
     );
     set(ended({ said: null, code: 1 }));
     expect((await adapter.poll()).health.detail).toBe(
@@ -294,7 +294,7 @@ describe("a machine's card", () => {
     ["what listens there closed the connection", { code: 0 }],
     [
       "what listens there never answered",
-      { code: 0, said: "Nothing came back within 90 seconds." },
+      { code: 0, said: "Nothing came back within 180 seconds." },
     ],
     ["Agent Lookout there stopped", { code: 0, connected: true }],
   ])("no Agent Lookout answering there, as %s: says to start it there", async (_, end) => {

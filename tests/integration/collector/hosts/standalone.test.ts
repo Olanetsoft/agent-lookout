@@ -18,7 +18,7 @@ import {
 // whether or not `npm run build` has been. The real `npm start` process is
 // started in serve.test.ts.
 
-type Signal = "SIGINT" | "SIGTERM";
+type Signal = "SIGINT" | "SIGTERM" | "SIGHUP";
 
 /** A stand-in for the process the host runs in: it records the signals it is given and every exit. */
 function standInProcess() {
@@ -273,7 +273,7 @@ describe("the standalone host", () => {
     ]);
     expect(host.errors).toEqual([]);
     expect(host.exits).toEqual([]);
-    expect([...host.listeners.keys()].sort()).toEqual(["SIGINT", "SIGTERM"]);
+    expect([...host.listeners.keys()].sort()).toEqual(["SIGHUP", "SIGINT", "SIGTERM"]);
 
     const page = await request(address.port, "/");
     expect(page.status).toBe(200);
@@ -555,12 +555,15 @@ describe("the standalone host", () => {
     await expect(request(address.port, "/api/health")).rejects.toThrow(/ECONNREFUSED|ECONNRESET/);
   });
 
-  test("Ctrl+C stops it the same way", async () => {
+  test.each([
+    ["Ctrl+C", "SIGINT"],
+    ["its terminal closing", "SIGHUP"],
+  ] as const)("%s stops it the same way", async (_, signal) => {
     const { env } = await isolatedEnv();
     const host = await start(await distFolder(true), env);
     const { port } = host.address as AddressInfo;
 
-    host.send("SIGINT");
+    host.send(signal);
 
     await vi.waitFor(() => expect(host.exits).toEqual([0]));
     await expect(request(port, "/api/health")).rejects.toThrow(/ECONNREFUSED|ECONNRESET/);

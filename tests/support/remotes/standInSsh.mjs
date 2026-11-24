@@ -26,7 +26,8 @@
 // With STAND_IN_SSH_PROXY naming a file, it first starts a program that never
 // ends and holds its error output, as a ProxyCommand that hangs, and adds its
 // process ID to the file. With STAND_IN_SSH_PROXY_APART set, that program is in a
-// process group of its own, so a signal to ssh's group does not reach it.
+// process group of its own, so a signal to ssh's group does not reach it, and
+// with STAND_IN_SSH_PROXY_IGNORE_TERM set it does not end on SIGTERM.
 
 import { spawn } from "node:child_process";
 import { appendFileSync } from "node:fs";
@@ -34,7 +35,10 @@ import { connect } from "node:net";
 import { fileURLToPath } from "node:url";
 
 const args = process.argv.slice(2);
-if (args[0] === "proxy") await new Promise(() => setInterval(() => {}, 1_000));
+if (args[0] === "proxy") {
+  if (process.env.STAND_IN_SSH_PROXY_IGNORE_TERM) process.on("SIGTERM", () => {});
+  await new Promise(() => setInterval(() => {}, 1_000));
+}
 const separator = args.indexOf("--");
 const target = separator >= 0 ? args[separator + 1] : undefined;
 const [host, port] = (args[args.indexOf("-W") + 1] ?? "").split(":");

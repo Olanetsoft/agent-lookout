@@ -87,7 +87,7 @@ export async function findSsh(
  * - `-o ControlMaster=no -o ControlPath=none`: a connection of its own, never
  *   one shared with another ssh through the person's `ControlMaster` and
  *   `ControlPath`, and never one left in the background by `ControlPersist`.
- *   So it ends when this process does. Options given here come before the
+ *   So it ends when this process ends it. Options given here come before the
  *   person's ssh config.
  * - `--`, then the target, already checked by `isSshTarget`, so nothing in it is
  *   ever read as an option.

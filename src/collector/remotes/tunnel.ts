@@ -22,9 +22,11 @@ export const RESTART_DELAYS_MS = [1_000, 2_000, 5_000, 10_000, 30_000, 60_000] a
 /**
  * How long a run of ssh has to bring back its first reading. One that hangs
  * while it signs in, itself or in a `ProxyJump` or `ProxyCommand`, never ends on
- * its own: ssh checks the other computer only once it has signed in.
+ * its own: ssh checks the other computer only once it has signed in. It is more
+ * than Linux takes to give up on an address that does not answer, 127 seconds,
+ * and leaves time for a `ProxyCommand` that starts the other computer.
  */
-export const FIRST_READING_MS = 90_000;
+export const FIRST_READING_MS = 180_000;
 
 /** The most of what ssh says that is kept: its last lines, which say why it ended. */
 const MAX_SAID_BYTES = 4_096;
@@ -120,7 +122,8 @@ const OWN_GROUP = process.platform !== "win32";
  * Starts ssh directly, with no shell between. With BatchMode it asks nothing, so
  * its input and output hold only what goes to the other machine's Agent Lookout
  * and comes back. Its error output is read for the reason it ends. Its input
- * ends when this process does, however it does, and then so does ssh.
+ * ends when this process does, however it does, and then so does ssh, unless it
+ * is still signing in: that one only `stop` and `endOnExit` end.
  */
 export const spawnSsh: SpawnSsh = (binary, args, env) =>
   spawn(binary, [...args], {
@@ -130,14 +133,14 @@ export const spawnSsh: SpawnSsh = (binary, args, env) =>
     windowsHide: true,
   });
 
-function signal(ssh: ChildProcess, name: "SIGTERM" | "SIGKILL"): void {
-  if (ssh.pid === undefined) return;
+/** Sends ssh a signal, or with 0 none, and says whether any of it was left to get it. */
+function signal(ssh: ChildProcess, name: "SIGTERM" | "SIGKILL" | 0): boolean {
+  if (ssh.pid === undefined) return false;
   try {
     // A negative pid is the whole group ssh leads.
-    if (OWN_GROUP) process.kill(-ssh.pid, name);
-    else ssh.kill(name);
+    return OWN_GROUP ? process.kill(-ssh.pid, name) : ssh.kill(name);
   } catch {
-    // Nothing is left to signal.
+    return false;
   }
 }
 
@@ -389,12 +392,13 @@ export function createTunnel(options: TunnelOptions): Tunnel {
     });
   }
 
-  /** Ends a run of ssh, whose end `gone` says. */
+  /** Ends a run of ssh, whose end `gone` says, and what it started, which can outlive it. */
   async function endSsh(ssh: ChildProcess, gone: Promise<void>): Promise<void> {
     signal(ssh, "SIGTERM");
-    if (await ended(gone)) return;
-    signal(ssh, "SIGKILL");
-    await ended(gone);
+    const kill = setTimeout(() => signal(ssh, "SIGKILL"), STOP_WAIT_MS);
+    kill.unref?.();
+    if (!(await ended(gone))) await ended(gone);
+    if (!signal(ssh, 0)) clearTimeout(kill);
   }
 
   return {

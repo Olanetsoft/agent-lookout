@@ -12,7 +12,7 @@ import { makeClaudeHome, NO_SETTINGS_FILE, tempDir } from "@tests/support/node/t
 // opened. It reads stand-in folders only, runs no `claude` command, and leaves
 // tmux and Terminal alone.
 
-type Signal = "SIGINT" | "SIGTERM";
+type Signal = "SIGINT" | "SIGTERM" | "SIGHUP";
 
 /** Settings that name nothing on this machine, with whatever a test adds. */
 async function isolatedEnv(overrides: Record<string, string> = {}): Promise<NodeJS.ProcessEnv> {
