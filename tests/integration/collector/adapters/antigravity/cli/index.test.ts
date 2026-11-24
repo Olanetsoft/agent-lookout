@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   appendFile,
+  chmod,
   lstat,
   mkdir,
   readdir,
@@ -33,6 +34,7 @@ import {
   replyStep,
   SECOND,
   step,
+  subagentsPath,
   textStep,
   transcriptPath,
   workingTurn,
@@ -288,6 +290,134 @@ describe("the Antigravity CLI adapter, on a folder laid out as agy lays it out",
       tokens: { input: 12_544, cached: 12_032, output: 66 },
     });
   });
+});
+
+describe("a conversation another one started, as a subagent or a swarm worker", () => {
+  const WORKER = conversationId("e5");
+  const NESTED = conversationId("f6");
+  const OTHERS = { [WORKING]: "working", [IDLE]: "idle", [FAILED]: "failed" };
+  /** The one that started the workers is listed for what they wrote. */
+  const LISTED = { ...OTHERS, [OLD]: "idle" };
+
+  /** The agy folder of the other tests, where a conversation of two days ago has started a worker, which has started another. */
+  async function withWorkers() {
+    const home = await makeAgyHome();
+    for (const [parent, child] of [
+      [OLD, WORKER],
+      [WORKER, NESTED],
+    ]) {
+      await put(
+        transcriptPath(home, child),
+        workingTurn(0, NOW - MINUTE).join(""),
+        NOW - 5 * SECOND,
+      );
+      await put(subagentsPath(home, parent, `${child}.json`), PRIVATE_WORDS, NOW - MINUTE);
+    }
+    const generated = path.join(home, "brain", IDLE, ".system_generated");
+    await put(path.join(generated, "swarm", "members.json"), PRIVATE_WORDS, NOW);
+    await put(path.join(generated, "tasks", "task-1.log"), PRIVATE_WORDS, NOW);
+    return home;
+  }
+
+  test("has no row, and only the names of the records are read", async () => {
+    const home = await withWorkers();
+    const before = await snapshotOf(home);
+    const { io, calls } = recordingIo();
+    const result = await adapterFor(home, { io }).poll();
+    expect(statuses(result.sessions)).toEqual(LISTED);
+    expect(JSON.stringify(result)).not.toContain(PRIVATE_WORDS);
+    expect(await snapshotOf(home)).toEqual(before);
+
+    const opened = calls.filter((call) => call.method === "openRegular").map((call) => call.path);
+    expect(opened.sort()).toEqual(
+      [WORKING, IDLE, FAILED, OLD].map((id) => path.normalize(transcriptPath(home, id))).sort(),
+    );
+    for (const call of calls) expect(call.path).not.toMatch(/swarm|tasks|members/);
+    expect(calls.filter((call) => call.method === "readdir").map((call) => call.path)).toEqual(
+      expect.arrayContaining([path.normalize(subagentsPath(home, OLD))]),
+    );
+  });
+
+  test("is listed while an agy program its command line names it with runs", async () => {
+    const home = await withWorkers();
+    const processes = standInProcesses([
+      { startedAt: NOW - 60 * MINUTE },
+      { startedAt: NOW - MINUTE, conversation: NESTED },
+    ]);
+    const { sessions } = await adapterFor(home, { processes: processes.reader }).poll();
+    expect(statuses(sessions)).toEqual({ ...LISTED, [NESTED]: "working" });
+  });
+
+  test("is found once its record is written, and listed again once its record has gone", async () => {
+    const home = await withWorkers();
+    const record = subagentsPath(home, OLD, `${WORKER}.json`);
+    await rm(record);
+    let at = NOW;
+    const adapter = adapterFor(home, { now: () => at });
+    const poll = async () => statuses((await adapter.poll()).sessions);
+    expect(await poll()).toEqual({ ...OTHERS, [WORKER]: "working" });
+
+    // A conversation not written for a day has its folder looked up every 30 seconds.
+    await writeFile(record, "{}");
+    at += 30 * SECOND;
+    expect(await poll()).toEqual(LISTED);
+    await rm(record);
+    at += 30 * SECOND;
+    expect(await poll()).toEqual({ ...OTHERS, [WORKER]: "working" });
+  });
+
+  test("is listed as before when a link, or anything but an ordinary file, is in its record's place", async () => {
+    const home = await withWorkers();
+    const outside = path.join(await tempDir(), "record.json");
+    await writeFile(outside, "{}");
+    const record = subagentsPath(home, OLD, `${WORKER}.json`);
+    const listed = { ...OTHERS, [WORKER]: "working" };
+
+    await rm(record);
+    await symlink(outside, record);
+    expect(statuses((await adapterFor(home).poll()).sessions)).toEqual(listed);
+
+    await rm(record);
+    await mkdir(record);
+    expect(statuses((await adapterFor(home).poll()).sessions)).toEqual(listed);
+  });
+
+  test("is listed as before when a link, or a file, is in the place of the records' folder, and the link is not followed", async () => {
+    const home = await withWorkers();
+    const folder = subagentsPath(home, OLD);
+    const outside = path.join(await tempDir(), "subagents");
+    await put(path.join(outside, `${WORKER}.json`), "{}", NOW - MINUTE);
+    const listed = { ...OTHERS, [WORKER]: "working" };
+
+    await rm(folder, { recursive: true });
+    // A junction on Windows, where making a link to a folder takes a privilege.
+    await symlink(outside, folder, "junction");
+    const { io, calls } = recordingIo();
+    expect(statuses((await adapterFor(home, { io }).poll()).sessions)).toEqual(listed);
+    expect(calls).not.toContainEqual({ method: "readdir", path: path.normalize(folder) });
+
+    const other = await withWorkers();
+    await rm(subagentsPath(other, OLD), { recursive: true });
+    await writeFile(subagentsPath(other, OLD), "{}");
+    expect(statuses((await adapterFor(other).poll()).sessions)).toEqual(listed);
+  });
+
+  // Windows keeps no such permission, and root may list anything.
+  test.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+    "is listed as before when the records' folder cannot be listed, and the others are still judged",
+    async () => {
+      const home = await withWorkers();
+      const folder = subagentsPath(home, OLD);
+      await chmod(folder, 0o000);
+      try {
+        const result = await adapterFor(home).poll();
+        expect(result.health.state).toBe("ok");
+        expect(statuses(result.sessions)).toEqual({ ...OTHERS, [WORKER]: "working" });
+      } finally {
+        await chmod(folder, 0o755);
+      }
+    },
+  );
 });
 
 describe("finding the Antigravity CLI's folder", () => {

@@ -3,11 +3,11 @@
 //
 // The adapter does not read the lock agy keeps of an open conversation
 // (docs/adapters/antigravity.md). What it knows is which agy programs run,
-// when each started, and which conversation each names: the one its log says
-// it opened last, else the one it was started with, `--conversation <id>`, or
-// `--resume <id>` or `-r <id>`. A program writes to the conversation it has
-// open, so a conversation written since a program started may be that
-// program's.
+// when each started, and which conversation each names: the last its log says
+// it opened that has a row of its own, else the one it was started with,
+// `--conversation <id>`, or `--resume <id>` or `-r <id>`. A program writes to
+// the conversation it has open, and to those that one started, so a
+// conversation written since a program started may be that program's.
 
 import { WRITE_TIME_STEP_MS } from "../time.ts";
 import type { AntigravityLiveness } from "./antigravityMapping.ts";
@@ -20,10 +20,10 @@ export interface AgySessionProcess {
   conversation?: string;
 }
 
-/** One conversation, and when agy last wrote its transcript. */
+/** One conversation, and when agy last wrote its transcript, or that of one it started. */
 export interface ConversationWrite {
   id: string;
-  /** Epoch milliseconds. Null when the transcript could not be looked at. */
+  /** Epoch milliseconds. Null when its own transcript could not be looked at. */
   writtenAt: number | null;
 }
 

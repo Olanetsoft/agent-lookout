@@ -35,6 +35,15 @@ export function databasePath(home: string, id: string, log = false): string {
   return `${home}/conversations/${id}.db${log ? "-wal" : ""}`;
 }
 
+/**
+ * Where a conversation keeps its records of the subagents and swarm workers it
+ * started, under an agy folder, or one of them, `<child's id>.json`.
+ */
+export function subagentsPath(home: string, parent: string, record?: string): string {
+  const folder = `${home}/brain/${parent}/.system_generated/subagents`;
+  return record === undefined ? folder : `${folder}/${record}`;
+}
+
 /** Words that stand for what a person or the model wrote, which the adapter must never keep. */
 export const PRIVATE_WORDS = "rename the helper in demo-project and keep the old name";
 

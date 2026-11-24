@@ -175,6 +175,14 @@ describe("what a program's log says", () => {
     expect(state.opened).toEqual(new Set([FIRST, SECOND_ONE]));
   });
 
+  test("the conversations it opened are kept in the order it last opened each", () => {
+    const state = stateOf(
+      [FIRST, SECOND_ONE, FIRST].map((id, index) => streamingLine(NOW + index * SECOND, id)),
+    );
+    expect([...state.opened]).toEqual([SECOND_ONE, FIRST]);
+    expect(state.current).toBe(FIRST);
+  });
+
   test("an approval asked for before any conversation is open is not one", () => {
     const state = stateOf([askingLine(NOW, 2)]);
     expect(state.ask).toBeNull();

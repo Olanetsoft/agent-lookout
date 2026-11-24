@@ -36,6 +36,7 @@ import {
   replyStep,
   SECOND,
   step,
+  subagentsPath,
   summariesPath,
   textStep,
   transcriptPath,
@@ -467,6 +468,68 @@ describe("with Antigravity 2.0's folder there", () => {
     expect(
       files.calls.every((call) => call.path === APP_HOME || call.path.startsWith(`${APP_HOME}/`)),
     ).toBe(true);
+  });
+});
+
+describe("a chat another one started, as a subagent or a swarm worker", () => {
+  const WORKER = conversationId("e5");
+
+  test("has no row, and neither its transcript, its title nor its database is read", async () => {
+    const { files, sqlite, adapter, write } = setUp();
+    write(WORKER, [appStep({ index: 0, type: "USER_INPUT", at: NOW - MINUTE })], NOW - SECOND);
+    files.write(annotationPath(APP_HOME, WORKER), 'title:"Check the links"');
+    files.write(databasePath(APP_HOME, WORKER), "SQLite format 3\u0000", { mtimeMs: NOW });
+    const record = subagentsPath(APP_HOME, IDLE, `${WORKER}.json`);
+    files.write(record, "{}");
+    expect(statuses((await adapter.poll()).sessions)).toEqual({
+      [WORKING]: "working",
+      [IDLE]: "idle",
+      [FAILED]: "failed",
+    });
+    expect(files.opened().filter((file) => file.includes(WORKER))).toEqual([]);
+    expect(
+      sqlite.runs.filter((run) => run.args.some((argument) => argument.includes(WORKER))),
+    ).toEqual([]);
+    expect(await adapter.lastMessage(`antigravity-app:${WORKER}`)).toBeNull();
+
+    // With no record of it, it is a chat like any other.
+    const { files: others, adapter: other, write: writeOther } = setUp();
+    writeOther(WORKER, appTurn(0, NOW - MINUTE), NOW - MINUTE);
+    others.mkdir(subagentsPath(APP_HOME, IDLE));
+    expect(statuses((await other.poll()).sessions)).toMatchObject({ [WORKER]: "idle" });
+  });
+
+  test("what it writes counts as a write of the chat that started it: for whether that is listed, for asking ps again, and for whether it is open", async () => {
+    const { clock, files, hub, adapter, write } = setUp(false);
+    for (const id of [WORKING, IDLE, FAILED]) files.remove(`${APP_HOME}/brain/${id}`);
+    files.write(subagentsPath(APP_HOME, OLD, `${WORKER}.json`), "{}");
+    write(WORKER, appTurn(0, NOW - MINUTE), NOW - MINUTE);
+    const poll = async () => statuses((await adapter.poll()).sessions);
+    expect(await poll()).toEqual({ [OLD]: "finished" });
+    expect(hub.asked()).toBe(1);
+    clock.advance(SECOND);
+    write(WORKER, appTurn(0, NOW), clock.now());
+    // Written since ps said the app was closed.
+    expect(await poll()).toEqual({ [OLD]: "idle" });
+    expect(hub.asked()).toBe(1);
+    clock.advance(SECOND);
+    await poll();
+    expect(hub.asked()).toBe(2);
+    hub.set(true);
+    clock.set(NOW + SECOND + DAY - SECOND);
+    expect(await poll()).toEqual({ [OLD]: "idle" });
+    clock.advance(SECOND);
+    expect(await poll()).toEqual({});
+  });
+
+  test("with no transcript of the chat that started it there is nothing to show, and ps is not asked", async () => {
+    const { files, hub, adapter, write } = setUp();
+    for (const id of [WORKING, IDLE, FAILED]) files.remove(`${APP_HOME}/brain/${id}`);
+    files.remove(transcriptPath(APP_HOME, OLD));
+    files.write(subagentsPath(APP_HOME, OLD, `${WORKER}.json`), "{}");
+    write(WORKER, appTurn(0, NOW - MINUTE), NOW - MINUTE);
+    expect((await adapter.poll()).sessions).toEqual([]);
+    expect(hub.asked()).toBe(0);
   });
 });
 

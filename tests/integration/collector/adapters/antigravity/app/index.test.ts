@@ -34,6 +34,7 @@ import {
   PRIVATE_WORDS,
   replyStep,
   SECOND,
+  subagentsPath,
   summariesPath,
   textStep,
   transcriptPath,
@@ -223,6 +224,25 @@ describe("the Antigravity adapter, on a folder laid out as Antigravity 2.0 lays 
         /transcript_full|chunks|messages|steps|agyhub|antigravity_state|installation_id/,
       );
     }
+  });
+
+  test("a chat another one started, as a subagent, has no row, and only the name of its record is read", async () => {
+    const home = await makeAppHome();
+    const worker = conversationId("e5");
+    await put(transcriptPath(home, worker), appTurn(0, NOW - MINUTE).join(""), NOW - MINUTE);
+    const record = subagentsPath(home, IDLE, `${worker}.json`);
+    await put(record, PRIVATE_WORDS, NOW - MINUTE);
+    const { io, calls } = recordingIo();
+    expect(statuses((await adapterFor(home, { io }).poll()).sessions)).toEqual({
+      [WORKING]: "working",
+      [IDLE]: "idle",
+      [FAILED]: "failed",
+    });
+    for (const call of calls.filter((each) => each.method === "openRegular")) {
+      expect(call.path).not.toMatch(/subagents/);
+      expect(call.path).not.toContain(worker);
+    }
+    expect(calls).toContainEqual({ method: "lstat", path: path.normalize(record) });
   });
 
   test("a transcript that is a link is not read", async () => {
