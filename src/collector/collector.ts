@@ -7,7 +7,7 @@ import { createActionLimiter, createStopper, type StopperOptions } from "./actio
 import { createStopTargets, stopOff } from "./actions/stopTargets.ts";
 import { createAnswering, type Answering, type AnsweringOptions } from "./answers/answering.ts";
 import type { WaitSighting } from "../core/waits/waitSightings.ts";
-import { isSighting, unendedWaits } from "../core/waits/waitTotals.ts";
+import { unendedWaits } from "../core/waits/waitTotals.ts";
 import type { Adapter } from "./adapters/adapter.ts";
 import { createAntigravityAppAdapter } from "./adapters/antigravity/app/index.ts";
 import { createAntigravityAdapter } from "./adapters/antigravity/cli/index.ts";
@@ -878,11 +878,7 @@ export function createCollector(options: CollectorOptions): Collector {
           // Agent Lookout was stopped is recorded at the first poll. A session
           // whose wait began before the newest events held is among them, so
           // its wait is ended by the first poll that finds it answered or gone.
-          poller.resume(
-            [...unendedWaits(kept.whole.marks), ...kept.events],
-            kept.whole.marks.filter(isSighting),
-            kept.restarts.map((restart) => restart.at),
-          );
+          poller.resume([...unendedWaits(kept.whole.marks), ...kept.events], kept.whole.marks);
           if (running) begin();
         })
         .catch(() => {

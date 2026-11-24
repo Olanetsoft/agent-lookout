@@ -47,7 +47,9 @@ export interface RunStart {
 /** What waits are worked out from: a start, a session's move, or how a session in a wait was seen. */
 export type WaitMark = RunStart | SessionEvent | WaitSighting;
 
-const isStart = (mark: WaitMark): mark is RunStart => "kind" in mark && mark.kind === "start";
+/** Whether a mark is a start of Agent Lookout. */
+export const isStart = (mark: WaitMark): mark is RunStart =>
+  "kind" in mark && mark.kind === "start";
 
 /** Whether a mark says how a session in a wait was seen. */
 export const isSighting = (mark: WaitMark): mark is WaitSighting => "way" in mark;

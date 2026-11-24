@@ -17,7 +17,7 @@ import {
 } from "@collector/waits/waitLedger";
 import type { HistoryPoint, SessionEvent, SessionStatus, SourceId } from "@core/sessions/session";
 import type { WaitSighting } from "@core/waits/waitSightings";
-import { isSighting, unendedWaits } from "@core/waits/waitTotals";
+import { unendedWaits } from "@core/waits/waitTotals";
 import { makeSession } from "@tests/fixtures/session";
 import { fakeHistoryFs } from "@tests/support/node/historyFs";
 import { modelDays, type SeenPoll } from "@tests/support/waits/waitModel";
@@ -392,11 +392,7 @@ describe("over histories made up at random, against a model that goes by what ea
           ledger.addSightings(sightings);
         },
       });
-      poller.resume(
-        [...unendedWaits(kept.whole.marks), ...kept.events],
-        kept.whole.marks.filter(isSighting),
-        kept.restarts.map(({ at }) => at),
-      );
+      poller.resume([...unendedWaits(kept.whole.marks), ...kept.events], kept.whole.marks);
       ledger.beginRun(now);
       keeper.start();
       runs += 1;

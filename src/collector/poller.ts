@@ -24,6 +24,7 @@ import { isStale } from "../core/sessions/staleness.ts";
 import { isQuietAt } from "../core/time-rules/quietHours.ts";
 import { staleAfterMs, type TimeRules } from "../core/time-rules/timeRules.ts";
 import type { WaitSighting } from "../core/waits/waitSightings.ts";
+import { isSighting, isStart, type WaitMark } from "../core/waits/waitTotals.ts";
 import type { Adapter, AdapterResult } from "./adapters/adapter.ts";
 import type { EventStore } from "./eventStore.ts";
 import type { HistoryStore } from "./historyStore.ts";
@@ -168,19 +169,14 @@ export interface Poller {
    * ended. A session they say nothing of is taken as it is found. Called
    * before `start`.
    *
-   * `sightings` say how the sessions in a wait were last seen, in that order.
-   * A session whose wait the history leaves open, that the first good poll
+   * `marks` say how the sessions in a wait were last seen, and when each run
+   * before this one began, in that order too. A session whose wait the history leaves open, that the first good poll
    * leaves out, is not taken to have ended unless the way that last listed it
    * is the way that poll was read. Nor is a session of a part that poll did
    * not read (`notRead`), which is compared the same way at the first poll
-   * that reads its part. `restarts` are when the runs before this one began
-   * again, oldest first.
+   * that reads its part.
    */
-  resume(
-    events: readonly SessionEvent[],
-    sightings?: readonly WaitSighting[],
-    restarts?: readonly number[],
-  ): void;
+  resume(events: readonly SessionEvent[], marks?: readonly WaitMark[]): void;
   /**
    * Lets go what the history said of sessions not read yet, as it is cleared,
    * and gives a sighting of each wait in sight: its event is gone, and it goes on.
@@ -671,7 +667,12 @@ export function createPoller(options: PollerOptions): Poller {
         // good poll was, and one listed while its part is still named not read
         // is taken as it is found.
         const unread = unreadBy(result.health);
-        const listed = new Set(result.sessions.map((session) => session.id));
+        const listed = new Map(result.sessions.map((session) => [session.id, session.status]));
+        for (const session of remembered.held) {
+          // Still waiting, as at the first good poll.
+          if (!session.sighting || listed.get(session.id) !== "needs-you") continue;
+          sightings.push(...takeUpWait(remembered, session, session.sighting, startedAt, at, true));
+        }
         const ready = remembered.held.filter(
           (session) => !unread(session.id) && !waits.has(session.id),
         );
@@ -791,9 +792,13 @@ export function createPoller(options: PollerOptions): Poller {
       timer = null;
     },
     pollOnce,
-    resume(kept, sightings = [], restarts = []) {
-      // Each session's newest.
-      const sighted = new Map(sightings.map((sighting) => [sighting.sessionId, sighting]));
+    resume(kept, marks = []) {
+      /** Each session's newest sighting, with when the run after it began, whatever their times. */
+      const sighted = new Map<string, { sighting: WaitSighting; nextRun?: number }>();
+      for (const mark of marks) {
+        if (isSighting(mark)) sighted.set(mark.sessionId, { sighting: mark });
+        else if (isStart(mark)) for (const seen of sighted.values()) seen.nextRun ??= mark.at;
+      }
       const newest = new Map<string, SessionEvent>();
       for (const event of kept) {
         // An event of what was done to a session, such as being stopped, says
@@ -808,12 +813,11 @@ export function createPoller(options: PollerOptions): Poller {
         // `remote:devbox:…` for one on another machine.
         const source = sourceOf(event.sessionId);
         if (source === null) continue;
-        const sighting = sighted.get(event.sessionId);
+        const { sighting, nextRun } = sighted.get(event.sessionId) ?? {};
         // A sighting from before this wait's own event is of an earlier wait,
         // and says nothing of this one.
         const followed = status === "needs-you" && sighting && sighting.at >= event.at;
-        const lastListed =
-          sighting && (sighting.lastSeen ?? restarts.find((start) => start > sighting.at));
+        const lastListed = sighting?.lastSeen ?? nextRun;
         const list = resumed.get(source) ?? [];
         list.push({
           id: event.sessionId,
