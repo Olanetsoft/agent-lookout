@@ -3,7 +3,7 @@ import path from "node:path";
 
 import type { SessionsSnapshot } from "../../core/sessions/session.ts";
 import { mapClaudeCodeWaitingFor } from "../../core/mapping/claudeCodeMapping.ts";
-import { CLAUDE_HOME_ENV } from "../adapters/claude-code/index.ts";
+import { claudeHomeFor } from "../adapters/claude-code/index.ts";
 import { parseRegistryEntry, readRegularFile } from "../adapters/claude-code/registry.ts";
 import type { RegistryReading, StatusReader } from "./heldAsks.ts";
 
@@ -32,8 +32,7 @@ export interface RegistryStatusOptions {
 export function createRegistryStatus(options: RegistryStatusOptions): StatusReader {
   const homeDir = options.homeDir ?? os.homedir();
   const readFile = options.readFile ?? readRegularFile;
-  const home = options.env[CLAUDE_HOME_ENV]?.trim() || path.join(homeDir, ".claude");
-  const sessionsDir = path.join(path.resolve(home), "sessions");
+  const sessionsDir = path.join(claudeHomeFor(options.env, homeDir), "sessions");
 
   return {
     async statusOf(sessionId): Promise<RegistryReading> {

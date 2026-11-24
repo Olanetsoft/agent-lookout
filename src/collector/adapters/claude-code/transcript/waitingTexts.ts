@@ -53,7 +53,7 @@ export interface WaitingTextReader {
 }
 
 export interface WaitingTextReaderOptions {
-  /** The Claude Code folder, `~/.claude` or the one `AGENT_LOOKOUT_CLAUDE_HOME` names. */
+  /** The Claude Code folder, as `claudeHomeFor` works it out. */
   claudeHome: string;
   /** Defaults to the file system. Tests pass a stand-in. */
   io?: ReadOnlyIo;

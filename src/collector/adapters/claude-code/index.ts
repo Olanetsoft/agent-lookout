@@ -69,6 +69,26 @@ import {
 /** The variable that replaces `~/.claude`. */
 export const CLAUDE_HOME_ENV = "AGENT_LOOKOUT_CLAUDE_HOME";
 
+/**
+ * Claude Code's own variable for where it keeps its folder, every path under
+ * `~/.claude` with it. The `claude` command follows it too.
+ */
+export const CLAUDE_OWN_HOME_ENV = "CLAUDE_CONFIG_DIR";
+
+/**
+ * Claude Code's folder: the one `AGENT_LOOKOUT_CLAUDE_HOME` names, otherwise the
+ * one `CLAUDE_CONFIG_DIR` names, otherwise `~/.claude`.
+ */
+export function claudeHomeFor(
+  env: NodeJS.ProcessEnv,
+  homeDir: string,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  const paths = pathsOf(platform);
+  const named = env[CLAUDE_HOME_ENV]?.trim() || env[CLAUDE_OWN_HOME_ENV]?.trim();
+  return paths.resolve(named || paths.join(homeDir, ".claude"));
+}
+
 /** The variable that, set to `off`, stops the `claude` command being run at all. */
 export const CLAUDE_FEED_ENV = "AGENT_LOOKOUT_CLAUDE_FEED";
 
@@ -363,12 +383,16 @@ function startedAfter(entry: RegistryEntry, since: number, now: number): boolean
  * then come from the registry alone, and background jobs whose process has
  * ended are not listed.
  *
- * `AGENT_LOOKOUT_CLAUDE_HOME` replaces `~/.claude`, and it has to replace it for
+ * Claude Code's own `CLAUDE_CONFIG_DIR` moves its whole folder, and the command
+ * is handed it as it is, so the registry and the transcripts are read in the
+ * folder it names. Only that one folder is read.
+ *
+ * `AGENT_LOOKOUT_CLAUDE_HOME` replaces either, and it has to replace it for
  * the feed as well as for the registry, or a dashboard pointed at an empty or
  * fixture directory would still list this machine's real sessions. The `claude`
- * command reads the real folder and cannot safely be told otherwise: pointed
- * elsewhere with `CLAUDE_CONFIG_DIR`, it writes account details into that
- * directory (seen on 2.1.283). So when the variable is set, a `claude` found on
+ * command reads the real folder and cannot safely be told otherwise: pointed by
+ * Agent Lookout elsewhere with `CLAUDE_CONFIG_DIR`, it writes account details into
+ * that directory (seen on 2.1.283). So when the variable is set, a `claude` found on
  * this machine is not run at all and only the named directory's registry is
  * read. The feed runs again when `AGENT_LOOKOUT_CLAUDE_BIN` names a program too,
  * because then the person has said exactly what to run.
@@ -444,7 +468,7 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
     ? { ...declared, tokens: tokensOff }
     : declared;
 
-  const claudeHome = paths.resolve(homeOverride ?? paths.join(homeDir, ".claude"));
+  const claudeHome = claudeHomeFor(env, homeDir, platform);
   const sessionsDir = paths.join(claudeHome, "sessions");
   const homeName = tildify(claudeHome, homeDir, platform);
   const registryName = tildify(sessionsDir, homeDir, platform);

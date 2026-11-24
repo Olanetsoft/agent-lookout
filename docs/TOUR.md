@@ -256,7 +256,7 @@ Those are the adapter's three bases: `registry+feed`, `feed` and `registry`.
 
 **When the command reads differently.** The command's answer can be a few seconds behind the registry. `sessionFromFeed` takes the registry's status time only when both say the same status. Otherwise a waiting session's time would move and read as a new wait (7944618).
 
-**Pointing it at another folder.** `AGENT_LOOKOUT_CLAUDE_HOME` replaces `~/.claude` and, on its own, stops the command running. `claude` would list the usual folder's sessions, and pointing it elsewhere with `CLAUDE_CONFIG_DIR` makes it write account details there. Set `AGENT_LOOKOUT_CLAUDE_BIN` as well to run the program it names.
+**Pointing it at another folder.** Claude Code's own `CLAUDE_CONFIG_DIR`, set where Agent Lookout starts, moves the one folder it reads, as it moves what `claude` lists (`claudeHomeFor`). `AGENT_LOOKOUT_CLAUDE_HOME` wins over it and, on its own, stops the command running. `claude` would list the usual folder's sessions, and Agent Lookout pointing it elsewhere with `CLAUDE_CONFIG_DIR` would make it write account details there. Set `AGENT_LOOKOUT_CLAUDE_BIN` as well to run the program it names.
 
 **Transcripts are read only when needed.** A transcript holds everything a session said, so no poll reads one for its own sake.
 

@@ -68,6 +68,10 @@ delete process.env.AGENT_LOOKOUT_NTFY_TOKEN;
 delete process.env.AGENT_LOOKOUT_PUSHOVER_TOKEN;
 delete process.env.AGENT_LOOKOUT_PUSHOVER_USER;
 
+// Nor does one read the Claude Code folder `CLAUDE_CONFIG_DIR` names, whatever
+// the shell running the tests has set. A test of the adapter names one.
+delete process.env.CLAUDE_CONFIG_DIR;
+
 // Nor does one read the Antigravity CLI's own folder, `~/.gemini/antigravity-cli`,
 // or Antigravity 2.0's, `~/.gemini/antigravity`, or run `ps` or `sqlite3` for
 // them: each adapter is pointed at an empty folder. A test of an adapter names

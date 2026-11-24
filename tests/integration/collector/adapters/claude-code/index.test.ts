@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { describe, expect, test } from "vitest";
@@ -19,6 +19,7 @@ import type { RegistryIo } from "@collector/adapters/claude-code/registry";
 import { createStopTargets } from "@collector/actions/stopTargets";
 import { createRegistryStatus } from "@collector/answers/registryStatus";
 import { createEventStore } from "@collector/eventStore";
+import { nodeIo } from "@collector/files/readOnlyIo";
 import { createHistoryStore } from "@collector/historyStore";
 import { createPoller } from "@collector/poller";
 import { FINISHED_RETENTION_MS } from "@core/sessions/retention";
@@ -34,6 +35,7 @@ import {
   registryFile,
   registryFiles,
 } from "@tests/fixtures/claudeCode";
+import { waitingToRun } from "@tests/fixtures/claudeTranscript";
 import {
   adapterFor,
   BIN,
@@ -1518,6 +1520,136 @@ describe("AGENT_LOOKOUT_CLAUDE_HOME", () => {
     }).poll();
     expect(asWritten(ranWith)).toBe(BIN);
     expect(basis).toBe("registry+feed");
+  });
+});
+
+describe("CLAUDE_CONFIG_DIR", () => {
+  /**
+   * A person's home with a session that waits under `.claude`, and another that
+   * waits in the folder `CLAUDE_CONFIG_DIR` names, with its transcript.
+   */
+  async function twoFolders() {
+    const userHome = await makeUserHome({ [`${pids.busy}.json`]: registryFile() });
+    const work = path.join(userHome, ".claude-work");
+    const entry = {
+      pid: pids.permission,
+      cwd: "/Users/example/code/demo-api",
+      sessionId: ids.permission,
+      name: "demo-api",
+      status: "waiting",
+      waitingFor: "permission prompt",
+      startedAt: now - 60_000,
+    };
+    const file = registryFile({ ...entry, entrypoint: "cli", statusUpdatedAt: now - 5_000 });
+    const projects = path.join(work, "projects", "-Users-example-code-demo-api");
+    await mkdir(path.join(work, "sessions"), { recursive: true });
+    await mkdir(projects, { recursive: true });
+    await writeFile(path.join(work, "sessions", `${pids.permission}.json`), file);
+    await writeFile(path.join(projects, `${ids.permission}.jsonl`), waitingToRun("npm test"));
+    const feed = JSON.stringify([{ ...entry, kind: "interactive" }]);
+    return { userHome, work, feed };
+  }
+
+  test("the registry, the transcripts, Stop and the answers use the folder it names, as the command does", async () => {
+    const { userHome, work, feed } = await twoFolders();
+    const env = { CLAUDE_CONFIG_DIR: ` ${work} `, AGENT_LOOKOUT_CLAUDE_BIN: BIN };
+    const before = await readdir(userHome, { recursive: true });
+    const touched: string[] = [];
+    const handed = new Set<string | undefined>();
+    const clock = handClock();
+    let runs = 0;
+    const stops = createStopTargets();
+    const adapter = createClaudeCodeAdapter({
+      env,
+      homeDir: userHome,
+      now: clock.now,
+      isAlive: () => true,
+      isExecutable: async (candidate) => asWritten(candidate) === BIN,
+      run: async (_file, _args, options) => {
+        runs += 1;
+        handed.add(options.env.CLAUDE_CONFIG_DIR);
+        return { ok: true, stdout: feed };
+      },
+      readProcessStarts: noStartTimes,
+      registryIo: {
+        readdir: (dir) => (touched.push(dir), readdir(dir)),
+        readFile: (name) => (touched.push(name), readFile(name, "utf8")),
+      },
+      transcriptIo: {
+        readdir: (dir) => (touched.push(dir), nodeIo.readdir(dir)),
+        stat: (target) => (touched.push(target), nodeIo.stat(target)),
+        lstat: (target) => (touched.push(target), nodeIo.lstat(target)),
+        openRegular: (name) => (touched.push(name), nodeIo.openRegular(name)),
+      },
+      stops,
+    });
+    const { health, sessions, basis } = await adapter.poll();
+    for (const at of [2_000, 10_000, 20_000]) {
+      clock.moveTo(at);
+      await adapter.poll();
+    }
+
+    expect(basis).toBe("registry+feed");
+    expect(health.detail).toBe(HEALTHY);
+    expect(health.watching?.[0]).toEqual({
+      label: "Registry folder",
+      value: "~/.claude-work/sessions",
+    });
+    expect(adapter.lookingIn).toContain("~/.claude-work/sessions");
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]).toMatchObject({
+      name: "demo-api",
+      status: "needs-you",
+      surface: "terminal",
+      statusSince: now - 5_000,
+      waitingText: "Run: npm test",
+    });
+    const id = `claude-code:${ids.permission}`;
+    expect(await adapter.lastMessage(id)).toMatchObject({
+      message: { text: "I will run them now." },
+    });
+    const file = path.join(work, "sessions", `${pids.permission}.json`);
+    if (process.platform !== "win32") expect(stops.targetOf(id)?.registryFile).toBe(file);
+    const answers = createRegistryStatus({
+      snapshot: () => ({ generatedAt: now, sources: [health], sessions }),
+      env,
+      homeDir: userHome,
+    });
+    expect(await answers.statusOf(id)).toMatchObject({ status: "waiting" });
+
+    // The command is run as seldom as ever, with the variable as it was set.
+    expect(runs).toBe(1);
+    expect([...handed]).toEqual([env.CLAUDE_CONFIG_DIR]);
+    // Nothing else is read, and nothing is written in either folder.
+    expect(touched.length).toBeGreaterThan(0);
+    expect(touched.filter((target) => !target.startsWith(work))).toEqual([]);
+    expect(await readdir(userHome, { recursive: true })).toEqual(before);
+  });
+
+  test("gives way to AGENT_LOOKOUT_CLAUDE_HOME, and an empty one names nothing", async () => {
+    const { userHome, work } = await twoFolders();
+    const listed = async (env: Record<string, string>) =>
+      (
+        await withoutBinary(userHome, { env: { PATH: "/usr/bin:/bin", ...env } }).poll()
+      ).sessions.map((session) => session.name);
+    expect(await listed({ CLAUDE_CONFIG_DIR: work })).toEqual(["demo-api"]);
+    expect(await listed({ CLAUDE_CONFIG_DIR: "  " })).toEqual(["demo-project"]);
+    expect(
+      await listed({
+        CLAUDE_CONFIG_DIR: work,
+        AGENT_LOOKOUT_CLAUDE_HOME: path.join(userHome, ".claude"),
+      }),
+    ).toEqual(["demo-project"]);
+  });
+
+  test("a folder with no registry in it is said by its name", async () => {
+    const userHome = await makeUserHome({ [`${pids.busy}.json`]: registryFile() });
+    const { health, sessions } = await withoutBinary(userHome, {
+      env: { PATH: "/usr/bin:/bin", CLAUDE_CONFIG_DIR: path.join(userHome, ".claude-work") },
+    }).poll();
+    expect(sessions).toEqual([]);
+    expect(health.state).toBe("unavailable");
+    expect(health.detail).toContain("there is no session registry at ~/.claude-work/sessions.");
   });
 });
 
