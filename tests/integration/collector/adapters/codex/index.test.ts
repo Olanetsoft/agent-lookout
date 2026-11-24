@@ -302,8 +302,11 @@ describe("the Codex adapter, on a folder laid out as Codex lays it out", () => {
     );
     expect(sessions.some((session) => session.status === "finished")).toBe(false);
     expect(sessions.find((session) => session.id === `codex:${ids.finished}`)?.status).toBe("idle");
-    // Without its lock, a resumed session in an older folder is not found: a known gap.
-    expect(sessions.some((session) => session.id === `codex:${ids.resumed}`)).toBe(false);
+    // A session resumed in an older folder before the first poll is found by its file's
+    // time. One resumed later, with no lock, is not: a known gap.
+    expect(sessions.find((session) => session.id === `codex:${ids.resumed}`)?.status).toBe(
+      "working",
+    );
   });
 
   test("a link, a pipe and an oversized first line are not read, and do not hold up the poll", async () => {

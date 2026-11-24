@@ -70,10 +70,14 @@ test("the fingerprint of the folders sessions are read from names none of them, 
       HOME,
     ),
   ).toBe(defaults);
-  // Codex's own variable counts as Agent Lookout's does, and so do Vibe's and
+  // Codex's own variable counts as Agent Lookout's does, and so do Claude Code's, Vibe's and
   // Qwen Code's; Gemini CLI's names its home folder, and OpenCode's own name
   // its database.
   expect(sourcesFingerprint({ CODEX_HOME: "/Users/example/.codex" }, HOME)).toBe(defaults);
+  expect(sourcesFingerprint({ CLAUDE_CONFIG_DIR: "/Users/example/.claude" }, HOME)).toBe(defaults);
+  expect(sourcesFingerprint({ CLAUDE_CONFIG_DIR: "/Users/example/.claude-work" }, HOME)).not.toBe(
+    defaults,
+  );
   expect(sourcesFingerprint({ VIBE_HOME: "/Users/example/.vibe" }, HOME)).toBe(defaults);
   expect(sourcesFingerprint({ GEMINI_CLI_HOME: "/Users/example" }, HOME)).toBe(defaults);
   // Oh My Pi's folder in XDG_DATA_HOME counts only when the variable is set, on

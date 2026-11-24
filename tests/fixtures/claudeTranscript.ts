@@ -27,7 +27,13 @@ interface LineOptions {
   usage?: unknown;
   /** The model the message names. Left out, it names none. */
   model?: string;
+  /** When the line was written, in epoch milliseconds. Left out, it does not say. */
+  at?: number;
 }
+
+/** A line's `timestamp`, when it says when it was written. */
+const timeField = (at: number | undefined) =>
+  at === undefined ? {} : { timestamp: new Date(at).toISOString() };
 
 /** The parts of a reply's token counts, as Claude Code writes them in `message.usage`. */
 export interface UsageCounts {
@@ -77,12 +83,13 @@ export function toolUse(
   id: string,
   name: string,
   input: Record<string, unknown>,
-  { messageId = `msg_${id}`, sidechain = false, usage: counted, model }: LineOptions = {},
+  { messageId = `msg_${id}`, sidechain = false, usage: counted, model, at }: LineOptions = {},
 ): TranscriptLine {
   return {
     type: "assistant",
     isSidechain: sidechain,
     uuid: `line-${id}`,
+    ...timeField(at),
     message: {
       ...messageFields({ messageId, model, usage: counted }),
       role: "assistant",
@@ -92,15 +99,52 @@ export function toolUse(
   };
 }
 
+interface ResultOptions extends LineOptions {
+  /** The line's `toolUseResult`, the result as Claude Code itself keeps it. Left out, it has none. */
+  result?: unknown;
+  /** Marks the result as an error, as a refused tool's is. */
+  error?: boolean;
+}
+
 /** A user line holding the result of a tool use. */
-export function toolResult(id: string, { sidechain = false }: LineOptions = {}): TranscriptLine {
+export function toolResult(
+  id: string,
+  { sidechain = false, result, error = false, at }: ResultOptions = {},
+): TranscriptLine {
   return {
     type: "user",
     isSidechain: sidechain,
+    ...timeField(at),
+    ...(result === undefined ? {} : { toolUseResult: result }),
     message: {
       role: "user",
-      content: [{ type: "tool_result", tool_use_id: id, content: "done" }],
+      content: [
+        {
+          type: "tool_result",
+          tool_use_id: id,
+          content: "done",
+          ...(error && { is_error: true }),
+        },
+      ],
     },
+  };
+}
+
+/** The `toolUseResult` of an agent started in the background, which runs on. */
+export const startedInBackground = (agentId: string) => ({
+  isAsync: true,
+  status: "async_launched",
+  agentId,
+  description: "Look into it",
+});
+
+/** The line Claude Code queues when a background agent ends, or tells of something else. */
+export function taskNotification(fields: Record<string, string>): TranscriptLine {
+  const body = Object.entries(fields).map(([name, value]) => `<${name}>${value}</${name}>`);
+  return {
+    type: "queue-operation",
+    operation: "enqueue",
+    content: `<task-notification>\n${body.join("\n")}\n</task-notification>`,
   };
 }
 

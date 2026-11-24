@@ -123,6 +123,39 @@ describe("what a waiting Claude Code session is asking", () => {
     expect(byName(sessions, "demo-docs")).not.toHaveProperty("waitingText");
   });
 
+  test("is not said while two processes write one transcript, since either could be asking", async () => {
+    const copy = (pid: number, overrides: Record<string, unknown>) =>
+      registryFile({
+        pid,
+        sessionId: ids.permission,
+        cwd: "/Users/example/code/demo-api",
+        name: "demo-api",
+        ...overrides,
+      });
+    const home = await makeClaudeHome({
+      "5150.json": copy(5150, { status: "busy" }),
+      "5151.json": copy(5151, { status: "waiting", waitingFor: "permission prompt" }),
+    });
+    // The newest tool use is the one the first of them runs.
+    await writeTranscript(
+      home,
+      "-Users-example-code-demo-api",
+      ids.permission,
+      waitingToRun("npm test"),
+    );
+    const alive = new Set([5150, 5151]);
+    const adapter = adapterFor(home, {
+      env: { AGENT_LOOKOUT_CLAUDE_HOME: home },
+      isAlive: (pid) => alive.has(pid),
+    });
+    const both = byName((await adapter.poll()).sessions, "demo-api");
+    expect(both).toMatchObject({ pid: 5151, status: "needs-you" });
+    expect(both).not.toHaveProperty("waitingText");
+
+    alive.delete(5150);
+    expect(byName((await adapter.poll()).sessions, "demo-api")?.waitingText).toBe("Run: npm test");
+  });
+
   test("goes when the wait ends", async () => {
     const home = await makeClaudeHome(registryFiles);
     await writeTranscript(

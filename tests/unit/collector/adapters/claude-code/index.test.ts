@@ -3,6 +3,7 @@ import path from "node:path";
 import { describe, expect, test } from "vitest";
 
 import {
+  claudeHomeFor,
   CLAUDE_CODE_CAPABILITIES,
   CLAUDE_CODE_WINDOWS_CAPABILITIES,
   createClaudeCodeAdapter,
@@ -49,6 +50,45 @@ const unlistable: RegistryIo = {
   },
   readFile: async () => "",
 };
+
+describe("Claude Code's folder", () => {
+  test("is AGENT_LOOKOUT_CLAUDE_HOME, then CLAUDE_CONFIG_DIR, then .claude in the home folder", () => {
+    const folder = (env: NodeJS.ProcessEnv) => claudeHomeFor(env, HOME, "darwin");
+    expect(folder({})).toBe("/Users/example/.claude");
+    expect(folder({ CLAUDE_CONFIG_DIR: "/Users/example/.claude-work/" })).toBe(
+      "/Users/example/.claude-work",
+    );
+    expect(folder({ CLAUDE_CONFIG_DIR: " " })).toBe("/Users/example/.claude");
+    expect(
+      folder({
+        CLAUDE_CONFIG_DIR: "/Users/example/.claude-work",
+        AGENT_LOOKOUT_CLAUDE_HOME: "/Users/example/empty",
+      }),
+    ).toBe("/Users/example/empty");
+    expect(
+      claudeHomeFor({ CLAUDE_CONFIG_DIR: "D:\\claude-work" }, "C:\\Users\\example", "win32"),
+    ).toBe("D:\\claude-work");
+    expect(claudeHomeFor({}, "C:\\Users\\example", "win32")).toBe("C:\\Users\\example\\.claude");
+  });
+
+  test("is found by the paths of the system the adapter runs on", async () => {
+    const dirs: string[] = [];
+    await createClaudeCodeAdapter({
+      env: { CLAUDE_CONFIG_DIR: "D:\\claude-work", AGENT_LOOKOUT_CLAUDE_FEED: "off" },
+      homeDir: "C:\\Users\\example",
+      platform: "win32",
+      now: () => now,
+      registryIo: {
+        ...unlistable,
+        readdir: async (dir) => {
+          dirs.push(dir);
+          return [];
+        },
+      },
+    }).poll();
+    expect(dirs).toEqual(["D:\\claude-work\\sessions"]);
+  });
+});
 
 describe("the Claude Code adapter", () => {
   test("has the id and label of its source and says where it looks", () => {

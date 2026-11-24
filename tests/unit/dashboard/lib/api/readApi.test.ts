@@ -797,6 +797,13 @@ test("a move out of a wait says the last poll that listed its session, when it s
 test("a session the collector can stop says how, and nothing else is read as Stop", () => {
   const base = { id: "claude-code:1", source: "claude-code", status: "idle" };
   expect(readSession({ ...base, stop: { how: "signal" } })?.stop).toEqual({ how: "signal" });
+  expect(readSession({ ...base, stop: { how: "signal", key: "0123" } })?.stop).toEqual({
+    how: "signal",
+    key: "0123",
+  });
+  expect(readSession({ ...base, stop: { how: "signal", key: 7 } })?.stop).toEqual({
+    how: "signal",
+  });
   expect(readSession({ ...base, stop: { how: "background", pid: 7 } })?.stop).toEqual({
     how: "background",
   });

@@ -5,6 +5,7 @@ import {
   mapClaudeCodeStatus,
 } from "../../../core/mapping/claudeCodeMapping.ts";
 import type {
+  Session,
   SourceCapabilities,
   SourceFact,
   SourceHealth,
@@ -50,10 +51,12 @@ import {
 } from "./registry.ts";
 import { withStopOffers } from "./stopOffers.ts";
 import {
+  openTwice,
   sessionFromFeed,
   sessionFromRegistry,
   SOURCE_ID,
   uniqueById,
+  type FeedAnswer,
   type SessionContext,
 } from "./toSession.ts";
 import { createLastMessageReader } from "./transcript/lastMessages.ts";
@@ -65,6 +68,26 @@ import {
 
 /** The variable that replaces `~/.claude`. */
 export const CLAUDE_HOME_ENV = "AGENT_LOOKOUT_CLAUDE_HOME";
+
+/**
+ * Claude Code's own variable for where it keeps its folder, every path under
+ * `~/.claude` with it. The `claude` command follows it too.
+ */
+export const CLAUDE_OWN_HOME_ENV = "CLAUDE_CONFIG_DIR";
+
+/**
+ * Claude Code's folder: the one `AGENT_LOOKOUT_CLAUDE_HOME` names, otherwise the
+ * one `CLAUDE_CONFIG_DIR` names, otherwise `~/.claude`.
+ */
+export function claudeHomeFor(
+  env: NodeJS.ProcessEnv,
+  homeDir: string,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  const paths = pathsOf(platform);
+  const named = env[CLAUDE_HOME_ENV]?.trim() || env[CLAUDE_OWN_HOME_ENV]?.trim();
+  return paths.resolve(named || paths.join(homeDir, ".claude"));
+}
 
 /** The variable that, set to `off`, stops the `claude` command being run at all. */
 export const CLAUDE_FEED_ENV = "AGENT_LOOKOUT_CLAUDE_FEED";
@@ -342,6 +365,8 @@ function startedAfter(entry: RegistryEntry, since: number, now: number): boolean
  *
  * - It supplies the background jobs that have no live process: the finished and
  *   failed ones. The registry holds a file per live process and cannot.
+ * - It supplies how a live job that is idle stands, blocked, done or failed,
+ *   which the job's registry file does not hold.
  * - A registry session it did not list is left out, unless that session started
  *   too recently for the answer to have known about it.
  * - When it lists a running session the registry lacks, when a registry entry
@@ -358,12 +383,16 @@ function startedAfter(entry: RegistryEntry, since: number, now: number): boolean
  * then come from the registry alone, and background jobs whose process has
  * ended are not listed.
  *
- * `AGENT_LOOKOUT_CLAUDE_HOME` replaces `~/.claude`, and it has to replace it for
+ * Claude Code's own `CLAUDE_CONFIG_DIR` moves its whole folder, and the command
+ * is handed it as it is, so the registry and the transcripts are read in the
+ * folder it names. Only that one folder is read.
+ *
+ * `AGENT_LOOKOUT_CLAUDE_HOME` replaces either, and it has to replace it for
  * the feed as well as for the registry, or a dashboard pointed at an empty or
  * fixture directory would still list this machine's real sessions. The `claude`
- * command reads the real folder and cannot safely be told otherwise: pointed
- * elsewhere with `CLAUDE_CONFIG_DIR`, it writes account details into that
- * directory (seen on 2.1.283). So when the variable is set, a `claude` found on
+ * command reads the real folder and cannot safely be told otherwise: pointed by
+ * Agent Lookout elsewhere with `CLAUDE_CONFIG_DIR`, it writes account details into
+ * that directory (seen on 2.1.283). So when the variable is set, a `claude` found on
  * this machine is not run at all and only the named directory's registry is
  * read. The feed runs again when `AGENT_LOOKOUT_CLAUDE_BIN` names a program too,
  * because then the person has said exactly what to run.
@@ -439,7 +468,7 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
     ? { ...declared, tokens: tokensOff }
     : declared;
 
-  const claudeHome = paths.resolve(homeOverride ?? paths.join(homeDir, ".claude"));
+  const claudeHome = claudeHomeFor(env, homeDir, platform);
   const sessionsDir = paths.join(claudeHome, "sessions");
   const homeName = tildify(claudeHome, homeDir, platform);
   const registryName = tildify(sessionsDir, homeDir, platform);
@@ -465,6 +494,12 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
   let lastDue: number | null = null;
   /** What the last run came back with. It stands until the next run. */
   let lastRead: FeedRead | null = null;
+  /**
+   * The last answer it gave, which a run that fails leaves as it is. Only the
+   * states of live background jobs are taken from it, so a job that needs the
+   * person does not stop needing them, and need them anew, over one failed run.
+   */
+  let lastAnswer: FeedAnswer | null = null;
   /** Set once a background job has been stopped, so the command is run at the next poll. */
   let feedSoon = false;
   /** The registry files the last read parsed, for a file read while it was being written. */
@@ -648,10 +683,19 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
     };
   }
 
+  /** The sessions two processes had open at the last poll. */
+  let shared: ReadonlySet<string> = new Set();
+
+  /** One copy of each session, once it is noted which have more than one. */
+  function oneOfEach(sessions: Session[]): Session[] {
+    shared = openTwice(sessions);
+    return uniqueById(sessions);
+  }
+
   /** The sessions of a poll, each waiting one with what it is asking when its transcript says. */
   async function withWaitingText(result: AdapterResult): Promise<AdapterResult> {
     if (waitingTexts === null) return result;
-    return { ...result, sessions: await waitingTexts.annotate(result.sessions) };
+    return { ...result, sessions: await waitingTexts.annotate(result.sessions, shared) };
   }
 
   async function poll(): Promise<AdapterResult> {
@@ -692,7 +736,10 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
         // An answer is newer than a reading made before it. Reading again keeps
         // a session that started in between from being taken for one the
         // registry lacks.
-        if (lastRead.feed.ok) reading = null;
+        if (lastRead.feed.ok) {
+          reading = null;
+          lastAnswer = { askedAt: checkedAt, entries: lastRead.feed.entries };
+        }
       }
     }
     reading ??= await readRegistryNow(checkedAt);
@@ -749,14 +796,18 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
 
     if (answer !== null && read !== null && problem === null) {
       // The registry's sessions, checked against the answer. One the answer did
-      // not list is believed only if it started too recently to be in it.
+      // not list is believed only if it started too recently to be in it, and so
+      // is another process of one it did list, as a file left by a crash can be.
       const listedPids = new Set(answer.map((entry) => entry.pid));
       const listedSessionIds = new Set(answer.map((entry) => entry.sessionId));
       const tooNewSince = read.askedAt - NEW_SESSION_GRACE_MS;
+      const listedLive = new Set(
+        live.filter((entry) => listedPids.has(entry.pid)).map((entry) => entry.sessionId),
+      );
       const fromRegistry = live.filter(
         (entry) =>
           listedPids.has(entry.pid) ||
-          listedSessionIds.has(entry.sessionId) ||
+          (listedSessionIds.has(entry.sessionId) && !listedLive.has(entry.sessionId)) ||
           startedAfter(entry, tooNewSince, checkedAt),
       );
 
@@ -783,7 +834,7 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
         });
 
       const sessions = [
-        ...fromRegistry.map((entry) => sessionFromRegistry(entry, context)),
+        ...fromRegistry.map((entry) => sessionFromRegistry(entry, context, lastAnswer)),
         ...jobs,
       ];
       const detail = `Sessions are read from Claude Code's session registry and checked against its own list of sessions.${
@@ -793,7 +844,7 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
       }`;
       return offered({
         health: health("ok", detail),
-        sessions: finished.keepRecent(uniqueById(sessions), checkedAt),
+        sessions: finished.keepRecent(oneOfEach(sessions), checkedAt),
         basis: "registry+feed",
       });
     }
@@ -820,7 +871,7 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
       }
       return offered({
         health: health("ok", detail),
-        sessions: finished.keepRecent(uniqueById(sessions), checkedAt),
+        sessions: finished.keepRecent(oneOfEach(sessions), checkedAt),
         basis: "feed",
       });
     }
@@ -842,7 +893,9 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
           : COULD_NOT_RUN;
 
     if (registry.readable) {
-      const sessions = uniqueById(live.map((entry) => sessionFromRegistry(entry, context)));
+      const sessions = oneOfEach(
+        live.map((entry) => sessionFromRegistry(entry, context, lastAnswer)),
+      );
       let detail: string;
       if (problem === "unknown-status") {
         detail = `${whyNoAnswer}, and ${oddStatus}. Sessions are read from the registry alone, and that status is shown as unknown.`;

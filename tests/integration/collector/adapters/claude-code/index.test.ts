@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { describe, expect, test } from "vitest";
@@ -16,11 +16,17 @@ import {
 } from "@collector/adapters/claude-code/index";
 import { readProcessStartsWithPs } from "@collector/processes/processStart";
 import type { RegistryIo } from "@collector/adapters/claude-code/registry";
+import { createStopTargets } from "@collector/actions/stopTargets";
+import { ALLOW_OUTPUT, createHeldAsks, DENY_OUTPUT } from "@collector/answers/heldAsks";
+import { createRegistryStatus } from "@collector/answers/registryStatus";
+import { shownAsk, type ShownAsk } from "@collector/answers/shownAsk";
 import { createEventStore } from "@collector/eventStore";
+import { nodeIo } from "@collector/files/readOnlyIo";
 import { createHistoryStore } from "@collector/historyStore";
 import { createPoller } from "@collector/poller";
 import { FINISHED_RETENTION_MS } from "@core/sessions/retention";
-import type { SourceFact } from "@core/sessions/session";
+import { EMPTY_CHANGE_MEMORY, sessionChanges } from "@core/notices/sessionChanges";
+import type { SessionsSnapshot, SourceFact } from "@core/sessions/session";
 import {
   feedEntries,
   feedJson,
@@ -31,6 +37,7 @@ import {
   registryFile,
   registryFiles,
 } from "@tests/fixtures/claudeCode";
+import { waitingToRun } from "@tests/fixtures/claudeTranscript";
 import {
   adapterFor,
   BIN,
@@ -574,6 +581,313 @@ describe("the registry is read on every poll", () => {
   });
 });
 
+describe("two processes with one session open", () => {
+  // Its file comes first by name, as 12000.json comes before 9100.json.
+  const [first, second] = [12_000, 9_100];
+  const file = (pid: number, overrides: Record<string, unknown>) =>
+    registryFile({ pid, entrypoint: "cli", startedAt: now - 60_000, ...overrides });
+  const listed = (pid: number) => ({
+    pid,
+    cwd: "/Users/example/code/demo",
+    kind: "interactive",
+    startedAt: now - 60_000,
+    sessionId: ids.busy,
+    name: "demo-project",
+    status: "idle",
+  });
+
+  test("the one that needs the person is shown, told of, stopped and answered, whatever its file is called", async () => {
+    const home = await makeClaudeHome({
+      [`${first}.json`]: file(first, { status: "idle", statusUpdatedAt: now - 50_000 }),
+      [`${second}.json`]: file(second, { status: "idle", statusUpdatedAt: now - 55_000 }),
+    });
+    const clock = handClock();
+    const alive = new Set<number>([first, second]);
+    const stops = createStopTargets();
+    const adapter = adapterFor(home, {
+      now: clock.now,
+      run: prints(JSON.stringify([listed(first), listed(second)])),
+      isAlive: (pid) => alive.has(pid),
+      stops,
+    });
+    let memory = EMPTY_CHANGE_MEMORY;
+    let snapshot: SessionsSnapshot = { generatedAt: now, sources: [], sessions: [] };
+    const answers = createRegistryStatus({
+      snapshot: () => snapshot,
+      env: { AGENT_LOOKOUT_CLAUDE_HOME: home },
+    });
+    const id = `claude-code:${ids.busy}`;
+    const poll = async (at: number) => {
+      clock.moveTo(at);
+      const { health, basis, sessions } = await adapter.poll();
+      snapshot = { generatedAt: clock.now(), sources: [{ ...health, basis }], sessions };
+      const { memory: next, changes } = sessionChanges(memory, snapshot);
+      memory = next;
+      expect(sessions).toHaveLength(1);
+      const reading = await answers.statusOf(id);
+      // On Windows nothing is stopped.
+      if (process.platform !== "win32") expect(stops.targetOf(id)?.pid).toBe(sessions[0]?.pid);
+      return [
+        sessions[0]?.pid,
+        sessions[0]?.status,
+        reading.status,
+        ...changes.map((change) => change.event),
+      ];
+    };
+    const writes = (pid: number, status: string, at: number, waitingFor?: string) =>
+      writeFile(
+        registryPath(home, `${pid}.json`),
+        file(pid, { status, waitingFor, statusUpdatedAt: now + at }),
+      );
+
+    // Both idle: the one that went idle last.
+    expect(await poll(0)).toEqual([first, "idle", "not-waiting"]);
+    await writes(second, "busy", 1_000);
+    expect(await poll(2_000)).toEqual([second, "working", "not-waiting"]);
+    await writes(second, "waiting", 3_000, "permission prompt");
+    expect(await poll(4_000)).toEqual([second, "needs-you", "waiting", "needs-you"]);
+    // The other works, and then waits too: the newest wait, which is told of as well.
+    await writes(first, "busy", 5_000);
+    expect(await poll(6_000)).toEqual([second, "needs-you", "waiting"]);
+    await writes(first, "waiting", 7_000, "permission prompt");
+    expect(await poll(8_000)).toEqual([first, "needs-you", "waiting", "needs-you"]);
+    // It is answered, and the older wait is no news.
+    await writes(first, "busy", 9_000);
+    expect(await poll(10_000)).toEqual([second, "needs-you", "waiting"]);
+    // That one ends, and the session goes on in the other.
+    alive.delete(second);
+    await rm(registryPath(home, `${second}.json`));
+    expect(await poll(12_000)).toEqual([first, "working", "not-waiting"]);
+  });
+
+  describe("whose permission requests are held", () => {
+    const id = `claude-code:${ids.busy}`;
+    const PROMPT = "permission prompt";
+
+    /** Two processes at work, the requests held for them, and what the page is shown. */
+    async function held([one, two]: readonly [number, number]) {
+      const home = await makeClaudeHome({
+        [`${one}.json`]: file(one, { status: "busy", statusUpdatedAt: now - 50_000 }),
+        [`${two}.json`]: file(two, { status: "busy", statusUpdatedAt: now - 55_000 }),
+      });
+      const clock = handClock();
+      const adapter = adapterFor(home, {
+        now: clock.now,
+        run: prints(JSON.stringify([listed(one), listed(two)])),
+      });
+      let snapshot: SessionsSnapshot = { generatedAt: now, sources: [], sessions: [] };
+      const drops: string[] = [];
+      const asks = createHeldAsks({
+        status: createRegistryStatus({
+          snapshot: () => snapshot,
+          env: { AGENT_LOOKOUT_CLAUDE_HOME: home },
+        }),
+        holdMs: 600_000,
+        now: clock.now,
+        every: () => () => {},
+        onDrop: (reason) => drops.push(reason),
+      });
+      const poll = async (at: number) => {
+        clock.moveTo(at);
+        const { health, basis, sessions } = await adapter.poll();
+        snapshot = { generatedAt: clock.now(), sources: [{ ...health, basis }], sessions };
+      };
+      const writes = (pid: number, status: string, at: number, waitingFor?: string) =>
+        writeFile(
+          registryPath(home, `${pid}.json`),
+          file(pid, { status, waitingFor, statusUpdatedAt: now + at }),
+        );
+      /** A hook's request for this command, and what it is answered with. */
+      const asksFor = (command: string) => {
+        const sent: string[] = [];
+        asks.receive(
+          { sessionId: id, shown: shownAsk("Bash", { command }) as ShownAsk },
+          { send: (body) => sent.push(body), isOpen: () => sent.length === 0, onClose: () => {} },
+        );
+        return sent;
+      };
+      const shown = async () => {
+        await asks.check();
+        const [session] = asks.withAsks(snapshot).sessions;
+        return [session?.pid, session?.status, session?.ask?.command];
+      };
+      const requestId = () => asks.withAsks(snapshot).sessions[0]?.ask?.requestId ?? "";
+      const answer = (decision: "allow" | "deny", request = requestId()) =>
+        asks.answer(id, request, decision);
+      await poll(0);
+      return { clock, poll, writes, asksFor, shown, requestId, answer, drops };
+    }
+
+    test.each([[[first, second]], [[second, first]]] as const)(
+      "the newest wait's is shown and answered, though it came before its process was listed: %j",
+      async ([older, newer]) => {
+        const { clock, poll, writes, asksFor, shown, answer, drops } = await held([older, newer]);
+        await writes(older, "waiting", 1_000, PROMPT);
+        const before = asksFor("npm run deploy");
+        await poll(2_000);
+        expect(await shown()).toEqual([older, "needs-you", "npm run deploy"]);
+        await poll(60_000);
+        expect(await shown()).toEqual([older, "needs-you", "npm run deploy"]);
+
+        // The other asks between two polls, and its request is checked twice before the next.
+        clock.moveTo(61_000);
+        await writes(newer, "waiting", 61_000, PROMPT);
+        const asked = asksFor("npm test");
+        await shown();
+        clock.moveTo(61_500);
+        await shown();
+        for (const at of [62_000, 64_000, 120_000]) {
+          await poll(at);
+          expect(await shown()).toEqual([newer, "needs-you", "npm test"]);
+        }
+        expect(drops).toEqual(["newer"]);
+        expect(before).toEqual([""]);
+        expect(await answer("allow")).toBe("answered");
+        expect(asked).toEqual([ALLOW_OUTPUT]);
+      },
+    );
+
+    test("one answered just as its process is listed is answered in its own wait", async () => {
+      const { clock, poll, writes, asksFor, shown, requestId, answer } = await held([
+        first,
+        second,
+      ]);
+      await writes(first, "waiting", 1_000, PROMPT);
+      await poll(60_000);
+      clock.moveTo(61_000);
+      const asked = asksFor("npm test");
+      expect(await shown()).toEqual([first, "needs-you", "npm test"]);
+      const seen = requestId();
+      await writes(second, "waiting", 61_500, PROMPT);
+      await poll(62_000);
+      expect(await answer("deny", seen)).toBe("answered");
+      expect(asked).toEqual([DENY_OUTPUT]);
+    });
+
+    test("the older wait's stays held while the other waits for something newer", async () => {
+      const { poll, writes, asksFor, shown, answer, drops } = await held([first, second]);
+      await writes(first, "waiting", 1_000, PROMPT);
+      const asked = asksFor("npm run deploy");
+      await poll(2_000);
+      expect(await shown()).toEqual([first, "needs-you", "npm run deploy"]);
+      await writes(second, "waiting", 60_000, "input needed");
+      await poll(62_000);
+      // It is not the one listed, so it is not shown there.
+      expect(await shown()).toEqual([second, "needs-you", undefined]);
+      await writes(second, "busy", 70_000);
+      await poll(72_000);
+      expect(await shown()).toEqual([first, "needs-you", "npm run deploy"]);
+      expect(await answer("allow")).toBe("answered");
+      expect(asked).toEqual([ALLOW_OUTPUT]);
+      expect(drops).toEqual([]);
+    });
+
+    test("and is let go once its own process has been answered, though the other still waits", async () => {
+      const { poll, writes, asksFor, shown, drops } = await held([first, second]);
+      await writes(first, "waiting", 1_000, PROMPT);
+      const asked = asksFor("npm run deploy");
+      await poll(2_000);
+      await shown();
+      await writes(second, "waiting", 60_000, PROMPT);
+      await poll(62_000);
+      expect(await shown()).toEqual([second, "needs-you", undefined]);
+      expect(drops).toEqual([]);
+      await writes(first, "busy", 63_000);
+      await shown();
+      expect(drops).toEqual(["left-waiting"]);
+      expect(asked).toEqual([""]);
+    });
+  });
+
+  test("a file the command did not list is not shown over the process it listed", async () => {
+    const leftover = (startedAt: number) =>
+      file(second, {
+        status: "waiting",
+        waitingFor: "permission prompt",
+        statusUpdatedAt: now - 20_000,
+        startedAt,
+        procStart: undefined,
+      });
+    const home = await makeClaudeHome({
+      [`${first}.json`]: file(first, { status: "idle", statusUpdatedAt: now - 50_000 }),
+      [`${second}.json`]: leftover(now - 60_000),
+    });
+    const shown = async (...pids: number[]) => {
+      const { basis, sessions } = await adapterFor(home, {
+        run: prints(JSON.stringify(pids.map(listed))),
+      }).poll();
+      expect(basis).toBe("registry+feed");
+      return sessions.map((session) => [session.pid, session.status]);
+    };
+    expect(await shown(first)).toEqual([[first, "idle"]]);
+    expect(await shown(first, second)).toEqual([[second, "needs-you"]]);
+    // One that started too recently for the answer to have it is shown.
+    await writeFile(registryPath(home, `${second}.json`), leftover(now - 5_000));
+    expect(await shown(first)).toEqual([[second, "needs-you"]]);
+  });
+
+  test("a session resumed in another process is shown, though the command listed the one before", async () => {
+    const home = await makeClaudeHome({
+      [`${second}.json`]: file(second, { status: "busy", statusUpdatedAt: now - 20_000 }),
+    });
+    const { basis, sessions } = await adapterFor(home, {
+      run: prints(JSON.stringify([listed(first)])),
+      isAlive: (pid) => pid === second,
+    }).poll();
+    expect(basis).toBe("registry+feed");
+    expect(sessions.map((session) => [session.pid, session.status])).toEqual([[second, "working"]]);
+  });
+
+  test.each<[string, string, string]>([
+    ["registry+feed", "idle", "registry+feed"],
+    ["feed", "pondering", "feed"],
+  ])("what it asks is not said when sessions are read from %s", async (_which, status, from) => {
+    const copies = {
+      [`${first}.json`]: file(first, { status: "waiting", waitingFor: "permission prompt" }),
+      [`${second}.json`]: file(second, { status }),
+    };
+    const home = await makeClaudeHome(copies);
+    const folder = path.join(home, "projects", "-Users-example-code-demo");
+    await mkdir(folder, { recursive: true });
+    await writeFile(path.join(folder, `${ids.busy}.jsonl`), waitingToRun("npm test"));
+    const alive = new Set<number>([first, second]);
+    const adapter = adapterFor(home, {
+      run: prints(
+        JSON.stringify([
+          { ...listed(first), status: "waiting", waitingFor: "permission prompt" },
+          listed(second),
+        ]),
+      ),
+      isAlive: (pid) => alive.has(pid),
+    });
+    const both = await adapter.poll();
+    expect(both.basis).toBe(from);
+    expect(both.sessions).toMatchObject([{ pid: first, status: "needs-you" }]);
+    expect(both.sessions[0]).not.toHaveProperty("waitingText");
+    alive.delete(second);
+    expect((await adapter.poll()).sessions[0]?.waitingText).toBe("Run: npm test");
+  });
+
+  test("so it is when sessions come from the command", async () => {
+    const home = await makeClaudeHome({
+      [`${first}.json`]: file(first, { status: "idle", statusUpdatedAt: now - 50_000 }),
+      [`${second}.json`]: file(second, { status: "pondering", statusUpdatedAt: now - 55_000 }),
+    });
+    const { basis, sessions } = await adapterFor(home, {
+      run: prints(
+        JSON.stringify([
+          listed(first),
+          { ...listed(second), status: "waiting", waitingFor: "permission prompt" },
+        ]),
+      ),
+    }).poll();
+    expect(basis).toBe("feed");
+    expect(sessions.map((session) => [session.pid, session.status])).toEqual([
+      [second, "needs-you"],
+    ]);
+  });
+});
+
 describe("the feed's answer outranks the registry", () => {
   test("a registry session the answer did not list is left out", async () => {
     const home = await makeClaudeHome({
@@ -851,24 +1165,129 @@ describe("background jobs, which the registry cannot hold once their process has
     expect(runs()).toBe(1);
   });
 
-  test("a failed job whose process is still there is read from the registry, as failed and not idle", async () => {
-    const home = await makeClaudeHome({
-      [`${pids.idle}.json`]: registryFile({
-        pid: pids.idle,
+  describe("whose process is still there", () => {
+    const jobPid = pids.idle;
+    /** The job's registry file, which holds its id and nothing of how it stands. */
+    const jobFile = (status: string, since: number) =>
+      registryFile({
+        pid: jobPid,
         sessionId: ids.background,
         kind: "bg",
+        entrypoint: "cli",
+        jobId: "job-0001",
         name: "nightly-report",
-        status: "idle",
-        state: "failed",
-      }),
+        startedAt: now - 60_000,
+        status,
+        statusUpdatedAt: since,
+      });
+
+    /** A job that works at the first poll, and what it does after it. */
+    async function working() {
+      const home = await makeClaudeHome({ [`${jobPid}.json`]: jobFile("busy", now - 50_000) });
+      const clock = handClock();
+      const command: {
+        status: string;
+        state: string;
+        fails: boolean;
+        /** What happens while it runs. */
+        during?: () => Promise<void>;
+      } = { status: "busy", state: "working", fails: false };
+      const adapter = adapterFor(home, {
+        now: clock.now,
+        run: async () => {
+          await command.during?.();
+          return command.fails
+            ? { ok: false, problem: "did not answer within 5 seconds" }
+            : {
+                ok: true,
+                stdout: JSON.stringify([
+                  job({
+                    pid: jobPid,
+                    status: command.status,
+                    state: command.state,
+                    startedAt: now - 60_000,
+                  }),
+                ]),
+              };
+        },
+      });
+      let memory = EMPTY_CHANGE_MEMORY;
+      /** One poll at this time: how it was read, the job's status, and what is told of it. */
+      const poll = async (at: number) => {
+        clock.moveTo(at);
+        const { health, basis, sessions } = await adapter.poll();
+        const { memory: next, changes } = sessionChanges(memory, {
+          generatedAt: clock.now(),
+          sources: [{ ...health, basis }],
+          sessions,
+        });
+        memory = next;
+        return [basis, sessions[0]?.status, ...changes.map((change) => change.event)];
+      };
+      const writes = (status: string, at: number) =>
+        writeFile(registryPath(home, `${jobPid}.json`), jobFile(status, now + at));
+      expect(await poll(0)).toEqual(["registry+feed", "working"]);
+      return { adapter, clock, command, poll, writes };
+    }
+
+    test.each([
+      ["blocked", "needs-you"],
+      ["done", "finished"],
+      ["stopped", "finished"],
+      ["failed", "failed"],
+    ])("one the command calls %s is %s once it is idle, and is told of once", async (state, is) => {
+      const { adapter, command, poll, writes } = await working();
+
+      await writes("idle", 4_000);
+      Object.assign(command, { status: "idle", state });
+      // What the command last said was before the job went idle.
+      expect(await poll(4_000)).toEqual(["registry+feed", "idle"]);
+      expect(await poll(30_000)).toEqual(["registry+feed", is, is]);
+      expect((await adapter.poll()).sessions[0]).toMatchObject({
+        pid: jobPid,
+        alive: true,
+        statusSince: now + 4_000,
+      });
+      expect(await poll(32_000)).toEqual(["registry+feed", is]);
     });
-    const feed = JSON.stringify([
-      job({ pid: pids.idle, status: "idle", state: "failed", startedAt: now - 60_000 }),
-    ]);
-    const { sessions, basis } = await adapterFor(home, { run: prints(feed) }).poll();
-    expect(basis).toBe("registry+feed");
-    expect(sessions).toHaveLength(1);
-    expect(sessions[0]).toMatchObject({ status: "failed", pid: pids.idle, alive: true });
+
+    test("a state from before a newer turn is not used", async () => {
+      const { command, poll, writes } = await working();
+      await writes("idle", 4_000);
+      Object.assign(command, { status: "idle", state: "blocked" });
+      expect(await poll(30_000)).toEqual(["registry+feed", "needs-you", "needs-you"]);
+
+      // It is answered and works, and goes idle, before the command is run again.
+      await writes("busy", 32_000);
+      expect(await poll(34_000)).toEqual(["registry+feed", "working"]);
+      await writes("idle", 36_000);
+      expect(await poll(38_000)).toEqual(["registry+feed", "idle"]);
+      command.state = "done";
+      expect(await poll(60_000)).toEqual(["registry+feed", "finished", "finished"]);
+    });
+
+    test("nor is a state from before a turn made while the command ran", async () => {
+      const { clock, command, poll, writes } = await working();
+      await writes("idle", 4_000);
+      Object.assign(command, { status: "idle", state: "blocked" });
+      command.during = async () => {
+        await writes("idle", 31_000);
+        clock.moveTo(32_000);
+      };
+      expect(await poll(30_000)).toEqual(["registry+feed", "idle"]);
+      expect(await poll(34_000)).toEqual(["registry+feed", "idle"]);
+    });
+
+    test("a run that fails does not end its wait and begin it anew", async () => {
+      const { command, poll, writes } = await working();
+      await writes("idle", 4_000);
+      Object.assign(command, { status: "idle", state: "blocked" });
+      expect(await poll(30_000)).toEqual(["registry+feed", "needs-you", "needs-you"]);
+      command.fails = true;
+      expect(await poll(60_000)).toEqual(["registry", "needs-you"]);
+      command.fails = false;
+      expect(await poll(90_000)).toEqual(["registry+feed", "needs-you"]);
+    });
   });
 
   test("a job whose process ends between runs keeps its row, not alive, and then shows how it ended", async () => {
@@ -878,9 +1297,9 @@ describe("background jobs, which the registry cannot hold once their process has
         pid: jobPid,
         sessionId: ids.background,
         kind: "bg",
+        jobId: "job-0001",
         name: "nightly-report",
         status: "busy",
-        state: "working",
       }),
     });
     const clock = handClock();
@@ -1038,9 +1457,9 @@ describe("through the poller", () => {
         pid: jobPid,
         sessionId: ids.background,
         kind: "bg",
+        jobId: "job-0001",
         name: "nightly-report",
         status: "busy",
-        state: "working",
       }),
     });
     const entry = {
@@ -1327,6 +1746,136 @@ describe("AGENT_LOOKOUT_CLAUDE_HOME", () => {
     }).poll();
     expect(asWritten(ranWith)).toBe(BIN);
     expect(basis).toBe("registry+feed");
+  });
+});
+
+describe("CLAUDE_CONFIG_DIR", () => {
+  /**
+   * A person's home with a session that waits under `.claude`, and another that
+   * waits in the folder `CLAUDE_CONFIG_DIR` names, with its transcript.
+   */
+  async function twoFolders() {
+    const userHome = await makeUserHome({ [`${pids.busy}.json`]: registryFile() });
+    const work = path.join(userHome, ".claude-work");
+    const entry = {
+      pid: pids.permission,
+      cwd: "/Users/example/code/demo-api",
+      sessionId: ids.permission,
+      name: "demo-api",
+      status: "waiting",
+      waitingFor: "permission prompt",
+      startedAt: now - 60_000,
+    };
+    const file = registryFile({ ...entry, entrypoint: "cli", statusUpdatedAt: now - 5_000 });
+    const projects = path.join(work, "projects", "-Users-example-code-demo-api");
+    await mkdir(path.join(work, "sessions"), { recursive: true });
+    await mkdir(projects, { recursive: true });
+    await writeFile(path.join(work, "sessions", `${pids.permission}.json`), file);
+    await writeFile(path.join(projects, `${ids.permission}.jsonl`), waitingToRun("npm test"));
+    const feed = JSON.stringify([{ ...entry, kind: "interactive" }]);
+    return { userHome, work, feed };
+  }
+
+  test("the registry, the transcripts, Stop and the answers use the folder it names, as the command does", async () => {
+    const { userHome, work, feed } = await twoFolders();
+    const env = { CLAUDE_CONFIG_DIR: ` ${work} `, AGENT_LOOKOUT_CLAUDE_BIN: BIN };
+    const before = await readdir(userHome, { recursive: true });
+    const touched: string[] = [];
+    const handed = new Set<string | undefined>();
+    const clock = handClock();
+    let runs = 0;
+    const stops = createStopTargets();
+    const adapter = createClaudeCodeAdapter({
+      env,
+      homeDir: userHome,
+      now: clock.now,
+      isAlive: () => true,
+      isExecutable: async (candidate) => asWritten(candidate) === BIN,
+      run: async (_file, _args, options) => {
+        runs += 1;
+        handed.add(options.env.CLAUDE_CONFIG_DIR);
+        return { ok: true, stdout: feed };
+      },
+      readProcessStarts: noStartTimes,
+      registryIo: {
+        readdir: (dir) => (touched.push(dir), readdir(dir)),
+        readFile: (name) => (touched.push(name), readFile(name, "utf8")),
+      },
+      transcriptIo: {
+        readdir: (dir) => (touched.push(dir), nodeIo.readdir(dir)),
+        stat: (target) => (touched.push(target), nodeIo.stat(target)),
+        lstat: (target) => (touched.push(target), nodeIo.lstat(target)),
+        openRegular: (name) => (touched.push(name), nodeIo.openRegular(name)),
+      },
+      stops,
+    });
+    const { health, sessions, basis } = await adapter.poll();
+    for (const at of [2_000, 10_000, 20_000]) {
+      clock.moveTo(at);
+      await adapter.poll();
+    }
+
+    expect(basis).toBe("registry+feed");
+    expect(health.detail).toBe(HEALTHY);
+    expect(health.watching?.[0]).toEqual({
+      label: "Registry folder",
+      value: "~/.claude-work/sessions",
+    });
+    expect(adapter.lookingIn).toContain("~/.claude-work/sessions");
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]).toMatchObject({
+      name: "demo-api",
+      status: "needs-you",
+      surface: "terminal",
+      statusSince: now - 5_000,
+      waitingText: "Run: npm test",
+    });
+    const id = `claude-code:${ids.permission}`;
+    expect(await adapter.lastMessage(id)).toMatchObject({
+      message: { text: "I will run them now." },
+    });
+    const file = path.join(work, "sessions", `${pids.permission}.json`);
+    if (process.platform !== "win32") expect(stops.targetOf(id)?.registryFile).toBe(file);
+    const answers = createRegistryStatus({
+      snapshot: () => ({ generatedAt: now, sources: [health], sessions }),
+      env,
+      homeDir: userHome,
+    });
+    expect(await answers.statusOf(id)).toMatchObject({ status: "waiting" });
+
+    // The command is run as seldom as ever, with the variable as it was set.
+    expect(runs).toBe(1);
+    expect([...handed]).toEqual([env.CLAUDE_CONFIG_DIR]);
+    // Nothing else is read, and nothing is written in either folder.
+    expect(touched.length).toBeGreaterThan(0);
+    expect(touched.filter((target) => !target.startsWith(work))).toEqual([]);
+    expect(await readdir(userHome, { recursive: true })).toEqual(before);
+  });
+
+  test("gives way to AGENT_LOOKOUT_CLAUDE_HOME, and an empty one names nothing", async () => {
+    const { userHome, work } = await twoFolders();
+    const listed = async (env: Record<string, string>) =>
+      (
+        await withoutBinary(userHome, { env: { PATH: "/usr/bin:/bin", ...env } }).poll()
+      ).sessions.map((session) => session.name);
+    expect(await listed({ CLAUDE_CONFIG_DIR: work })).toEqual(["demo-api"]);
+    expect(await listed({ CLAUDE_CONFIG_DIR: "  " })).toEqual(["demo-project"]);
+    expect(
+      await listed({
+        CLAUDE_CONFIG_DIR: work,
+        AGENT_LOOKOUT_CLAUDE_HOME: path.join(userHome, ".claude"),
+      }),
+    ).toEqual(["demo-project"]);
+  });
+
+  test("a folder with no registry in it is said by its name", async () => {
+    const userHome = await makeUserHome({ [`${pids.busy}.json`]: registryFile() });
+    const { health, sessions } = await withoutBinary(userHome, {
+      env: { PATH: "/usr/bin:/bin", CLAUDE_CONFIG_DIR: path.join(userHome, ".claude-work") },
+    }).poll();
+    expect(sessions).toEqual([]);
+    expect(health.state).toBe("unavailable");
+    expect(health.detail).toContain("there is no session registry at ~/.claude-work/sessions.");
   });
 });
 

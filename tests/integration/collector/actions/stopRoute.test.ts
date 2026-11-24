@@ -110,11 +110,13 @@ async function serve(
   const port = await listen(createServer(collector.handler));
   await collector.poller.pollOnce();
 
+  const keyOf = async (sessionId: string) =>
+    (await sessions()).find((session) => session.id === sessionId)?.stop?.key ?? "no key";
   /** The request the dashboard's page makes when Stop session is pressed, changed as a test says. */
-  const stop = (sessionId: unknown = `claude-code:${ids.busy}`, change: TestRequest = {}) =>
+  const stop = async (sessionId = `claude-code:${ids.busy}`, change: TestRequest = {}) =>
     request(port, "/api/sessions/stop", {
       method: "POST",
-      body: JSON.stringify({ sessionId }),
+      body: JSON.stringify({ sessionId, key: await keyOf(sessionId) }),
       ...change,
       headers: {
         Origin: `http://localhost:${port}`,
@@ -128,7 +130,7 @@ async function serve(
   const events = async () => (await request(port, "/api/events")).json<EventsResponse>().events;
   const rewrite = (name: string, content: string) =>
     writeFile(path.join(claudeHome, "sessions", name), content);
-  return { port, collector, stop, sessions, events, rewrite };
+  return { port, collector, stop, keyOf, sessions, events, rewrite };
 }
 
 const named = (sessions: Session[], name: string) =>
@@ -355,6 +357,35 @@ posixOnly("POST /api/sessions/stop", () => {
     expect(named(await server.sessions(), "checkout-flow")).not.toHaveProperty("stop");
     expect((await server.stop()).status).toBe(409);
     expect(standIn.running()).toBe(true);
+  });
+
+  test("once the session is listed from another process, what was confirmed is not stopped, nor the other", async () => {
+    const [shown, other] = [await startStandIn(), await startStandIn()];
+    const idle = (hours: number) => ({
+      status: "idle",
+      statusUpdatedAt: Date.now() - hours * HOUR,
+    });
+    const server = await serve({
+      [`${shown.pid}.json`]: entryFor(shown, idle(1)),
+      [`${other.pid}.json`]: entryFor(other, idle(2)),
+    });
+    const id = `claude-code:${ids.busy}`;
+    const confirmed = JSON.stringify({ sessionId: id, key: await server.keyOf(id) });
+    expect(named(await server.sessions(), "checkout-flow")).toMatchObject({ pid: shown.pid });
+
+    await server.rewrite(`${other.pid}.json`, entryFor(other, { statusUpdatedAt: Date.now() }));
+    await server.collector.poller.pollOnce();
+    expect(named(await server.sessions(), "checkout-flow")).toMatchObject({ pid: other.pid });
+    const response = await server.stop(id, { body: confirmed });
+    expect(response.status).toBe(409);
+    expect(response.json()).toMatchObject({ reason: "cannot-confirm" });
+    expect([shown.running(), other.running()]).toEqual([true, true]);
+
+    // Asked again of what is listed now, that one is.
+    expect((await server.stop(id)).status).toBe(200);
+    expect(await other.exited).toBe("SIGTERM");
+    expect(shown.running()).toBe(true);
+    expect(named(await server.sessions(), "checkout-flow")).toMatchObject({ pid: shown.pid });
   });
 
   test("a session that is not listed has gone", async () => {

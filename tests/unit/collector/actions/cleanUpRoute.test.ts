@@ -76,6 +76,7 @@ function targetOf(n: number, how: "signal" | "background" = "signal"): StopTarge
   const found = {
     sessionId: idOf(n).slice("claude-code:".length),
     pid: 4240 + n,
+    key: "0123456789abcdef",
     procStart: "Tue Nov 14 22:13:20 2023",
     registryFile: `/Users/example/.claude/sessions/${4240 + n}.json`,
   };

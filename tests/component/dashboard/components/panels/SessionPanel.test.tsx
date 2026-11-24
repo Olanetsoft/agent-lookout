@@ -1029,7 +1029,7 @@ test.each([375, 1440])(
   },
 );
 
-test("Stop session asks the app to stop it, by its id alone, and the page reads the sessions again", async () => {
+test("Stop session asks the app to stop it, by its id and key alone, and the page reads the sessions again", async () => {
   const asked: [string, RequestInit | undefined][] = [];
   setApiHost(
     lastMessageHost(
@@ -1048,7 +1048,7 @@ test("Stop session asks the app to stop it, by its id alone, and the page reads 
     <SessionPanel
       sessionId={CLAUDE_ID}
       onClose={vi.fn()}
-      state={withClaude({ stop: { how: "signal" } })}
+      state={withClaude({ stop: { how: "signal", key: "0123456789abcdef" } })}
       now={NOW}
       onStopped={stopped}
     />,
@@ -1060,7 +1060,11 @@ test("Stop session asks the app to stop it, by its id alone, and the page reads 
     .element(page.getByRole("status").filter({ hasText: "Stopped." }))
     .toHaveTextContent("Stopped. Its process has ended, and its conversation is kept.");
   expect(asked.map(([path, init]) => [path, init?.method, init?.body])).toEqual([
-    ["/api/sessions/stop", "POST", JSON.stringify({ sessionId: CLAUDE_ID })],
+    [
+      "/api/sessions/stop",
+      "POST",
+      JSON.stringify({ sessionId: CLAUDE_ID, key: "0123456789abcdef" }),
+    ],
   ]);
   expect(stopped).toHaveBeenCalledOnce();
 });

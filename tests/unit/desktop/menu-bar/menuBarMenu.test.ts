@@ -571,6 +571,15 @@ describe("a session whose permission request is held", () => {
     expect(note?.label).toMatch(/only Deny|Answer in the session|open Agent Lookout/);
   });
 
+  test("only the held request says what is asked, not the line from the transcript", () => {
+    const held = ask("Bash", { command: "npm run build" });
+    const session = waiting("checkout-flow", MINUTE, { ask: held, waitingText: "Run: npm test" });
+    const item = menuBarTemplate(snapshot([session]), NOW, actions())[1];
+    expect(item?.sublabel).toBe("Waiting for permission");
+    expect(item?.toolTip).toBe("Waiting for permission");
+    expect(JSON.stringify(item?.submenu)).toContain("npm run build");
+  });
+
   test("an & in what it asks is written so the menu draws it", () => {
     const submenu = submenuOf(
       menuBarTemplate(snapshot([asking(ask("Bash", { command: "a && b" }))]), NOW, actions()),

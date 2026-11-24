@@ -231,7 +231,8 @@ A session that is over leaves the list after a day. `FINISHED_RETENTION_MS` and 
 **The command's answer wins.**
 
 - It supplies the background jobs that finished or failed and have no process left. The registry has no file for them.
-- A registry session the command did not list is dropped, unless it started in the last 10 seconds (`NEW_SESSION_GRACE_MS`).
+- It supplies the `state` of a background job whose process is idle, which the registry file does not hold, while the file has said idle since before the command was asked (`jobStateOf`).
+- A registry session the command did not list is dropped, unless it started in the last 10 seconds (`NEW_SESSION_GRACE_MS`). So is a second process of a session it lists under another live one's.
 - The registry is not trusted when the command lists a running session the registry lacks, when a registry status is one the mapping does not know, or when the folder cannot be read. Sessions then come from the command, run every 5 seconds (`FEED_FALLBACK_INTERVAL_MS`) until the two agree.
 - When the command is missing or fails, the registry is used alone, and the card says so. When neither works, the source is `unavailable`.
 
@@ -243,6 +244,8 @@ Those are the adapter's three bases: `registry+feed`, `feed` and `registry`.
 
 **Leftover files.** A registry file can outlive a crashed session. The adapter checks that the process exists (`isProcessAlive`). It also asks `ps` when the process started, to catch a process ID that has since gone to another program (`createProcessStartCheck` in `src/collector/processes/processStart.ts`). This is not done on Windows, where Claude Code records no start time.
 
+**Two processes on one session.** Each has a registry file. `uniqueById` makes them one row: the copy that needs you, then one that works, then the rest, the newest first. Jump, Stop and an answer act on that copy's process. A request held for the other is kept, and shown when that copy is.
+
 **Statuses.**
 
 - `busy`, and the registry's `shell`, are working. `waiting` is needs-you. `idle` is idle.
@@ -253,11 +256,11 @@ Those are the adapter's three bases: `registry+feed`, `feed` and `registry`.
 
 **When the command reads differently.** The command's answer can be a few seconds behind the registry. `sessionFromFeed` takes the registry's status time only when both say the same status. Otherwise a waiting session's time would move and read as a new wait (7944618).
 
-**Pointing it at another folder.** `AGENT_LOOKOUT_CLAUDE_HOME` replaces `~/.claude` and, on its own, stops the command running. `claude` would list the usual folder's sessions, and pointing it elsewhere with `CLAUDE_CONFIG_DIR` makes it write account details there. Set `AGENT_LOOKOUT_CLAUDE_BIN` as well to run the program it names.
+**Pointing it at another folder.** Claude Code's own `CLAUDE_CONFIG_DIR`, set where Agent Lookout starts, moves the one folder it reads, as it moves what `claude` lists (`claudeHomeFor`). `AGENT_LOOKOUT_CLAUDE_HOME` wins over it and, on its own, stops the command running. `claude` would list the usual folder's sessions, and Agent Lookout pointing it elsewhere with `CLAUDE_CONFIG_DIR` would make it write account details there. Set `AGENT_LOOKOUT_CLAUDE_BIN` as well to run the program it names.
 
 **Transcripts are read only when needed.** A transcript holds everything a session said, so no poll reads one for its own sake.
 
-- For a session that needs you, and only then, `transcript/waitingTexts.ts` reads the last 256 KB of `~/.claude/projects/<folder>/<session id>.jsonl`. The folder is the session's folder with every character that is not a letter or digit made a `-`. `lastAsk.ts` turns the newest tool use with no result into one line, such as `Run: npm test` (#56). A parse that fails gives no text, never a guess. The file is read again only when it changes, and everything kept is dropped on the first poll the session is not waiting. Where the text may go is under [What is never sent](#what-is-never-sent).
+- For a session that needs you, and only then, `transcript/waitingTexts.ts` reads the last 256 KB of `~/.claude/projects/<folder>/<session id>.jsonl`. The folder is the session's folder with every character that is not a letter or digit made a `-`. `lastAsk.ts` turns the newest tool use with no result into one line, such as `Run: npm test` (#56). A parse that fails gives no text, never a guess. Nor does a wait that something else may be asking in: a background agent, another tool of the same message, or a second process with the session open. The file is read again only when it changes, and everything kept is dropped on the first poll the session is not waiting. Where the text may go is under [What is never sent](#what-is-never-sent).
 - What a session last said is read only when a page asks for it. [A session's last message](#a-sessions-last-message) covers it.
 - `AGENT_LOOKOUT_WAITING_TEXT=off` stops any transcript being opened.
 
@@ -269,7 +272,7 @@ Those are the adapter's three bases: `registry+feed`, `feed` and `registry`.
 
 **Why it reads files alone.** Codex documents no listing a passive reader can use. Its app server writes to Codex's folder when it starts, and its hooks need the person to edit Codex's config. So the adapter runs no program. It reads three undocumented things under `~/.codex`, or `CODEX_HOME`, or `AGENT_LOOKOUT_CODEX_HOME`:
 
-- **The session files**, which Codex calls rollouts: `sessions/YYYY/MM/DD/rollout-*.jsonl`. On each poll, `rollouts.ts` lists only today's and yesterday's folders. It lists every folder only while a session Codex has open is not found, and then at most every 30 seconds (`INDEX_REFRESH_MS`), or after 5 seconds for a session Codex has only just opened (`INDEX_PROMPT_REFRESH_MS`). `rolloutFile.ts` reads the first `session_meta` line, the last line that says a turn started or ended, and the newest `token_count` line. It reads within 2 MiB of the start and 8 MiB of the end, and after that only what was added. What a session last said is read from the end of the same file only when it is asked for (`lastMessages.ts`), as [A session's last message](#a-sessions-last-message) says.
+- **The session files**, which Codex calls rollouts: `sessions/YYYY/MM/DD/rollout-*.jsonl`. On each poll, `rollouts.ts` lists only today's and yesterday's folders. A file once found is kept past them while it is written to within a day or its session is open (`tracked` in `index.ts`). It lists every folder on the first poll, and then only while a session Codex has open is not found, and then at most every 30 seconds (`INDEX_REFRESH_MS`), or after 5 seconds for a session Codex has only just opened (`INDEX_PROMPT_REFRESH_MS`). `rolloutFile.ts` reads the first `session_meta` line, the last line that says a turn started or ended, and the newest `token_count` line. It reads within 2 MiB of the start and 8 MiB of the end, and after that only what was added. What a session last said is read from the end of the same file only when it is asked for (`lastMessages.ts`), as [A session's last message](#a-sessions-last-message) says.
 - **The lock folder** `thread-writer-locks/`, listed and never opened, for which sessions a Codex program has open (`writerLocks.ts`).
 - **`session_index.jsonl`**, for the names of sessions (`sessionIndex.ts`).
 
@@ -1639,7 +1642,7 @@ Thirteen files call `actionRefusalFor`:
 
 **After those checks, each route follows the same pattern.**
 
-1. **It parses the body strictly.** For example, `sessionIdIn` in `jumpRoute.ts` takes exactly `{"sessionId": "..."}`. A body with any other field is refused outright, not partly read.
+1. **It parses the body strictly.** For example, `sessionIdIn` in `jumpRoute.ts` takes exactly `{"sessionId": "..."}`, and the stop route the session's key beside it. A body with any other field is refused outright, not partly read.
 2. **The request names something, and the collector finds it.** The route looks the session up in the poller's latest snapshot and acts on what the collector found for it by itself: the pane, the tab, the pid, the start time or the job ID. Nothing from a request ever reaches a command line or names a file.
 3. **It checks again at the moment it acts.** It re-reads the registry file, asks `ps` again, or confirms the session is still in the same wait.
 4. **It does one thing at a time.** Jumps are one a second (`JUMP_INTERVAL_MS`). Stop and clean-up share one turn, one at a time and a second apart (`createActionLimiter` in `src/collector/actions/stopSession.ts`).
@@ -1690,21 +1693,22 @@ Thirteen files call `actionRefusalFor`:
 
 **Where the code is.**
 
-- On each poll, `withStopOffers` in `src/collector/adapters/claude-code/stopOffers.ts` decides which sessions can be stopped. For each one it keeps a `StopTarget` (`src/collector/actions/stopTargets.ts`) inside the collector: the pid, the start time recorded in the registry, the registry file's path and, for a background job, the job ID. The page only ever gets `stop: { how }`.
+- On each poll, `withStopOffers` in `src/collector/adapters/claude-code/stopOffers.ts` decides which sessions can be stopped. For each one it keeps a `StopTarget` (`src/collector/actions/stopTargets.ts`) inside the collector: the pid, the start time recorded in the registry, the registry file's path and, for a background job, the job ID. The page only ever gets `stop: { how, key }`, and the key says nothing of the process it stands for.
 - `createStopRoute` in `stopRoute.ts` and `createCleanUpRoute` in `cleanUpRoute.ts` both act through `createStopper` in `stopSession.ts`, which has `confirm`, `act` and `waitForEnd`.
 - On the dashboard: `StopSession.tsx` and `LeftRunning.tsx` in `src/dashboard/components/stop/`, and `src/dashboard/lib/stop/`. "Hide until it changes" lives only in this browser's local storage (`hiddenSessions.ts`), and does nothing to the session.
 
 **Why it works this way.**
 
-- **Only some sessions can be stopped.** A session needs a registry file that names its kind and records a start time.
+- **Only some sessions can be stopped.** A session needs a process that runs, and a registry file that names its kind and records a start time. A job that has finished or failed keeps Stop while its process runs.
   - An `interactive` session in a terminal or in VS Code is sent SIGTERM.
   - A `bg` background job is stopped with `claude stop <jobId>`, and the job ID must match `JOB_ID`. Claude Code's supervisor would restart a job whose process was simply ended.
   - A session in the desktop app is not stopped. That app looks after its own process, and nothing says how it handles an outside stop. A session whose app is unknown might be in the desktop app, so it is not stopped either.
 - **It confirms again, because pids get reused.** `confirm` re-reads the registry file with `readRegularFile`, which follows no link and reads no pipe. It checks the session ID, pid, kind and start time. It then asks `ps` again, with nothing cached, and needs the same start time within a second (`compareProcessStart`, `SAME_START_TO_STOP_WITHIN_MS`).
+- **What was confirmed is what is stopped.** Two processes can have one session open, and the row can move from one to the other while the question is open. So the page sends the key Stop had when it was pressed, and a target with another key is not stopped.
 - **It never stops itself or what started it.** `confirm` refuses pid 1, Agent Lookout's own process and every process above it (`ancestorsOf`). Suppose you start Agent Lookout from a terminal inside a Claude Code session. Stopping that session would end Agent Lookout too.
 - **It sends SIGTERM, never SIGKILL.** SIGTERM ends Claude Code the same way closing it does, and the conversation is kept for `claude --resume`. If the process is still running after 10 seconds, the answer is 202 `still-running`, and nothing stronger is sent.
 - **The clean-up ends only sessions that stayed idle.** The request sends each session's `statusSince` as the page showed it. A session is ended only if the registry file and the snapshot both still say it has been idle since that exact moment, and the clock still makes it stale (`changedSince`). A session that did anything since is left running, even if it has gone idle again. That was #6's condition: "A session that became active again is never ended."
-- **The session leaves the list at once.** After a stop the route polls straight away.
+- **The session leaves the list at once,** or is shown from the other process that has it open. After a stop the route polls straight away.
 
 ### Resume
 

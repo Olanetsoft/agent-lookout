@@ -138,12 +138,28 @@ export type RegistryReading =
       wait: string;
       /** When the wait began, as the file gives it. Left out when it gives no time. */
       since?: number;
+      /** The process that waits. Two can have one session open. */
+      pid?: number;
     }
   | { status: "not-waiting" | "unknown" };
 
+/** A held request, as much as says whose wait it is in. */
+export interface HeldWait {
+  arrivedAt: number;
+  /** The process it was confirmed in the wait of, when the reading named one. */
+  pid?: number;
+  /** When that wait began, as the registry said, or null when it did not say. */
+  since: number | null;
+}
+
 export interface StatusReader {
-  /** Reads the session's registry file again, by the id the collector lists it under. */
-  statusOf(sessionId: string): Promise<RegistryReading>;
+  /**
+   * Reads the session's registry file again, by the id the collector lists it
+   * under. Of two processes that have it open, that is the one it lists, unless
+   * the request was confirmed in the other's wait and the one listed is not in
+   * the request's own.
+   */
+  statusOf(sessionId: string, request?: HeldWait): Promise<RegistryReading>;
 }
 
 /** What a hook sent, with all but what is shown let go: the session it is for, and what it asks. */
@@ -184,19 +200,16 @@ export type AnswerOutcome = "answered" | "no-ask" | "not-allowable" | "gone" | "
 /** Why a request was let go with no answer, for the tests and nothing else. */
 export type DropReason = "left-waiting" | "closed" | "limit" | "newer" | "full" | "stopped";
 
-interface Held {
+interface Held extends HeldWait {
   requestId: string;
   sessionId: string;
   shown: ShownAsk;
-  arrivedAt: number;
   until: number;
   reply: HookReply;
   /** Whether the registry has said the session is waiting since it arrived. */
   confirmed: boolean;
   /** The wait the registry said the session was in when it was confirmed. */
   wait: string | null;
-  /** When that wait began, as the registry said, or null when it did not say. */
-  since: number | null;
   /** Whether an answer is being written. */
   answering: boolean;
   /** Whether that answer is a rule's. */
@@ -283,34 +296,45 @@ export function createHeldAsks(options: HeldAsksOptions): HeldAsks {
     }
   }
 
-  async function read(sessionId: string): Promise<RegistryReading> {
+  async function read(entry: Held): Promise<RegistryReading> {
     try {
-      return await reader.statusOf(sessionId);
+      return await reader.statusOf(entry.sessionId, entry);
     } catch {
       return { status: "unknown" };
     }
+  }
+
+  function confirm(entry: Held, reading: RegistryReading & { status: "waiting" }): void {
+    entry.confirmed = true;
+    entry.wait = reading.wait;
+    entry.since = reading.since ?? null;
+    entry.pid = reading.pid;
+  }
+
+  /**
+   * Whether a confirmed request is still in its wait. One confirmed in the wait
+   * of another process that has the session open moves to its own.
+   */
+  function stillIn(entry: Held, reading: RegistryReading): boolean {
+    if (reading.status !== "waiting") return false;
+    if (reading.pid !== entry.pid) confirm(entry, reading);
+    return reading.wait === entry.wait;
   }
 
   async function checkOne(entry: Held, at: number): Promise<void> {
     if (entry.answering) return;
     if (!entry.reply.isOpen()) return drop(entry, "closed");
     if (at >= entry.until) return drop(entry, "limit");
-    const reading = await read(entry.sessionId);
+    const reading = await read(entry);
     // Gone, or being answered, while the file was read.
     if (held.get(entry.sessionId) !== entry || entry.answering) return;
-    if (reading.status === "waiting") {
-      if (!entry.confirmed) {
-        entry.confirmed = true;
-        entry.wait = reading.wait;
-        entry.since = reading.since ?? null;
-        answerByRule(entry);
-        return;
-      }
-      // Answered in the session, and waiting again since, for something else.
-      if (reading.wait !== entry.wait) drop(entry, "left-waiting");
-      return;
-    }
-    if (entry.confirmed || at - entry.arrivedAt >= GRACE_MS) drop(entry, "left-waiting");
+    if (entry.confirmed) {
+      // Answered in the session, and perhaps waiting again since, for something else.
+      if (!stillIn(entry, reading)) drop(entry, "left-waiting");
+    } else if (reading.status === "waiting") {
+      confirm(entry, reading);
+      answerByRule(entry);
+    } else if (at - entry.arrivedAt >= GRACE_MS) drop(entry, "left-waiting");
   }
 
   /**
@@ -345,12 +369,12 @@ export function createHeldAsks(options: HeldAsksOptions): HeldAsks {
     if (decision === "allow" && !entry.shown.allow) return "not-allowable";
     if (entry.answering) return "too-soon";
     entry.answering = true;
-    const reading = await read(sessionId);
+    const reading = await read(entry);
     if (held.get(sessionId) !== entry || !entry.reply.isOpen()) {
       if (held.get(sessionId) === entry) drop(entry, "closed");
       return "gone";
     }
-    const sameWait = reading.status === "waiting" && reading.wait === entry.wait;
+    const sameWait = stillIn(entry, reading);
     if (!sameWait || now() >= entry.until) {
       drop(entry, sameWait ? "limit" : "left-waiting");
       return "gone";
@@ -466,6 +490,8 @@ export function createHeldAsks(options: HeldAsksOptions): HeldAsks {
         if (!entry || !entry.confirmed || entry.answering || session.status !== "needs-you") {
           return session;
         }
+        // Its own process waits, but another is the one listed.
+        if (entry.pid !== undefined && entry.pid !== session.pid) return session;
         return { ...session, ask: toAsk(entry) };
       });
       return { ...snapshot, sessions, answering };

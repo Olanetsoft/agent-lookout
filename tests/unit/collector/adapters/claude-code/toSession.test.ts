@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
   sessionFromFeed,
   sessionFromRegistry,
+  openTwice,
   uniqueById,
   type SessionContext,
 } from "@collector/adapters/claude-code/toSession";
@@ -609,6 +610,79 @@ describe("sessionFromRegistry", () => {
   });
 });
 
+describe("a live background job", () => {
+  const askedAt = now - 10_000;
+  const file = {
+    pid: pids.idle,
+    sessionId: ids.background,
+    kind: "bg",
+    status: "idle",
+    waitingFor: "permission prompt",
+    statusUpdatedAt: askedAt,
+  };
+  const listed = {
+    pid: pids.idle,
+    sessionId: ids.background,
+    id: "job-0001",
+    status: "idle",
+    state: "blocked",
+  };
+  const shown = (
+    fileChanges: Record<string, unknown> = {},
+    listedChanges: Record<string, unknown> = {},
+  ) =>
+    sessionFromRegistry({ ...file, ...fileChanges }, context, {
+      askedAt,
+      entries: [{ ...listed, ...listedChanges }],
+    });
+
+  test("takes the state the command gave it, and what it waits for", () => {
+    const blocked = shown();
+    expect(blocked).toMatchObject({
+      status: "needs-you",
+      waitingReason: "other",
+      statusSince: askedAt,
+    });
+    expect(blocked.waitingDetail).toBeUndefined();
+    expect(shown({}, { waitingFor: "input needed" })).toMatchObject({
+      waitingReason: "question",
+      waitingDetail: "input needed",
+    });
+    expect(shown({}, { state: "working" }).status).toBe("idle");
+  });
+
+  test("takes its state whichever of the process's entries comes first", () => {
+    const entries = [{ ...listed, id: undefined, state: undefined }, listed];
+    for (const both of [entries, [...entries].reverse()]) {
+      const job = sessionFromRegistry(file, context, { askedAt, entries: both });
+      expect(job.status).toBe("needs-you");
+    }
+  });
+
+  test("that waits keeps the reason its own file gives", () => {
+    expect(shown({ status: "waiting" }, { waitingFor: "input needed" })).toMatchObject({
+      status: "needs-you",
+      waitingReason: "permission",
+    });
+  });
+
+  test.each<[string, Record<string, unknown>, Record<string, unknown>, string]>([
+    ["went idle after the command was asked", { statusUpdatedAt: askedAt + 1 }, {}, "idle"],
+    ["does not say when it went idle", { statusUpdatedAt: undefined }, {}, "idle"],
+    ["says it went idle at no real time", { statusUpdatedAt: 5 }, {}, "idle"],
+    ["works", { status: "busy" }, {}, "working"],
+    ["is in a shell", { status: "shell" }, {}, "working"],
+    ["holds a state of its own", { state: "done" }, {}, "finished"],
+    ["was busy when the command was asked", {}, { status: "busy" }, "idle"],
+    ["had no process when the command was asked", {}, { status: undefined }, "idle"],
+    ["is another process", {}, { pid: pids.busy }, "idle"],
+    ["was listed with no process", {}, { pid: undefined }, "idle"],
+    ["is another session's process", {}, { sessionId: ids.idle }, "idle"],
+  ])("that %s keeps what its file says", (_what, fileChanges, listedChanges, status) => {
+    expect(shown(fileChanges, listedChanges).status).toBe(status);
+  });
+});
+
 describe("uniqueById", () => {
   test("keeps one session per id, preferring the one whose process is alive", () => {
     const dead = makeSession({ id: "claude-code:a", pid: 1, alive: false });
@@ -617,5 +691,51 @@ describe("uniqueById", () => {
     expect(uniqueById([dead, alive, other])).toEqual([alive, other]);
     expect(uniqueById([alive, dead, other])).toEqual([alive, other]);
     expect(uniqueById([dead, { ...dead, pid: 9 }])).toEqual([dead]);
+  });
+
+  const copy = (pid: number, status: Session["status"], statusSince: number | null) =>
+    makeSession({ id: "claude-code:a", pid, alive: true, status, statusSince });
+
+  test.each<[string, Session, Session]>([
+    ["that waits, before one that works", copy(1, "needs-you", now - 9), copy(2, "working", now)],
+    ["that waits, before an idle one", copy(1, "needs-you", now - 9), copy(2, "idle", now)],
+    ["that works, before an idle one", copy(1, "working", now - 9), copy(2, "idle", now)],
+    ["that works, before a finished one", copy(1, "working", now - 9), copy(2, "finished", now)],
+    ["whose wait began last", copy(1, "needs-you", now), copy(2, "needs-you", now - 9)],
+    ["that went idle last", copy(1, "idle", now), copy(2, "idle", now - 9)],
+    ["that finished after the other went idle", copy(1, "finished", now), copy(2, "idle", now - 9)],
+    ["whose time is known", copy(1, "working", now - 9), copy(2, "working", null)],
+  ])("of two live copies keeps the one %s, in either order", (_which, shown, hidden) => {
+    expect(uniqueById([shown, hidden])).toEqual([shown]);
+    expect(uniqueById([hidden, shown])).toEqual([shown]);
+  });
+
+  test("a copy that waits but has no process is not kept over one that has", () => {
+    const gone = { ...copy(1, "needs-you", now), alive: false };
+    const listed = makeSession({ id: "claude-code:a", status: "needs-you", statusSince: now });
+    const idle = copy(2, "idle", now - 9);
+    expect(uniqueById([gone, idle])).toEqual([idle]);
+    expect(uniqueById([idle, gone])).toEqual([idle]);
+    expect(uniqueById([listed, idle])).toEqual([idle]);
+  });
+});
+
+describe("openTwice", () => {
+  test("gives the sessions two live processes have open", () => {
+    const copy = (id: string, pid: number | undefined, alive: boolean | undefined) =>
+      makeSession({ id: `claude-code:${id}`, pid, alive });
+    expect([
+      ...openTwice([
+        copy("a", 1, true),
+        copy("b", 2, true),
+        copy("a", 3, true),
+        copy("b", 4, false),
+        copy("c", 5, true),
+        // Listed twice, as Claude Code has done, is one process.
+        copy("c", 5, true),
+        copy("d", undefined, undefined),
+        copy("d", 6, true),
+      ]),
+    ]).toEqual(["claude-code:a"]);
   });
 });

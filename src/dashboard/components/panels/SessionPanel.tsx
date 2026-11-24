@@ -491,7 +491,7 @@ function SessionDialog({
         ? state.lastOkAt
         : now;
   const saying = jump.outcome !== null || jump.asking !== null;
-  const stop = useStop(sessionId, { open, onStopped });
+  const stop = useStop(sessionId, { open, onStopped, stopKey: session?.stop?.key });
   // A session Stop ended here can be resumed at once, whatever a list read before then said of
   // it, but not once a list read after has it running again, as `claude attach` can open a
   // stopped background job: resuming it then would start a second copy of the conversation.

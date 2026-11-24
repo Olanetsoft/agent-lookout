@@ -29,6 +29,7 @@ import { sessionTitle, waitNotice } from "../../core/notices/waiting.ts";
 import {
   agentName,
   surfaceLabel,
+  withoutWaitingText,
   type AnswerDecision,
   type Session,
   type SourceHealth,
@@ -203,7 +204,7 @@ interface MenuBarListing {
   id: string;
   name: string;
   statusSince: number | null;
-  /** The reason, and what the session is asking, cut short. */
+  /** The reason, and what the session is asking unless its request is held, cut short. */
   sublabel: string;
   /** The same, whole, for a Mac that does not show the line under a name. */
   toolTip: string;
@@ -229,8 +230,9 @@ function menuBarList(snapshot: MenuBarSnapshot | null): MenuBarList {
     headline: menuBarHeadline(snapshot),
     note: snapshot?.note ?? null,
     listed: listed.map((session, index) => {
-      const { body } = waitNotice(session);
       const { ask } = session;
+      // Of a held request, only its own words say what it asks, in its submenu.
+      const { body } = waitNotice(ask === undefined ? session : withoutWaitingText(session));
       return {
         id: session.id,
         name: names[index] ?? sessionTitle(session),
@@ -305,7 +307,8 @@ function askItems(
  * 4m 12s", with the reason and what it is asking under it, cut short, and the
  * whole of that when the pointer rests on it, for a Mac that does not show the
  * line under a name. A wait whose start is not known gives no time. Choosing
- * it opens the session's details, or, while its request is held, its submenu.
+ * it opens the session's details, or, while its request is held, its submenu,
+ * which says what it asks in place of the line.
  */
 function sessionItem(
   listing: MenuBarListing,

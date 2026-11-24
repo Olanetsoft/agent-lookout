@@ -27,9 +27,11 @@ describe("which sessions can be stopped", () => {
   test("a session in a terminal is stopped by a signal to its process, and the page is told only that", () => {
     const { sessions, targets } = offers([entry({ entrypoint: "cli" })]);
 
-    expect(sessions[0]?.stop).toEqual({ how: "signal" });
+    const key = sessions[0]?.stop?.key;
+    expect(sessions[0]?.stop).toEqual({ how: "signal", key });
     expect(targets.get(`claude-code:${ids.busy}`)).toEqual({
       how: "signal",
+      key,
       sessionId: ids.busy,
       pid: pids.busy,
       procStart: "Tue Nov 14 22:13:20 2023",
@@ -42,7 +44,7 @@ describe("which sessions can be stopped", () => {
 
   test("a session in VS Code is stopped the same way", () => {
     const { sessions } = offers([entry({ entrypoint: "claude-vscode" })]);
-    expect(sessions[0]?.stop).toEqual({ how: "signal" });
+    expect(sessions[0]?.stop).toMatchObject({ how: "signal" });
   });
 
   test.each([
@@ -60,12 +62,25 @@ describe("which sessions can be stopped", () => {
   test.each([
     ["finished", "done"],
     ["failed", "failed"],
-  ])("a background job that has %s has nothing left to stop", (status, state) => {
-    const one = entry({ entrypoint: "cli", kind: "bg", status: "idle", state });
-    const { sessions, targets } = offers([one], [{ sessionId: ids.busy, id: "7c5dcf5d" }]);
-    expect(sessions[0]?.status).toBe(status);
-    expect(sessions[0]).not.toHaveProperty("stop");
-    expect(targets.size).toBe(0);
+  ])("a background job that has %s keeps Stop while its process runs", (status, state) => {
+    const one = entry({ entrypoint: "cli", kind: "bg", status: "idle" });
+    const answer: FeedEntry[] = [
+      { pid: one.pid, sessionId: ids.busy, id: "7c5dcf5d", status: "idle", state },
+    ];
+    const stopOf = (alive: boolean) => {
+      const session = sessionFromRegistry(
+        one,
+        { now: NOW, isAlive: () => alive },
+        { askedAt: NOW, entries: answer },
+      );
+      expect(session.status).toBe(status);
+      return withStopOffers([session], [one], answer, {
+        sessionsDir: SESSIONS_DIR,
+        background: true,
+      }).targets.get(`claude-code:${ids.busy}`);
+    };
+    expect(stopOf(true)).toMatchObject({ how: "background", jobId: "7c5dcf5d" });
+    expect(stopOf(false)).toBeUndefined();
   });
 
   test("a session whose process has gone has no Stop", () => {
@@ -89,7 +104,7 @@ describe("which sessions can be stopped", () => {
     const answer: FeedEntry[] = [{ sessionId: ids.background, id: "7c5dcf5d", kind: "background" }];
     const { sessions, targets } = offers([job], answer);
 
-    expect(sessions[0]?.stop).toEqual({ how: "background" });
+    expect(sessions[0]?.stop).toMatchObject({ how: "background" });
     expect(targets.get(`claude-code:${ids.background}`)).toMatchObject({
       how: "background",
       jobId: "7c5dcf5d",
@@ -101,6 +116,55 @@ describe("which sessions can be stopped", () => {
     const job = entry({ pid: 5001, sessionId: ids.background, kind: "bg", entrypoint: "sdk-cli" });
     const { targets } = offers([job], [{ pid: 5001, id: "7c5dcf5d" }]);
     expect(targets.get(`claude-code:${ids.background}`)).toMatchObject({ jobId: "7c5dcf5d" });
+  });
+
+  test("of two processes with one session open, the one the session is shown from is stopped", () => {
+    const shown = entry({ pid: 5001, entrypoint: "cli" });
+    const other = entry({ pid: 5002, entrypoint: "cli", procStart: "Tue Nov 14 23:00:00 2023" });
+    for (const live of [
+      [shown, other],
+      [other, shown],
+    ]) {
+      const { sessions, targets } = withStopOffers(
+        [sessionFromRegistry(shown, context)],
+        live,
+        null,
+        { sessionsDir: SESSIONS_DIR, background: true },
+      );
+      expect(sessions[0]?.stop).toMatchObject({ how: "signal" });
+      expect(targets.get(`claude-code:${ids.busy}`)).toMatchObject({
+        pid: 5001,
+        procStart: shown.procStart,
+        registryFile: path.join(SESSIONS_DIR, "5001.json"),
+      });
+    }
+  });
+
+  test("the key says which process it is, at every poll, and nothing else of it", () => {
+    const keyOf = (overrides: Record<string, unknown>) =>
+      offers([entry({ entrypoint: "cli", ...overrides })]).sessions[0]?.stop?.key;
+    const key = keyOf({ status: "busy" });
+    expect(key).toMatch(/^[0-9a-f]{16}$/);
+    expect(keyOf({ status: "idle", statusUpdatedAt: NOW })).toBe(key);
+    // Another process with the session open, or a pid given to another one since.
+    expect(keyOf({ pid: 5002 })).not.toBe(key);
+    expect(keyOf({ procStart: "Tue Nov 14 23:00:00 2023" })).not.toBe(key);
+  });
+
+  test("of two jobs of one session, the one of the same process is stopped, or none", () => {
+    const job = entry({ pid: 5001, sessionId: ids.background, kind: "bg", entrypoint: "sdk-cli" });
+    const jobs = (...listed: FeedEntry[]) =>
+      offers(
+        [job],
+        listed.map((one) => ({ sessionId: ids.background, ...one })),
+      ).targets.get(`claude-code:${ids.background}`);
+    expect(jobs({ pid: 5002, id: "aaaa1111" }, { pid: 5001, id: "bbbb2222" })).toMatchObject({
+      jobId: "bbbb2222",
+    });
+    expect(jobs({ pid: 5002, id: "aaaa1111" }, { pid: 5003, id: "bbbb2222" })).toBeUndefined();
+    // One job, whose process has been started anew since, or listed twice.
+    expect(jobs({ pid: 5002, id: "aaaa1111" })).toMatchObject({ jobId: "aaaa1111" });
+    expect(jobs({ id: "aaaa1111" }, { id: "aaaa1111" })).toMatchObject({ jobId: "aaaa1111" });
   });
 
   test.each<[string, FeedEntry[] | null, boolean]>([
@@ -128,12 +192,14 @@ describe("which sessions can be stopped", () => {
       [
         { ...session, source: "codex", id: `codex:${ids.busy}` },
         { ...session, pid: pids.busy + 1 },
+        // Its pid's file names another session.
+        { ...session, id: `claude-code:${ids.idle}` },
       ],
       [one],
       null,
       { sessionsDir: SESSIONS_DIR, background: true },
     );
-    expect(sessions.map((candidate) => candidate.stop)).toEqual([undefined, undefined]);
+    expect(sessions.map((candidate) => candidate.stop)).toEqual([undefined, undefined, undefined]);
   });
 });
 

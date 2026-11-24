@@ -42,7 +42,7 @@ export interface LastMessageReader {
 }
 
 export interface LastMessageReaderOptions {
-  /** The Claude Code folder, `~/.claude` or the one `AGENT_LOOKOUT_CLAUDE_HOME` names. */
+  /** The Claude Code folder, as `claudeHomeFor` works it out. */
   claudeHome: string;
   /** Shared with the other agents' readers. Left out, the reader has its own. */
   limits?: TailLimits;

@@ -19,7 +19,8 @@ import type { ReadOnlyIo } from "../../files/readOnlyIo.ts";
  * A resumed session goes on writing to its original file, which can sit in a
  * folder many days old. Listing every folder on every poll would cost more
  * than the rest of the poll together, so each poll lists only the folders for
- * today and yesterday, and a list of every folder is kept for finding the
+ * today and yesterday, where every new file is made. Every folder is listed at
+ * the first poll, for the files written to since, and again for finding the
  * sessions Codex says are open that those two do not hold.
  */
 
@@ -59,21 +60,21 @@ function twoDigits(value: number): string {
 }
 
 /**
- * The day folders a session written to in the last day can be in: the folders
- * for the local dates of `now` and of 24 hours before it. Codex names folders
- * by local date, so these are local too.
+ * The day folders a session made in the last day can be in: the folders for
+ * today's local date and the date before it, however long either day is. Codex
+ * names folders by local date, so these are local too.
  */
 export function recentDayFolders(sessionsDir: string, now: number): string[] {
-  const folders = [now, now - 24 * 60 * 60 * 1000].map((at) => {
-    const date = new Date(at);
-    return path.join(
+  const today = new Date(now);
+  const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+  return [today, yesterday].map((date) =>
+    path.join(
       sessionsDir,
       String(date.getFullYear()),
       twoDigits(date.getMonth() + 1),
       twoDigits(date.getDate()),
-    );
-  });
-  return [...new Set(folders)];
+    ),
+  );
 }
 
 const YEAR = /^\d{4}$/;
@@ -82,10 +83,13 @@ const MONTH_OR_DAY = /^\d{2}$/;
 export interface RolloutFinder {
   /** The rollout files in today's and yesterday's folders. A folder that is not there holds none. */
   recent(now: number): Promise<RolloutRef[]>;
+  /** The rollout files in every day folder. Lists them all. */
+  all(now: number): Promise<RolloutRef[]>;
   /**
    * The rollout files of these threads, found in the list of every day folder.
-   * The list is made again when a thread asked for is not in it: at once the
-   * first time that thread is asked for, if the last listing is at least
+   * A thread asked for may have a newer file than the list holds, or a file the
+   * list does not hold, so the list is made again: at once the first time that
+   * thread is asked for, if the last listing is at least
    * `INDEX_PROMPT_REFRESH_MS` old, and otherwise at most every `INDEX_REFRESH_MS`.
    */
   locate(threadIds: readonly string[], now: number): Promise<RolloutRef[]>;
@@ -106,8 +110,8 @@ export function createRolloutFinder(options: RolloutFinderOptions): RolloutFinde
   /** Every rollout file in every day folder, by thread id. Null until first needed. */
   let index: Map<string, string[]> | null = null;
   let indexedAt = 0;
-  /** The threads that were asked for and not found when the list was last made. */
-  let notFound = new Set<string>();
+  /** The threads that were asked for when the list was last made. */
+  let asked = new Set<string>();
 
   async function names(dir: string): Promise<string[]> {
     try {
@@ -149,33 +153,37 @@ export function createRolloutFinder(options: RolloutFinderOptions): RolloutFinde
     return built;
   }
 
+  const refsOf = (threadId: string): RolloutRef[] =>
+    (index?.get(threadId) ?? []).map((file) => ({ path: file, threadId }));
+
   return {
     async recent(now) {
       const refs = await Promise.all(recentDayFolders(sessionsDir, now).map(filesIn));
       return refs.flat();
     },
 
+    async all(now) {
+      index = await buildIndex();
+      indexedAt = now;
+      return [...index.keys()].flatMap(refsOf);
+    },
+
     async locate(threadIds, now) {
       if (threadIds.length === 0) return [];
-      const missing = threadIds.filter((id) => !index?.has(id));
-      if (missing.length > 0) {
-        const since = now - indexedAt;
-        const askedFresh = missing.some((id) => !notFound.has(id));
-        // A clock set back counts as time enough.
-        const due =
-          index === null ||
-          since < 0 ||
-          since >= refreshMs ||
-          (askedFresh && since >= promptRefreshMs);
-        if (due) {
-          index = await buildIndex();
-          indexedAt = now;
-          notFound = new Set(missing.filter((id) => !index?.has(id)));
-        }
+      const since = now - indexedAt;
+      const askedFresh = threadIds.some((id) => !asked.has(id));
+      // A clock set back counts as time enough.
+      const due =
+        index === null ||
+        since < 0 ||
+        since >= refreshMs ||
+        (askedFresh && since >= promptRefreshMs);
+      if (due) {
+        index = await buildIndex();
+        indexedAt = now;
+        asked = new Set(threadIds);
       }
-      return threadIds.flatMap((threadId) =>
-        (index?.get(threadId) ?? []).map((file) => ({ path: file, threadId })),
-      );
+      return threadIds.flatMap(refsOf);
     },
   };
 }

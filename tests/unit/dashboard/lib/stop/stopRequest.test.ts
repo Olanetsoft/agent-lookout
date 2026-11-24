@@ -18,6 +18,7 @@ afterEach(() => {
 });
 
 const SESSION = "claude-code:00000000-0000-4000-8000-000000000001";
+const KEY = "0123456789abcdef";
 
 /** A host that answers every request with this status and body. */
 function answering(status: number, body: unknown) {
@@ -32,15 +33,15 @@ function answering(status: number, body: unknown) {
   return host;
 }
 
-test("Stop session is one POST through the app's own seam, naming the session and nothing else", async () => {
+test("Stop session is one POST through the app's own seam, naming the session with its key and nothing else", async () => {
   const host = answering(200, { ok: true });
   vi.spyOn(AbortSignal, "timeout");
 
-  expect(await requestStop(SESSION)).toBe("stopped");
+  expect(await requestStop(SESSION, KEY)).toBe("stopped");
   const [path, init] = host.mock.calls[0] ?? [];
   expect(path).toBe("/api/sessions/stop");
   expect(init?.method).toBe("POST");
-  expect(init?.body).toBe(JSON.stringify({ sessionId: SESSION }));
+  expect(init?.body).toBe(JSON.stringify({ sessionId: SESSION, key: KEY }));
   const headers = new Headers(init?.headers);
   expect(headers.get("Content-Type")).toBe("application/json");
   expect(headers.get("X-Agent-Lookout-Action")).toBe("stop");
@@ -63,14 +64,14 @@ test.each<[number, unknown, StopOutcome]>([
   [200, "not json", "no-answer"],
 ])("an answer of %i with %j comes to %s", async (status, body, outcome) => {
   answering(status, body);
-  expect(await requestStop(SESSION)).toBe(outcome);
+  expect(await requestStop(SESSION, KEY)).toBe(outcome);
 });
 
 test("no answer at all is said as no answer, since the session may have stopped all the same", async () => {
   setApiHost(async () => {
     throw new TypeError("Failed to fetch");
   });
-  expect(await requestStop(SESSION)).toBe("no-answer");
+  expect(await requestStop(SESSION, KEY)).toBe("no-answer");
 });
 
 test("End sends each session with the moment its idle began, and reads what became of each", async () => {

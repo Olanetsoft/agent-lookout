@@ -114,6 +114,14 @@ export function jumpRefusalFor(req: Pick<IncomingMessage, "method" | "headers">)
  * read for the part that fits.
  */
 export function sessionIdIn(body: string): string | null {
+  return textsIn(body, ["sessionId"])?.sessionId ?? null;
+}
+
+/** A body's fields, when it is a JSON object with exactly these, each a string of some length. */
+export function textsIn<Field extends string>(
+  body: string,
+  fields: readonly Field[],
+): Record<Field, string> | null {
   let value: unknown;
   try {
     value = JSON.parse(body);
@@ -121,11 +129,14 @@ export function sessionIdIn(body: string): string | null {
     return null;
   }
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
-  const keys = Object.keys(value);
-  if (keys.length !== 1 || keys[0] !== "sessionId") return null;
-  const { sessionId } = value as { sessionId: unknown };
-  if (typeof sessionId !== "string" || sessionId === "") return null;
-  return sessionId.length <= MAX_SESSION_ID_LENGTH ? sessionId : null;
+  const found = value as Record<Field, unknown>;
+  const fits = fields.every((field) => {
+    const text = Object.hasOwn(found, field) ? found[field] : null;
+    return typeof text === "string" && text !== "" && text.length <= MAX_SESSION_ID_LENGTH;
+  });
+  return fits && Object.keys(found).length === fields.length
+    ? (found as Record<Field, string>)
+    : null;
 }
 
 /**

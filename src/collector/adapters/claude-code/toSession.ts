@@ -185,21 +185,87 @@ export function sessionFromFeed(
   );
 }
 
-/** A session from its registry file alone: the usual way a running session is read. */
-export function sessionFromRegistry(entry: RegistryEntry, context: SessionContext): Session {
-  return build(entry, "registry", context);
+/** The last answer the command gave, and when it was asked. */
+export interface FeedAnswer {
+  askedAt: number;
+  entries: readonly FeedEntry[];
 }
 
 /**
- * Removes sessions that share an id, which Claude Code has been seen to produce
- * by listing one session twice. The copy with a live process is kept; failing
- * that, the first.
+ * How the command says a live background job stands, which the job's registry
+ * file does not hold. It is used only while the file has said idle since before
+ * the command was asked, and the command called the process idle too, so a
+ * state from before a newer turn is never used.
+ */
+function jobStateOf(
+  entry: RegistryEntry,
+  answer: FeedAnswer,
+  now: number,
+): Pick<FeedEntry, "state" | "waitingFor"> | undefined {
+  if (entry.status !== "idle" || entry.state !== undefined) return undefined;
+  const since = plausibleTime(entry.statusUpdatedAt, now);
+  if (since === null || since > answer.askedAt) return undefined;
+  // The command can list one process twice, and only the job's entry has a state.
+  const job = answer.entries.find(
+    (listed) =>
+      listed.pid === entry.pid && listed.state !== undefined && describesSameSession(listed, entry),
+  );
+  return job?.status === "idle" ? { state: job.state, waitingFor: job.waitingFor } : undefined;
+}
+
+/**
+ * A session from its registry file, the usual way a running session is read,
+ * with the state of a background job from the command's last answer, if any.
+ */
+export function sessionFromRegistry(
+  entry: RegistryEntry,
+  context: SessionContext,
+  answer: FeedAnswer | null = null,
+): Session {
+  const state = answer === null ? undefined : jobStateOf(entry, answer, context.now);
+  return build({ ...entry, ...state }, "registry", context);
+}
+
+/** How much a status says of which copy of a session to show. */
+const COPY_RANK = new Map<Session["status"], number>([
+  ["needs-you", 2],
+  ["working", 1],
+]);
+
+/** Whether one copy of a session is shown in place of another. */
+function shownBefore(copy: Session, kept: Session): boolean {
+  if (copy.alive !== true || kept.alive !== true) return copy.alive === true;
+  const rank = (session: Session) => COPY_RANK.get(session.status) ?? 0;
+  return rank(copy) === rank(kept)
+    ? (copy.statusSince ?? 0) > (kept.statusSince ?? 0)
+    : rank(copy) > rank(kept);
+}
+
+/**
+ * Keeps one copy of each session. Two Claude Code processes can have one
+ * session open, as when it is resumed in a second terminal, and Claude Code has
+ * been seen to list one session twice. A copy with a live process comes first.
+ * Of those, the one that needs the person, then one that works, then the rest,
+ * and of two alike the one whose status began last. Its process is the one Jump,
+ * Stop and an answer act on. Failing all that, the first is kept.
  */
 export function uniqueById(sessions: Session[]): Session[] {
   const byId = new Map<string, Session>();
   for (const session of sessions) {
     const kept = byId.get(session.id);
-    if (!kept || (kept.alive === false && session.alive === true)) byId.set(session.id, session);
+    if (!kept || shownBefore(session, kept)) byId.set(session.id, session);
   }
   return [...byId.values()];
+}
+
+/** The ids of the sessions two live processes have open. */
+export function openTwice(sessions: readonly Session[]): Set<string> {
+  const pids = new Map<string, number>();
+  const twice = new Set<string>();
+  for (const { id, pid, alive } of sessions) {
+    if (alive !== true || pid === undefined) continue;
+    if ((pids.get(id) ?? pid) !== pid) twice.add(id);
+    pids.set(id, pid);
+  }
+  return twice;
 }

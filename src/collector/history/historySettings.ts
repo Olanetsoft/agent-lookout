@@ -5,7 +5,7 @@ import path from "node:path";
 import { ANTIGRAVITY_APP_HOME_ENV, DEFAULT_APP_HOME } from "../adapters/antigravity/app/index.ts";
 import { ANTIGRAVITY_HOME_ENV, DEFAULT_HOME } from "../adapters/antigravity/cli/index.ts";
 import { autohandHomeFor } from "../adapters/autohand-code/index.ts";
-import { CLAUDE_HOME_ENV } from "../adapters/claude-code/index.ts";
+import { claudeHomeFor } from "../adapters/claude-code/index.ts";
 import { clineSessionsDirFor } from "../adapters/cline/index.ts";
 import { CODEX_HOME_ENV, CODEX_OWN_HOME_ENV } from "../adapters/codex/index.ts";
 import { continueHomeFor } from "../adapters/continue/index.ts";
@@ -94,7 +94,7 @@ export function sourcesFingerprint(
 ): string {
   const set = (name: string) => env[name]?.trim() || undefined;
   const folders = [
-    path.resolve(set(CLAUDE_HOME_ENV) ?? path.join(homeDir, ".claude")),
+    claudeHomeFor(env, homeDir),
     path.resolve(set(CODEX_HOME_ENV) ?? set(CODEX_OWN_HOME_ENV) ?? path.join(homeDir, ".codex")),
     path.resolve(set(STATUS_DIR_ENV) ?? path.join(homeDir, ".agent-lookout", "sessions")),
     path.resolve(set(ANTIGRAVITY_HOME_ENV) ?? path.join(homeDir, ...DEFAULT_HOME)),

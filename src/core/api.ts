@@ -351,13 +351,15 @@ export const STOP_ACTION = "stop";
 export const CLEAN_UP_ACTION = "clean-up";
 
 /**
- * The body of `POST /api/sessions/stop`: the id of the session to stop, and
+ * The body of `POST /api/sessions/stop`: the id of the session to stop, the
+ * `key` of its `stop` as the page showed it when the person pressed Stop, and
  * nothing else. The collector looks the session up in its own list and acts
- * on the process or the background job it found there, so nothing in the
- * request can choose what is signalled or run.
+ * on the process or the background job it found there, unless the key stands
+ * for another, so nothing in the request can choose what is signalled or run.
  */
 export interface StopRequest {
   sessionId: string;
+  key: string;
 }
 
 /** `POST /api/sessions/stop`, when the session's process has ended, or its background job was stopped. */
@@ -373,8 +375,8 @@ export interface StopResponse {
  * unsupported     409: Agent Lookout does not stop this session: one of Codex, a
  *                 status file, the desktop app, or one whose kind is not known
  * cannot-confirm  409: the collector could not confirm that the process is that
- *                 session: its registry file changed, or `ps` did not give the
- *                 same start time
+ *                 session: its registry file changed, `ps` did not give the same
+ *                 start time, or the session is now listed from another process
  * not-allowed     403: the process is another user's, or one Agent Lookout never
  *                 stops: its own, the one it was started from, or the first process
  * still-running   202: asked to stop, and still running 10 seconds later
