@@ -11,6 +11,7 @@ import type {
 import {
   EMPTY_CHANGE_MEMORY,
   EMPTY_WAIT_MEMORY,
+  mayStillWait,
   readNoticeEvents,
   sessionChanges,
   waitChanges,
@@ -1503,6 +1504,66 @@ describe("sessionChanges: what happened to each session", () => {
         bySessions.changes.filter((change) => change.event === "needs-you").map((c) => c.session),
       ).toEqual(byWaits.started);
     }
+  });
+});
+
+describe("mayStillWait: whether a wait that is not listed may be open", () => {
+  const since = at - 60_000;
+  const wait = () => waiting(A, { statusSince: since });
+  const main = (state: SourceState = "ok"): SourceHealth => ({
+    ...source("claude-code", state),
+    ...(state === "ok" && { basis: "registry+feed" }),
+  });
+  const fallback = (): SourceHealth => ({ ...source("claude-code"), basis: "registry" });
+  const after = (...snapshots: SessionsSnapshot[]): ChangeMemory =>
+    snapshots.reduce((memory, each) => sessionChanges(memory, each).memory, EMPTY_CHANGE_MEMORY);
+
+  test("while its source has not answered, or does not answer now", () => {
+    expect(mayStillWait(EMPTY_CHANGE_MEMORY, wait(), null)).toBe(true);
+    const away = after(snapshot([wait()], [main()]), snapshot([], [main("error")]));
+    expect(mayStillWait(away, wait(), null)).toBe(true);
+  });
+
+  test("not once its source is read without it", () => {
+    const read = after(snapshot([wait()], [main()]), snapshot([], [main()]));
+    expect(mayStillWait(read, wait(), null)).toBe(false);
+    expect(mayStillWait(read, wait(), since)).toBe(false);
+    // Nor by an older answer read another way that holds it.
+    const other = after(
+      snapshot([wait()], [fallback()]),
+      snapshot([wait()], [main()]),
+      snapshot([], [main()]),
+    );
+    expect(mayStillWait(other, wait(), since)).toBe(false);
+  });
+
+  test("while its part is not read", () => {
+    const part = (read: boolean): SourceHealth => ({
+      ...source("claude-code"),
+      parts: read ? { [A]: "database" } : {},
+    });
+    const memory = after(snapshot([wait()], [part(true)]), snapshot([], [part(false)]));
+    expect(mayStillWait(memory, wait(), null)).toBe(true);
+    expect(mayStillWait(after(snapshot([], [part(true)])), wait(), null)).toBe(false);
+  });
+
+  test("stopped by another way of reading that leaves it out, until the way that listed it is read without it", () => {
+    const hidden = after(snapshot([wait()], [main()]), snapshot([], [fallback()]));
+    expect(mayStillWait(hidden, wait(), since)).toBe(true);
+    const gone = sessionChanges(hidden, snapshot([], [main()])).memory;
+    expect(mayStillWait(gone, wait(), since)).toBe(false);
+  });
+
+  test("stopped, and seen again with the same status time, as a wait is after a poll that missed it", () => {
+    const again = after(
+      snapshot([wait()], [main()]),
+      snapshot([], [main()]),
+      snapshot([wait()], [main()]),
+      snapshot([], [main("unavailable")]),
+    );
+    expect(mayStillWait(again, wait(), since)).toBe(true);
+    // A wait that began later is another wait.
+    expect(mayStillWait(again, wait(), since - 1)).toBe(false);
   });
 });
 

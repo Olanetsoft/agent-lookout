@@ -10,7 +10,7 @@ import {
 import { HOUR_MS } from "@collector/outbound/outboundTiming";
 import { SENDS_PER_HOUR } from "@core/api";
 import type { NoticeEvent } from "@core/notices/sessionChanges";
-import type { Session, SessionsSnapshot } from "@core/sessions/session";
+import type { Session, SessionsSnapshot, SourceHealth } from "@core/sessions/session";
 import { waitingText } from "@core/text";
 import { DEFAULT_TIME_RULES, type TimeRules } from "@core/time-rules/timeRules";
 import { makeSession } from "@tests/fixtures/session";
@@ -32,9 +32,9 @@ const waiting = (n: number): Session =>
     waitingReason: "permission",
     statusSince: null,
   });
-const snapshot = (sessions: Session[]): SessionsSnapshot => ({
+const snapshot = (sessions: Session[], source: Partial<SourceHealth> = {}): SessionsSnapshot => ({
   generatedAt: T0,
-  sources: [{ id: "claude-code", label: "Claude Code", state: "ok", checkedAt: T0 }],
+  sources: [{ id: "claude-code", label: "Claude Code", state: "ok", checkedAt: T0, ...source }],
   sessions,
 });
 
@@ -304,9 +304,14 @@ describe("the time rules", () => {
     return {
       sent,
       made,
-      async poll(at: number, rules: TimeRules, sessions: Session[]) {
+      async poll(
+        at: number,
+        rules: TimeRules,
+        sessions: Session[],
+        source?: Partial<SourceHealth>,
+      ) {
         clock.now = at;
-        made.handle({ ...snapshot(sessions), generatedAt: at, timeRules: rules });
+        made.handle({ ...snapshot(sessions, source), generatedAt: at, timeRules: rules });
         await made.settled();
       },
     };
@@ -374,6 +379,72 @@ describe("the time rules", () => {
     await poll(later + 2 * MINUTE, QUIET, [working(1)]);
     await poll(MORNING, QUIET, [working(1)]);
     expect(sent).toEqual([]);
+  });
+
+  describe("a held wait whose source is away as quiet hours end", () => {
+    const since = EVENING + 10 * MINUTE;
+    const wait = waitingSince(1, since);
+    const LEFT_OUT: TimeRules = {
+      ...QUIET,
+      quietHours: { ...QUIET.quietHours, leaveOutAnswered: true },
+    };
+
+    /** The wait begins, is held, and its source cannot be read at the poll that ends the quiet hours. */
+    async function away(rules: TimeRules, source: Partial<SourceHealth>) {
+      const made = ruled(["needs-you", "ended"]);
+      await made.poll(EVENING, rules, [working(1)], { basis: "feed" });
+      await made.poll(since, rules, [wait], { basis: "feed" });
+      await made.poll(since + MINUTE, rules, [wait], { basis: "feed" });
+      await made.poll(MORNING, rules, [], source);
+      await made.poll(MORNING + MINUTE, rules, [], source);
+      expect(made.sent).toEqual([]);
+      return made;
+    }
+
+    test.each<[string, TimeRules, Partial<SourceHealth>]>([
+      ["in error", QUIET, { state: "error" }],
+      ["unavailable, as a computer that sleeps", QUIET, { state: "unavailable" }],
+      ["away, with answered waits left out", LEFT_OUT, { state: "unavailable" }],
+      ["read another way, which leaves it out", QUIET, { basis: "registry" }],
+    ])("%s: is sent once when it is back, and in no summary", async (_why, rules, source) => {
+      const { poll, sent } = await away(rules, source);
+      await poll(MORNING + 60 * MINUTE, rules, [wait], { basis: "feed" });
+      expect(sent).toEqual(["wait session-1 655m"]);
+      // Nor again, at a later poll or after one that missed it.
+      await poll(MORNING + 61 * MINUTE, rules, [wait], { basis: "feed" });
+      await poll(MORNING + 62 * MINUTE, rules, [], { state: "error" });
+      await poll(MORNING + 63 * MINUTE, rules, [], source);
+      await poll(MORNING + 64 * MINUTE, rules, [wait], { basis: "feed" });
+      expect(sent).toHaveLength(1);
+    });
+
+    test("with the wait over when it is back, sends nothing of it", async () => {
+      const { poll, sent } = await away(QUIET, { state: "unavailable" });
+      await poll(MORNING + 60 * MINUTE, QUIET, [working(1)], { basis: "feed" });
+      await poll(MORNING + 61 * MINUTE, QUIET, [working(1)], { basis: "feed" });
+      expect(sent).toEqual([]);
+    });
+
+    test("with another wait open when it is back, sends that one alone", async () => {
+      const { poll, sent } = await away(QUIET, { state: "unavailable" });
+      const later = waitingSince(1, MORNING + 50 * MINUTE);
+      await poll(MORNING + 60 * MINUTE, QUIET, [later], { basis: "feed" });
+      await poll(MORNING + 61 * MINUTE, QUIET, [later], { basis: "feed" });
+      expect(sent).toEqual(["wait session-1 10m"]);
+    });
+  });
+
+  test("a held wait the poll that ends quiet hours missed is sent when it is listed again", async () => {
+    const { poll, sent } = ruled(["needs-you"]);
+    const since = EVENING + 10 * MINUTE;
+    await poll(EVENING, QUIET, [working(1)]);
+    await poll(since + MINUTE, QUIET, [waitingSince(1, since)]);
+    // Its source was read, and did not list it, so it is taken to be over.
+    await poll(MORNING, QUIET, []);
+    expect(sent).toEqual(["summary session-1 waited 595m"]);
+    await poll(MORNING + 2_000, QUIET, [waitingSince(1, since)]);
+    await poll(MORNING + 4_000, QUIET, [waitingSince(1, since)]);
+    expect(sent.slice(1)).toEqual(["wait session-1 595m"]);
   });
 
   test("leaving answered waits out, the summary has the rest", async () => {

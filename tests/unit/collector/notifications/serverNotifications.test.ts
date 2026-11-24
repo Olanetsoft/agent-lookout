@@ -7,7 +7,7 @@ import {
   notificationsOnAtStart,
   NOTIFICATIONS_NOT_SHOWN_LINE,
 } from "@collector/notifications/serverNotifications";
-import type { Session, SessionsSnapshot, SourceState } from "@core/sessions/session";
+import type { Session, SessionsSnapshot, SourceHealth, SourceState } from "@core/sessions/session";
 import type { NoticeEvent } from "@core/notices/sessionChanges";
 import { DEFAULT_TIME_RULES, type TimeRules } from "@core/time-rules/timeRules";
 import { makeSession } from "@tests/fixtures/session";
@@ -568,11 +568,13 @@ describe("the time rules", () => {
     });
     return {
       notifier,
-      poll(at: number, sessions: Session[]) {
+      poll(at: number, sessions: Session[], source: Partial<SourceHealth> = {}) {
         clock.now = at;
         notifications.handle({
           generatedAt: at,
-          sources: [{ id: "claude-code", label: "Claude Code", state: "ok", checkedAt: at }],
+          sources: [
+            { id: "claude-code", label: "Claude Code", state: "ok", checkedAt: at, ...source },
+          ],
           sessions,
           timeRules: rules,
         });
@@ -760,6 +762,35 @@ describe("the time rules", () => {
     poll(MORNING, [since(1, begun, "checkout-flow")]);
     poll(MORNING + 2_000, [since(1, begun, "checkout-flow")]);
     expect(notifier.shown).toEqual([{ title: "checkout-flow", body: "Waiting for permission" }]);
+  });
+
+  test.each<[string, Partial<SourceHealth>]>([
+    ["in error", { state: "error" }],
+    ["unavailable", { state: "unavailable" }],
+    ["read another way, which leaves it out", { basis: "registry" }],
+  ])(
+    "a held wait whose source is %s as quiet hours end is shown once when it is back, and in no summary",
+    (_why, source) => {
+      const { notifier, poll } = ruled(QUIET);
+      const wait = since(1, EVENING + 10 * MINUTE, "checkout-flow");
+      poll(EVENING, [working(1, "checkout-flow")], { basis: "feed" });
+      poll(EVENING + 10 * MINUTE, [wait], { basis: "feed" });
+      poll(MORNING, [], source);
+      poll(MORNING + 2_000, [], source);
+      expect(notifier.shown).toEqual([]);
+      poll(MORNING + 60 * MINUTE, [wait], { basis: "feed" });
+      poll(MORNING + 60 * MINUTE + 2_000, [wait], { basis: "feed" });
+      expect(notifier.shown).toEqual([{ title: "checkout-flow", body: "Waiting for permission" }]);
+    },
+  );
+
+  test("a held wait whose source is away as quiet hours end, and over when it is back, is not shown", () => {
+    const { notifier, poll } = ruled(QUIET);
+    poll(EVENING, [working(1, "checkout-flow")]);
+    poll(EVENING + 10 * MINUTE, [since(1, EVENING + 10 * MINUTE, "checkout-flow")]);
+    poll(MORNING, [], { state: "unavailable" });
+    poll(MORNING + 2_000, [working(1, "checkout-flow")]);
+    expect(notifier.shown).toEqual([]);
   });
 
   test("with notifications off, nothing is held and there is no summary", () => {

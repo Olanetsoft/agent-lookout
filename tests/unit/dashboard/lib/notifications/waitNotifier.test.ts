@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import type { Session, SessionsSnapshot, SourceState } from "@core/sessions/session";
+import type { Session, SessionsSnapshot, SourceHealth, SourceState } from "@core/sessions/session";
 import type { NoticeEvent } from "@core/notices/sessionChanges";
 import { DEFAULT_TIME_RULES, type TimeRules } from "@core/time-rules/timeRules";
 import { createWaitNotifier, SUMMARY_TAG } from "@dashboard/lib/notifications/waitNotifier";
@@ -904,10 +904,15 @@ describe("the time rules", () => {
   };
 
   /** A snapshot made at `at` by these rules. */
-  function made(at: number, rules: TimeRules, sessions: Session[]): SessionsSnapshot {
+  function made(
+    at: number,
+    rules: TimeRules,
+    sessions: Session[],
+    source: Partial<SourceHealth> = {},
+  ): SessionsSnapshot {
     return {
       generatedAt: at,
-      sources: [{ id: "claude-code", label: "Claude Code", state: "ok", checkedAt: at }],
+      sources: [{ id: "claude-code", label: "Claude Code", state: "ok", checkedAt: at, ...source }],
       sessions,
       timeRules: rules,
     };
@@ -1010,6 +1015,62 @@ describe("the time rules", () => {
     notifier.handle(made(night + 3 * MINUTE, QUIET, [waits]));
     notifier.handle(made(new Date(2026, 9, 6, 8, 0).getTime(), QUIET, [waits]));
     expect(shown(host)).toEqual([["api", "Waiting for permission", `agent-lookout:${id(1)}`]]);
+  });
+
+  describe("a held wait that cannot be read as quiet hours end", () => {
+    const night = new Date(2026, 9, 5, 23, 0).getTime();
+    const morning = new Date(2026, 9, 6, 8, 0).getTime();
+    const waits = waiting(1, { name: "api", statusSince: night + MINUTE });
+    const told = [["api", "Waiting for permission", `agent-lookout:${id(1)}`]];
+
+    /** The wait begins in quiet hours, and its source is as `source` says at the snapshot that ends them. */
+    function away(source: Partial<SourceHealth>) {
+      const { host, notifier } = choosing("needs-you");
+      const working = session(1, { name: "api", status: "working" });
+      notifier.handle(made(night, QUIET, [working], { basis: "feed" }), T0);
+      notifier.handle(made(night + MINUTE, QUIET, [waits], { basis: "feed" }), T0);
+      notifier.handle(made(morning, QUIET, [], source), T0);
+      expect(host.shown).toEqual([]);
+      return { host, notifier, working };
+    }
+
+    test.each<[string, Partial<SourceHealth>]>([
+      ["its source is in error", { state: "error" }],
+      ["its source is unavailable", { state: "unavailable" }],
+      ["it is read another way, which leaves it out", { basis: "registry" }],
+    ])("as when %s, is shown once when it is back, and in no summary", (_why, source) => {
+      const { host, notifier } = away(source);
+      notifier.handle(made(morning + MINUTE, QUIET, [waits], { basis: "feed" }), T0);
+      notifier.handle(made(morning + 2 * MINUTE, QUIET, [waits], { basis: "feed" }), T0);
+      expect(shown(host)).toEqual(told);
+    });
+
+    test("over when it is back, is not shown", () => {
+      const { host, notifier, working } = away({ state: "unavailable" });
+      notifier.handle(made(morning + MINUTE, QUIET, [working], { basis: "feed" }), T0);
+      expect(host.shown).toEqual([]);
+    });
+
+    test("is shown, or not, as its source says it, when a new collector begins meanwhile", () => {
+      const still = away({ state: "unavailable" });
+      still.notifier.handle(made(morning + MINUTE, QUIET, [], { state: "searching" }), T0 + 1);
+      still.notifier.handle(made(morning + 2 * MINUTE, QUIET, [waits]), T0 + 1);
+      expect(shown(still.host)).toEqual(told);
+
+      const over = away({ state: "unavailable" });
+      over.notifier.handle(made(morning + MINUTE, QUIET, [], { state: "searching" }), T0 + 1);
+      over.notifier.handle(made(morning + 2 * MINUTE, QUIET, []), T0 + 1);
+      expect(over.host.shown).toEqual([]);
+    });
+
+    test("that a poll missed, and the next lists, is shown once at the snapshot that ends them", () => {
+      const { host, notifier } = choosing("needs-you");
+      notifier.handle(made(night, QUIET, [session(1, { name: "api", status: "working" })]));
+      notifier.handle(made(night + MINUTE, QUIET, [waits]));
+      notifier.handle(made(night + 2 * MINUTE, QUIET, []));
+      notifier.handle(made(morning, QUIET, [waits]));
+      expect(shown(host)).toEqual(told);
+    });
   });
 
   test("leaving answered waits out, the summary names the rest, and with nothing else there is none", () => {

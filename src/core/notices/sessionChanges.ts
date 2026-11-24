@@ -243,6 +243,27 @@ export const EMPTY_CHANGE_MEMORY: ChangeMemory = {
   lost: new Map(),
 };
 
+/**
+ * Whether a wait whose session is not listed may still be open, by what is
+ * remembered: nothing that would list it has been read without it. Its source
+ * has not answered, or its part was not read, so the wait is remembered still.
+ * Or it stopped only because another way of reading, which can leave out a
+ * session that waits, was in use: the last answer read the way that listed it
+ * holds it. `stoppedSince` is when a wait that stopped began, or null for one
+ * that has not: one seen again since, with that status time, is the same wait.
+ */
+export function mayStillWait(
+  { waits, seen, lost }: ChangeMemory,
+  { id, source }: Pick<Session, "id" | "source">,
+  stoppedSince: number | null,
+): boolean {
+  const known = waits.get(source);
+  const wait = known?.get(id);
+  if (stoppedSince === null ? !known || wait : wait?.since === stoppedSince) return true;
+  const way = lost.get(source)?.get(id);
+  return way !== undefined && (seen.get(source)?.get(way)?.has(id) ?? false);
+}
+
 /** One thing that happened to one session. */
 export interface SessionChange {
   event: NoticeEvent;

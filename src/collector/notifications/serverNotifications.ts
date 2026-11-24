@@ -63,7 +63,8 @@ import type { NoticeAbout, SystemNotifier } from "./systemNotifier.ts";
  * During quiet hours nothing is shown: what would have been is held, a
  * reminder as its wait, and when they end a wait still open is shown as
  * usual, or reminded of when it was told of before them, and the rest in one
- * summary, "While quiet".
+ * summary, "While quiet". A wait that cannot be read as they end is held until
+ * it can.
  *
  * A wait whose permission request Agent Lookout answered is over from the
  * moment of the answer, as the snapshot marks it for the page too: one
@@ -232,7 +233,7 @@ export function createServerNotifications(
 
       if (quiet.holding() && !quietNow) {
         // The quiet hours are over: one summary, and each wait still open as usual.
-        const end = quiet.end(snapshot, at, rules.quietHours.leaveOutAnswered);
+        const end = quiet.end(snapshot, at, rules.quietHours.leaveOutAnswered, memory);
         // Only of the events still chosen, as the page sums up only those.
         const items = end.summary?.items.filter((item) => wants(item.event)) ?? [];
         if (end.summary && items.length > 0) {

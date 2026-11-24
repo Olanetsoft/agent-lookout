@@ -54,8 +54,9 @@ import type {
  * hours nothing is shown: what would have been is held, a reminder as its
  * wait, and when they end a wait still open is shown as usual, or reminded of
  * when it was told of before them, and the rest in one notification, "While
- * quiet", which stays until the person clears it. A page opened during quiet
- * hours sums up what it has seen since.
+ * quiet", which stays until the person clears it. A wait that cannot be read
+ * as they end is held until it can. A page opened during quiet hours sums up
+ * what it has seen since.
  *
  * A wait the collector marks as answered, by Allow, Deny or a permission
  * rule, is over at that snapshot, as it is for the collector's own
@@ -245,13 +246,16 @@ export function createWaitNotifier({ host, isOn }: WaitNotifierOptions): WaitNot
         if (waiting && !waiting.has(id)) close(id);
       }
 
+      /** The sessions whose held wait is told of at this snapshot. */
+      const told = new Set<string>();
       if (quiet.holding() && !quietNow) {
         // The quiet hours are over: one summary, and each wait still open as usual.
-        const end = quiet.end(snapshot, at, rules.quietHours.leaveOutAnswered);
+        const end = quiet.end(snapshot, at, rules.quietHours.leaveOutAnswered, memory);
         const items = end.summary?.items.filter((item) => isOn(item.event)) ?? [];
         if (items.length > 0) showSummary(summaryNotice(items));
         if (isOn("needs-you")) {
           for (const { session } of end.open) {
+            told.add(session.id);
             show({ event: "needs-you", session });
             if (rules.longWait.on) reminders.told(session.id, at);
           }
@@ -260,6 +264,8 @@ export function createWaitNotifier({ host, isOn }: WaitNotifierOptions): WaitNot
       if (quietNow) quiet.begin(at);
 
       for (const change of result.changes) {
+        // A held wait that is back in the list at this snapshot has started too.
+        if (change.event === "needs-you" && told.has(change.session.id)) continue;
         if (!isOn(change.event)) continue;
         if (quietNow) holdQuietly(change, at);
         else show(change);

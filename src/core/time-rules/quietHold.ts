@@ -1,4 +1,4 @@
-import type { NoticeEvent } from "../notices/sessionChanges.ts";
+import { mayStillWait, type ChangeMemory, type NoticeEvent } from "../notices/sessionChanges.ts";
 import { withoutWaitingText, type Session, type SessionsSnapshot } from "../sessions/session.ts";
 import { needsYou } from "../waits/answeredWaits.ts";
 
@@ -20,6 +20,12 @@ import { needsYou } from "../waits/answeredWaits.ts";
  * another status for one poll, or that a poll misses, comes back so. It is
  * told of once, and is not in the summary. A wait Agent Lookout answered is
  * not open, whatever its source still says (`needsYou` in `answeredWaits.ts`).
+ *
+ * A wait that may still be open, because its source, or its part of one, is
+ * not read as the quiet hours end, or is read another way that leaves it out
+ * (`mayStillWait` in `sessionChanges.ts`), is neither told of then nor in the
+ * summary. It is held on until it is read, and is then told of if its session
+ * still waits. If not, nothing is said of it: there is one summary.
  *
  * A long wait's reminder that comes due in quiet hours, for a wait told of
  * before them, holds that wait too, once however many come due. Answered or
@@ -76,7 +82,7 @@ export interface QuietEnd {
 }
 
 export interface QuietHold {
-  /** Whether quiet hours are under way, as this channel has seen them. */
+  /** Whether anything is held: quiet hours are under way, as this channel has seen them, or a wait is held past them. */
   holding(): boolean;
   /** Notes that this moment is in quiet hours. The first such moment begins them. */
   begin(at: number): void;
@@ -91,10 +97,20 @@ export interface QuietHold {
   holdOver(event: OverEvent, session: Session, at: number): void;
   /** A session's wait ended, at `at`. A held wait of it is answered. */
   waitEnded(sessionId: string, at: number): void;
-  /** Whether a wait of this session is held and has not ended. */
+  /** Whether a wait of this session is held to be told of, and has not ended. */
   holdsWait(sessionId: string): boolean;
-  /** The quiet hours are over: what to tell, worked out from the snapshot now. Forgets it all. */
-  end(snapshot: SessionsSnapshot, at: number, leaveOutAnswered: boolean): QuietEnd;
+  /**
+   * Asked at each poll outside quiet hours while anything is held: what to
+   * tell, worked out from the snapshot and what `sessionChanges` remembers of
+   * it. The first such poll ends the quiet hours, and forgets all but the
+   * waits that may still be open. Later ones tell of those as each is read.
+   */
+  end(
+    snapshot: SessionsSnapshot,
+    at: number,
+    leaveOutAnswered: boolean,
+    memory: ChangeMemory,
+  ): QuietEnd;
 }
 
 interface HeldWait {
@@ -121,7 +137,7 @@ export function createQuietHold(): QuietHold {
   };
 
   return {
-    holding: () => since !== null,
+    holding: () => since !== null || waits.length > 0,
 
     begin(at) {
       since ??= at;
@@ -170,9 +186,9 @@ export function createQuietHold(): QuietHold {
       if (held) held.endedAt = at;
     },
 
-    holdsWait: (sessionId) => openWaitOf(sessionId) !== undefined,
+    holdsWait: (sessionId) => openWaitOf(sessionId)?.reminderOnly === false,
 
-    end(snapshot, at, leaveOutAnswered) {
+    end(snapshot, at, leaveOutAnswered, memory) {
       const listed = new Map(snapshot.sessions.map((session) => [session.id, session]));
       // Each session's wait still open: one whose end was not seen, or one
       // seen to end that is back with the status time it began at.
@@ -194,11 +210,22 @@ export function createQuietHold(): QuietHold {
       const answered = new Map<string, Extract<SummaryItem, { event: "needs-you" }>>();
       /** When each session's last wait in the summary began. */
       const lastBegun = new Map<string, number>();
+      /** The waits that may still be open, held on until they are read. */
+      const unread: HeldWait[] = [];
       for (const wait of waits) {
+        const { session } = wait;
         // Told of as usual, however many times it was held.
-        if (stillOpen.get(wait.session.id)?.begunAt === wait.begunAt) continue;
+        if (stillOpen.get(session.id)?.begunAt === wait.begunAt) continue;
+        if (
+          !listed.has(session.id) &&
+          lastWaitOf(session.id) === wait &&
+          mayStillWait(memory, session, wait.endedAt === null ? null : wait.begunAt)
+        ) {
+          unread.push(wait);
+          continue;
+        }
         if (leaveOutAnswered) continue;
-        // A wait whose end nobody saw, as when its source stopped answering, is counted to now.
+        // A wait whose end nobody saw is counted to now.
         const waitedMs = Math.max(0, (wait.endedAt ?? at) - wait.begunAt);
         lastBegun.set(wait.session.id, wait.begunAt);
         const item = answered.get(wait.session.id);
@@ -230,11 +257,15 @@ export function createQuietHold(): QuietHold {
       }
 
       const items: SummaryItem[] = [...answered.values(), ...rest].sort((a, b) => a.at - b.at);
-      const from = since ?? at;
+      const from = since;
       since = null;
-      waits = [];
+      waits = unread;
       over = [];
-      return { summary: items.length > 0 ? { from, to: at, items } : null, open };
+      // A wait held past them that turns out to be over adds no summary of its own.
+      return {
+        summary: from !== null && items.length > 0 ? { from, to: at, items } : null,
+        open,
+      };
     },
   };
 }
