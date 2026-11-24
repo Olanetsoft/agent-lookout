@@ -1,5 +1,6 @@
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
 
+import { followZone } from "@core/time-rules/localTime";
 import { isQuietAt, quietOf } from "@core/time-rules/quietHours";
 import { DEFAULT_TIME_RULES, type QuietHoursRule, type Weekday } from "@core/time-rules/timeRules";
 
@@ -102,6 +103,19 @@ describe("the night the clocks change", () => {
       vi.unstubAllEnvs();
     }
   });
+});
+
+test("quiet hours go by the zone the computer has moved to, its days among them", () => {
+  onTestFinished(() => followZone(null));
+  followZone("America/New_York");
+  // Monday 5 October 2026, at 22:00 there, is 02:00 on Tuesday in UTC.
+  const evening = Date.UTC(2026, 9, 6, 2, 0);
+  const rule = quiet({ from: "22:00", to: "08:00", days: ["mon"] });
+  expect(isQuietAt(rule, evening - 60_000)).toBe(false);
+  expect(isQuietAt(rule, evening)).toBe(true);
+  expect(isQuietAt(rule, Date.UTC(2026, 9, 6, 11, 59))).toBe(true);
+  expect(isQuietAt(rule, Date.UTC(2026, 9, 6, 12, 0))).toBe(false);
+  expect(isQuietAt({ ...rule, days: ["tue"] }, evening)).toBe(false);
 });
 
 describe("quietOf", () => {

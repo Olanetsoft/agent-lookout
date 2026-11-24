@@ -277,7 +277,7 @@ After a restart, the first poll that reads a source compares each session with t
 
 ### `GET /api/waits`
 
-How long sessions waited on you today, from local midnight, and over the last seven days, which are today and the six days before it, from midnight. It is worked out from the whole of the history kept, eight days of it, and not only the six hours `/api/history` serves, and counts only the time Agent Lookout measured: while it was running and every source it reads answered. A wait whose session left the list counts up to the last poll that listed it, unless a later poll lists the session and its wait has not ended. A session listed waiting again with a status time later than that last poll began a new wait, which counts from that time. Days are this computer's own, by its clock and time zone.
+How long sessions waited on you today, from local midnight, and over the last seven days, which are today and the six days before it, from midnight. It is worked out from the whole of the history kept, eight days of it, and not only the six hours `/api/history` serves, and counts only the time Agent Lookout measured: while it was running and every source it reads answered. A wait whose session left the list counts up to the last poll that listed it, unless a later poll lists the session and its wait has not ended. A session listed waiting again with a status time later than that last poll began a new wait, which counts from that time. Days are this computer's own, by its clock and the time zone Agent Lookout started in.
 
 ```json
 {

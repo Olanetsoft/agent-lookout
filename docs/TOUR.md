@@ -1508,9 +1508,10 @@ Each channel also reads its own `_EVENTS`, `_AFTER` (in seconds, 60 by default) 
   - `timeRules.ts`: `readTimeRules`, `timeRulesIn` and `staleAfterMs`
   - `reminders.ts`: `createReminderWatch` and `reminderSchedule`
   - `quietHours.ts`: `isQuietAt` and `quietOf`
+  - `localTime.ts`: `localDate` and `followZone`, the local clock that they and the times in messages go by
   - `quietHold.ts`: `createQuietHold`
   - `timeRulesWords.ts`: the wording of reminders and of "While quiet"
-- `src/collector/settings/`: `settingsFile.ts`, `collectorSettings.ts`, and `timeRulesRoute.ts` for `POST /api/settings/time-rules`. The rules live in `~/.agent-lookout/settings.json` (mode 600), or the file `AGENT_LOOKOUT_SETTINGS_FILE` names.
+- `src/collector/settings/`: `settingsFile.ts`, `collectorSettings.ts`, `timeZone.ts`, which follows the computer to another time zone (#461), and `timeRulesRoute.ts` for `POST /api/settings/time-rules`. The rules live in `~/.agent-lookout/settings.json` (mode 600), or the file `AGENT_LOOKOUT_SETTINGS_FILE` names.
 - The card is `src/dashboard/components/settings/TimeRulesCard.tsx`.
 
 **Why it works this way.**
@@ -1531,6 +1532,7 @@ Each channel also reads its own `_EVENTS`, `_AFTER` (in seconds, 60 by default) 
 
 - Each channel holds back its own notices.
 - When quiet hours end, a wait that is still open is announced as usual. Everything else goes in one summary, "While quiet".
+- A wait that cannot be read when they end is neither. It is held until it can be read, and announced then if it is still open (#460).
 - What is held is kept in memory only. Restart Agent Lookout during quiet hours and it is lost.
 
 ### History, the Events log and Waits
