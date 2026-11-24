@@ -18,5 +18,7 @@ test("a file whose text cannot be written is not left behind, and one that was t
   await nodeHistoryFs.create(file, "kept");
   await expect(nodeHistoryFs.create(file, "other")).rejects.toThrow(/EEXIST/);
   expect(() => nodeHistoryFs.createNow(file, "other")).toThrow(/EEXIST/);
+  await expect(nodeHistoryFs.append(file, unwritable)).rejects.toThrow();
+  expect(() => nodeHistoryFs.appendNow(file, unwritable)).toThrow();
   expect(nodeHistoryFs.readRegularNow(file, 256)).toBe("kept");
 });

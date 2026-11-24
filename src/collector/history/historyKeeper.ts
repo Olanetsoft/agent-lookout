@@ -254,8 +254,12 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
    * to a write the process may end before.
    */
   let writing: { lines: string[] } | null = null;
-  /** When watching started, to be written first by the copy that writes. */
-  let startedAt: number | null = null;
+  /**
+   * When watching started, or the history was cleared since: the line the copy
+   * that writes writes first. It is held apart from the queue, whose oldest
+   * lines go, since waits end by it.
+   */
+  let opening: string | null = null;
   /** The day and part being written to. */
   let target: { day: string; part: number } | null = null;
 
@@ -542,18 +546,20 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
     }
   }
 
-  async function writeLines(lines: readonly string[]): Promise<boolean> {
-    if (lines.length === 0) return true;
-    const job = { lines: [...lines] };
+  async function writeQueued(): Promise<void> {
+    const first = opening;
+    const lines = takeQueued();
+    if (lines.length === 0) return;
+    const job = { lines };
     writing = job;
     const steps = chunks(lines);
     let step = steps.next("written");
     while (!step.done) {
       // Stopped meanwhile: the stop wrote what was left.
-      if (writing !== job) return false;
+      if (writing !== job) return;
       const { name, text, count } = step.value;
       await prune(name, byteLength(text));
-      if (writing !== job) return false;
+      if (writing !== job) return;
       try {
         await fs.append(full(name), text);
       } catch (error) {
@@ -564,22 +570,23 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
         const before = files.get(name)?.size ?? 0;
         await rescan();
         // Stopped meanwhile: the stop wrote what was left.
-        if (writing !== job) return false;
+        if (writing !== job) return;
         writing = null;
         // What it still holds is written first once it can be, but not the
         // lines that reached the file whole before the write failed.
         const reached = (files.get(name)?.size ?? 0) - before;
         const landed = Buffer.from(text).toString("utf8", 0, reached).trimStart().split("\n");
-        queue = [...job.lines.slice(landed.length - 1), ...queue];
+        const left = job.lines.slice(landed.length - 1);
+        if (left[0] === first) opening = left.shift() ?? null;
+        queue = [...left, ...queue];
         writeFailed();
-        return false;
+        return;
       }
       job.lines = job.lines.slice(count);
       step = steps.next("written");
     }
     writing = null;
     wrote();
-    return true;
   }
 
   function writeLinesNow(lines: readonly string[]): void {
@@ -601,12 +608,11 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
     }
   }
 
-  /** What is waiting, with the start first when this copy has not written it yet. */
+  /** What is waiting, with what is written first before it when this copy has not written it yet. */
   function takeQueued(): string[] {
-    const lines =
-      startedAt === null ? queue : [encodeRecord({ kind: "start", at: startedAt }), ...queue];
+    const lines = opening === null ? queue : [opening, ...queue];
     queue = [];
-    startedAt = null;
+    opening = null;
     return lines;
   }
 
@@ -645,7 +651,7 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
         writer = false;
         failing = null;
         queue = [];
-        startedAt = null;
+        opening = null;
         // What that copy writes and deletes changes what the folder holds,
         // and where the history begins.
         await rescan();
@@ -665,7 +671,7 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
         // Whatever has aged out while nobody was writing goes now.
         await prune(null, 0);
       }
-      await writeLines(takeQueued());
+      await writeQueued();
     }).catch(() => {});
   }
 
@@ -716,7 +722,7 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
       pruned = false;
       // Only the copy that writes says that watching started: another copy's
       // start is not one the files saw.
-      startedAt = writer === false ? null : now();
+      opening = writer === false ? null : encodeRecord({ kind: "start", at: now() });
       void beat();
       timer = setInterval(() => void beat(), flushIntervalMs);
       // The keeper alone should not keep a process alive.
@@ -753,7 +759,7 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
         writeLinesNow(left);
       }
       queue = [];
-      startedAt = null;
+      opening = null;
       writer = null;
       lock.releaseNow();
     },
@@ -804,10 +810,10 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
         }
         const at = now();
         queue = [];
-        startedAt = null;
+        opening = encodeRecord({ kind: "cleared", at });
         clearedAt = at;
         forget();
-        await writeLines([encodeRecord({ kind: "cleared", at })]);
+        await writeQueued();
         return { ok: true, at };
       });
     },

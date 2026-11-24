@@ -371,6 +371,62 @@ describe("writing", () => {
       expect(kept.at(-1)).toContain(`[${T0 + MAX_QUEUED_LINES + 1},`);
     });
 
+    test("the start, or the clearing since, is not among the lines that go", async () => {
+      const { fs, keeper } = setUp();
+      await keeper.restore(LIMITS);
+      const append = fs.append;
+      const full = () => Promise.reject(Object.assign(new Error("Full."), { code: "ENOSPC" }));
+      /** More lines than it holds while there is no room, and the first three that reach the file. */
+      const held = async () => {
+        await keeper.flush();
+        for (let n = 1; n <= MAX_QUEUED_LINES + 1; n += 1) keeper.addPoint(point(T0 + n));
+        await keeper.flush();
+        fs.append = append;
+        await keeper.flush();
+        return (fs.text(TODAY) ?? "").split("\n").slice(0, 2).join("\n") + "\n";
+      };
+      const first: HistoryRecord = { kind: "point", point: point(T0 + 2) };
+      fs.append = full;
+      keeper.start();
+      expect(await held()).toBe(lines(START, first));
+
+      fs.append = full;
+      await keeper.clear(() => {});
+      expect(await held()).toBe(lines({ kind: "cleared", at: T0 }, first));
+      keeper.stop();
+    });
+
+    test("what is added while a write fails comes after what that write held", async () => {
+      const { fs, keeper } = setUp();
+      await keeper.restore(LIMITS);
+      keeper.start();
+      await keeper.flush();
+      const append = fs.append;
+      fs.append = () => {
+        fs.append = append;
+        keeper.addPoint(point(T0 + 4_000));
+        return Promise.reject(Object.assign(new Error("Full."), { code: "ENOSPC" }));
+      };
+      keeper.addPoint(point(T0 + 2_000));
+      await keeper.flush();
+      await keeper.flush();
+      keeper.stop();
+      expect((fs.text(TODAY) ?? "").replace("\n\n", "\n")).toBe(
+        lines(START, pointAt(2), pointAt(4)),
+      );
+    });
+
+    test("stopping once a write has failed writes each line once", async () => {
+      const { fs, keeper } = setUp();
+      await keeper.restore(LIMITS);
+      fs.append = () => Promise.reject(Object.assign(new Error("Full."), { code: "ENOSPC" }));
+      keeper.start();
+      keeper.addPoint(point(T0 + 2_000));
+      await keeper.flush();
+      keeper.stop();
+      expect(fs.text(TODAY)).toBe(lines(START, pointAt(2)));
+    });
+
     test("stopping as a write fails writes each line once", async () => {
       const { fs, keeper } = setUp();
       await keeper.restore(LIMITS);
