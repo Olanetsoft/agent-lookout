@@ -4,7 +4,8 @@
  * text. Built for Muse Code's session logs, whose lines hold prompts,
  * questions, answers, commands and outputs unredacted. The Copilot CLI
  * adapter walks Copilot CLI's event logs with it too
- * (`../copilot-cli/records.ts`), so a change here changes both.
+ * (`../copilot-cli/records.ts`), and the Codex adapter a session's first
+ * prompt (`../codex/firstPrompt.ts`), so a change here changes all three.
  *
  * Muse Code writes each record as one line, with its keys in the order of
  * Meta's export in its cookbook
@@ -21,6 +22,8 @@
  *   paths wanted, and never matches a key that holds an escape;
  * - gives each wanted value as where its bytes are, and for an array whether
  *   it holds nothing, and steps over the rest;
+ * - goes into each object of an array wanted with `elements`, and says where
+ *   each of its values ends;
  * - stops when the caller says it has what it needs, at the line's end, or at
  *   the end of the bytes it was given, when the line is longer than them.
  *
@@ -45,6 +48,11 @@ export interface WantedKey {
   leaf?: number;
   /** Set for an object gone into. */
   children?: readonly WantedKey[];
+  /**
+   * Set for an array gone into: the keys wanted in each object in it, and the
+   * number `visit` is given, with each value's token, as that value ends.
+   */
+  elements?: { keys: readonly WantedKey[]; leaf: number };
 }
 
 /** How a walk ended. */
@@ -186,11 +194,15 @@ export function walkLine(
     return at + word.byteLength;
   }
 
-  /** Where the value at `at` ends, going into an object whose keys are `children`, and its token. */
+  /**
+   * Where the value at `at` ends, going into an object whose keys are
+   * `children`, or an array whose objects' are `elements`, and its token.
+   */
   function value(
     at: number,
     depth: number,
     children: readonly WantedKey[] | null,
+    elements: WantedKey["elements"] | null = null,
   ): [number, Token] {
     past(at);
     const byte = line[at];
@@ -202,7 +214,7 @@ export function walkLine(
     if (byte === OPEN_BRACKET) {
       const inside = spaces(at + 1);
       const empty = inside < length && line[inside] === CLOSE_BRACKET;
-      return [array(at, depth + 1), { type: "array", empty }];
+      return [array(at, depth + 1, elements), { type: "array", empty }];
     }
     if (byte === 0x74) return [literal(at, TRUE), { type: "true" }];
     if (byte === 0x66) return [literal(at, FALSE), { type: "false" }];
@@ -214,14 +226,15 @@ export function walkLine(
     throw new Bad();
   }
 
-  function array(at: number, depth: number): number {
+  function array(at: number, depth: number, elements: WantedKey["elements"] | null): number {
     if (depth > MAX_DEPTH) throw new Bad();
     let cursor = spaces(at + 1);
     past(cursor);
     if (line[cursor] === CLOSE_BRACKET) return cursor + 1;
     for (;;) {
-      [cursor] = value(cursor, depth, null);
-      cursor = spaces(cursor);
+      const [end, token] = value(cursor, depth, elements?.keys ?? null);
+      if (elements && visit(elements.leaf, token)) throw new Stop();
+      cursor = spaces(end);
       past(cursor);
       if (line[cursor] === CLOSE_BRACKET) return cursor + 1;
       if (line[cursor] !== COMMA) throw new Bad();
@@ -262,7 +275,12 @@ export function walkLine(
         if (met.has(wantedKey)) throw new Bad();
         met.add(wantedKey);
       }
-      const [end, token] = value(cursor, depth, wantedKey?.children ?? null);
+      const [end, token] = value(
+        cursor,
+        depth,
+        wantedKey?.children ?? null,
+        wantedKey?.elements ?? null,
+      );
       cursor = end;
       if (wantedKey?.leaf !== undefined && visit(wantedKey.leaf, token)) throw new Stop();
       cursor = spaces(cursor);

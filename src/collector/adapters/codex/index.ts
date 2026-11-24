@@ -69,7 +69,8 @@ export const OLDER_CODEX_NOTE =
  *   0.155 or later records, in its folder of locks.
  * - Failed never: Codex writes no error to the files, and a stopped turn
  *   reads as idle.
- * - Its name comes from the names file, which the desktop app does not write.
+ * - Its name comes from the names file, which the desktop app does not write,
+ *   unless it is the first prompt, whole or cut with `…` (`firstPrompt.ts`).
  * - No Jump: the files name no process, and the desktop app's link is
  *   undocumented (`toSession.ts`).
  * - Quiet for is the file's own modified time, moved on by every line.
@@ -92,7 +93,7 @@ export const CODEX_CAPABILITIES: SourceCapabilities = {
   names: {
     level: "partly",
     reason:
-      "The desktop app does not keep its titles in the names file Agent Lookout reads, so its sessions take their folder's name.",
+      "Codex's names file, else the folder's. The desktop app writes none. A name made from your first prompt is left out where seen.",
   },
   jump: {
     level: "no",
@@ -389,7 +390,7 @@ export function createCodexAdapter(options: CodexAdapterOptions = {}): CodexAdap
 
       let state: RolloutState;
       try {
-        state = await reader.read(ref.path, info);
+        state = await reader.read(ref.path, info, names.get(ref.threadId));
       } catch {
         // Unreadable this time. What was read of it before is kept for the next poll.
         read.add(ref.path);
@@ -440,7 +441,8 @@ export function createCodexAdapter(options: CodexAdapterOptions = {}): CodexAdap
       const session = codexSession({
         threadId,
         state,
-        name: names.get(threadId),
+        // A name that is the first prompt, whole or cut with `…`, is not shown.
+        name: state.nameIsPrompt ? undefined : names.get(threadId),
         live,
         writtenAt: Math.max(writtenAt, subagentWrites.get(threadId) ?? -Infinity),
         now: checkedAt,

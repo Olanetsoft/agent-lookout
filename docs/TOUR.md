@@ -283,6 +283,7 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 - Subagents and Codex's own internal threads are left out. A subagent's writes still count toward its parent's `lastWriteAt`, because a parent waiting on subagents writes nothing itself.
 - When Codex is not installed, the source is `unavailable`, and the folder is looked for again once a minute with one `stat` (`RECHECK_MS`).
 - The token counts of the newest reply came with #83, the first part of #55.
+- A name that is the first prompt, whole or cut with `…`, as Codex 0.170 and later make one when their model gives no title, is passed over. The two are compared as bytes in the start of the file, read again when the name changes, with the prompt cut to its first 2,000 characters as Codex cuts it, with HTML tags and comments, whitespace and every ASCII character but a letter left out, or fewer when that leaves nothing of the prompt, along with the prompt's code fence lines, paired as CommonMark pairs them, and, in a second comparison, its list markers, and again in copies with more of what Codex takes out or changes left out or undone, such as HTML blocks, links' addresses and entities. A name cut with `…` after 58 or 59 characters, as Codex cuts one, is passed over too when its letters come in order in the prompt (`firstPrompt.ts`, #410).
 
 **How sure it is.** The adapter notes say it was checked against Codex's source at `rust-v0.160.0` and against the Codex desktop app, but not yet against the Codex CLI or the IDE extension.
 
@@ -2019,7 +2020,7 @@ No source, tests, scripts or site files go in.
 - The licence of every library and font that goes in is written to `dist/THIRD-PARTY-LICENSES.md`, first by the dashboard's build and then by the script. Each licence comes from the package's own licence file, or from `licenses/` for a package that ships none (881f8ac).
 - `bin/agent-lookout.mjs` runs `src/` through tsx if `src/` exists, as in a clone, and the bundle in `dist/cli/` otherwise, as in the installed package. A bundle left over from an earlier `npm pack` is never run by mistake in a clone.
 
-**Why it is this small.** #67 found that `npx agent-lookout` installed about 29 MB. About 20 MB of that was the MCP SDK and zod, and every font shipped twice, as `.woff2` and `.woff`. Since a8cd2e5 the SDK is bundled and only `.woff2` ships, and the install is about 4 MB. `scripts/package-size.mjs` keeps it small: it fails when the tarball passes 1.25 MB, the unpacked files pass 4.6 MB, or the install passes 6.4 MB, the `LIMITS` there. Raise a limit only on purpose, and say why in the pull request.
+**Why it is this small.** #67 found that `npx agent-lookout` installed about 29 MB. About 20 MB of that was the MCP SDK and zod, and every font shipped twice, as `.woff2` and `.woff`. Since a8cd2e5 the SDK is bundled and only `.woff2` ships, and the install is about 4 MB. `scripts/package-size.mjs` keeps it small: it fails when the tarball passes 1.30 MB, the unpacked files pass 4.80 MB, or the install passes 6.60 MB, the `LIMITS` there. Raise a limit only on purpose, and say why in the pull request.
 
 **What bundling costs.** A bundled package is never updated where Agent Lookout is installed, and `npm audit` there cannot see it. When the SDK or zod gets a security fix, update `package-lock.json` and publish a new version.
 

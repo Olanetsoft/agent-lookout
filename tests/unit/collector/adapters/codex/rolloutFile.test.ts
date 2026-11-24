@@ -26,6 +26,7 @@ import {
   TOTAL_USAGE,
   turnLine,
   usage,
+  userMessageLine,
 } from "@tests/fixtures/codex";
 import { memoryFiles, type MemoryFiles } from "@tests/support/adapters/codexAdapter";
 
@@ -607,6 +608,211 @@ describe("createRolloutReader", () => {
     );
     const state = await readNow(createRolloutReader(files.io), files);
     expect(JSON.stringify(state)).not.toContain("private");
+  });
+});
+
+describe("a name that is the first prompt", () => {
+  const PROMPT = "Fix the flaky demo test";
+  const promptFile = (...more: string[]) =>
+    rollout(
+      metaLine(START),
+      turnLine(START, "task_started"),
+      messageLine(START, PROMPT),
+      userMessageLine(START, PROMPT),
+      ...more,
+    );
+
+  test("is compared in the head already read, with no file opened for it, and passed over", async () => {
+    const files = memoryFiles();
+    files.write(FILE, promptFile());
+    const reader = createRolloutReader(files.io);
+    const state = await reader.read(FILE, await infoOf(files), PROMPT);
+    expect(state.nameIsPrompt).toBe(true);
+    expect(files.opened()).toEqual([FILE]);
+    expect(JSON.stringify(state)).not.toContain(PROMPT);
+  });
+
+  test("is compared again only when the name changes, in the head read again as far as before", async () => {
+    const files = memoryFiles();
+    files.write(FILE, promptFile());
+    const reader = createRolloutReader(files.io);
+    expect(await reader.read(FILE, await infoOf(files))).not.toHaveProperty("nameIsPrompt");
+
+    // Codex saves its title once the prompt is written, often polls later.
+    files.forget();
+    const named = await reader.read(FILE, await infoOf(files), PROMPT);
+    expect(named.nameIsPrompt).toBe(true);
+    expect(files.reads).toEqual([{ path: FILE, position: 0, length: (await infoOf(files)).size }]);
+
+    files.forget();
+    expect((await reader.read(FILE, await infoOf(files), PROMPT)).nameIsPrompt).toBe(true);
+    expect(files.opened()).toEqual([]);
+
+    // A rename you make is shown.
+    expect(await reader.read(FILE, await infoOf(files), "Demo test fix")).not.toHaveProperty(
+      "nameIsPrompt",
+    );
+    // So is a name that is only the prompt's start, with no `…`.
+    expect(await reader.read(FILE, await infoOf(files), "Fix the flaky")).not.toHaveProperty(
+      "nameIsPrompt",
+    );
+    // A name that goes leaves nothing to compare.
+    files.forget();
+    expect(await reader.read(FILE, await infoOf(files))).not.toHaveProperty("nameIsPrompt");
+    expect(files.opened()).toEqual([]);
+  });
+
+  test("keeps its verdict as lines are added, which are read on from where they were", async () => {
+    const files = memoryFiles();
+    files.write(FILE, promptFile());
+    const reader = createRolloutReader(files.io);
+    await reader.read(FILE, await infoOf(files), PROMPT);
+    const size = (await infoOf(files)).size;
+    files.forget();
+    files.append(FILE, rollout(turnLine(START + MINUTE, "task_complete")));
+    const state = await reader.read(FILE, await infoOf(files), PROMPT);
+    expect(state).toMatchObject({ lastTurn: "task_complete", nameIsPrompt: true });
+    expect(files.reads.every((read) => read.position >= size - 1)).toBe(true);
+  });
+
+  test("past the head the session_meta line was found in, the prompt is not looked for, and the name is kept", async () => {
+    const files = memoryFiles();
+    // Context Codex records before the prompt, longer than the 256 KiB first read.
+    const context = messageLine(START, "z".repeat(300 * 1024), "developer");
+    files.write(FILE, promptFile().replace(messageLine(START, PROMPT), context));
+    const reader = createRolloutReader(files.io);
+    expect(await reader.read(FILE, await infoOf(files), PROMPT)).not.toHaveProperty("nameIsPrompt");
+    const headReads = files.reads.filter((read) => read.position === 0);
+    expect(Math.max(...headReads.map((read) => read.length))).toBe(256 * 1024);
+
+    files.forget();
+    expect(await reader.read(FILE, await infoOf(files), "Another name")).not.toHaveProperty(
+      "nameIsPrompt",
+    );
+    expect(files.reads).toEqual([{ path: FILE, position: 0, length: 256 * 1024 }]);
+  });
+
+  test("after a session_meta line that needed 2 MiB, the prompt is looked for in them, and they are read again when the name changes", async () => {
+    const files = memoryFiles();
+    // Base instructions longer than the 256 KiB first read, then the prompt, then more than 2 MiB in all.
+    const big = metaLine(START, { base_instructions: { text: "x".repeat(300 * 1024) } });
+    const lines = [
+      big,
+      turnLine(START, "task_started"),
+      messageLine(START, PROMPT),
+      userMessageLine(START, PROMPT),
+    ];
+    const filler = messageLine(START + MINUTE, "y".repeat(64 * 1024), "assistant");
+    while (lines.join("\n").length <= HEAD_LIMIT_BYTES) lines.push(filler);
+    files.write(FILE, rollout(...lines));
+    expect(
+      (await createRolloutReader(files.io).read(FILE, await infoOf(files), PROMPT)).nameIsPrompt,
+    ).toBe(true);
+
+    const reader = createRolloutReader(files.io);
+    expect(await reader.read(FILE, await infoOf(files))).not.toHaveProperty("nameIsPrompt");
+    files.forget();
+    expect((await reader.read(FILE, await infoOf(files), PROMPT)).nameIsPrompt).toBe(true);
+    expect(files.reads).toEqual([{ path: FILE, position: 0, length: HEAD_LIMIT_BYTES }]);
+  });
+
+  test("a file with no session_meta line is not read again for a name", async () => {
+    const files = memoryFiles();
+    files.write(FILE, rollout(userMessageLine(START, PROMPT)));
+    const reader = createRolloutReader(files.io);
+    await reader.read(FILE, await infoOf(files));
+    files.forget();
+    expect(await reader.read(FILE, await infoOf(files), PROMPT)).not.toHaveProperty("nameIsPrompt");
+    expect(files.opened()).toEqual([]);
+  });
+
+  test("a name that comes before the prompt's line is written is compared once it is, and then no more", async () => {
+    const files = memoryFiles();
+    files.write(FILE, rollout(metaLine(START), turnLine(START, "task_started")));
+    const reader = createRolloutReader(files.io);
+    expect(await reader.read(FILE, await infoOf(files), PROMPT)).not.toHaveProperty("nameIsPrompt");
+
+    // Nothing was added, so nothing is read.
+    files.forget();
+    expect(await reader.read(FILE, await infoOf(files), PROMPT)).not.toHaveProperty("nameIsPrompt");
+    expect(files.opened()).toEqual([]);
+
+    // The response_item copy is not the prompt, and the line after it is.
+    files.append(FILE, rollout(messageLine(START, PROMPT)));
+    expect(await reader.read(FILE, await infoOf(files), PROMPT)).not.toHaveProperty("nameIsPrompt");
+    files.append(FILE, rollout(userMessageLine(START, PROMPT)));
+    expect((await reader.read(FILE, await infoOf(files), PROMPT)).nameIsPrompt).toBe(true);
+
+    files.forget();
+    files.append(FILE, rollout(turnLine(START + MINUTE, "task_complete")));
+    expect((await reader.read(FILE, await infoOf(files), PROMPT)).nameIsPrompt).toBe(true);
+    expect(files.reads.some((read) => read.position === 0)).toBe(false);
+  });
+
+  test.each([
+    ["the first prompt", PROMPT, true],
+    ["another name", "Demo test fix", undefined],
+  ])(
+    "%s is not shown while the prompt's line is being written, and is compared once it ends",
+    async (_, name, verdict) => {
+      const files = memoryFiles();
+      const whole = promptFile();
+      files.write(FILE, whole.slice(0, -1));
+      const reader = createRolloutReader(files.io);
+      const during = await reader.read(FILE, await infoOf(files), name);
+      expect(during).toMatchObject({ lastTurn: "task_started", nameIsPrompt: true });
+      expect((await reader.read(FILE, await infoOf(files), name)).nameIsPrompt).toBe(true);
+
+      files.append(FILE, whole.slice(-1));
+      expect((await reader.read(FILE, await infoOf(files), name)).nameIsPrompt).toBe(verdict);
+
+      // A whole prompt was compared, so a line being written after it hides nothing.
+      files.forget();
+      files.append(FILE, turnLine(START + MINUTE, "task_complete"));
+      expect((await reader.read(FILE, await infoOf(files), name)).nameIsPrompt).toBe(verdict);
+      expect(files.reads.some((read) => read.position === 0)).toBe(false);
+    },
+  );
+
+  test("a name with no prompt in the whole of the head is shown, and the head is not read again as the file grows past it", async () => {
+    const files = memoryFiles();
+    const context = messageLine(START, "z".repeat(300 * 1024), "developer");
+    files.write(FILE, rollout(metaLine(START), context).slice(0, 256 * 1024));
+    const reader = createRolloutReader(files.io);
+    // The head's last line is cut off, but it has no room for the prompt.
+    expect(await reader.read(FILE, await infoOf(files), PROMPT)).not.toHaveProperty("nameIsPrompt");
+    files.forget();
+    files.append(FILE, "z");
+    expect(await reader.read(FILE, await infoOf(files), PROMPT)).not.toHaveProperty("nameIsPrompt");
+    expect(files.reads.some((read) => read.position === 0)).toBe(false);
+  });
+
+  test("a head that cannot be read for a name leaves the rest of the session, with no name until it can", async () => {
+    const files = memoryFiles();
+    files.write(FILE, promptFile());
+    const reader = createRolloutReader(files.io);
+    const before = await reader.read(FILE, await infoOf(files));
+
+    files.failOpen(FILE);
+    for (const name of [PROMPT, "Demo test fix", "Demo test fix"]) {
+      const state = await reader.read(FILE, await infoOf(files), name);
+      expect(state).toEqual({ ...before, nameIsPrompt: true });
+    }
+    files.heal(FILE);
+    expect(await reader.read(FILE, await infoOf(files), "Demo test fix")).toEqual(before);
+    expect((await reader.read(FILE, await infoOf(files), PROMPT)).nameIsPrompt).toBe(true);
+    expect(files.openHandles()).toBe(0);
+  });
+
+  test("a file put in place of the one read is not compared, and the poll skips it", async () => {
+    const files = memoryFiles();
+    files.write(FILE, promptFile());
+    const reader = createRolloutReader(files.io);
+    const before = await infoOf(files);
+    await reader.read(FILE, before);
+    files.write(FILE, promptFile(), { mtimeMs: before.mtimeMs });
+    await expect(reader.read(FILE, before, PROMPT)).rejects.toThrow();
+    expect(files.openHandles()).toBe(0);
   });
 });
 

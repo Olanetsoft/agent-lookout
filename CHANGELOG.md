@@ -18,6 +18,7 @@ Changes that a user of Agent Lookout would notice, newest first.
 - A Hermes Agent session whose turn the model's provider refused for safety shows as failed, since the refusal, after any tools that turn ran, not as idle on the reply before it. From v0.23.1 Hermes Agent takes such a turn out of the conversation and writes no failure row for it. (#412)
 - A Hermes Agent session waiting for a one-time code in a chat, or for an approval a plugin asks for, needs you, as one waiting for your approval does, instead of showing as working. (#412)
 - A Mistral Vibe 3.1.4 session, which Vibe runs on its Session API by default, shows as working or needing you while a turn runs, with its token counts, instead of unknown. Vibe 3.1 writes the Session API's facts after the state in its journal, and Agent Lookout now finds the state by its place in the record, so a tool's arguments shaped like one are never taken for it. (#413)
+- A Codex session that Codex 0.170 or later named with its first prompt, whole or cut with `…`, as it does when its model gives no title, now takes its folder's name, so the prompt no longer shows as the name or goes out in notifications and the history. A name you set that matches the prompt once Markdown, punctuation and spacing are left out is passed over too, and some names made from a prompt can still show, as [docs/adapters/codex.md](docs/adapters/codex.md#a-title-made-from-the-first-prompt) explains. (#410)
 
 ## 0.2.29 - 2026-11-22
 

@@ -68,7 +68,7 @@ export const CODEX_CAPABILITIES: SourceCapabilities = {
   names: {
     level: "partly",
     reason:
-      "The desktop app does not keep its titles in the names file Agent Lookout reads, so its sessions take their folder's name.",
+      "Codex's names file, else the folder's. The desktop app writes none. A name made from your first prompt is left out where seen.",
   },
   jump: {
     level: "no",

@@ -100,9 +100,15 @@ import { gunzipSync } from "node:zlib";
  * from 4.65 MB and 6.47 MB with Mistral Vibe's last message. It added 57 KB,
  * its code in the command and the documents the package ships. The tarball,
  * at 1.24 MB, is still under its 1.25 MB.
+ *
+ * The tarball was raised from 1.25 MB to 1.30 MB once the comparison of a
+ * Codex name with the first prompt took it to 1.252 MB, from 1.238 MB. It
+ * added 13 KB to the tarball and 44 KB unpacked, most of it the comparison's
+ * code in the command. Unpacked, at 4.75 MB, and installed, at 6.57 MB, are
+ * still under their 4.80 MB and 6.60 MB, so they were left as they were.
  */
 const LIMITS = {
-  tarball: 1_250_000,
+  tarball: 1_300_000,
   unpacked: 4_800_000,
   installed: 6_600_000,
 };
