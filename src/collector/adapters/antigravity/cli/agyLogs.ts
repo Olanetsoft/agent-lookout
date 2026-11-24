@@ -21,8 +21,9 @@ import type { AgyRemoteAgent } from "./agyProcesses.ts";
  * in the seconds before its name's time, so a log is tied to the program
  * running now that wrote it. A program started with `--remote-agent` runs no
  * session on this computer and may write a log all the same, so one started in
- * those seconds leaves a log untied too, and its own is not read. The logs of
- * programs that have ended are not read.
+ * those seconds leaves a log untied too, and its own is not read. Nor is that
+ * of an `agy acp`, which an editor runs: Google documents it as `acp-*.log`.
+ * The logs of programs that have ended are not read.
  *
  * Each line is matched against the few kinds used and dropped at once: nothing
  * else of it is kept. A log is read from its start, then only what was added.
@@ -77,7 +78,9 @@ export function logStartOf(name: string): number | null {
  * gives the first such hour, and is matched to none.
  *
  * `others` are the programs started with `--remote-agent`: each counts as one
- * that could have written a log, and is given none.
+ * that could have written a log, and is given none. So does an `agy acp`,
+ * which would else be given the log of an agy started just after it, once that
+ * one has ended.
  */
 export function matchLogs(
   processes: readonly AgySessionProcess[],
@@ -94,8 +97,8 @@ export function matchLogs(
   for (const { startedAt } of [...processes, ...others]) {
     for (const [name] of candidates(startedAt)) owners.set(name, (owners.get(name) ?? 0) + 1);
   }
-  return processes.map(({ startedAt }) => {
-    const found = candidates(startedAt);
+  return processes.map(({ startedAt, acp }) => {
+    const found = acp ? [] : candidates(startedAt);
     if (found.length !== 1) return null;
     const [name] = found[0];
     return owners.get(name) === 1 ? name : null;

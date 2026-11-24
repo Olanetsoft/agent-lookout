@@ -92,7 +92,7 @@ const LABEL = CLI_PROFILE.label;
 
 /** Said whenever the Antigravity CLI is watched, because it is what a person would otherwise expect to see. */
 export const NEEDS_YOU_NOTE =
-  "A session needs you while agy asks you to approve a tool, which its own log records. A question it asks you is not known to be recorded, so it shows as working.";
+  "A session needs you while agy asks you to approve a tool, which its own log records. A question it asks you is not known to be recorded, and an agy acp session's approvals are not seen, so both show as working.";
 
 /** Said whenever the Antigravity CLI is watched, until the adapter has been checked against more of agy. */
 export const UNCHECKED_NOTE =
@@ -122,14 +122,17 @@ export const UNMATCHED_NOTE =
  *
  * - Working and idle are the transcript's last step (`antigravityMapping.ts`).
  * - Needs you is an approval its program's log says it waits for
- *   (`antigravityLog.ts`). A question it asks shows as working.
+ *   (`antigravityLog.ts`). A question it asks shows as working, and so does an
+ *   approval an editor's `agy acp` asks for, whose log is not read.
  * - Finished is a conversation no agy program running could have open
  *   (`antigravityLiveness.ts`), which needs `ps`.
  * - Failed is an error agy records as a step of its own, or a reply that failed.
  * - The name is the title agy gives a conversation, and the folder the one its
  *   program's log names.
- * - No Jump, Stop or Answer: nothing ties a conversation to one terminal, and
- *   agy takes its answers only in that terminal.
+ * - The app is not known: nothing says whether a conversation is in a terminal,
+ *   in an editor over ACP or in neither.
+ * - No Jump, Stop or Answer: nothing ties a conversation to one window, and agy
+ *   takes its answers only in that window or in Remote Control.
  * - Quiet for is the newest modified time of the conversation's files.
  * - Tokens are the counts of the newest reply, from the transcript's newest
  *   `PLANNER_RESPONSE` step that names them, until a finished checkpoint
@@ -140,7 +143,7 @@ export const ANTIGRAVITY_CAPABILITIES: SourceCapabilities = {
   "needs-you": {
     level: "partly",
     reason:
-      "While agy asks you to approve a tool, from its own log. A question it asks you shows as working.",
+      "While agy asks you to approve a tool, from its own log, not under agy acp. A question it asks you shows as working.",
   },
   finished: {
     level: "partly",
@@ -160,7 +163,7 @@ export const ANTIGRAVITY_CAPABILITIES: SourceCapabilities = {
   jump: {
     level: "no",
     reason:
-      "The transcripts name no terminal, and agy documents no link that opens a conversation.",
+      "The transcripts name no terminal or editor, and agy documents only links that need Remote Control to be on.",
   },
   "quiet-for": { level: "yes" },
   tokens: { level: "yes" },
@@ -171,7 +174,8 @@ export const ANTIGRAVITY_CAPABILITIES: SourceCapabilities = {
   },
   answer: {
     level: "no",
-    reason: "Its approval prompt takes an answer only in the terminal agy runs in.",
+    reason:
+      "agy takes an answer in its terminal, an editor or Remote Control, and Agent Lookout reaches none of them.",
   },
 };
 

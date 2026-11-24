@@ -166,6 +166,24 @@ describe("readAgyCommandLine", () => {
     });
   });
 
+  test("agy acp, which an editor runs, is a session that names no conversation", () => {
+    for (const rest of [
+      "acp",
+      "acp --sandbox --add-dir /Users/example/code/demo",
+      "acp --process-per-session",
+      `acp --agent -r ${A}`,
+    ]) {
+      expect(readAgyCommandLine(`/Users/example/.local/bin/agy ${rest}`), rest).toEqual({
+        session: true,
+        acp: true,
+      });
+    }
+    // Anywhere else in the line it can be a prompt's word.
+    for (const rest of ["-p explain what acp does", "--acp", "acps", "-c acp"]) {
+      expect(readAgyCommandLine(`agy ${rest}`), rest).toEqual({ session: true });
+    }
+  });
+
   test("agy's own commands, and options that print and end, are not sessions", () => {
     for (const command of [
       "remote-control start",
@@ -254,6 +272,29 @@ describe("createAgyProcessReader", () => {
     expect(ps.runs).toEqual([
       { args: AGY_TABLE_ARGS, utc: true },
       { args: agyCommandLineArgs([812, 813, 814, 900, 901]), utc: false },
+    ]);
+  });
+
+  test("an agy acp is told apart, and the programs it starts for its sessions belong to it", async () => {
+    const editors = [
+      row(700, 1, NOW - 9 * MINUTE, "/Applications/Some Editor.app/Contents/MacOS/editor"),
+      row(701, 700, NOW - 8 * MINUTE, "/Users/example/.local/bin/agy"),
+      row(702, 701, NOW - 7 * MINUTE, "/Users/example/.local/bin/agy"),
+    ].join("\n");
+    const ps = standInPs(editors, {
+      701: "/Users/example/.local/bin/agy acp --process-per-session",
+      702: "/Users/example/.local/bin/agy --worker",
+    });
+    const reader = createAgyProcessReader({ run: ps.run, platform: "darwin" });
+    expect(await reader.read()).toEqual({
+      ok: true,
+      sessions: [{ startedAt: NOW - 8 * MINUTE, acp: true }],
+      remoteAgents: [],
+    });
+    // Nothing more is asked of ps for it.
+    expect(ps.runs.map((run) => run.args)).toEqual([
+      AGY_TABLE_ARGS,
+      agyCommandLineArgs([701, 702]),
     ]);
   });
 

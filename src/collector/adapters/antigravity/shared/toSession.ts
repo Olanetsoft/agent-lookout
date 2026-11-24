@@ -15,15 +15,18 @@ export interface AntigravityProfile {
   sourceId: SourceId;
   /** How the Sources card and its sentences name the product. */
   label: string;
-  /** Where its sessions run. */
+  /** Where its sessions run, or that it is not known. */
   surface: Surface;
 }
 
-/** The Antigravity CLI, `agy`, which runs in a terminal. */
+/**
+ * The Antigravity CLI, `agy`. It runs in a terminal, in an editor over ACP
+ * (`agy acp`), from a script or as a service, and nothing read here says which.
+ */
 export const CLI_PROFILE: AntigravityProfile = {
   sourceId: "antigravity-cli",
   label: "Antigravity CLI",
-  surface: "terminal",
+  surface: "unknown",
 };
 
 /** Antigravity 2.0, Google's desktop app with the Agent Manager, whose chats run in its own window. */
@@ -79,7 +82,7 @@ export interface AntigravitySessionInput {
  *   An Antigravity 2.0 chat needs you, for permission, while its database
  *   says its newest step waits, with no detail, and stays working while its
  *   files are written.
- * - The app is the profile's: the terminal for the CLI, the desktop app for
+ * - The app is the profile's: not known for the CLI, the desktop app for
  *   Antigravity 2.0.
  * - It is named by the title Antigravity gave it, else its folder's name, else
  *   its conversation id, which `agy --conversation <id>` takes. The folder is

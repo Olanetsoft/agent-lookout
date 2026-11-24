@@ -117,7 +117,7 @@ describe("with agy's folder there", () => {
     const working = sessions.find((session) => session.id.endsWith(WORKING));
     expect(working).toMatchObject({
       name: WORKING,
-      surface: "terminal",
+      surface: "unknown",
       statusSince: NOW - 3 * MINUTE,
       lastWriteAt: NOW - 10 * SECOND,
     });
@@ -732,6 +732,27 @@ describe("an agy program's own log and a conversation's title", () => {
       [FAILED]: "failed",
     });
     expect(files.opened()).not.toContain(log);
+  });
+
+  test("an agy acp program is given no log, so it is not taken to wait for an approval another agy asked for", async () => {
+    const { adapter, processes, files } = waiting();
+    // An editor's program, and the agy started just after it that wrote the log, which has ended.
+    processes.set([{ startedAt: STARTED - 2 * SECOND, acp: true }]);
+    const { basis, sessions } = await adapter.poll();
+    expect(find(sessions, ASKING)).toMatchObject({
+      status: "working",
+      surface: "unknown",
+      cwd: null,
+    });
+    // It may still have open what was written since it started.
+    expect(basis).toBe(BASIS);
+    expect(files.opened()).not.toContain(LOG);
+
+    // While both run, the log is tied to neither.
+    processes.set([{ startedAt: STARTED - 2 * SECOND, acp: true }, { startedAt: STARTED }]);
+    const both = await antigravityAdapterFor(files, processes).poll();
+    expect(find(both.sessions, ASKING)).toMatchObject({ status: "working", cwd: null });
+    expect(files.opened()).not.toContain(LOG);
   });
 
   test("a log that cannot be tied to one running program is not read", async () => {

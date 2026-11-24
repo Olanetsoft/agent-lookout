@@ -101,6 +101,16 @@ describe("which log each program wrote", () => {
     expect(matchLogs([], logs(START + SECOND), [{ startedAt: START }])).toEqual([]);
   });
 
+  test("none for an agy acp, which counts as one that could have written another's", () => {
+    const acp = { startedAt: START, acp: true } as const;
+    expect(matchLogs([acp], logs(START + SECOND))).toEqual([null]);
+    expect(matchLogs([acp, { startedAt: START }], logs(START + SECOND))).toEqual([null, null]);
+    expect(matchLogs([acp, { startedAt: START + MINUTE }], logs(START + MINUTE + SECOND))).toEqual([
+      null,
+      logName(START + MINUTE + SECOND),
+    ]);
+  });
+
   test("none for a program whose start is not known", () => {
     expect(matchLogs([{ startedAt: null }], logs(START + SECOND))).toEqual([null]);
   });
