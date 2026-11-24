@@ -189,7 +189,7 @@ export function waitChanges(memory: WaitMemory, snapshot: SessionsSnapshot): Wai
 
   for (const source of snapshot.sources) {
     const waiting = answers.get(source.id)?.waiting;
-    for (const [id, wait] of keptUnread(source, memory.get(source.id) ?? [], listed)) {
+    for (const [id, wait] of keptUnread(source, memory.get(source.id)?.waits ?? [], listed)) {
       waiting?.set(id, wait);
     }
   }
