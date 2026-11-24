@@ -24,6 +24,8 @@ function room(holder: Element): number {
  */
 function placeOf(element: HTMLElement | null): Place | null {
   if (element === null || element.closest("[aria-hidden='true']")) return null;
+  // What is drawn while a dialog is open is not marked as hidden under it.
+  if (document.querySelector("[role='dialog']") && !element.closest("[role='dialog']")) return null;
   const place: Place = { x: 0, y: 0, height: element.offsetHeight, scrolled: [] };
   for (let at: Element | null = element; at instanceof HTMLElement; at = at.offsetParent) {
     place.x += at.offsetLeft;

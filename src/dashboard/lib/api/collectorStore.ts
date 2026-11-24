@@ -241,7 +241,7 @@ export async function fetchLastMessage(sessionId: string): Promise<LastMessageRe
   return answer;
 }
 
-/** Adds events the page has not seen yet. Keeps newest first and a bounded length. */
+/** Adds events the page has not seen yet, both lists with the one added last first. Keeps that order and a bounded length. */
 export function mergeEvents(
   known: readonly SessionEvent[],
   incoming: readonly SessionEvent[],
@@ -250,7 +250,7 @@ export function mergeEvents(
   const seen = new Set(known.map((event) => event.id));
   const fresh = incoming.filter((event) => !seen.has(event.id));
   if (fresh.length === 0) return known as SessionEvent[];
-  return [...fresh, ...known].sort((a, b) => b.at - a.at).slice(0, MAX_EVENTS);
+  return [...fresh, ...known].slice(0, MAX_EVENTS);
 }
 
 export function createCollectorStore(options: CollectorStoreOptions = {}): CollectorStore {
@@ -272,10 +272,10 @@ export function createCollectorStore(options: CollectorStoreOptions = {}): Colle
    */
   let hourCurrentAt: number | null = null;
   /**
-   * When the event added last of those held was, which the next poll asks what
+   * The events held, the one added last first, which the next poll asks what
    * followed: not always the latest, once the collector's clock was set back.
    */
-  let newestAt = 0;
+  let added: SessionEvent[] = [];
 
   function setState(next: CollectorState): void {
     state = next;
@@ -292,7 +292,7 @@ export function createCollectorStore(options: CollectorStoreOptions = {}): Colle
         hourCurrentAt === null || askedAt - hourCurrentAt > HISTORY_WINDOW_MS - STALE_AFTER_MS;
       const [sessions, newer, history] = await Promise.allSettled([
         getJson("/api/sessions").then(parseSnapshot),
-        eventsSince(newestAt),
+        eventsSince(added[0]?.at ?? 0),
         getJson(`/api/history?windowMs=${wholeHour ? HISTORY_KEPT_MS : HISTORY_WINDOW_MS}`).then(
           parseHistory,
         ),
@@ -326,14 +326,14 @@ export function createCollectorStore(options: CollectorStoreOptions = {}): Colle
           hourCurrentAt = askedAt;
         }
         const oldest = now() - HISTORY_KEPT_MS - HISTORY_SLACK_MS;
-        if (restarted) newestAt = 0;
+        if (restarted) added = [];
         next = {
           ...next,
           history: {
             ...held,
             points: held.points.filter((point) => point.at >= oldest),
           },
-          events: restarted ? [] : next.events,
+          events: restarted ? added : next.events,
           // The run before let every request it held go as it stopped, so no
           // request last read before this run began is held now. One read
           // since is kept, even when history answers only after a restart.
@@ -341,8 +341,11 @@ export function createCollectorStore(options: CollectorStoreOptions = {}): Colle
         };
       }
       if (events.status === "fulfilled") {
-        newestAt = events.value[0]?.at ?? newestAt;
-        next = { ...next, events: mergeEvents(next.events, events.value) };
+        const merged = mergeEvents(added, events.value);
+        if (merged !== added) {
+          added = merged;
+          next = { ...next, events: [...added].sort((a, b) => b.at - a.at) };
+        }
       }
 
       if (sessions.status === "fulfilled") {

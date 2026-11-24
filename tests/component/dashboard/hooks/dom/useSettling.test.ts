@@ -163,6 +163,31 @@ test("a dialog closing over it starts it again", async () => {
   expect(take).toHaveBeenCalledOnce();
 });
 
+test("a dialog closing over it starts it again, also when it was drawn while the dialog was open", async () => {
+  const dialog = document.createElement("div");
+  dialog.setAttribute("role", "dialog");
+  document.body.append(dialog);
+  onTestFinished(() => dialog.remove());
+  const { take } = await drawn();
+  dialog.remove();
+  box().click();
+  expect(take).not.toHaveBeenCalled();
+  await settled();
+  box().click();
+  expect(take).toHaveBeenCalledOnce();
+});
+
+test("in a dialog, it is watched as it is elsewhere", async () => {
+  const take = vi.fn();
+  await render(createElement("div", { role: "dialog" }, createElement(Box, { take })));
+  await settled();
+  box().click();
+  expect(take).toHaveBeenCalledOnce();
+  part("above").style.height = "60px";
+  box().click();
+  expect(take).toHaveBeenCalledOnce();
+});
+
 test("scrolling the page to it, or animating it, is no move", async () => {
   const { take } = await drawn();
   window.scrollTo({ top: 200 });

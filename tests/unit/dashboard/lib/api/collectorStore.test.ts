@@ -1257,7 +1257,38 @@ test("with the collector's clock set back it is sent each event once, however ma
   }
   expect([...sent].sort()).toEqual([...added].sort());
   expect(store.getState().events).toHaveLength(MAX_EVENTS);
-  expect(store.getState().events[1]?.id).toBe(added.at(-1));
+  expect(store.getState().events[0]?.id).toBe(added.at(-1));
+  stop();
+});
+
+test("with as many events as it holds and the collector's clock set back, it holds the newest, as a page opened then does", async () => {
+  const collector = fakeCollector();
+  const events = createEventStore();
+  setApiHost(async (path, init) => {
+    const url = new URL(path, "http://localhost");
+    if (url.pathname !== "/api/events") return collector.host(path, init);
+    const since = url.searchParams.get("since");
+    return json({ events: events.list(since === "0" ? {} : { since: Number(since) }) });
+  });
+  events.add(Array.from({ length: MAX_EVENTS }, (_, n) => event(n, T0 + n)));
+  const store = createCollectorStore();
+  const stop = store.subscribe(() => {});
+  await settle();
+
+  for (let n = 0; n < 5; n += 1) {
+    events.add([event(MAX_EVENTS + n, T0 - DAY + n)]);
+    await beat();
+  }
+  // Latest first, so those added last are at the end, and the five added first have gone.
+  const held = store.getState().events.map(({ id }) => id);
+  expect(held).toHaveLength(MAX_EVENTS);
+  expect(held.slice(-5)).toEqual([4, 3, 2, 1, 0].map((n) => `event-${MAX_EVENTS + n}`));
+  expect(held).not.toContain("event-4");
+  const fresh = createCollectorStore();
+  const stopFresh = fresh.subscribe(() => {});
+  await settle();
+  expect(store.getState().events).toEqual(fresh.getState().events);
+  stopFresh();
   stop();
 });
 
