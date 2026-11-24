@@ -1486,9 +1486,13 @@ describe("the request that comes right after an answer, while the file still say
 describe("a session two processes have open", () => {
   const A = 4241;
   const B = 4242;
+  const ALLOWED: ReturnType<RuleAnswers["verdictFor"]> = {
+    decision: "allow",
+    rule: { id: "aaaaaaaaaaaa", decision: "allow", tool: "Bash", command: "npm test" },
+  };
 
   /** Each process's registry file, and the one the collector lists, over a clock the test moves. */
-  function twoProcesses() {
+  function twoProcesses(rules?: Pick<RuleAnswers, "verdictFor" | "answered">) {
     const clock = { now: T0 };
     const row = { pid: A };
     /** When each process's wait for permission began, or null while it works. */
@@ -1526,6 +1530,7 @@ describe("a session two processes have open", () => {
       every: () => () => {},
       newId: () => (ids += 1).toString(16).padStart(32, "0"),
       onDrop: (reason) => drops.push(reason),
+      ...(rules && { rules }),
     });
     const at = async (ms: number) => {
       clock.now = T0 + ms;
@@ -1541,7 +1546,7 @@ describe("a session two processes have open", () => {
   const shown = (asks: ReturnType<typeof createHeldAsks>, poll: SessionsSnapshot) =>
     asks.withAsks(poll).sessions[0]?.ask;
 
-  test("an answer to one's request leaves the other's wait, whose request was let go, as it is", async () => {
+  test("an answer to one's request ends the other's wait, whose request was let go, for a moment and no longer", async () => {
     const { asks, row, since, at, poll } = twoProcesses();
     row.pid = B;
     // A's request, before any file says it waits, and B's, for which it is let go.
@@ -1559,18 +1564,49 @@ describe("a session two processes have open", () => {
 
     // The collector lists A now, which waits still.
     row.pid = A;
+    await at(1_000 + GRACE_MS - 1);
+    expect([...asks.answeredIn(poll())]).toEqual([ID]);
+    await at(1_000 + GRACE_MS);
     expect([...asks.answeredIn(poll())]).toEqual([]);
   });
 
-  test("one answered while the other's older wait is read is answered in its own process's wait", async () => {
+  test("one a rule answers while the other's wait, just begun, is read is answered in its own process's wait", async () => {
+    const { asks, row, since, at, poll } = twoProcesses({
+      verdictFor: ({ shown }) => (shown.command === "npm test" ? ALLOWED : null),
+      answered: () => {},
+    });
+    row.pid = B;
+    asks.receive(bash("npm run build"), standInReply().reply);
+    since.set(B, T0);
+    await at(500);
+    await at(850);
+    const reply = standInReply();
+    asks.receive(bash("npm test"), reply.reply);
+    since.set(A, T0 + 870);
+    await at(900);
+    expect(reply.sent).toEqual([ALLOW_OUTPUT]);
+    row.pid = A;
+    await at(1_100);
+    expect([...asks.answeredIn(poll())]).toEqual([ID]);
+  });
+
+  test("one answered while the other's older wait is read is answered in its own process's wait for good", async () => {
     const { asks, row, since, at, poll } = twoProcesses();
+    // A's own request, which B's is let go for.
+    await at(-8_000);
     since.set(A, T0 - 8_000);
+    asks.receive(bash("npm run build"), standInReply().reply);
+    await at(-7_500);
+    await at(0);
     asks.receive(bash("npm test"), standInReply().reply);
     since.set(B, T0 + 100);
     await at(400);
     expect(await asks.answer(ID, shown(asks, poll())?.requestId ?? "", "allow")).toBe("answered");
     row.pid = B;
-    expect([...asks.answeredIn(poll())]).toEqual([ID]);
+    for (const ms of [500, 400 + GRACE_MS]) {
+      await at(ms);
+      expect([...asks.answeredIn(poll())]).toEqual([ID]);
+    }
   });
 
   test("one between two of its own waits is not taken up by the other's older wait", async () => {

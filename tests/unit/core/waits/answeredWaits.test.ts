@@ -77,16 +77,16 @@ describe("whether a session is still in the wait that was answered", () => {
     expect(inAnsweredWait(waiting({ status: "working" }), wait)).toBe(false);
   });
 
-  test("a wait of another process that has the session open is not, whenever it began", () => {
-    const wait = { since: T0, pid: 4241, from: T0 + 1_000, at: T0 + 2_000 };
-    for (const statusSince of [T0, T0 + 1_500, null]) {
-      expect(inAnsweredWait(waiting({ statusSince, pid: 4242 }), wait)).toBe(false);
-      expect(inAnsweredWait(waiting({ statusSince, pid: 4241 }), wait)).toBe(true);
-      expect(inAnsweredWait(waiting({ statusSince, pid: undefined }), wait)).toBe(true);
-      expect(inAnsweredWait(waiting({ statusSince, pid: 4242 }), { ...wait, pid: undefined })).toBe(
-        true,
-      );
-    }
+  test("past `until` a wait of another process that has the session open is not its own, whenever it began", () => {
+    const wait = { since: T0, pid: 4241, from: T0 + 1_000, at: T0 + 2_000, until: T0 + 5_000 };
+    const own = (pid: number, now: number, of: typeof wait = wait) =>
+      inAnsweredWait(waiting({ statusSince: T0 + 1_500, pid }), of, now);
+    expect([own(4241, T0 + 4_999), own(4242, T0 + 4_999)]).toEqual([true, true]);
+    expect([own(4241, T0 + 5_000), own(4242, T0 + 5_000)]).toEqual([true, false]);
+    // With no other prompt open, and with the process not known.
+    expect(own(4242, T0 + 5_000, { ...wait, until: Infinity })).toBe(true);
+    const { pid: _, ...untold } = wait;
+    expect(inAnsweredWait(waiting({ statusSince: T0 + 1_500 }), untold, T0 + 5_000)).toBe(true);
   });
 
   test("past `until` the wait it was given in is another's, and its own wait is not", () => {
