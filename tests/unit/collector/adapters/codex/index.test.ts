@@ -1336,6 +1336,41 @@ describe("which sessions are listed, and for how long", () => {
       });
     });
 
+    test.each<[string, (files: MemoryFiles, file: string) => void, number]>([
+      ["a day after its last line", () => {}, on(17, 23) + FINISHED_RETENTION_MS + 1],
+      ["once it has gone", (files, file) => files.remove(file), on(18, 1)],
+      [
+        // As when it is copied, or its time is set.
+        "when only its time is new",
+        (files, file) => files.append(file, "", { mtimeMs: on(18, 23, 30) }),
+        on(18, 23, 31),
+      ],
+    ])("a file is looked at no more %s", async (_when, change, time) => {
+      await inTimeZone("UTC", async () => {
+        const files = emptyCodex();
+        const file = addSession(files, {
+          thread: ids.finished,
+          created: "2026-11-16T09-00-00",
+          lines: [meta(on(16, 9), ids.finished), turnLine(on(17, 23), "task_complete")],
+          mtimeMs: on(17, 23),
+        });
+        const clock = handClock(on(17, 23, 30));
+        const adapter = codexAdapterFor(files, { now: clock.now });
+        const looks = async (at: number) => {
+          files.forget();
+          clock.set(at);
+          await adapter.poll();
+          return files.count("lstat", (looked) => looked === file);
+        };
+        expect(await looks(on(17, 23, 30))).toBe(1);
+        // Past the day its folder is listed, for as long as it may be listed.
+        expect(await looks(on(18, 0, 30))).toBe(1);
+        change(files, file);
+        expect(await looks(time)).toBe(1);
+        expect(await looks(time + 2_000)).toBe(0);
+      });
+    });
+
     test("a resumed session that was reverted keeps its newest file", async () => {
       await inTimeZone("UTC", async () => {
         const files = emptyCodex();
