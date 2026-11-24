@@ -100,6 +100,9 @@ export function createSubagentRecords(options: {
       return;
     }
     const names = await io.readdir(dir);
+    const files = new Set(
+      (last?.children ?? []).filter((child) => records.get(child)?.get(parent)?.file),
+    );
     forget(parent);
     const children: string[] = [];
     let listedAt = now;
@@ -113,7 +116,7 @@ export function createSubagentRecords(options: {
       if (child === null || child === parent) continue;
       const named = records.get(child) ?? new Map<string, KeptRecord>();
       if (named.has(parent)) continue;
-      records.set(child, named.set(parent, { name, file: false }));
+      records.set(child, named.set(parent, { name, file: files.has(child) }));
       children.push(child);
       kept += 1;
     }

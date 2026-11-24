@@ -261,6 +261,32 @@ describe("telling a child by its record's name", () => {
     expect(await isChild(records, SECOND_CHILD)).toBe(true);
   });
 
+  test("a record that cannot be looked up just after its folder is listed again is what it last was", async () => {
+    const { clock, files, records, look, record } = setUp();
+    record(PARENT, `${CHILD}.json`, NOW - MINUTE);
+    await look(PARENT);
+    expect(await isChild(records, CHILD)).toBe(true);
+
+    // Another record moves the folder's time, so its names are listed again.
+    clock.advance(MINUTE);
+    record(PARENT, `${SECOND_CHILD}.json`, clock.now());
+    files.fail(RECORD, "EMFILE");
+    files.fail(subagentsPath(AGY_HOME, PARENT, `${SECOND_CHILD}.json`), "EMFILE");
+    await look(PARENT);
+    expect(await isChild(records, CHILD)).toBe(true);
+    // One never looked up says nothing yet.
+    expect(await isChild(records, SECOND_CHILD)).toBe(false);
+
+    // Nor is one that was gone told to be there by the listing.
+    files.fail(RECORD, "ENOENT");
+    expect(await isChild(records, CHILD)).toBe(false);
+    files.fail(RECORD, "EMFILE");
+    clock.advance(MINUTE);
+    files.touch(FOLDER, clock.now());
+    await look(PARENT);
+    expect(await isChild(records, CHILD)).toBe(false);
+  });
+
   test("a record is looked up and never opened, and nothing of it is read", async () => {
     const { files, records, look, record } = setUp();
     record(PARENT, `${CHILD}.json`);
