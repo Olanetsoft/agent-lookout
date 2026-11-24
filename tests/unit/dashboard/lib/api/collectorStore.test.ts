@@ -1035,6 +1035,29 @@ test("once the history has been cleared, what the page held from before goes, ev
   stop();
 });
 
+test("an event read just before the history was cleared goes with it", async () => {
+  const collector = fakeCollector();
+  collector.events = [event(1, T0 - 9_000)];
+  let clearing = false;
+  setApiHost((path, init) => {
+    // Cleared after the events of this beat were read, and before its history is.
+    if (clearing && path.startsWith("/api/history")) {
+      collector.since = { at: T0 + 500, by: "cleared" };
+      collector.events = [];
+    }
+    return collector.host(path, init);
+  });
+  const store = createCollectorStore();
+  const stop = store.subscribe(() => {});
+  await settle();
+
+  collector.events.push(event(2, T0 + 400));
+  clearing = true;
+  await beat();
+  expect(store.getState().events).toEqual([]);
+  stop();
+});
+
 test("where the history is kept, and where it begins, go with the history the page holds", async () => {
   const collector = fakeCollector();
   collector.since = { at: T0 - 86_400_000, by: "started" };
