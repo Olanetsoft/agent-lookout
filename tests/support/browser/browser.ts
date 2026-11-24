@@ -1,6 +1,6 @@
 // Pointer and keyboard helpers for component tests, which share one browser page.
 
-import { userEvent } from "vitest/browser";
+import { cdp, userEvent } from "vitest/browser";
 
 /**
  * Moves the pointer off everything, to the top-left corner of the page, the way
@@ -57,6 +57,24 @@ export async function pressAt(x: number, y: number, times = 1): Promise<void> {
     clickCount: times,
     delay: 100,
   });
+}
+
+/** Taps a finger at a point of the window, as `pressAt` presses the pointer. */
+export async function tapAt(x: number, y: number, times = 1): Promise<void> {
+  // The page under test is in a frame of the one the browser is told of.
+  const frame = window.frameElement?.getBoundingClientRect();
+  const scale = frame ? frame.width / window.innerWidth : 1;
+  const point = { x: (frame?.left ?? 0) + x * scale, y: (frame?.top ?? 0) + y * scale };
+  const touch = (type: string, touchPoints: object[]) =>
+    (cdp() as { send?: (method: string, params: object) => Promise<unknown> }).send?.(
+      "Input.dispatchTouchEvent",
+      { type, touchPoints },
+    );
+  for (let tap = 0; tap < times; tap += 1) {
+    if (tap > 0) await new Promise((resolve) => setTimeout(resolve, 150));
+    await touch("touchStart", [point]);
+    await touch("touchEnd", []);
+  }
 }
 
 /** The middle of an element, as a point of the window. */

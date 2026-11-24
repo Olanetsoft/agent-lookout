@@ -685,7 +685,7 @@ A session that changed status or ended while Agent Lookout was stopped is found 
 
 The History card says that history is kept on this computer for 8 days, and gives the folder, how much the files hold out of 20 MB, and how far back they go. Each day's history is deleted once that day ended more than 8 days ago, and when the files would hold more than 20 MB the oldest is deleted first, so they never hold more. They hold the events and counts the dashboard shows, with each session's name, how a session in a wait was last read, and, beyond that name, no folder path, prompt or anything a waiting session is asking. [PRIVACY.md](../PRIVACY.md#the-history) has the details.
 
-Clear history asks first, in the card: Clear history again to go ahead, or Cancel. It deletes the files and empties the Events log and the charts, which then start with History cleared. The card says when it was cleared. Files written by a later version of Agent Lookout are left alone.
+Clear history asks first, in the card: Clear history again to go ahead, or Cancel. The second half of a double click or a double tap is no answer. It deletes the files and empties the Events log and the charts, which then start with History cleared. The card says when it was cleared. Files written by a later version of Agent Lookout are left alone.
 
 `AGENT_LOOKOUT_HISTORY_DIR` keeps the files in another folder. With `AGENT_LOOKOUT_HISTORY=off` nothing is written: the card says history is kept in memory only and has no button, and the Events log and the charts start empty each time Agent Lookout starts.
 
