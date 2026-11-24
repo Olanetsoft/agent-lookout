@@ -9,8 +9,8 @@ import { MACHINE } from "@site-tour/feed/hour";
  * Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi,
  * Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx,
  * Unreal Agent, Autohand Code, DeepSeek Harness, Droid, Grok Build, Oh My Pi,
- * Muse Code and Copilot CLI, none of the twenty-six installed here, and status
- * files. Then the other machine, connected over SSH.
+ * Muse Code, Copilot CLI and Kiro CLI, none of the twenty-seven installed
+ * here, and status files. Then the other machine, connected over SSH.
  *
  * The adapters run in Node, so their declarations cannot be bundled into the
  * page. Their words are written here in their place, and a test holds each
@@ -1280,6 +1280,50 @@ export const COPILOT_CLI_CAPABILITIES: SourceCapabilities = {
   },
 };
 
+export const KIRO_CLI_CAPABILITIES: SourceCapabilities = {
+  "working-and-idle": {
+    level: "partly",
+    reason:
+      "From V3's turn rows. A V2 turn with no tool shows as idle, as V2 writes nothing until it ends.",
+  },
+  "needs-you": {
+    level: "partly",
+    reason:
+      "While a V3 session waits for your approval or an answer. V2 writes no wait, so one shows as working.",
+  },
+  finished: {
+    level: "partly",
+    reason:
+      "Once its lock is gone or names a process that has ended. A Kiro IDE session with no lock shows as finished too.",
+  },
+  failed: {
+    level: "no",
+    reason: "Kiro's files are not read for errors, so a session never shows as failed.",
+  },
+  names: {
+    level: "partly",
+    reason:
+      "The title Kiro gives a V3 session, or one you set, else the folder's name. V2's title is your first prompt, so it is not read.",
+  },
+  jump: {
+    level: "no",
+    reason: "A session's lock names Kiro's own process, and no terminal or window.",
+  },
+  "quiet-for": {
+    level: "partly",
+    reason: "From the session's log, which V2 writes only once each step is done.",
+  },
+  tokens: { level: "no", reason: "Agent Lookout reads no counts from Kiro's files." },
+  stop: {
+    level: "no",
+    reason: "The process in a session's lock is not one Agent Lookout can confirm and stop.",
+  },
+  answer: {
+    level: "no",
+    reason: "Agent Lookout does not talk to Kiro, so it cannot send an answer.",
+  },
+};
+
 /**
  * What Claude Code on the other machine can report, as it is seen from here:
  * what its Agent Lookout says, with Jump, Stop and Answer as no, since each
@@ -1449,6 +1493,10 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
           label: "Process check run",
           value:
             "once for each lease, after a minute with nothing written or as soon as its session waits, then every 30 seconds while it waits or until ps answers",
+        },
+        {
+          label: "Last message read",
+          value: "end of a session's journal and history, while its details are open",
         },
       ],
       capabilities: MISTRAL_VIBE_CAPABILITIES,
@@ -2024,6 +2072,30 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
       checkedAt,
     },
     {
+      // The adapter's card on a Mac, when Kiro CLI is not installed: its folder is looked for, and nothing more.
+      id: "kiro-cli",
+      label: "Kiro CLI",
+      state: "unavailable",
+      detail:
+        "Kiro CLI was not found: there is no ~/.kiro folder. Agent Lookout looks again every minute.",
+      watching: [
+        { label: "Sessions folder", value: "~/.kiro/sessions" },
+        { label: "Read", value: "not found" },
+        {
+          label: "Files read",
+          value:
+            "session.json, .lock and the end of messages.jsonl of each V3 session; <uuid>.json, <uuid>.lock and the end of <uuid>.jsonl of each V2 one",
+        },
+        { label: "Process check", value: "ps -o pid=,lstart= -p <pids>" },
+        {
+          label: "Process check run",
+          value: "every 30 seconds while a session's lock names a process that runs",
+        },
+      ],
+      capabilities: KIRO_CLI_CAPABILITIES,
+      checkedAt,
+    },
+    {
       id: "status-files",
       label: "Status files",
       state: "ok",
@@ -2078,6 +2150,7 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "Oh My Pi there", value: "Not found" },
         { label: "Muse Code there", value: "Not found" },
         { label: "Copilot CLI there", value: "Not found" },
+        { label: "Kiro CLI there", value: "Not found" },
         { label: "Status files there", value: "Not set up" },
       ],
       agents: [{ label: "Claude Code", capabilities: CLAUDE_CODE_THERE_CAPABILITIES }],

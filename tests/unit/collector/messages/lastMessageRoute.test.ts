@@ -35,14 +35,14 @@ const T0 = 1_700_000_000_000;
 
 const claude = makeSession({ id: "claude-code:00000000-0000-4000-8000-000000000001" });
 const codex = makeSession({ id: "codex:00000000-0000-4000-8000-000000000002", source: "codex" });
-const vibe = makeSession({ id: "mistral-vibe:demo-session", source: "mistral-vibe" });
+const hermes = makeSession({ id: "hermes-agent:demo-session", source: "hermes-agent" });
 const statusFile = makeSession({ id: "status-files:demo-agent", source: "status-files" });
 const remote = makeSession({
   id: "remote:devbox:claude-code:00000000-0000-4000-8000-000000000003",
   source: "remote:devbox",
   machine: "devbox",
 });
-const listed: Session[] = [claude, codex, vibe, statusFile, remote];
+const listed: Session[] = [claude, codex, hermes, statusFile, remote];
 
 const SAID: LastMessageResponse = { message: { text: "The tests pass.", cut: false } };
 
@@ -66,7 +66,7 @@ function setUp(env: NodeJS.ProcessEnv = {}, said: LastMessageResponse | "busy" |
     adapters: [
       reading("claude-code"),
       reading("codex"),
-      { id: "mistral-vibe" },
+      { id: "hermes-agent" },
       { id: "status-files" },
     ],
   });
@@ -151,7 +151,7 @@ describe("GET /api/sessions/last-message", () => {
 
   test("a session on another machine, or of an agent whose adapter reads no messages, is not read", async () => {
     const { ask, asked } = setUp();
-    for (const session of [remote, vibe, statusFile]) {
+    for (const session of [remote, hermes, statusFile]) {
       await expect(ask(forId(session.id)), session.id).resolves.toEqual({
         status: 200,
         body: { message: null, reason: "not-read" },

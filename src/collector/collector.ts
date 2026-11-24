@@ -27,6 +27,7 @@ import { createHermesAgentAdapter } from "./adapters/hermes-agent/index.ts";
 import { createKiloCodeAdapter } from "./adapters/kilo-code/index.ts";
 import { createKimchiAdapter } from "./adapters/kimchi/index.ts";
 import { createKimiCodeAdapter } from "./adapters/kimi-code/index.ts";
+import { createKiroCliAdapter } from "./adapters/kiro-cli/index.ts";
 import { createMimoCodeAdapter } from "./adapters/mimo-code/index.ts";
 import { createMistralVibeAdapter } from "./adapters/mistral-vibe/index.ts";
 import { createMuseCodeAdapter } from "./adapters/muse-code/index.ts";
@@ -123,7 +124,7 @@ import { readWebhookSetup, webhookProblemLine } from "./webhook/webhookSettings.
 export interface CollectorOptions {
   /** The app version reported by `/api/health`. */
   version: string;
-  /** Defaults to every adapter the app ships: Claude Code, Codex, the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx, Unreal Agent, Autohand Code, DeepSeek Harness, Droid, Grok Build, Oh My Pi, Muse Code, Copilot CLI and status files. */
+  /** Defaults to every adapter the app ships: Claude Code, Codex, the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx, Unreal Agent, Autohand Code, DeepSeek Harness, Droid, Grok Build, Oh My Pi, Muse Code, Copilot CLI, Kiro CLI and status files. */
   adapters?: readonly Adapter[];
   /**
    * Where the default adapters read their settings, such as
@@ -140,7 +141,7 @@ export interface CollectorOptions {
    * `AGENT_LOOKOUT_UNREAL_AGENT_SESSION_DIR`, `AGENT_LOOKOUT_AUTOHAND_HOME`,
    * `AGENT_LOOKOUT_DEEPSEEK_HARNESS_HOME`, `AGENT_LOOKOUT_DROID_HOME`,
    * `AGENT_LOOKOUT_GROK_HOME`, `AGENT_LOOKOUT_OMP_HOME`,
-   * `AGENT_LOOKOUT_MUSE_CODE_HOME`, `AGENT_LOOKOUT_COPILOT_HOME` and
+   * `AGENT_LOOKOUT_MUSE_CODE_HOME`, `AGENT_LOOKOUT_COPILOT_HOME`, `AGENT_LOOKOUT_KIRO_HOME` and
    * `AGENT_LOOKOUT_STATUS_DIR`, and
    * where `AGENT_LOOKOUT_NOTIFICATIONS`, the
    * history settings, the email settings, the webhook settings and
@@ -518,8 +519,8 @@ export function createCollector(options: CollectorOptions): Collector {
   });
   if (remotes.problem !== null) warn(remotesProblemLine(remotes.problem));
   // One set of limits for every agent's last messages, those of Claude Code,
-  // Codex, the Antigravity CLI, Antigravity, Gemini CLI, OpenCode, Qwen Code,
-  // Kilo Code and MiMo Code together: four reads a second, eight kept.
+  // Codex, the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode,
+  // Qwen Code, Kilo Code and MiMo Code together: four reads a second, eight kept.
   const lastMessageLimits = createTailLimits();
   const localAdapters = options.adapters ?? [
     createClaudeCodeAdapter({
@@ -549,7 +550,12 @@ export function createCollector(options: CollectorOptions): Collector {
       platform,
       lastMessageLimits,
     }),
-    createMistralVibeAdapter({ env: options.env, now, pollIntervalMs: intervalMs }),
+    createMistralVibeAdapter({
+      env: options.env,
+      now,
+      pollIntervalMs: intervalMs,
+      lastMessageLimits,
+    }),
     createGeminiCliAdapter({
       env: options.env,
       now,
@@ -654,6 +660,14 @@ export function createCollector(options: CollectorOptions): Collector {
     createMuseCodeAdapter({ env: options.env, now, pollIntervalMs: intervalMs, platform }),
     // Read from each session's event log, as bytes, and the names of its locks, with no last message.
     createCopilotCliAdapter({
+      env: options.env,
+      now,
+      pollIntervalMs: intervalMs,
+      platform,
+      readProcessStarts: options.readProcessStarts,
+    }),
+    // Read from each session's header, lock and newest lines, in V3's store and V2's, with no last message.
+    createKiroCliAdapter({
       env: options.env,
       now,
       pollIntervalMs: intervalMs,

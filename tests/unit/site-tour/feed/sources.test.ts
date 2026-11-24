@@ -21,6 +21,7 @@ import { GROK_BUILD_CAPABILITIES } from "@collector/adapters/grok-build/index";
 import { HERMES_AGENT_CAPABILITIES } from "@collector/adapters/hermes-agent/index";
 import { MUSE_CODE_CAPABILITIES } from "@collector/adapters/muse-code/index";
 import { COPILOT_CLI_CAPABILITIES } from "@collector/adapters/copilot-cli/index";
+import { KIRO_CLI_CAPABILITIES } from "@collector/adapters/kiro-cli/index";
 import { OH_MY_PI_CAPABILITIES } from "@collector/adapters/oh-my-pi/index";
 import { KILO_CODE_CAPABILITIES } from "@collector/adapters/kilo-code/index";
 import { KIMCHI_CAPABILITIES } from "@collector/adapters/kimchi/index";
@@ -77,6 +78,10 @@ import {
   copilotCliAdapterFor,
   memoryFiles as copilotCliFiles,
 } from "@tests/support/adapters/copilot-cli/copilotCliAdapter";
+import {
+  kiroCliAdapterFor,
+  memoryFiles as kiroCliFiles,
+} from "@tests/support/adapters/kiro-cli/kiroCliAdapter";
 import { vibeAdapterFor } from "@tests/support/adapters/mistralVibeAdapter";
 import { opencodeAdapterFor } from "@tests/support/adapters/opencodeAdapter";
 import { piAdapterFor } from "@tests/support/adapters/pi/piAdapter";
@@ -135,6 +140,7 @@ test("each source says what its agent can report in its adapter's own words", ()
   expect(tour.OH_MY_PI_CAPABILITIES).toEqual(OH_MY_PI_CAPABILITIES);
   expect(tour.MUSE_CODE_CAPABILITIES).toEqual(MUSE_CODE_CAPABILITIES);
   expect(tour.COPILOT_CLI_CAPABILITIES).toEqual(COPILOT_CLI_CAPABILITIES);
+  expect(tour.KIRO_CLI_CAPABILITIES).toEqual(KIRO_CLI_CAPABILITIES);
   expect(tour.STATUS_FILE_CAPABILITIES).toEqual(STATUS_FILE_CAPABILITIES);
 });
 
@@ -169,6 +175,7 @@ test("this computer's sources come in the collector's order", () => {
     "oh-my-pi",
     "muse-code",
     "copilot-cli",
+    "kiro-cli",
     "status-files",
   ]);
 });
@@ -524,6 +531,18 @@ test("Copilot CLI's card is the one its adapter shows on a Mac without it", asyn
   expect(sessions).toEqual([]);
 });
 
+test("Kiro CLI's card is the one its adapter shows on a Mac without it", async () => {
+  const adapter = kiroCliAdapterFor(kiroCliFiles());
+  const { health, sessions } = await adapter.poll();
+  const { capabilities, ...card } = tour
+    .sourcesAt(0, 1, "0.2.6")
+    .find((source) => source.id === "kiro-cli")!;
+  // The poller adds what the adapter can report to each health it gives.
+  expect(card).toEqual({ ...health, checkedAt: card.checkedAt });
+  expect(capabilities).toEqual(adapter.capabilities);
+  expect(sessions).toEqual([]);
+});
+
 test("Kimi Code's card is the one its adapter shows on a computer without it", async () => {
   const adapter = kimiCodeAdapterFor(memoryFiles());
   const { health, sessions } = await adapter.poll();
@@ -716,6 +735,12 @@ test("the other machine's agents and its row for each source are what this compu
           capabilities: COPILOT_CLI_CAPABILITIES,
         },
         {
+          id: "kiro-cli",
+          label: "Kiro CLI",
+          state: "unavailable",
+          capabilities: KIRO_CLI_CAPABILITIES,
+        },
+        {
           id: "status-files",
           label: "Status files",
           state: "not-set-up",
@@ -754,7 +779,7 @@ test("the other machine's card names the ssh command the tunnel runs, as it runs
  * soon as it changes, so it names an agent at the release that ships it, and
  * the agent leaves this list then.
  */
-const NOT_ON_THE_PAGE_YET = new Set<string>(["Copilot CLI"]);
+const NOT_ON_THE_PAGE_YET = new Set<string>(["Copilot CLI", "Kiro CLI"]);
 
 test("the page's Works with names every agent the tour's Sources reads", () => {
   const works = /<div class="works">([\s\S]*?)<\/div\s*>/.exec(page)?.[1] ?? "";

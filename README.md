@@ -4,7 +4,7 @@ See every AI coding agent running on your computer on one page, and which one is
 
 [![npm](https://img.shields.io/npm/v/agent-lookout)](https://www.npmjs.com/package/agent-lookout) [![CI](https://img.shields.io/github/actions/workflow/status/Olanetsoft/agent-lookout/ci.yml?branch=main&label=CI)](https://github.com/Olanetsoft/agent-lookout/actions/workflows/ci.yml) [![License](https://img.shields.io/npm/l/agent-lookout)](LICENSE) ![Node.js](https://img.shields.io/node/v/agent-lookout)
 
-It finds your Claude Code, Codex, Antigravity, Antigravity CLI, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx, Unreal Agent, Autohand Code, DeepSeek Harness, Droid, Grok Build, Oh My Pi, Muse Code and Copilot CLI sessions on its own, with no setup. It never starts a session, and it stops one or answers a prompt only when you press the button, or by a rule you set.
+It finds your Claude Code, Codex, Antigravity, Antigravity CLI, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx, Unreal Agent, Autohand Code, DeepSeek Harness, Droid, Grok Build, Oh My Pi, Muse Code, Copilot CLI and Kiro CLI sessions on its own, with no setup. It never starts a session, and it stops one or answers a prompt only when you press the button, or by a rule you set.
 
 [Install](#install) · [Download for Mac](https://github.com/Olanetsoft/agent-lookout/releases/latest) · [Guide](docs/GUIDE.md) · [Privacy](#privacy) · [Changelog](CHANGELOG.md) · [Website](https://www.agentlookout.app)
 
@@ -41,7 +41,7 @@ Then open http://127.0.0.1:4777. Your sessions appear within a few seconds.
 - **Needs you:** the sessions waiting for your permission or an answer, longest first, with what a Claude Code session is asking.
 - **Sessions:** everything else, by status, by repository or on a board, with folder and branch.
 - **Answer and act:** Allow or Deny a Claude Code prompt, jump to its terminal or editor, or stop it after you confirm.
-- **Details:** Claude Code, Codex, Antigravity, Gemini CLI, OpenCode 1.x, Qwen Code, Kilo Code and MiMo Code sessions show what they last said, and how many tokens the newest reply took. Mistral Vibe sessions show the tokens.
+- **Details:** Claude Code, Codex, Antigravity, Mistral Vibe, Gemini CLI, OpenCode 1.x, Qwen Code, Kilo Code and MiMo Code sessions show what they last said, and how many tokens the newest reply took.
 - **Notifications:** on your desktop, by email, by webhook or on your phone, when a session waits or finishes. All off until you turn them on.
 - **Your own agents:** any agent that writes one small JSON file per session shows up too.
 
@@ -83,11 +83,12 @@ Any other agent can show up by writing one small file per session, and Amp throu
 | Oh My Pi         | Partly    | No     | Partly    | No     | No     | No     |
 | Muse Code        | Partly    | No     | Partly    | No     | No     | No     |
 | Copilot CLI      | Partly    | No     | Partly    | No     | No     | No     |
+| Kiro CLI         | Partly    | No     | Partly    | No     | No     | No     |
 | Status files     | Partly    | No     | Partly    | No     | No     | No     |
 
 Codex doesn't record when it waits for your approval, so a waiting session shows as working, and after 5 minutes its row says how long it has been quiet. The Antigravity CLI and the Antigravity app show as needing you while they ask you to approve a step, but not what they ask. [What each agent can report](docs/GUIDE.md#what-each-agent-can-report) explains every Partly and No.
 
-Mistral Vibe support was built from the source of Vibe 2.26.1 and 3.0.4 and has not yet been checked on a computer running Vibe.
+Mistral Vibe support was built from the source of Vibe 2.26.1, 3.0.4 and 3.1.4 and has not yet been checked on a computer running Vibe.
 
 Gemini CLI support was built from its source at v0.64.0, with its tool calls checked again at v0.70.0, and has not yet been checked on a machine running it.
 
@@ -134,6 +135,8 @@ Oh My Pi support reads the title slot, the header and the newest lines of each s
 Muse Code support reads each session's log in `~/.local/share/muse/sessions` as bytes. A session shows as failed or finished once Muse Code writes so, and on macOS and Linux as working, idle or needing you while a Muse Code that started no later than a minute after its newest status record runs, whichever session that one holds, so a session whose own Muse Code was killed can show as working or idle while another runs. It is named after its workspace folder. It was built from Meta's documentation, its MIT-licensed SDK and protocol schema at 1.4.24 and its cookbook, and from open-source readers of Muse Code's files, and has not yet been checked on a computer running it.
 
 Copilot CLI support reads each session's event log in `~/.copilot/session-state` as bytes, and the names of the `inuse.<pid>.lock` files beside it. A session shows as working, idle, needing you for a permission prompt or an `ask_user` question, finished once Copilot writes that it shut down or no process holds its lock, and failed when it shut down on an error. It is named after its working folder. It was built from GitHub's docs, the MIT Copilot SDK v2.0.1 and open-source readers, never checked on a computer running Copilot CLI.
+
+Kiro CLI support reads the header, the lock and the newest lines of each session's log in `~/.kiro/sessions`, in Kiro's V3 store and its V2 store side by side. A session shows as finished once its lock is gone or names a process that has ended, and while it is open as working, idle or, in V3, needing you while Kiro waits for your approval. A V2 session waiting for your approval shows as working, and one in a turn with no tool as idle. A V3 session is named by Kiro's title, else its folder, and a V2 session by its folder, since V2's title is your first prompt. It was built from Kiro's documentation and open-source readers of its files, not from Kiro CLI's own program, and has not yet been checked on a computer running it.
 
 |                                                    | macOS | Linux | Windows |
 | -------------------------------------------------- | ----- | ----- | ------- |

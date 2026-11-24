@@ -419,15 +419,15 @@ export function readSource(value: unknown, generatedAt: number): SourceHealth | 
  * sources, and as many sources are taken (`MAX_REMOTE_SOURCES` in
  * `src/collector/remotes/remoteSessions.ts`).
  */
-const MAX_AGENTS = 30;
+const MAX_AGENTS = 40;
 
 /**
  * The most parts read for one source: as many as the collector takes from one
  * machine (`MAX_REMOTE_PARTS` in `src/collector/remotes/remoteSessions.ts`), so
- * both compare that machine's sessions alike. Raised with it from 63 to 64
- * for Copilot CLI.
+ * both compare that machine's sessions alike. Raised with it from 64 to 65
+ * for Kiro CLI.
  */
-const MAX_PARTS = 64;
+const MAX_PARTS = 65;
 
 /** The way another machine read each of its sources, by the start of their sessions' ids, or null. */
 function readParts(value: unknown): Record<string, string> | null {

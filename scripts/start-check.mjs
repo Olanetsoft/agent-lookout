@@ -17,7 +17,7 @@
 // tests/fixtures/codex-home, an empty folder for the Antigravity CLI, one for
 // Antigravity and one for Mistral Vibe, an empty Gemini CLI folder with its
 // tmp/, an empty folder for OpenCode, one for Qwen Code, one for Hermes Agent,
-// one for Cline, one for Goose, one for Pi, one for Kimi Code, one for Continue, one for Crush, one for Kilo Code, one for MiMo Code, one for Kimchi, one for Prime Agent, one for fx, one for Unreal Agent, one for Autohand Code, one for DeepSeek Harness, one for Droid, one for Grok Build, one for Oh My Pi, one for Muse Code and one for Copilot CLI, a folder with one status file, and a folder for the history the app keeps, so nothing is
+// one for Cline, one for Goose, one for Pi, one for Kimi Code, one for Continue, one for Crush, one for Kilo Code, one for MiMo Code, one for Kimchi, one for Prime Agent, one for fx, one for Unreal Agent, one for Autohand Code, one for DeepSeek Harness, one for Droid, one for Grok Build, one for Oh My Pi, one for Muse Code, one for Copilot CLI and one for Kiro CLI, a folder with one status file, and a folder for the history the app keeps, so nothing is
 // written to this machine's. It starts the app on a port the system picks, with
 // the claude command, tmux and Terminal left alone, and asks only
 // `/api/health`, `/api/sessions`, the dashboard's page and its script. Then it
@@ -121,6 +121,7 @@ const SOURCES = [
   ["oh-my-pi", "Oh My Pi"],
   ["muse-code", "Muse Code"],
   ["copilot-cli", "Copilot CLI"],
+  ["kiro-cli", "Kiro CLI"],
   ["status-files", "Status files"],
 ];
 
@@ -361,6 +362,7 @@ async function makeFolders(dir, waitingPid, leftoverPid) {
   const ompHome = path.join(dir, "omp");
   const museHome = path.join(dir, "muse-code");
   const copilotHome = path.join(dir, "copilot-cli");
+  const kiroHome = path.join(dir, "kiro");
   const statusDir = path.join(dir, "status");
   const historyDir = path.join(dir, "history");
   // Named and never made, so the app reads no settings and starts with every rule off.
@@ -393,6 +395,7 @@ async function makeFolders(dir, waitingPid, leftoverPid) {
   await mkdir(path.join(ompHome, "sessions"), { recursive: true });
   await mkdir(path.join(museHome, "sessions"), { recursive: true });
   await mkdir(path.join(copilotHome, "session-state"), { recursive: true });
+  await mkdir(path.join(kiroHome, "sessions"), { recursive: true });
   await mkdir(statusDir, { recursive: true });
   await mkdir(path.join(work, "checkout-flow"), { recursive: true });
   await mkdir(path.join(work, "docs-refresh"), { recursive: true });
@@ -476,6 +479,7 @@ async function makeFolders(dir, waitingPid, leftoverPid) {
     ompHome,
     museHome,
     copilotHome,
+    kiroHome,
     statusDir,
     historyDir,
     settingsFile,
@@ -547,6 +551,7 @@ function appEnv(folders) {
     AGENT_LOOKOUT_OMP_HOME: folders.ompHome,
     AGENT_LOOKOUT_MUSE_CODE_HOME: folders.museHome,
     AGENT_LOOKOUT_COPILOT_HOME: folders.copilotHome,
+    AGENT_LOOKOUT_KIRO_HOME: folders.kiroHome,
     AGENT_LOOKOUT_STATUS_DIR: folders.statusDir,
     AGENT_LOOKOUT_HISTORY_DIR: folders.historyDir,
     AGENT_LOOKOUT_SETTINGS_FILE: folders.settingsFile,

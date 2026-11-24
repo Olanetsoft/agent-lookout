@@ -65,6 +65,10 @@ import {
   UNCHECKED_RUN_NOTE as COPILOT_CLI_UNCHECKED_RUN_NOTE,
 } from "@collector/adapters/copilot-cli/index";
 import {
+  KIRO_CLI_CAPABILITIES,
+  UNCHECKED_NOTE as KIRO_CLI_UNCHECKED_NOTE,
+} from "@collector/adapters/kiro-cli/index";
+import {
   KIMCHI_CAPABILITIES,
   UNCHECKED_NOTE as KIMCHI_UNCHECKED_NOTE,
 } from "@collector/adapters/kimchi/index";
@@ -142,6 +146,9 @@ const MUSE_CODE_NOTES = fileURLToPath(
 const COPILOT_CLI_NOTES = fileURLToPath(
   new URL("../../../../docs/adapters/copilot-cli.md", import.meta.url),
 );
+const KIRO_CLI_NOTES = fileURLToPath(
+  new URL("../../../../docs/adapters/kiro-cli.md", import.meta.url),
+);
 
 const GUIDE_HEADING = "#### What each agent can report";
 const README_HEADING = "## Supported agents and systems";
@@ -176,6 +183,7 @@ const DECLARED: [string, SourceCapabilities][] = [
   ["Oh My Pi", OH_MY_PI_CAPABILITIES],
   ["Muse Code", MUSE_CODE_CAPABILITIES],
   ["Copilot CLI", COPILOT_CLI_CAPABILITIES],
+  ["Kiro CLI", KIRO_CLI_CAPABILITIES],
   ["Status files", STATUS_FILE_CAPABILITIES],
 ];
 
@@ -1047,4 +1055,58 @@ test("PRIVACY.md and the Copilot CLI notes name what is read and from which sour
   }
   // The notes say which reader was left out, and why.
   expect(notes).toContain("kenn-io/agentsview");
+});
+
+test("PRIVACY.md and the Kiro CLI notes name what is read and where it came from", async () => {
+  const privacy = await readFile(PRIVACY, "utf8");
+  const notes = await readFile(KIRO_CLI_NOTES, "utf8");
+  const line = (start: string) => privacy.split("\n").find((one) => one.startsWith(start)) ?? "";
+
+  const kiro = line("For Kiro CLI, Agent Lookout reads");
+  for (const words of [
+    "built from Kiro's documentation",
+    "open-source readers",
+    "not yet been checked on a computer running Kiro CLI",
+    "`ps`",
+  ]) {
+    expect(kiro, words).toContain(words);
+  }
+  expect(kiro).not.toContain("Muse Code");
+  expect(KIRO_CLI_UNCHECKED_NOTE).toContain("Kiro's documentation and open-source readers");
+  for (const licence of ["MIT", "Apache-2.0", "MPL-2.0"]) expect(notes, licence).toContain(licence);
+
+  const start = privacy.indexOf("### Kiro CLI's files");
+  expect(start).toBeGreaterThan(-1);
+  const section = privacy.slice(start, privacy.indexOf("\n### ", start));
+  for (const text of [section, notes]) {
+    for (const field of [
+      "~/.kiro/sessions",
+      "KIRO_HOME",
+      "AGENT_LOOKOUT_KIRO_HOME",
+      "session.json",
+      "messages.jsonl",
+      ".lock",
+      "sessions/cli",
+      "<uuid>.json",
+      "<uuid>.jsonl",
+      "<uuid>.lock",
+      "sub-executions",
+      "turn_start",
+      "turn_end",
+      "pending_interaction",
+      "interaction_resolved",
+      "started_at",
+      "parent_session_id",
+      "workspacePaths",
+      "4 KiB",
+      "4 MiB",
+      "8 MiB",
+      "ps -o pid=,lstart= -p <pids>",
+    ]) {
+      expect(text, field).toContain(field);
+    }
+  }
+  for (const field of ["kiro.dev/docs", "--resume-id", "Not yet checked"]) {
+    expect(notes, field).toContain(field);
+  }
 });

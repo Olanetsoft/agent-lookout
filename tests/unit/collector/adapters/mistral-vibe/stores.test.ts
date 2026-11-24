@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   createStoreReader,
+  HISTORY_CHUNKS_KEPT,
   isStoreName,
   legacyWrittenSince,
   readPointer,
@@ -18,9 +19,11 @@ import {
   SESSION_DIR,
   SUBAGENT_ID,
   current,
+  digest,
   document,
   generationName,
   journalPath,
+  manifest,
   runtimeState,
   savedCallback,
   sessionId,
@@ -83,6 +86,7 @@ describe("a session's store", () => {
       tooNew: false,
       journal: "journal/0000000000000005.jsonl",
       snapshot: expect.objectContaining({ statusType: "running", title: "demo-project refactor" }),
+      history: { newest: [digest(7)], older: false },
       cwd: CWD,
       kind: "root",
       deleting: false,
@@ -145,10 +149,54 @@ describe("a session's store", () => {
       tooNew: true,
       journal: null,
       snapshot: null,
+      history: null,
       cwd: null,
       kind: null,
       deleting: false,
       pending: [],
+    });
+  });
+
+  test("names the newest five pieces of the history, oldest first, and says when there are older ones, and opens none", async () => {
+    const names = Array.from({ length: HISTORY_CHUNKS_KEPT + 2 }, (_, n) => digest(200 + n));
+    const historyOf = async (chunks: unknown) => {
+      const files = memoryFiles();
+      writeStore(files, { id: A });
+      files.rewrite(`${generationOf(A)}/manifest.json`, manifest(A, 4, chunks));
+      const read = await createStoreReader(STORES, files.io).read(A);
+      expect(files.opened().some((file) => file.includes("/chunks/"))).toBe(false);
+      return read.state === "ok" ? read.store.history : "not read";
+    };
+    expect(await historyOf(names)).toEqual({ newest: names.slice(-5), older: true });
+    expect(await historyOf(names.slice(0, 5))).toEqual({ newest: names.slice(0, 5), older: false });
+    expect(await historyOf([])).toEqual({ newest: [], older: false });
+
+    // A history kept whole in the projection, or a list that holds a name Vibe never gives a piece.
+    expect(await historyOf(null)).toBeNull();
+    expect(await historyOf("not a list")).toBeNull();
+    expect(await historyOf([digest(1), `../${digest(2)}`])).toBeNull();
+    expect(await historyOf([digest(1), "A".repeat(64)])).toBeNull();
+    expect(await historyOf(["a".repeat(64)])).toEqual({ newest: ["a".repeat(64)], older: false });
+    expect(await historyOf([digest(1).slice(1)])).toBeNull();
+    expect(await historyOf([digest(1), 7])).toBeNull();
+  });
+
+  test("names no piece of the history for a projection the manifest names under another file, or a newer Vibe's store", async () => {
+    const files = memoryFiles();
+    writeStore(files, { id: A });
+    files.rewrite(
+      `${generationOf(A)}/manifest.json`,
+      manifest(A).replace('"path":"projection-state.json"', '"path":"checkpoint.json"'),
+    );
+    const read = await createStoreReader(STORES, files.io).read(A);
+    expect(read.state === "ok" && read.store.history).toBeNull();
+
+    const newer = memoryFiles();
+    writeStore(newer, { id: A, minor: 11 });
+    const readNewer = await createStoreReader(STORES, newer.io).read(A);
+    expect(readNewer.state === "ok" && readNewer.store).toMatchObject({
+      tooNew: true,
+      history: null,
     });
   });
 

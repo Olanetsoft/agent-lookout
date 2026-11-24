@@ -82,6 +82,14 @@ import {
   registryRecord as qwenRecord,
 } from "@tests/fixtures/qwen-code/qwenCode";
 import {
+  historyChunk as vibeHistoryChunk,
+  leaseFile as vibeLeaseFile,
+  replyEntry as vibeReplyEntry,
+  sessionId as vibeSessionId,
+  storeFiles as vibeStoreFiles,
+  userEntry as vibeUserEntry,
+} from "@tests/fixtures/mistralVibe";
+import {
   agentMessageLine,
   fixtureSessions,
   messageLine,
@@ -117,8 +125,9 @@ import { isRunning, makeStandInSsh, startStandInLookout } from "@tests/support/r
 /**
  * Every reader of last messages made, by any adapter, so a test can count the
  * sessions they keep between them: those made with `createTailReader`, and
- * OpenCode's, made with `createEndReader`. Each is the real one,
- * untouched.
+ * those made with `createEndReader`, the one each of OpenCode, Kilo Code and
+ * MiMo Code makes from the code they share and Mistral Vibe's. Each is the
+ * real one, untouched.
  */
 const readersMade = vi.hoisted(() => [] as { readonly size: number }[]);
 vi.mock("@collector/messages/tailReader", async (importOriginal) => {
@@ -179,6 +188,7 @@ async function serve(settings: Record<string, string>) {
       AGENT_LOOKOUT_OMP_HOME: await tempDir(),
       AGENT_LOOKOUT_MUSE_CODE_HOME: await tempDir(),
       AGENT_LOOKOUT_COPILOT_HOME: await tempDir(),
+      AGENT_LOOKOUT_KIRO_HOME: await tempDir(),
       AGENT_LOOKOUT_STATUS_DIR: path.join(await tempDir(), "no-status-files-here"),
       AGENT_LOOKOUT_TMUX: "off",
       ...settings,
@@ -215,7 +225,7 @@ const FX_STATE = process.platform === "win32" ? "unavailable" : "ok";
 const UNREAL_AGENT_STATE = process.platform === "win32" ? "unavailable" : "ok";
 
 describe("createCollector", () => {
-  test("watches Claude Code, Codex, the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx, Unreal Agent, Autohand Code, DeepSeek Harness, Droid, Grok Build, Oh My Pi, Muse Code and Copilot CLI, and lists Codex sessions beside Claude Code's", async () => {
+  test("watches Claude Code, Codex, the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Hermes Agent, Cline, Goose, Pi, Kimi Code, Continue, Crush, Kilo Code, MiMo Code, Kimchi, Prime Agent, fx, Unreal Agent, Autohand Code, DeepSeek Harness, Droid, Grok Build, Oh My Pi, Muse Code, Copilot CLI and Kiro CLI, and lists Codex sessions beside Claude Code's", async () => {
     const snapshot = await serve({ AGENT_LOOKOUT_CODEX_HOME: CODEX_FIXTURE_HOME });
 
     expect(snapshot.sources.map((source) => [source.id, source.label, source.state])).toEqual([
@@ -247,6 +257,7 @@ describe("createCollector", () => {
       ["oh-my-pi", "Oh My Pi", "ok"],
       ["muse-code", "Muse Code", "ok"],
       ["copilot-cli", "Copilot CLI", "ok"],
+      ["kiro-cli", "Kiro CLI", "ok"],
       ["status-files", "Status files", "not-set-up"],
     ]);
     // The folder is written from ~ when the repository sits in the home folder.
@@ -302,6 +313,7 @@ describe("createCollector", () => {
       { id: "oh-my-pi", state: "ok" },
       { id: "muse-code", state: "ok" },
       { id: "copilot-cli", state: "ok" },
+      { id: "kiro-cli", state: "ok" },
       { id: "status-files", state: "not-set-up" },
     ]);
     expect(snapshot.sources[1]).not.toHaveProperty("advice");
@@ -448,6 +460,7 @@ describe("createCollector", () => {
           AGENT_LOOKOUT_OMP_HOME: await tempDir(),
           AGENT_LOOKOUT_MUSE_CODE_HOME: await tempDir(),
           AGENT_LOOKOUT_COPILOT_HOME: await tempDir(),
+          AGENT_LOOKOUT_KIRO_HOME: await tempDir(),
           AGENT_LOOKOUT_STATUS_DIR: path.join(await tempDir(), "no-status-files-here"),
           AGENT_LOOKOUT_TMUX: "off",
           AGENT_LOOKOUT_STOP: "off",
@@ -503,6 +516,7 @@ describe("createCollector", () => {
         AGENT_LOOKOUT_OMP_HOME: await tempDir(),
         AGENT_LOOKOUT_MUSE_CODE_HOME: await tempDir(),
         AGENT_LOOKOUT_COPILOT_HOME: await tempDir(),
+        AGENT_LOOKOUT_KIRO_HOME: await tempDir(),
         AGENT_LOOKOUT_STATUS_DIR: folder,
         AGENT_LOOKOUT_TMUX: "off",
       },
@@ -595,6 +609,7 @@ describe("createCollector", () => {
         AGENT_LOOKOUT_OMP_HOME: await tempDir(),
         AGENT_LOOKOUT_MUSE_CODE_HOME: await tempDir(),
         AGENT_LOOKOUT_COPILOT_HOME: await tempDir(),
+        AGENT_LOOKOUT_KIRO_HOME: await tempDir(),
         AGENT_LOOKOUT_STATUS_DIR: statusDir,
         AGENT_LOOKOUT_TMUX: "off",
       },
@@ -2480,6 +2495,22 @@ describe("the last messages of every agent, under one set of limits", () => {
     );
   }
 
+  /**
+   * A Mistral Vibe session this process holds, whose turn has ended, with its
+   * newest reply, saying this, in the piece of its history Vibe saved.
+   */
+  async function putVibeSession(dir: string, id: string, reply: string) {
+    const piece = vibeHistoryChunk([vibeUserEntry("user-1"), vibeReplyEntry("assistant-1", reply)]);
+    const written = {
+      ...vibeStoreFiles({ id, state: { id, status: "idle" }, historyChunks: [piece] }),
+      [`active/${id}.lock`]: "",
+      [`active/${id}.lock.json`]: vibeLeaseFile(id, process.pid, NOW - 30 * MINUTE),
+    };
+    for (const [relative, content] of Object.entries(written)) {
+      await put(path.join(dir, ...relative.split("/")), content, NOW - MINUTE);
+    }
+  }
+
   /** A Codex session open in Codex whose newest reply says this. */
   async function putThread(home: string, thread: string, reply: string) {
     await mkdir(path.join(home, "thread-writer-locks"), { recursive: true });
@@ -2541,7 +2572,7 @@ describe("the last messages of every agent, under one set of limits", () => {
     execFileSync(sqlite, [path.join(home, file), [schema, ...rows].join("\n")]);
   }
 
-  test("Claude Code, Codex, the Antigravity CLI, Antigravity, Gemini CLI, OpenCode, Qwen Code, Kilo Code and MiMo Code read at most four transcripts a second between them, and keep at most eight sessions", async () => {
+  test("Claude Code, Codex, the Antigravity CLI, Antigravity, Mistral Vibe, Gemini CLI, OpenCode, Qwen Code, Kilo Code and MiMo Code read at most four transcripts a second between them, and keep at most eight sessions", async () => {
     // Two live Claude Code sessions, in this test's own process and the one that started it.
     const claude = ["00000000-0000-4000-8000-0000000000c1", "00000000-0000-4000-8000-0000000000c2"];
     const claudeHome = await makeClaudeHome({
@@ -2579,6 +2610,12 @@ describe("the last messages of every agent, under one set of limits", () => {
     const appHome = path.join(await tempDir(), "antigravity");
     for (const [index, id] of app.entries()) {
       await putConversation(appHome, id, `Antigravity reply ${index + 1}.`);
+    }
+    // Two Mistral Vibe sessions, held by this test's own process.
+    const vibe = [vibeSessionId("e1"), vibeSessionId("e2")];
+    const vibeDir = await tempDir();
+    for (const [index, id] of vibe.entries()) {
+      await putVibeSession(vibeDir, id, `Mistral Vibe reply ${index + 1}.`);
     }
     // Two Gemini CLI sessions in one project, each begun a minute after the other.
     const gemini = ["00000000-0000-4000-8000-0000000000b1", "00000000-0000-4000-8000-0000000000b2"];
@@ -2648,7 +2685,7 @@ describe("the last messages of every agent, under one set of limits", () => {
         AGENT_LOOKOUT_CODEX_HOME: codexHome,
         AGENT_LOOKOUT_ANTIGRAVITY_HOME: cliHome,
         AGENT_LOOKOUT_ANTIGRAVITY_APP_HOME: appHome,
-        AGENT_LOOKOUT_VIBE_SESSION_DIR: await tempDir(),
+        AGENT_LOOKOUT_VIBE_SESSION_DIR: vibeDir,
         AGENT_LOOKOUT_GEMINI_CLI_HOME: geminiHome,
         AGENT_LOOKOUT_OPENCODE_HOME: opencodeHome,
         AGENT_LOOKOUT_QWEN_HOME: qwenHome,
@@ -2672,6 +2709,7 @@ describe("the last messages of every agent, under one set of limits", () => {
         AGENT_LOOKOUT_OMP_HOME: await tempDir(),
         AGENT_LOOKOUT_MUSE_CODE_HOME: await tempDir(),
         AGENT_LOOKOUT_COPILOT_HOME: await tempDir(),
+        AGENT_LOOKOUT_KIRO_HOME: await tempDir(),
         AGENT_LOOKOUT_STATUS_DIR: path.join(await tempDir(), "no-status-files-here"),
         AGENT_LOOKOUT_TMUX: "off",
         AGENT_LOOKOUT_TERMINAL_JUMP: "off",
@@ -2695,6 +2733,7 @@ describe("the last messages of every agent, under one set of limits", () => {
       codex: codex.map((id) => `codex:${id}`),
       cli: cli.map((id) => `antigravity-cli:${id}`),
       app: app.map((id) => `antigravity-app:${id}`),
+      vibe: vibe.map((id) => `mistral-vibe:${id}`),
       gemini: gemini.map((id) => geminiCliSessionId("demo-project", id)),
       qwen: qwen.map((id) => `qwen-code:${id}`),
       opencode: opencode.map((id) => `opencode:${id}`),
@@ -2734,6 +2773,7 @@ describe("the last messages of every agent, under one set of limits", () => {
     const busy = [
       sessions.qwen[0],
       sessions.gemini[0],
+      sessions.vibe[0],
       ...withOpencode(sessions.opencode[0], sessions.kilo[0], sessions.mimo[0]),
       sessions.claude[1],
       sessions.codex[1],
@@ -2762,7 +2802,9 @@ describe("the last messages of every agent, under one set of limits", () => {
       [sessions.cli[1], "Antigravity CLI reply 2."],
       [sessions.app[1], "Antigravity reply 2."],
       [sessions.qwen[1], "Qwen Code reply 2."],
+      [sessions.vibe[0], "Mistral Vibe reply 1."],
       [sessions.gemini[1], "Gemini CLI reply 2."],
+      [sessions.vibe[1], "Mistral Vibe reply 2."],
       [sessions.codex[2], "Codex reply 3."],
       ...withOpencode([sessions.opencode[1], "OpenCode reply 2."] as const),
       ...withOpencode([sessions.kilo[0], "Kilo Code reply 1."] as const),
@@ -2966,6 +3008,7 @@ describe.skipIf(process.platform === "win32")("another machine over SSH", () => 
         AGENT_LOOKOUT_OMP_HOME: await tempDir(),
         AGENT_LOOKOUT_MUSE_CODE_HOME: await tempDir(),
         AGENT_LOOKOUT_COPILOT_HOME: await tempDir(),
+        AGENT_LOOKOUT_KIRO_HOME: await tempDir(),
         AGENT_LOOKOUT_STATUS_DIR: path.join(await tempDir(), "no-status-files-here"),
         AGENT_LOOKOUT_TMUX: "off",
         AGENT_LOOKOUT_NOTIFICATIONS: "on",
@@ -3216,6 +3259,7 @@ describe.skipIf(process.platform === "win32")("another machine over SSH", () => 
       "oh-my-pi",
       "muse-code",
       "copilot-cli",
+      "kiro-cli",
       "status-files",
       "remote:",
     ]);

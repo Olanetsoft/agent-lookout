@@ -21,6 +21,7 @@ import { hermesRootFor } from "../adapters/hermes-agent/home.ts";
 import { kiloDatabaseFor } from "../adapters/kilo-code/index.ts";
 import { kimchiSessionsDirFor } from "../adapters/kimchi/index.ts";
 import { kimiCodeHomeFor } from "../adapters/kimi-code/index.ts";
+import { kiroSessionsDirFor } from "../adapters/kiro-cli/index.ts";
 import { mimoCodeDatabaseFor } from "../adapters/mimo-code/index.ts";
 import { vibeSessionDirFor } from "../adapters/mistral-vibe/index.ts";
 import { museCodeSessionsDirFor } from "../adapters/muse-code/index.ts";
@@ -75,7 +76,7 @@ export function readHistorySetup(
 }
 
 /**
- * The folders the twenty-five other sources read, and OpenCode's, Goose's, Kilo
+ * The folders the twenty-six other sources read, and OpenCode's, Goose's, Kilo
  * Code's and MiMo Code's databases,
  * as the adapters work them out on this system, made into a short fingerprint that
  * names none of them. Two copies of Agent Lookout with the same one see the
@@ -125,6 +126,7 @@ export function sourcesFingerprint(
     ...ompSessionsDirsFor(env, homeDir, platform),
     museCodeSessionsDirFor(env, homeDir),
     copilotCliSessionsDirFor(env, homeDir, platform),
+    kiroSessionsDirFor(env, homeDir, platform),
   ];
   return createHash("sha256").update(JSON.stringify(folders)).digest("hex").slice(0, 32);
 }

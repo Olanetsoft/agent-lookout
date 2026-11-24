@@ -20,6 +20,8 @@ import type {
 import { plausibleTime, WRITE_TIME_STEP_MS } from "../../../core/time.ts";
 import { tildify } from "../../files/paths.ts";
 import { isMissing, nodeIo, type FileInfo, type ReadOnlyIo } from "../../files/readOnlyIo.ts";
+import { lastMessageStoppedBy } from "../../messages/lastMessageSettings.ts";
+import type { TailLimits } from "../../messages/tailReader.ts";
 import { POLL_INTERVAL_MS } from "../../poller.ts";
 import { isProcessAlive } from "../../processes/pids.ts";
 import {
@@ -32,9 +34,11 @@ import { createRecordProcessCheck, type RecordProcess } from "../qwen-code/proce
 import { every } from "../words.ts";
 import { openCallbacks } from "./callbacks.ts";
 import type { Envelope } from "./envelope.ts";
+import { createMistralVibeLastMessages, type VibeReplyTarget } from "./history/lastMessages.ts";
 import { createJournalReader, type Newest } from "./journal.ts";
 import { createLeaseReader, LEASE_DIR } from "./leases.ts";
 import {
+  CHUNKS_DIR,
   createStoreReader,
   legacyWrittenSince,
   scanStores,
@@ -237,6 +241,21 @@ export interface MistralVibeAdapterOptions {
   scanMinMs?: number;
   /** The most time between two looks through every store. Defaults to 5 minutes. */
   scanMaxMs?: number;
+  /**
+   * The limits its reader of last messages shares with the other agents'
+   * readers. The collector passes one for them all. Left out, it has its own.
+   */
+  lastMessageLimits?: TailLimits;
+}
+
+/** The Mistral Vibe adapter, which reads what its sessions last said when asked. */
+export interface MistralVibeAdapter extends Adapter {
+  lastMessage: NonNullable<Adapter["lastMessage"]>;
+  /**
+   * How many sessions it keeps a last message for, in memory. For the tests
+   * that check none is kept once its session has left the list.
+   */
+  readonly lastMessagesKept: number;
 }
 
 /** Where the session folder was named. */
@@ -360,6 +379,17 @@ function processCheckFacts(asksPs: boolean, pollIntervalMs: number): SourceFact[
  * changed and cannot be read, forgets that. A lease whose pid another program
  * has by then, or went to one unseen, stands until that program ends.
  *
+ * What a session last said is read from the end of the journal segment its
+ * generation names and, when that holds no reply, from the newest pieces of
+ * the history the generation's manifest names in its store's `chunks/`, at
+ * most 256 KB of them together, but only when `lastMessage` is asked for it,
+ * which the route does while a page has the session's details open, and only
+ * for a session the last poll listed (`history/lastMessages.ts`). No poll
+ * reads it, and it is never put on a session. A session whose store a newer
+ * Vibe wrote is answered `not-read`, with nothing opened.
+ * `AGENT_LOOKOUT_LAST_MESSAGE=off` stops it, and so does
+ * `AGENT_LOOKOUT_WAITING_TEXT=off`, which says no transcript is read.
+ *
  * Vibe not being installed costs nothing: when the session folder is
  * missing, the adapter says so and looks again only once a minute, with a
  * single `stat`.
@@ -370,7 +400,9 @@ function processCheckFacts(asksPs: boolean, pollIntervalMs: number): SourceFact[
  * means that folder: if it holds no sessions, that is an answer, not a
  * missing Vibe.
  */
-export function createMistralVibeAdapter(options: MistralVibeAdapterOptions = {}): Adapter {
+export function createMistralVibeAdapter(
+  options: MistralVibeAdapterOptions = {},
+): MistralVibeAdapter {
   const env = options.env ?? process.env;
   const homeDir = options.homeDir ?? os.homedir();
   const now = options.now ?? Date.now;
@@ -399,6 +431,28 @@ export function createMistralVibeAdapter(options: MistralVibeAdapterOptions = {}
   const leases = createLeaseReader(leaseDir, io, now);
   const stores = createStoreReader(storesDir, io);
   const journals = createJournalReader(io);
+  // What a session last said, read only when it is asked for. With either
+  // setting off, no file is opened for it.
+  const lastMessagesOff = lastMessageStoppedBy(env);
+  const lastMessages =
+    lastMessagesOff === null
+      ? createMistralVibeLastMessages({ io, now, limits: options.lastMessageLimits })
+      : null;
+  /** What Sources says of the last-message read: when it reads a session's journal and history, or Off. */
+  const lastMessageRead =
+    lastMessagesOff === null
+      ? "end of a session's journal and history, while its details are open"
+      : "Off";
+  /**
+   * Where this poll found each session's history, by the session's id in the
+   * model, or null for one whose journal could not be named or whose store a
+   * newer Vibe wrote: the only place its last message is read from.
+   */
+  let replyTargets = new Map<string, VibeReplyTarget | null>();
+  /** The sessions this poll found in a store a newer Vibe wrote, by their id in the model. */
+  let newerStores = new Set<string>();
+  /** Of those, the ones the last poll listed, whose last message is answered `not-read`. */
+  let listedNewer = new Set<string>();
 
   /** When the session folder was last found missing. Null while it is there, or before the first look. */
   let absentAt: number | null = null;
@@ -444,6 +498,7 @@ export function createMistralVibeAdapter(options: MistralVibeAdapterOptions = {}
       { label: "Read", value: read },
       { label: "Open-sessions folder", value: leasesName },
       ...processCheckFacts(asksPs, pollIntervalMs),
+      { label: "Last message read", value: lastMessageRead },
     ];
   }
 
@@ -736,6 +791,20 @@ export function createMistralVibeAdapter(options: MistralVibeAdapterOptions = {}
       // when a lease is looked at here, never what the answer is.
       const quiet = checkedAt - lastWrite >= LEASE_QUIET_MS;
       const due = wait !== null || (quiet && known === undefined);
+      // Where its last message is, should it be asked for before the next poll.
+      const modelId = `${SOURCE_ID}:${id}`;
+      if (store.tooNew) newerStores.add(modelId);
+      replyTargets.set(
+        modelId,
+        store.tooNew || store.journal === null
+          ? null
+          : {
+              journal: path.join(storesDir, id, ...store.journal.split("/")),
+              generation: store.generation,
+              chunksDir: path.join(storesDir, id, CHUNKS_DIR),
+              history: store.history,
+            },
+      );
       listed.push({
         input: {
           sessionId: id,
@@ -800,11 +869,24 @@ export function createMistralVibeAdapter(options: MistralVibeAdapterOptions = {}
     capabilities: MISTRAL_VIBE_CAPABILITIES,
     lookingIn: `Looking for Mistral Vibe sessions in ${dirName}.`,
     async poll() {
+      replyTargets = new Map();
+      newerStores = new Set();
       try {
-        return await poll();
+        const answer = await poll();
+        // The sessions whose last message may be asked for until the next poll.
+        const targets = new Map<string, VibeReplyTarget | null>();
+        for (const session of answer.sessions) {
+          targets.set(session.id, replyTargets.get(session.id) ?? null);
+        }
+        lastMessages?.keep(targets);
+        listedNewer = new Set([...targets.keys()].filter((id) => newerStores.has(id)));
+        return answer;
       } catch {
         // Nothing above is expected to throw. If it does, the poller still gets an
-        // answer, and the person sees a sentence, not a stack trace.
+        // answer, and the person sees a sentence, not a stack trace. It lists no
+        // session, so no last message is kept either.
+        lastMessages?.forget();
+        listedNewer = new Set();
         return result(
           "error",
           "Something unexpected went wrong while reading Mistral Vibe sessions.",
@@ -812,6 +894,17 @@ export function createMistralVibeAdapter(options: MistralVibeAdapterOptions = {}
           now(),
         );
       }
+    },
+    async lastMessage(sessionId) {
+      if (lastMessagesOff !== null) {
+        return { message: null, reason: "off", setting: lastMessagesOff };
+      }
+      // A newer Vibe's store may not be laid out as this one is: nothing of it is opened.
+      if (listedNewer.has(sessionId)) return { message: null, reason: "not-read" };
+      return lastMessages?.read(sessionId) ?? null;
+    },
+    get lastMessagesKept() {
+      return lastMessages?.size ?? 0;
     },
   };
 }

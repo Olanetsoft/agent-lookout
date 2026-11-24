@@ -308,6 +308,7 @@ test.each([
       "Oh My Pi",
       "Muse Code",
       "Copilot CLI",
+      "Kiro CLI",
       "Status files",
       "Claude Code on devbox",
     ]);
@@ -335,6 +336,7 @@ test.each([
       "No",
       "Yes",
       "Yes",
+      "No",
       "No",
       "No",
       "No",

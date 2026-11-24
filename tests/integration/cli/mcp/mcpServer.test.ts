@@ -92,6 +92,7 @@ async function startLookout(files: Record<string, string>): Promise<string> {
       AGENT_LOOKOUT_OMP_HOME: await tempDir(),
       AGENT_LOOKOUT_MUSE_CODE_HOME: await tempDir(),
       AGENT_LOOKOUT_COPILOT_HOME: await tempDir(),
+      AGENT_LOOKOUT_KIRO_HOME: await tempDir(),
       AGENT_LOOKOUT_STATUS_DIR: statusDir,
       AGENT_LOOKOUT_TMUX: "off",
     },

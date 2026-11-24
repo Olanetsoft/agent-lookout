@@ -94,11 +94,17 @@ import { gunzipSync } from "node:zlib";
  * unpacked to 4.61 MB, past its limit. It added 22 KB of the documents the
  * package ships, and its code in the command. The tarball, at 1.22 MB, is
  * still under its 1.25 MB.
+ *
+ * Unpacked was raised from 4.70 MB to 4.80 MB, and installed from 6.50 MB to
+ * 6.60 MB, once Kiro CLI took unpacked to 4.71 MB and installed to 6.52 MB,
+ * from 4.65 MB and 6.47 MB with Mistral Vibe's last message. It added 57 KB,
+ * its code in the command and the documents the package ships. The tarball,
+ * at 1.24 MB, is still under its 1.25 MB.
  */
 const LIMITS = {
   tarball: 1_250_000,
-  unpacked: 4_700_000,
-  installed: 6_500_000,
+  unpacked: 4_800_000,
+  installed: 6_600_000,
 };
 
 /** Bytes as megabytes, as npm gives sizes. */

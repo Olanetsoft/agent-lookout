@@ -1,6 +1,8 @@
 /**
- * Finding the public state a Vibe `projection_delta` line sets, by walking the
- * line back from its end as bytes. Nothing but the state is turned into text.
+ * Finding the public state a Vibe `projection_delta` line sets, or where its
+ * steps are, by walking the line back from its end as bytes. A poll turns
+ * nothing but the state into text (`journal.ts`), and the reader of a
+ * session's last message nothing but the steps (`history/replies.ts`).
  *
  * A journal line is the record's JSON with its keys sorted and no spaces
  * (harness/.../vibe/_storage.py, `canonical_json` and `_journal_record_bytes`),
@@ -12,7 +14,7 @@
  *
  * `{"payload":{"delta":[<steps>],"session_api":{…},"watermark":N},"previous_record_sha256":…,"type":"projection_delta"}`
  *
- * `session_api` holds a tool's arguments as the model wrote them, JSON objects
+ * `session_api` can hold a tool's arguments as the model wrote them, objects
  * that can hold any keys (`SessionApiFactsV1.tool_calls`), and the steps before
  * the state hold what was said, run and read. So, from the line's end, the walk:
  *
@@ -20,11 +22,13 @@
  * - takes the payload's last key, `watermark`, then steps over `session_api`
  *   whole when it is there;
  * - steps over the array before them whole, to check that its key is `delta`.
- *   Any other key there, or after `delta`, is a payload it does not know;
+ *   Any other key there, or after `delta`, is a payload it does not know.
+ *   Where the steps are is this array (`deltaSpanOf`);
  * - goes into `delta` and through its steps from the last, each an object, to
  *   the newest `{"op":"set_envelope","state":{…}}`, which Vibe makes the last
  *   step (`compute_projection_delta`). The steps before it are stepped over
- *   for the key alone, and its state is the one value the walk gives.
+ *   for the key alone, and its state is the one value the walk gives
+ *   (`deltaStateOf`).
  *
  * To step over a value, it finds where the value starts: a string's opening
  * quote is the nearest `"` before its end with an even run of `\` before it,
@@ -47,16 +51,32 @@ export interface Span {
   end: number;
 }
 
-/** What a walk of a `projection_delta` line found. */
+/** The walk reached the start of the bytes given, which start inside the line. */
+interface WalkCut {
+  kind: "cut";
+}
+
+/** The line is not laid out as Vibe writes a `projection_delta` record. */
+interface WalkBad {
+  kind: "bad";
+}
+
+/** What a walk of a `projection_delta` line found of its state. */
 export type DeltaState =
   /** The newest `set_envelope` step's state. */
   | { kind: "state"; state: Span }
   /** The delta sets no state. */
   | { kind: "none" }
-  /** The walk reached the start of the bytes given, which start inside the line. */
-  | { kind: "cut" }
-  /** The line is not laid out as Vibe writes a `projection_delta` record. */
-  | { kind: "bad" };
+  | WalkCut
+  | WalkBad;
+
+/** What a walk of a `projection_delta` line found of its steps. */
+export type DeltaSpan =
+  /** The `delta` array, its brackets included, its key checked. */
+  | { kind: "delta"; delta: Span }
+  /** The array, or its key, starts before the bytes given. */
+  | WalkCut
+  | WalkBad;
 
 const QUOTE = 0x22;
 const BACKSLASH = 0x5c;
@@ -87,11 +107,12 @@ const isScalarByte = (byte: number) =>
   byte === 0x2e;
 
 /**
- * The newest state a `projection_delta` line sets. `whole` says whether `line`
- * is the whole line, without its newline, or only its end, so that reaching
- * its start is a line not laid out as Vibe writes one, or one cut there.
+ * The walk of one `projection_delta` line. `whole` says whether `line` is the
+ * whole line, without its newline, or only its end, so that reaching its start
+ * is a line not laid out as Vibe writes one, or one cut there. Each step of it
+ * throws `Cut` or `Bad` for such a line.
  */
-export function deltaStateOf(line: Buffer, whole: boolean): DeltaState {
+function walkOf(line: Buffer, whole: boolean) {
   /** Before the bytes given. */
   const past = (): never => {
     throw whole ? new Bad() : new Cut();
@@ -185,7 +206,13 @@ export function deltaStateOf(line: Buffer, whole: boolean): DeltaState {
     }
   }
 
-  try {
+  /**
+   * The `delta` array, past the header, `watermark` and `session_api`: where
+   * it ends, after its closing bracket, and where it starts once its key is
+   * checked. On a line whose start was not read, the key can be before the
+   * bytes given, and is not checked: `start` is then null.
+   */
+  function deltaArray(): { start: number | null; end: number } {
     // The record's header, to the payload, the one value of it that is an object.
     if (byteAt(line.byteLength - 1) !== CLOSE_BRACE) throw new Bad();
     let end = line.byteLength - 1;
@@ -204,25 +231,61 @@ export function deltaStateOf(line: Buffer, whole: boolean): DeltaState {
       if (byteAt(end - 1) !== CLOSE_BRACKET) throw new Bad();
     }
 
-    // The delta, keyed `delta`, from its last step. On a line whose start was
-    // not read, the key can be before the bytes given, and is not checked.
+    // The delta, keyed `delta`.
     try {
-      if (!is(memberBefore(end).key, DELTA)) throw new Bad();
+      const member = memberBefore(end);
+      if (!is(member.key, DELTA)) throw new Bad();
+      return { start: member.value.start, end };
     } catch (error) {
       if (!(error instanceof Cut)) throw error;
+      return { start: null, end };
     }
-    end -= 1;
-    if (byteAt(end - 1) === OPEN_BRACKET) return { kind: "none" };
-    for (;;) {
-      const step = stepBefore(end);
-      if (step.state !== null) return { kind: "state", state: step.state };
-      const before = endBefore(step.start, OPEN_BRACKET);
-      if (before === null) return { kind: "none" };
-      end = before;
-    }
+  }
+
+  return { byteAt, endBefore, stepBefore, deltaArray };
+}
+
+/** What `walk` found, or `cut` or `bad` when the line was cut or is not laid out as Vibe writes one. */
+function settled<Found>(walk: () => Found): Found | WalkCut | WalkBad {
+  try {
+    return walk();
   } catch (error) {
     if (error instanceof Cut) return { kind: "cut" };
     if (error instanceof Bad) return { kind: "bad" };
     throw error;
   }
+}
+
+/**
+ * The newest state a `projection_delta` line sets. `whole` says whether `line`
+ * is the whole line, without its newline, or only its end, so that reaching
+ * its start is a line not laid out as Vibe writes one, or one cut there.
+ */
+export function deltaStateOf(line: Buffer, whole: boolean): DeltaState {
+  const walk = walkOf(line, whole);
+  return settled((): DeltaState => {
+    // From the delta's last step. Its key, when it is before the bytes given, is not checked.
+    let end = walk.deltaArray().end - 1;
+    if (walk.byteAt(end - 1) === OPEN_BRACKET) return { kind: "none" };
+    for (;;) {
+      const step = walk.stepBefore(end);
+      if (step.state !== null) return { kind: "state", state: step.state };
+      const before = walk.endBefore(step.start, OPEN_BRACKET);
+      if (before === null) return { kind: "none" };
+      end = before;
+    }
+  });
+}
+
+/**
+ * Where a `projection_delta` line's steps are: its `delta` array, found by the
+ * same walk, past the header, `watermark` and `session_api`, none of which is
+ * turned into text. `whole` is as for `deltaStateOf`.
+ */
+export function deltaSpanOf(line: Buffer, whole: boolean): DeltaSpan {
+  const walk = walkOf(line, whole);
+  return settled((): DeltaSpan => {
+    const { start, end } = walk.deltaArray();
+    return start === null ? { kind: "cut" } : { kind: "delta", delta: { start, end } };
+  });
 }

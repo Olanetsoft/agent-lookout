@@ -189,6 +189,10 @@ test("the fingerprint of the folders sessions are read from names none of them, 
   expect(sourcesFingerprint({ AGENT_LOOKOUT_COPILOT_HOME: `${HOME}/.copilot` }, HOME)).toBe(
     defaults,
   );
+  // Kiro's folder named outright is the default, and so is a KIRO_HOME Kiro would not take.
+  for (const env of [{ AGENT_LOOKOUT_KIRO_HOME: `${HOME}/.kiro` }, { KIRO_HOME: "kiro-work" }]) {
+    expect(sourcesFingerprint(env, HOME), JSON.stringify(env)).toBe(defaults);
+  }
   // Agent Lookout's names the root outright. A home folder is a whole path,
   // with a drive on Windows, as the system gives it.
   const home = path.resolve(HOME);
@@ -277,6 +281,8 @@ test("the fingerprint of the folders sessions are read from names none of them, 
     sourcesFingerprint({ AGENT_LOOKOUT_MUSE_CODE_HOME: "/tmp/empty-muse" }, HOME),
     sourcesFingerprint({ AGENT_LOOKOUT_COPILOT_HOME: "/tmp/empty-copilot" }, HOME),
     sourcesFingerprint({ COPILOT_HOME: path.resolve("/tmp/copilot-home") }, HOME),
+    sourcesFingerprint({ AGENT_LOOKOUT_KIRO_HOME: "/tmp/empty-kiro" }, HOME),
+    sourcesFingerprint({ KIRO_HOME: path.resolve("/tmp/kiro-work") }, HOME),
     sourcesFingerprint({}, "/Users/someone-else"),
   ];
   for (const other of others) expect(other).not.toBe(defaults);

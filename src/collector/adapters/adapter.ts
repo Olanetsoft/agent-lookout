@@ -168,6 +168,10 @@ export interface AdapterResult {
    *
    * The Copilot CLI adapter has one, `files`: Copilot CLI's event logs and the
    * locks beside them, checked with signal 0 and, on a Mac, `ps`.
+   *
+   * The Kiro CLI adapter has one, `files`: each session's header, lock and
+   * log, in Kiro's V3 store and its V2 store. Where `ps` is not asked, or
+   * cannot say, a session is read from its log as an open one is.
    */
   basis?: string;
 }

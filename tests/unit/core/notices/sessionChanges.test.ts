@@ -777,6 +777,7 @@ describe("over a long run of snapshots", () => {
     "oh-my-pi": [],
     "muse-code": [],
     "copilot-cli": [],
+    "kiro-cli": [],
     "status-files": [F],
   };
   const sourceOf = (id: string): SourceId =>

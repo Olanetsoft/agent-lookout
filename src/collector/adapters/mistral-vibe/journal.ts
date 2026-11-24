@@ -40,7 +40,10 @@ import { envelopeOf, type Envelope } from "./envelope.ts";
  *   `watermark` and `session_api`, to the newest `set_envelope` step in
  *   `delta` (`deltaWalker.ts`), and parses its state alone. The entries
  *   before it, which hold what was said, run and read, and `session_api`,
- *   which holds a tool's arguments, are never parsed or kept;
+ *   which can hold a tool's arguments, are never parsed or kept here. Only the
+ *   reader of a session's last message parses the steps, when it is asked,
+ *   and of the line only `delta`, found by the same walk (`deltaSpanOf`,
+ *   `history/replies.ts`);
  * - takes a `projection_advanced` record, a whole state that only some older
  *   builds wrote, as a state it does not read.
  *
