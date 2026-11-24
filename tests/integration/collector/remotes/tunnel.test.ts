@@ -1,10 +1,9 @@
+import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { createServer } from "node:net";
 import path from "node:path";
 
 import { describe, expect, onTestFinished, test, vi } from "vitest";
 
-import { readRemote } from "@collector/remotes/remoteReader";
 import type { Remote } from "@collector/remotes/remoteSettings";
 import { SSH_BIN_ENV, sshArguments } from "@collector/remotes/sshProgram";
 import {
@@ -15,6 +14,7 @@ import {
   type TunnelState,
 } from "@collector/remotes/tunnel";
 import { snapshotThere } from "@tests/fixtures/remote";
+import { closedPort } from "@tests/support/node/http";
 import { tempDir } from "@tests/support/node/tempFiles";
 import { isRunning, makeStandInSsh, startStandInLookout } from "@tests/support/remotes/standIns";
 
@@ -30,6 +30,12 @@ const WAIT = { timeout: 20_000, interval: 20 };
 // moments ago can take seconds to start the first time, while macOS checks it.
 // A test that starts it is given this long. None of them is about this timeout.
 const STAND_IN_TIMEOUT_MS = 30_000;
+
+/** A port nothing listens on, for a run that never comes to connect to it. */
+const NOWHERE = await closedPort();
+
+/** Settings of a stand-in ssh that signs in for as long as it runs. */
+const SIGNING_IN = { STAND_IN_SSH_DELAY_MS: "600000" };
 
 /** A tunnel that is stopped when the test finishes, however it ends. */
 function tunnelFor(
@@ -62,7 +68,7 @@ async function ended(tunnel: Tunnel, run: number) {
 
 describe("the tunnel to another machine", () => {
   posixTest(
-    "runs the named ssh with exactly its arguments, and forwards to Agent Lookout there",
+    "runs the named ssh with exactly its arguments, and reads Agent Lookout there through it",
     async () => {
       const lookout = await startStandInLookout(snapshotThere());
       const ssh = await makeStandInSsh();
@@ -72,53 +78,37 @@ describe("the tunnel to another machine", () => {
       tunnel.start();
 
       const state = await running(tunnel, 1);
-      const args = sshArguments({
-        localPort: state.port,
-        remotePort: lookout.port,
-        target: "dev@devbox.local",
-      });
-      expect(state.command).toEqual([ssh.bin, ...args]);
-      await vi.waitFor(async () => expect(await ssh.runs()).toHaveLength(1), WAIT);
+      expect(state.command).toEqual([ssh.bin, ...sshArguments(remote)]);
+      const reading = await state.read();
       expect((await ssh.runs())[0]?.args).toEqual([
-        "-N",
+        "-W",
+        `127.0.0.1:${lookout.port}`,
         "-o",
         "BatchMode=yes",
         "-o",
-        "ExitOnForwardFailure=yes",
+        "ClearAllForwardings=yes",
+        "-o",
+        "PermitLocalCommand=no",
         "-o",
         "ServerAliveInterval=15",
         "-o",
         "ControlMaster=no",
         "-o",
         "ControlPath=none",
-        "-L",
-        `127.0.0.1:${state.port}:127.0.0.1:${lookout.port}`,
         "--",
         "dev@devbox.local",
       ]);
-
-      const reading = await vi.waitFor(async () => {
-        const read = await readRemote(state.port);
-        if (read.kind !== "read") throw new Error(read.kind);
-        return read;
-      }, WAIT);
-      expect(reading.version).toBe("0.2.3");
+      expect(reading).toMatchObject({ kind: "read", version: "0.2.3" });
       // Only the two routes, on the loopback's own name, with no Origin and nothing about the page.
-      expect(lookout.requests.slice(-2)).toEqual([
-        {
-          method: "GET",
-          path: "/api/health",
-          host: `127.0.0.1:${state.port}`,
-          origin: undefined,
-          notifications: undefined,
-        },
-        {
-          method: "GET",
-          path: "/api/sessions",
-          host: `127.0.0.1:${state.port}`,
-          origin: undefined,
-          notifications: undefined,
-        },
+      const asked = {
+        method: "GET",
+        host: `127.0.0.1:${lookout.port}`,
+        origin: undefined,
+        notifications: undefined,
+      };
+      expect(lookout.requests).toEqual([
+        { ...asked, path: "/api/health" },
+        { ...asked, path: "/api/sessions" },
       ]);
     },
     STAND_IN_TIMEOUT_MS,
@@ -130,15 +120,13 @@ describe("the tunnel to another machine", () => {
       const mark = path.join(await tempDir(), "ran");
       // Through a shell, this would be two words, and the touch would run.
       const target = `dev@devbox $(touch ${mark})`;
-      const ssh = await makeStandInSsh();
-      const tunnel = tunnelFor({ name: "devbox", target, port: 4777 }, ssh.env);
+      const ssh = await makeStandInSsh(SIGNING_IN);
+      const tunnel = tunnelFor({ name: "devbox", target, port: NOWHERE }, ssh.env);
       tunnel.start();
 
-      const state = await running(tunnel, 1);
+      await running(tunnel, 1);
       await vi.waitFor(async () => expect(await ssh.runs()).toHaveLength(1), WAIT);
-      expect((await ssh.runs())[0]?.args).toEqual(
-        sshArguments({ localPort: state.port, remotePort: 4777, target }),
-      );
+      expect((await ssh.runs())[0]?.args).toEqual(sshArguments({ port: NOWHERE, target }));
       expect(existsSync(mark)).toBe(false);
     },
     STAND_IN_TIMEOUT_MS,
@@ -147,10 +135,10 @@ describe("the tunnel to another machine", () => {
   posixTest(
     "finds ssh on PATH when no program is named",
     async () => {
-      const ssh = await makeStandInSsh();
+      const ssh = await makeStandInSsh(SIGNING_IN);
       const env: NodeJS.ProcessEnv = { ...ssh.env, PATH: ssh.dir };
       delete env[SSH_BIN_ENV];
-      const tunnel = tunnelFor({ name: "devbox", target: "devbox", port: 4777 }, env);
+      const tunnel = tunnelFor({ name: "devbox", target: "devbox", port: NOWHERE }, env);
       tunnel.start();
       expect((await running(tunnel)).command[0]).toBe(ssh.bin);
     },
@@ -159,7 +147,7 @@ describe("the tunnel to another machine", () => {
 
   test("with no ssh to run, says where it looked, and looks again", async () => {
     const tunnel = tunnelFor(
-      { name: "devbox", target: "devbox", port: 4777 },
+      { name: "devbox", target: "devbox", port: NOWHERE },
       { [SSH_BIN_ENV]: "/nonexistent/agent-lookout-test/ssh" },
     );
     tunnel.start();
@@ -176,7 +164,7 @@ describe("the tunnel to another machine", () => {
   });
 
   posixTest(
-    "a drop is told apart, and ssh is started again on a new port after the shortest wait",
+    "a drop is told apart, and ssh is started again after the shortest wait",
     async () => {
       const lookout = await startStandInLookout(snapshotThere());
       const ssh = await makeStandInSsh();
@@ -186,7 +174,7 @@ describe("the tunnel to another machine", () => {
       );
       tunnel.start();
       const first = await running(tunnel, 1);
-      await vi.waitFor(async () => expect((await readRemote(first.port)).kind).toBe("read"), WAIT);
+      expect((await first.read()).kind).toBe("read");
       tunnel.connected(1);
 
       // The other machine closes the connection.
@@ -200,9 +188,10 @@ describe("the tunnel to another machine", () => {
       });
       expect(dropped.retryAt - dropped.end.at).toBe(100);
 
+      expect(await first.read()).toEqual({ kind: "closed" });
       const second = await running(tunnel, 2);
-      await vi.waitFor(async () => expect(await ssh.runs()).toHaveLength(2), WAIT);
-      await vi.waitFor(async () => expect((await readRemote(second.port)).kind).toBe("read"), WAIT);
+      expect((await second.read()).kind).toBe("read");
+      expect(await ssh.runs()).toHaveLength(2);
     },
     STAND_IN_TIMEOUT_MS,
   );
@@ -212,7 +201,7 @@ describe("the tunnel to another machine", () => {
     async () => {
       const ssh = await makeStandInSsh();
       const tunnel = tunnelFor(
-        { name: "devbox", target: "dev@refuse.example", port: 4777 },
+        { name: "devbox", target: "dev@refuse.example", port: NOWHERE },
         ssh.env,
       );
       tunnel.start();
@@ -233,16 +222,16 @@ describe("the tunnel to another machine", () => {
   posixTest(
     "an ssh that hangs while it signs in is ended, with the ProxyCommand it hangs in, and started again",
     async () => {
-      const ssh = await makeStandInSsh({ STAND_IN_SSH_DELAY_MS: "600000" });
+      const ssh = await makeStandInSsh(SIGNING_IN);
       const tunnel = tunnelFor(
-        { name: "devbox", target: "devbox", port: 4777 },
+        { name: "devbox", target: "devbox", port: NOWHERE },
         { ...ssh.env, STAND_IN_SSH_PROXY: ssh.proxyLog },
         { firstReadingMs: 2_000 },
       );
       tunnel.start();
       expect((await ended(tunnel, 1)).end).toMatchObject({
         connected: false,
-        said: "No answer within 2 seconds.",
+        said: "Nothing came back within 2 seconds.",
       });
       const [proxy] = await vi.waitFor(async () => {
         const started = await ssh.proxies();
@@ -258,8 +247,8 @@ describe("the tunnel to another machine", () => {
   posixTest(
     "a run through which a reading has come back is not ended for its time",
     async () => {
-      const ssh = await makeStandInSsh();
-      const tunnel = tunnelFor({ name: "devbox", target: "devbox", port: 4777 }, ssh.env, {
+      const ssh = await makeStandInSsh(SIGNING_IN);
+      const tunnel = tunnelFor({ name: "devbox", target: "devbox", port: NOWHERE }, ssh.env, {
         firstReadingMs: 1_500,
       });
       tunnel.start();
@@ -277,7 +266,7 @@ describe("the tunnel to another machine", () => {
     async () => {
       const ssh = await makeStandInSsh({ STAND_IN_SSH_PROXY_APART: "1" });
       const tunnel = tunnelFor(
-        { name: "devbox", target: "dev@refuse.example", port: 4777 },
+        { name: "devbox", target: "dev@refuse.example", port: NOWHERE },
         { ...ssh.env, STAND_IN_SSH_PROXY: ssh.proxyLog },
       );
       tunnel.start();
@@ -292,18 +281,53 @@ describe("the tunnel to another machine", () => {
   );
 
   posixTest(
-    "a port taken on this computer ends ssh, which says why",
+    "with no Agent Lookout there the run ends, and says why the connection to it failed",
     async () => {
-      const taken = createServer();
-      await new Promise<void>((resolve) => taken.listen(0, "127.0.0.1", resolve));
-      onTestFinished(() => new Promise<void>((resolve) => taken.close(() => resolve())));
-      const port = (taken.address() as { port: number }).port;
       const ssh = await makeStandInSsh();
-      const tunnel = tunnelFor({ name: "devbox", target: "devbox", port: 4777 }, ssh.env, {
-        freePort: async () => port,
-      });
+      const tunnel = tunnelFor({ name: "devbox", target: "devbox", port: NOWHERE }, ssh.env);
       tunnel.start();
-      expect((await ended(tunnel, 1)).end.said).toBe("Could not request local forwarding.");
+      const { read } = await running(tunnel, 1);
+      expect(await read()).toEqual({ kind: "closed" });
+      expect((await ended(tunnel, 1)).end).toMatchObject({
+        connected: false,
+        code: 255,
+        said: "channel 0: open failed: connect failed: Connection refused",
+      });
+    },
+    STAND_IN_TIMEOUT_MS,
+  );
+
+  posixTest(
+    "the first reading waits while ssh signs in, and Agent Lookout there stopping ends the run",
+    async () => {
+      const lookout = await startStandInLookout(snapshotThere());
+      const ssh = await makeStandInSsh({ STAND_IN_SSH_DELAY_MS: "500" });
+      const tunnel = tunnelFor({ name: "devbox", target: "devbox", port: lookout.port }, ssh.env);
+      tunnel.start();
+      const { read } = await running(tunnel, 1);
+      for (const _ of [1, 2, 3]) expect((await read()).kind).toBe("read");
+      expect(lookout.connections()).toBe(1);
+      tunnel.connected(1);
+      await lookout.close();
+      expect((await ended(tunnel, 1)).end).toMatchObject({ connected: true, code: 0, said: null });
+    },
+    STAND_IN_TIMEOUT_MS,
+  );
+
+  posixTest(
+    "an ssh that goes on once its output has ended is ended",
+    async () => {
+      // A program that answers once, closes its output and goes on.
+      const script = `printf 'HTTP/1.1 200 OK\\r\\nContent-Length: 2\\r\\n\\r\\n{}'; exec sleep 600 >&-`;
+      const tunnel = tunnelFor(
+        { name: "devbox", target: "devbox", port: NOWHERE },
+        { [SSH_BIN_ENV]: "/bin/sh" },
+        { spawnSsh: (sh, _, env) => spawn(sh, ["-c", script], { env, detached: true }) },
+      );
+      tunnel.start();
+      const { read } = await running(tunnel, 1);
+      expect((await read()).kind).toBe("unreadable");
+      expect((await ended(tunnel, 1)).end.connected).toBe(false);
     },
     STAND_IN_TIMEOUT_MS,
   );
@@ -311,8 +335,8 @@ describe("the tunnel to another machine", () => {
   posixTest(
     "stop ends ssh with SIGTERM and starts it no more",
     async () => {
-      const ssh = await makeStandInSsh();
-      const tunnel = tunnelFor({ name: "devbox", target: "devbox", port: 4777 }, ssh.env);
+      const ssh = await makeStandInSsh(SIGNING_IN);
+      const tunnel = tunnelFor({ name: "devbox", target: "devbox", port: NOWHERE }, ssh.env);
       tunnel.start();
       await running(tunnel, 1);
       await vi.waitFor(async () => expect(await ssh.runs()).toHaveLength(1), WAIT);
@@ -334,8 +358,8 @@ describe("the tunnel to another machine", () => {
   posixTest(
     "an ssh that SIGTERM does not end is ended with SIGKILL, and a later start runs ssh again",
     async () => {
-      const ssh = await makeStandInSsh({ STAND_IN_SSH_IGNORE_TERM: "1" });
-      const tunnel = tunnelFor({ name: "devbox", target: "devbox", port: 4777 }, ssh.env);
+      const ssh = await makeStandInSsh({ ...SIGNING_IN, STAND_IN_SSH_IGNORE_TERM: "1" });
+      const tunnel = tunnelFor({ name: "devbox", target: "devbox", port: NOWHERE }, ssh.env);
       tunnel.start();
       await running(tunnel, 1);
       await vi.waitFor(async () => expect(await ssh.runs()).toHaveLength(1), WAIT);
@@ -360,8 +384,8 @@ describe("the tunnel to another machine", () => {
   posixTest(
     "started again while the last ssh is still ending, it runs ssh once that one has gone",
     async () => {
-      const ssh = await makeStandInSsh({ STAND_IN_SSH_IGNORE_TERM: "1" });
-      const tunnel = tunnelFor({ name: "devbox", target: "devbox", port: 4777 }, ssh.env);
+      const ssh = await makeStandInSsh({ ...SIGNING_IN, STAND_IN_SSH_IGNORE_TERM: "1" });
+      const tunnel = tunnelFor({ name: "devbox", target: "devbox", port: NOWHERE }, ssh.env);
       tunnel.start();
       await running(tunnel, 1);
       await vi.waitFor(async () => expect(await ssh.runs()).toHaveLength(1), WAIT);
@@ -371,9 +395,8 @@ describe("the tunnel to another machine", () => {
       tunnel.start();
       await stopping;
       expect(isRunning(run?.pid as number)).toBe(false);
-      const second = await running(tunnel, 2);
+      await running(tunnel, 2);
       await vi.waitFor(async () => expect(await ssh.runs()).toHaveLength(2), WAIT);
-      expect(second.port).toBeGreaterThan(0);
     },
     STAND_IN_TIMEOUT_MS,
   );

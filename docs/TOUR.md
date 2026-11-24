@@ -953,7 +953,7 @@ Each tool is marked read-only (`READ_ONLY`). None can jump to, stop or answer a 
 
 **Why.** #57: some people run their agents on a remote machine and reach them with tmux over SSH, so the agents never show on the computer in front of them. It shipped in f5d196f on 6 October, released in 0.2.5.
 
-**How it changed from the plan.** #57 first planned to read the agents' files over ssh. Instead it reads the Agent Lookout you start on that machine, through a tunnel your own `ssh` opens. That gains three things:
+**How it changed from the plan.** #57 first planned to read the agents' files over ssh. Instead it reads the Agent Lookout you start on that machine, through your own `ssh`. That gains three things:
 
 - This computer installs nothing there and leaves nothing there.
 - That machine's own adapters read its agents, so nothing is written twice.
@@ -966,18 +966,19 @@ Each tool is marked read-only (`READ_ONLY`). None can jump to, stop or answer a 
 | `remoteSettings.ts` | `readRemotesSetup` reads `name=target` entries, with `:port` when needed. At most eight (`MAX_REMOTES`). `isSshTarget` allows only a host, an alias or `user@host`. One bad entry, and no machine is read                                                                             |
 | `sshProgram.ts`     | `findSsh` finds your ssh: `AGENT_LOOKOUT_SSH_BIN`, else `PATH`, else fixed folders. `sshArguments` builds the one command line                                                                                                                                                        |
 | `tunnel.ts`         | `createTunnel` keeps one ssh running for each machine. When it ends, it starts again after 1, 2, 5, 10 and 30 seconds, then every minute (`RESTART_DELAYS_MS`). A run with no reading within 90 seconds (`FIRST_READING_MS`) is ended, as ssh that hangs while it signs in never ends |
-| `remoteReader.ts`   | `readRemote` asks the tunnel for `GET /api/health`, then `GET /api/sessions` (`REMOTE_ROUTES`), and nothing else                                                                                                                                                                      |
+| `remoteReader.ts`   | `createRemoteReader` asks for `GET /api/health`, then `GET /api/sessions` (`REMOTE_ROUTES`), and nothing else, over one connection kept open through ssh                                                                                                                              |
 | `remoteSessions.ts` | `readRemoteSnapshot` reads the answer as it would any answer from outside: each field checked and cleaned again, at most 500 sessions and 40 sources                                                                                                                                  |
 | `remoteAdapter.ts`  | `createRemoteAdapter` makes the machine a source, `remote:<name>`, polled with the others                                                                                                                                                                                             |
 | `remotes.ts`        | `createRemotes` ties these together, and starts and stops the tunnels with the collector                                                                                                                                                                                              |
 
 **Why the ssh command looks the way it does.**
 
-- `-N`: run nothing there, only forward a port.
+- `-W 127.0.0.1:<port there>`: join ssh's input and output to Agent Lookout there, run nothing there, and open no port here.
 - `-o BatchMode=yes`: never ask for a password, a passphrase or a host key. Your ssh config and agent sign in, or it fails and says why.
-- `-o ExitOnForwardFailure=yes` and `-o ServerAliveInterval=15`: end rather than hang, so the tunnel can be started again.
-- `-o ControlMaster=no -o ControlPath=none`: a connection of its own, never one shared with an ssh you have open, so the forward ends when Agent Lookout stops.
-- `-L 127.0.0.1:<free port>:127.0.0.1:<port there>`: both ends on loopback only.
+- `-o ClearAllForwardings=yes`: take none of the forwards your ssh config names for the host, so it connects while your own ssh holds them (#469).
+- `-o PermitLocalCommand=no`: leave out the config's `LocalCommand`, which would write into what is read.
+- `-o ServerAliveInterval=15`: end rather than hang, so it can be started again.
+- `-o ControlMaster=no -o ControlPath=none`: a connection of its own, never one shared with an ssh you have open, so it ends when Agent Lookout stops.
 - `--` before the target, so the target is never read as an option.
 
 **Things to know.**
@@ -988,7 +989,6 @@ Each tool is marked read-only (`READ_ONLY`). None can jump to, stop or answer a 
 - It does not chain: a session that machine read from a third machine is left out.
 - It never asks that machine for a session's last message.
 - The other machine must run Agent Lookout as a server, such as `npx agent-lookout`. The Mac app opens no port.
-- While a tunnel is up, its port here is open to every program and user account on this computer, and it leads to that machine's whole API. [SECURITY.md](../SECURITY.md) says so. Name a machine only from a computer whose other users you trust.
 
 [PRIVACY.md](../PRIVACY.md#another-machine-over-ssh) lists what is read over the connection.
 

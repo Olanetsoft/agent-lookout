@@ -677,7 +677,7 @@ The API has no token or password. The `Host` and `Origin` rules keep websites, a
 
 A token would not keep out programs running as you, which could read it as easily as the API. It could keep out other accounts on a shared computer, stopping your sessions included, the known limit above, and is left for a later version. The MCP server changes none of this: it opens no port of its own, speaks to the app that started it over stdin and stdout, and reads the same loopback API the dashboard and `agent-lookout status` read without one. A token is also for an API that can be reached some other way, such as from another computer, and Agent Lookout has none.
 
-Another computer reads it only through SSH: with `AGENT_LOOKOUT_REMOTES` set there, Agent Lookout on that computer runs `ssh` to this one and forwards a port of its own loopback to this one's `127.0.0.1:4777`. Its requests then arrive on this computer's loopback, from the ssh server, which only someone who can sign in to this computer can open. It asks for `GET /api/health` and `GET /api/sessions`, with no `Origin` and no notifications header, and nothing else. [Another machine over SSH](GUIDE.md#another-machine-over-ssh) describes it.
+Another computer reads it only through SSH: with `AGENT_LOOKOUT_REMOTES` set there, Agent Lookout on that computer runs `ssh` to this one, with ssh's input and output joined to this one's `127.0.0.1:4777`. Its requests then arrive on this computer's loopback, from the ssh server, which only someone who can sign in to this computer can open. It asks for `GET /api/health` and `GET /api/sessions`, with no `Origin` and no notifications header, and nothing else. [Another machine over SSH](GUIDE.md#another-machine-over-ssh) describes it.
 
 ## The MCP server
 

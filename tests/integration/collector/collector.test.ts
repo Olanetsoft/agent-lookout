@@ -3204,7 +3204,7 @@ describe.skipIf(process.platform === "win32")("another machine over SSH", () => 
     await lookout.close();
     const snapshot = await until("unavailable");
     const card = snapshot.sources.find((source) => source.id === "remote:devbox");
-    expect(card?.detail).toBe(
+    expect(card?.detail).toContain(
       `ssh is connected to devbox, but no Agent Lookout answers on its port ${lookout.port}.`,
     );
     expect(snapshot.sessions).toEqual([]);

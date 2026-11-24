@@ -6,7 +6,7 @@ import { snapshotThere } from "@tests/fixtures/remote";
 import { isRunning, makeStandInSsh, startStandInLookout } from "@tests/support/remotes/standIns";
 
 // The stand-in ssh is a POSIX sh script, and Node named ssh.exe cannot be one on
-// Windows: it takes ssh's first argument, -N, for an option of its own.
+// Windows: it takes ssh's first argument, -W, for an option of its own.
 const posixTest = test.skipIf(process.platform === "win32");
 
 // The stand-in ssh is a Node program: on a heavily loaded machine its first

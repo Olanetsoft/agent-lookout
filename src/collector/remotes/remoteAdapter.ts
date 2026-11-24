@@ -14,7 +14,7 @@ import {
 import type { Adapter, AdapterResult } from "../adapters/adapter.ts";
 import { every } from "../adapters/words.ts";
 import { POLL_INTERVAL_MS } from "../poller.ts";
-import { readRemote, REMOTE_ANSWER_TIMEOUT_MS, type RemoteReading } from "./remoteReader.ts";
+import { REMOTE_ANSWER_TIMEOUT_MS, type RemoteReading } from "./remoteReader.ts";
 import { readRemoteSnapshot, type RemoteSnapshot } from "./remoteSessions.ts";
 import type { Remote } from "./remoteSettings.ts";
 import { SSH_BIN_ENV } from "./sshProgram.ts";
@@ -69,8 +69,8 @@ export interface RemoteAdapterOptions {
   tunnel: Pick<Tunnel, "state" | "connected">;
   /** This machine's version of Agent Lookout, to say when the other's cannot be read. */
   version: string;
-  /** Reads the other machine through the tunnel's port. Tests pass their own. */
-  read?: (port: number) => Promise<RemoteReading>;
+  /** Reads the other machine. Defaults to the running tunnel's own. Tests pass their own. */
+  read?: () => Promise<RemoteReading>;
   now?: () => number;
   pollIntervalMs?: number;
   /** Defaults to `ANSWER_WAIT_MS`. */
@@ -117,7 +117,7 @@ interface Problem {
 interface Read {
   run: number;
   at: number;
-  reading: RemoteReading;
+  reading: Exclude<RemoteReading, { kind: "closed" }>;
   /** The sessions and sources it held, once read. */
   snapshot: RemoteSnapshot | null;
 }
@@ -149,7 +149,6 @@ interface Read {
  */
 export function createRemoteAdapter(options: RemoteAdapterOptions): Adapter {
   const { remote, tunnel, version } = options;
-  const read = options.read ?? ((port: number) => readRemote(port));
   const now = options.now ?? Date.now;
   const pollIntervalMs = options.pollIntervalMs ?? POLL_INTERVAL_MS;
   const answerWaitMs = options.answerWaitMs ?? ANSWER_WAIT_MS;
@@ -235,7 +234,7 @@ export function createRemoteAdapter(options: RemoteAdapterOptions): Adapter {
         NOT_CONNECTED,
         {
           detail: `Still connecting to ${remote.name} over SSH, as ${remote.target}.`,
-          advice: `ssh has not connected yet. If this goes on, check that ssh ${remote.target} connects from a terminal on this computer, and that ${remote.name} is switched on and reachable.`,
+          advice: `Nothing has come back through ssh yet. If this goes on, check that ssh ${remote.target} connects from a terminal on this computer, and that ${remote.name} is switched on and reachable.`,
         },
         at,
       );
@@ -247,9 +246,18 @@ export function createRemoteAdapter(options: RemoteAdapterOptions): Adapter {
     );
   }
 
+  const NO_LOOKOUT: Problem = {
+    detail: `ssh is connected to ${remote.name}, but no Agent Lookout answers on its port ${remote.port}.`,
+    advice: `Start it there with npx agent-lookout, and leave it running. If it listens on another port, give it as ${remote.name}=${remote.target}:<port>.`,
+  };
+
   /** Why a run of ssh ended, in words. */
   function endProblem(end: TunnelEnd): Problem {
     const said = end.said === null ? null : sentence(end.said);
+    // It signed in, and its connection to the port there failed or was closed there.
+    if (end.code === 0 || (said !== null && /connect failed|stdio forwarding/i.test(said))) {
+      return NO_LOOKOUT;
+    }
     if (end.connected) {
       return {
         detail: `The SSH connection to ${remote.name} dropped${said ? `: ${said}` : "."}`,
@@ -257,8 +265,11 @@ export function createRemoteAdapter(options: RemoteAdapterOptions): Adapter {
           "It is started again on its own. If it keeps dropping, check the network between the two machines.",
       };
     }
-    if (said !== null && /could not request local forwarding|cannot listen to port/i.test(said)) {
-      return { detail: `ssh could not forward a port on this computer: ${said}` };
+    if (said !== null && /open failed/i.test(said)) {
+      return {
+        detail: `The ssh server on ${remote.name} did not let ssh reach its port ${remote.port}: ${said}`,
+        advice: `Check that it allows TCP forwarding: AllowTcpForwarding and PermitOpen in its sshd_config.`,
+      };
     }
     if (
       said !== null &&
@@ -281,14 +292,6 @@ export function createRemoteAdapter(options: RemoteAdapterOptions): Adapter {
   function fromRead(done: Read): AdapterResult {
     const { reading } = done;
     switch (reading.kind) {
-      case "refused":
-        return connecting(done.at);
-      case "closed":
-        problem = {
-          detail: `ssh is connected to ${remote.name}, but no Agent Lookout answers on its port ${remote.port}.`,
-          advice: `Start it there with npx agent-lookout, and leave it running. If it listens on another port, give it as ${remote.name}=${remote.target}:<port>.`,
-        };
-        return result(NOT_CONNECTED, problem, done.at);
       case "timeout":
         problem = {
           detail: `${remote.name} did not answer within ${REMOTE_ANSWER_TIMEOUT_MS / 1000} seconds.`,
@@ -324,14 +327,15 @@ export function createRemoteAdapter(options: RemoteAdapterOptions): Adapter {
   }
 
   /** Starts a reading through this run, unless one is under way. */
-  function readThrough(run: number, port: number): Promise<void> {
+  function readThrough(run: number, read: () => Promise<RemoteReading>): Promise<void> {
     if (underWay) return underWay;
-    const current = read(port)
+    const current = read()
       .catch((): RemoteReading => ({ kind: "closed" }))
       .then((reading) => {
+        // The run is ending, and the tunnel says why once it has.
+        if (reading.kind === "closed") return;
         const at = now();
-        // Anything but a refusal came through ssh, so ssh had signed in.
-        if (reading.kind !== "refused") tunnel.connected(run);
+        if (reading.kind === "read") tunnel.connected(run);
         const snapshot =
           reading.kind === "read"
             ? readRemoteSnapshot(reading.snapshot, remote.name, at, { waitingText })
@@ -362,9 +366,12 @@ export function createRemoteAdapter(options: RemoteAdapterOptions): Adapter {
         };
         return result(NOT_CONNECTED, problem, at);
       case "ended": {
-        // What it held belongs to that run, and a waiting session's text to its wait.
-        latest = null;
-        problem = endProblem(state.end);
+        // What it held belongs to that run, and a waiting session's text to its
+        // wait. But what answered there and could not be read ended the run.
+        if (!problem || latest?.run !== state.run || latest.reading.kind !== "unreadable") {
+          latest = null;
+          problem = endProblem(state.end);
+        }
         return result(
           NOT_CONNECTED,
           {
@@ -377,7 +384,7 @@ export function createRemoteAdapter(options: RemoteAdapterOptions): Adapter {
       case "running": {
         command = state.command.join(" ");
         if (latest && latest.run !== state.run) latest = null;
-        await within(readThrough(state.run, state.port), answerWaitMs);
+        await within(readThrough(state.run, options.read ?? state.read), answerWaitMs);
         const asOf = now();
         // One dated later than now is as old, by a clock that has been set back.
         if (latest && (latest.at > asOf || asOf - latest.at > READING_KEPT_MS)) {

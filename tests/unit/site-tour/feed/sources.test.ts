@@ -768,10 +768,7 @@ test("the other machine's agents and its row for each source are what this compu
 
 test("the other machine's card names the ssh command the tunnel runs, as it runs it", () => {
   const command = tour.MACHINE_COMMAND.split(" ");
-  const port = Number(/127\.0\.0\.1:(\d+):/.exec(tour.MACHINE_COMMAND)?.[1]);
-  expect(command.slice(1)).toEqual(
-    sshArguments({ localPort: port, remotePort: MACHINE.port, target: MACHINE.target }),
-  );
+  expect(command.slice(1)).toEqual(sshArguments(MACHINE));
 });
 
 /**

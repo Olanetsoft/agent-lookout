@@ -1,6 +1,6 @@
 // Stand-ins for another machine, for the tests of reading one over SSH: a
-// stand-in ssh, which forwards to this machine and connects nowhere else, and
-// a stand-in Agent Lookout for it to forward to. No test runs the real ssh,
+// stand-in ssh, which connects to this machine and nowhere else, and a stand-in
+// Agent Lookout for it to connect to. No test runs the real ssh,
 // reads ~/.ssh or reaches another machine. Everything is ended when the test
 // that started it finishes.
 
@@ -131,6 +131,8 @@ export interface StandInLookout {
   port: number;
   /** Every request so far, oldest first. */
   requests: LookoutRequest[];
+  /** How many connections those came over. */
+  connections(): number;
   /** What `/api/sessions` answers from now on. */
   answer(snapshot: unknown): void;
   /** Stops it, as Agent Lookout stopping on the other machine would. */
@@ -166,10 +168,13 @@ export async function startStandInLookout(
     res.writeHead(body === null ? 404 : 200, { "Content-Type": "application/json" });
     res.end(JSON.stringify(body ?? { error: "not-found" }));
   });
+  let connections = 0;
+  server.on("connection", () => (connections += 1));
   const port = await listen(server);
   return {
     port,
     requests,
+    connections: () => connections,
     answer(next) {
       current = next;
     },

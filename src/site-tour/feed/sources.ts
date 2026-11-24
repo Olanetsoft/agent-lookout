@@ -1343,25 +1343,23 @@ export const CLAUDE_CODE_THERE_CAPABILITIES: SourceCapabilities = {
   answer: { level: "no", reason: `Answer acts on this computer only, not on ${MACHINE.name}.` },
 };
 
-/** The port on this computer that ssh forwards to the other machine's Agent Lookout. */
-const FORWARDED_PORT = 52417;
-
 /** The command the tunnel to the other machine runs, as its card shows it. */
 export const MACHINE_COMMAND = [
   "/usr/bin/ssh",
-  "-N",
+  "-W",
+  `127.0.0.1:${MACHINE.port}`,
   "-o",
   "BatchMode=yes",
   "-o",
-  "ExitOnForwardFailure=yes",
+  "ClearAllForwardings=yes",
+  "-o",
+  "PermitLocalCommand=no",
   "-o",
   "ServerAliveInterval=15",
   "-o",
   "ControlMaster=no",
   "-o",
   "ControlPath=none",
-  "-L",
-  `127.0.0.1:${FORWARDED_PORT}:127.0.0.1:${MACHINE.port}`,
   "--",
   MACHINE.target,
 ].join(" ");

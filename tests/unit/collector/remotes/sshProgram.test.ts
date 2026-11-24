@@ -3,43 +3,44 @@ import { describe, expect, test } from "vitest";
 import { findSsh, SSH_BIN_ENV, SSH_LOCATIONS, sshArguments } from "@collector/remotes/sshProgram";
 
 describe("sshArguments", () => {
-  test("forwards a free port on this machine's loopback to Agent Lookout's there, and asks nothing", () => {
-    expect(
-      sshArguments({ localPort: 53211, remotePort: 4777, target: "dev@devbox.local" }),
-    ).toEqual([
-      "-N",
+  test("joins ssh to Agent Lookout's port there, and asks nothing", () => {
+    expect(sshArguments({ port: 4777, target: "dev@devbox.local" })).toEqual([
+      "-W",
+      "127.0.0.1:4777",
       "-o",
       "BatchMode=yes",
       "-o",
-      "ExitOnForwardFailure=yes",
+      "ClearAllForwardings=yes",
+      "-o",
+      "PermitLocalCommand=no",
       "-o",
       "ServerAliveInterval=15",
       "-o",
       "ControlMaster=no",
       "-o",
       "ControlPath=none",
-      "-L",
-      "127.0.0.1:53211:127.0.0.1:4777",
       "--",
       "dev@devbox.local",
     ]);
   });
 
+  test("opens no port here, and takes none of the forwards the person's ssh config names", () => {
+    const args = sshArguments({ port: 4777, target: "devbox" });
+    for (const option of ["-L", "-R", "-D"]) expect(args).not.toContain(option);
+    expect(args[args.indexOf("ClearAllForwardings=yes") - 1]).toBe("-o");
+  });
+
   test("every run is a connection of its own, never one shared through the person's ssh config", () => {
-    const args = sshArguments({ localPort: 1, remotePort: 4777, target: "devbox" });
-    const forward = args.indexOf("-L");
-    // Given before the forward, and on the command line, so they come before ~/.ssh/config.
-    expect(args.slice(0, forward)).toEqual(
-      expect.arrayContaining(["ControlMaster=no", "ControlPath=none"]),
-    );
+    const args = sshArguments({ port: 4777, target: "devbox" });
+    // On the command line, so they come before ~/.ssh/config.
     expect(args[args.indexOf("ControlMaster=no") - 1]).toBe("-o");
     expect(args[args.indexOf("ControlPath=none") - 1]).toBe("-o");
   });
 
   test("the target comes last, after --, as one argument", () => {
-    const args = sshArguments({ localPort: 1, remotePort: 4800, target: "gpu-vm" });
+    const args = sshArguments({ port: 4800, target: "gpu-vm" });
     expect(args.slice(-2)).toEqual(["--", "gpu-vm"]);
-    expect(args).toContain("127.0.0.1:1:127.0.0.1:4800");
+    expect(args).toContain("127.0.0.1:4800");
   });
 });
 
