@@ -117,7 +117,7 @@ describe("with agy's folder there", () => {
     const working = sessions.find((session) => session.id.endsWith(WORKING));
     expect(working).toMatchObject({
       name: WORKING,
-      surface: "terminal",
+      surface: "unknown",
       statusSince: NOW - 3 * MINUTE,
       lastWriteAt: NOW - 10 * SECOND,
     });
@@ -632,6 +632,12 @@ test("never throws: anything unexpected is a sentence", async () => {
   });
 });
 
+test("what the card says of Needs you is short, and names what is not seen", () => {
+  expect(NEEDS_YOU_NOTE.length).toBeLessThanOrEqual(130);
+  expect(NEEDS_YOU_NOTE).toContain("question");
+  expect(NEEDS_YOU_NOTE).toContain("agy acp");
+});
+
 describe("an agy program's own log and a conversation's title", () => {
   const ASKING = conversationId("e5");
   const STARTED = NOW - 10 * MINUTE;
@@ -732,6 +738,30 @@ describe("an agy program's own log and a conversation's title", () => {
       [FAILED]: "failed",
     });
     expect(files.opened()).not.toContain(log);
+  });
+
+  test("an agy acp program is given no log, so it is not taken to wait for an approval another agy asked for", async () => {
+    const { adapter, processes, files } = waiting();
+    // An editor's program, and the agy started just after it that wrote the log, which has ended.
+    processes.set([{ startedAt: STARTED - 2 * SECOND, acp: true }]);
+    const { basis, sessions } = await adapter.poll();
+    expect(find(sessions, ASKING)).toMatchObject({
+      status: "working",
+      surface: "unknown",
+      cwd: null,
+    });
+    // It may still have open what was written since it started.
+    expect(basis).toBe(BASIS);
+    expect(files.opened()).not.toContain(LOG);
+
+    // While both run, the log is the other one's, so its approval shows.
+    processes.set([{ startedAt: STARTED - 2 * SECOND, acp: true }, { startedAt: STARTED }]);
+    const both = await antigravityAdapterFor(files, processes).poll();
+    expect(find(both.sessions, ASKING)).toMatchObject({
+      status: "needs-you",
+      waitingReason: "permission",
+      cwd: WORKSPACE,
+    });
   });
 
   test("a log that cannot be tied to one running program is not read", async () => {

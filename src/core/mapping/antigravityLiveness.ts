@@ -18,6 +18,8 @@ export interface AgySessionProcess {
   startedAt: number | null;
   /** The conversation it was started with, `--conversation <id>`, `--resume <id>` or `-r <id>`, in lower case. */
   conversation?: string;
+  /** True for `agy acp`, which an editor runs. It writes no log that is read. */
+  acp?: true;
 }
 
 /** One conversation, and when agy last wrote its transcript, or that of one it started. */

@@ -21,8 +21,9 @@ import type { AgyRemoteAgent } from "./agyProcesses.ts";
  * in the seconds before its name's time, so a log is tied to the program
  * running now that wrote it. A program started with `--remote-agent` runs no
  * session on this computer and may write a log all the same, so one started in
- * those seconds leaves a log untied too, and its own is not read. The logs of
- * programs that have ended are not read.
+ * those seconds leaves a log untied too, and its own is not read. An `agy acp`,
+ * which an editor runs, leaves none untied: its log is `log/acp-*.log`, which
+ * is not read. The logs of programs that have ended are not read.
  *
  * Each line is matched against the few kinds used and dropped at once: nothing
  * else of it is kept. A log is read from its start, then only what was added.
@@ -77,25 +78,27 @@ export function logStartOf(name: string): number | null {
  * gives the first such hour, and is matched to none.
  *
  * `others` are the programs started with `--remote-agent`: each counts as one
- * that could have written a log, and is given none.
+ * that could have written a log, and is given none. An `agy acp` is given none
+ * and does not count, since its log is elsewhere. It would else be given the log
+ * of an agy started just after it, once that one has ended.
  */
 export function matchLogs(
   processes: readonly AgySessionProcess[],
   logs: ReadonlyMap<string, number>,
   others: readonly AgyRemoteAgent[] = [],
 ): (string | null)[] {
-  const candidates = (startedAt: number | null) =>
-    startedAt === null
+  const candidates = ({ startedAt, acp }: AgySessionProcess) =>
+    startedAt === null || acp
       ? []
       : [...logs].filter(
           ([, at]) => at >= startedAt - PS_LATE_MS && at - startedAt <= LOG_NAMED_WITHIN_MS,
         );
   const owners = new Map<string, number>();
-  for (const { startedAt } of [...processes, ...others]) {
-    for (const [name] of candidates(startedAt)) owners.set(name, (owners.get(name) ?? 0) + 1);
+  for (const program of [...processes, ...others]) {
+    for (const [name] of candidates(program)) owners.set(name, (owners.get(name) ?? 0) + 1);
   }
-  return processes.map(({ startedAt }) => {
-    const found = candidates(startedAt);
+  return processes.map((program) => {
+    const found = candidates(program);
     if (found.length !== 1) return null;
     const [name] = found[0];
     return owners.get(name) === 1 ? name : null;

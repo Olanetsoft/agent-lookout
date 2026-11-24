@@ -30,7 +30,7 @@ const idle: TranscriptState = {
 const COUNTED = { input: 48_210, cached: 40_960, output: 1_204 };
 
 describe("antigravitySession", () => {
-  test("is a terminal session named by its conversation id, with no folder, process or link", () => {
+  test("is a session in no app that is known, named by its conversation id, with no folder, process or link", () => {
     expect(
       antigravitySession({
         profile: CLI_PROFILE,
@@ -43,7 +43,7 @@ describe("antigravitySession", () => {
     ).toEqual({
       id: `antigravity-cli:${ID}`,
       source: "antigravity-cli",
-      surface: "terminal",
+      surface: "unknown",
       name: ID,
       cwd: null,
       project: null,

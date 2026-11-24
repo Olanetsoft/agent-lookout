@@ -115,7 +115,7 @@ export const ANTIGRAVITY_CAPABILITIES: SourceCapabilities = {
   "needs-you": {
     level: "partly",
     reason:
-      "While agy asks you to approve a tool, from its own log. A question it asks you shows as working.",
+      "While agy asks you to approve a tool, from its own log, not under agy acp. A question it asks you shows as working.",
   },
   finished: {
     level: "partly",
@@ -135,7 +135,7 @@ export const ANTIGRAVITY_CAPABILITIES: SourceCapabilities = {
   jump: {
     level: "no",
     reason:
-      "The transcripts name no terminal, and agy documents no link that opens a conversation.",
+      "The transcripts name no terminal or editor, and agy documents only links that need Remote Control to be on.",
   },
   "quiet-for": { level: "yes" },
   tokens: { level: "yes" },
@@ -146,7 +146,8 @@ export const ANTIGRAVITY_CAPABILITIES: SourceCapabilities = {
   },
   answer: {
     level: "no",
-    reason: "Its approval prompt takes an answer only in the terminal agy runs in.",
+    reason:
+      "An answer is taken in agy's terminal, an editor or Remote Control, and Agent Lookout reaches none of them.",
   },
 };
 
@@ -183,7 +184,8 @@ export const ANTIGRAVITY_APP_CAPABILITIES: SourceCapabilities = {
   },
   answer: {
     level: "no",
-    reason: "Antigravity documents no way to answer one of its approvals from outside the app.",
+    reason:
+      "Antigravity documents no way to answer one of its approvals but in the app or through Remote Control.",
   },
 };
 

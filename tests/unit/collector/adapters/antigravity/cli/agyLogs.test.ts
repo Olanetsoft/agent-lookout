@@ -101,6 +101,26 @@ describe("which log each program wrote", () => {
     expect(matchLogs([], logs(START + SECOND), [{ startedAt: START }])).toEqual([]);
   });
 
+  test("none for an agy acp, which is not taken to have written another's, whichever started first", () => {
+    const acp = { startedAt: START, acp: true } as const;
+    expect(matchLogs([acp], logs(START + SECOND))).toEqual([null]);
+    for (const apart of [-SECOND, 0, 5 * SECOND, MINUTE]) {
+      const startedAt = START + apart;
+      expect(matchLogs([acp, { startedAt }], logs(startedAt + SECOND)), String(apart)).toEqual([
+        null,
+        logName(startedAt + SECOND),
+      ]);
+    }
+    // Were one to write such a log too, an agy that could be the writer of both is given neither.
+    expect(
+      matchLogs([acp, { startedAt: START + SECOND }], logs(START + SECOND, START + 2 * SECOND)),
+    ).toEqual([null, null]);
+    // Two others in the same seconds still leave a log untied.
+    expect(
+      matchLogs([acp, { startedAt: START }, { startedAt: START }], logs(START + SECOND)),
+    ).toEqual([null, null, null]);
+  });
+
   test("none for a program whose start is not known", () => {
     expect(matchLogs([{ startedAt: null }], logs(START + SECOND))).toEqual([null]);
   });
