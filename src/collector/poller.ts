@@ -181,8 +181,11 @@ export interface Poller {
     sightings?: readonly WaitSighting[],
     restarts?: readonly number[],
   ): void;
-  /** A sighting of each wait in sight, for a history that begins again: its event is gone, and it goes on. */
-  seenWaiting(): WaitSighting[];
+  /**
+   * Lets go what the history said of sessions not read yet, as it is cleared,
+   * and gives a sighting of each wait in sight: its event is gone, and it goes on.
+   */
+  forget(): WaitSighting[];
   /** When the collector began. History before this was not measured. */
   readonly startedAt: number;
 }
@@ -243,6 +246,8 @@ interface FollowedWait {
   lastListed: number;
   /** Whether a poll has left it out since. */
   unseen: boolean;
+  /** No event kept began it: it counts only as it is listed waiting. */
+  found: boolean;
 }
 
 /** What the poller remembers about one source between polls. */
@@ -319,7 +324,10 @@ function againstHistory(
  * by the same rule. So a session left out only stops the count, at the last
  * poll that listed it (`waitsOf`), and if it is seen waiting again it carries
  * on as one wait, unless a status time later than that poll shows a new wait
- * began unseen. A session listed in any status is followed as seen.
+ * began unseen. A session listed in any status is followed as seen, since a
+ * fallback may read a waiting session as working, but one whose wait no event
+ * began (`found`) is seen only while it is listed waiting: the log says nothing
+ * of that wait, and no event would end it.
  *
  * What is held is a subset of `reported`, and a wait out of sight is let go
  * once the ledger would have dropped it.
@@ -328,16 +336,22 @@ function followWaits(
   memory: SourceMemory,
   sessions: readonly Session[],
   ways: ReadWays,
+  changes: readonly SessionEvent[],
   at: number,
 ): WaitSighting[] {
   const { reported, waits } = memory;
   const sightings: WaitSighting[] = [];
   const listed = new Set<string>();
   for (const session of sessions) {
-    listed.add(session.id);
     if (reported.get(session.id) !== "needs-you") continue;
     const way = ways.keyOf(session.id);
     const wait = waits.get(session.id);
+    const found = wait?.found ?? !changes.some((event) => event.sessionId === session.id);
+    if (found && session.status !== "needs-you") {
+      if (wait) wait.way = way;
+      continue;
+    }
+    listed.add(session.id);
     if (!wait || wait.unseen || wait.way !== way) {
       const began = wait?.unseen ? beganOutOfSight(session, wait.lastListed) : null;
       sightings.push({
@@ -348,7 +362,7 @@ function followWaits(
         ...(began !== null && { began }),
       });
     }
-    waits.set(session.id, { name: session.name, way, lastListed: at, unseen: false });
+    waits.set(session.id, { name: session.name, way, lastListed: at, unseen: false, found });
   }
   for (const [id, wait] of waits) {
     if (reported.get(id) !== "needs-you" || at - wait.lastListed > LEDGER_KEPT_MS) {
@@ -419,6 +433,7 @@ function takeUpWait(
     way: sighting.way,
     lastListed,
     unseen: true,
+    found: false,
   });
   return listed || sighting.lastSeen !== undefined
     ? []
@@ -602,7 +617,7 @@ export function createPoller(options: PollerOptions): Poller {
       // without them, so a wait there is out of sight as any other is.
       if (state === "unavailable") {
         const known = memory.get(id);
-        if (known) sightings.push(...followWaits(known, result.sessions, ways, at));
+        if (known) sightings.push(...followWaits(known, result.sessions, ways, changes, at));
         return;
       }
       // A source that is not set up was read as well, and holds no sessions. So
@@ -725,7 +740,7 @@ export function createPoller(options: PollerOptions): Poller {
         const wait = waits.get(event.sessionId);
         changes.push(withLastSeen(event, wait?.unseen ? wait.lastListed : undefined));
       }
-      sightings.push(...followWaits(remembered, result.sessions, ways, at));
+      sightings.push(...followWaits(remembered, result.sessions, ways, changes, at));
     });
 
     const rules = options.timeRules?.();
@@ -809,13 +824,19 @@ export function createPoller(options: PollerOptions): Poller {
         resumed.set(source, list);
       }
     },
-    seenWaiting() {
+    forget() {
       const at = now();
-      return [...memory.values()].flatMap(({ waits }) =>
-        [...waits]
-          .filter(([, wait]) => !wait.unseen)
-          .map(([sessionId, { name, way }]) => ({ sessionId, sessionName: name, at, way })),
-      );
+      const seen: WaitSighting[] = [];
+      resumed.clear();
+      for (const known of memory.values()) {
+        known.held = [];
+        for (const [sessionId, wait] of known.waits) {
+          wait.found = true;
+          const { name: sessionName, way, unseen } = wait;
+          if (!unseen) seen.push({ sessionId, sessionName, at, way });
+        }
+      }
+      return seen;
     },
     getSnapshot() {
       if (latest) return latest;

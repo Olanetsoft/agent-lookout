@@ -793,6 +793,18 @@ describe("a wait whose session left every listing", () => {
       ]);
     });
 
+    test("lost, and not seen by the run after, it ends where it was lost", () => {
+      const sightings = [
+        seen(1, at(6, 10)),
+        lost(1, at(6, 11, 0, 2), at(6, 11)),
+        seen(1, at(6, 14)),
+      ];
+      expect(spans({ ...runs, sightings, waitingNow: now })).toEqual([
+        [at(6, 10), at(6, 11), false],
+        [at(6, 14), NOW, true],
+      ]);
+    });
+
     test("a move into needs-you in a later run begins another wait", () => {
       const sightings = [seen(1, at(6, 10)), seen(1, at(6, 13))];
       expect(spans({ ...runs, sightings, events: [into(1, at(6, 13))] })).toEqual([

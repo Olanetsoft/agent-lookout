@@ -122,17 +122,17 @@ function threeDays(): HistoryRecord[] {
 /**
  * A collector over a stand-in Claude Code, started as a host starts it, with
  * its history in `dir`, and polled once. The clock stands at `NOW` unless the
- * test moves it. `read` names the way the sessions are read and what the source
- * answers, and whether the disk is full, which a test can change, and
- * `sessions` is read at each poll. A second source always answers, and lists none, so time is measured without
- * the first.
+ * test moves it. `read` names the way the sessions are read, what the source
+ * answers and which parts of it were not read, and whether the disk is full,
+ * which a test can change, and `sessions` is read at each poll. A second source
+ * always answers, and lists none, so time is measured without the first.
  */
 async function startIn(
   dir: string,
   sessions: Session[],
   env: Record<string, string> = {},
   clock = { now: NOW },
-  read: { way?: string; state?: SourceState; full?: boolean } = {},
+  read: { way?: string; state?: SourceState; notRead?: string[]; full?: boolean } = {},
 ) {
   const answering = (id: SourceId, answer: () => Omit<AdapterResult, "health">): Adapter => ({
     id,
@@ -140,7 +140,8 @@ async function startIn(
     lookingIn: "Looking for sessions in a test.",
     poll: async () => {
       const state = id === "claude-code" ? (read.state ?? "ok") : "ok";
-      const health = { id, label: "A source", state, checkedAt: clock.now };
+      const { notRead } = id === "claude-code" ? read : {};
+      const health = { id, label: "A source", state, checkedAt: clock.now, notRead };
       return { health, ...(state === "ok" ? answer() : { sessions: [] }) };
     },
   });
@@ -417,6 +418,26 @@ describe("a wait found by a run's first poll, over a history folder on disk", ()
     expect((await waitsFrom(third.port)).sevenDays).toMatchObject({ ...counted, openMs: 0 });
   });
 
+  test("it stops once another way of reading lists it idle, through a restart too", async () => {
+    const dir = await tempDir();
+    const clock = { now: at(6, 9) };
+    const read = { way: "fallback" };
+    const sessions: Session[] = [waiting];
+    let run = await startIn(dir, sessions, {}, clock, read);
+    await run.pollFor(MINUTE);
+    read.way = "main";
+    sessions[0] = { ...waiting, status: "idle" };
+    for (const _ of [1, 2]) {
+      await run.pollFor(3 * HOUR);
+      const { today } = await waitsFrom(run.port);
+      expect(today).toMatchObject({ waitedMs: MINUTE, openMs: 0, waits: 1 });
+      expect(await eventsOf(run.port, id(5))).toEqual([]);
+      run.stop();
+      clock.now += MINUTE;
+      run = await startIn(dir, sessions, {}, clock, read);
+    }
+  });
+
   test("listed first by a later poll of the run, it counts from that poll", async () => {
     const clock = { now: at(6, 9) };
     const read: { state?: SourceState } = { state: "unavailable" };
@@ -471,10 +492,29 @@ describe("a wait found by a run's first poll, over a history folder on disk", ()
     expect((await waitsFrom(again.port)).today).toMatchObject(counted);
   });
 
-  test("what a source not read yet was last doing goes with the history cleared", async () => {
+  test("a wait that goes on as the history is cleared stops once another way of reading lists it idle", async () => {
+    const clock = { now: at(6, 9) };
+    const read = { way: "fallback" };
+    const sessions: Session[] = [{ ...waiting, status: "working" }];
+    const run = await startIn(await tempDir(), sessions, {}, clock, read);
+    sessions[0] = waiting;
+    await run.pollFor(MINUTE);
+    await clear(run.port);
+    await run.pollFor(10 * MINUTE);
+    read.way = "main";
+    sessions[0] = { ...waiting, status: "idle" };
+    await run.pollFor(HOUR);
+    const counted = { waitedMs: 10 * MINUTE - 2 * SECOND, openMs: 0, waits: 1 };
+    expect((await waitsFrom(run.port)).today).toMatchObject(counted);
+  });
+
+  test.each([
+    ["a source", { state: "error" as const }, []],
+    ["a part of a source", { notRead: ["claude-code:0"] }, [["appeared", undefined, "idle"]]],
+  ])("what %s not read yet was last doing goes with the history cleared", async (_, away, told) => {
     const dir = await tempDir();
     const clock = { now: at(6, 9) };
-    const read: { state?: SourceState } = {};
+    const read: { state?: SourceState; notRead?: string[] } = {};
     const sessions: Session[] = [{ ...waiting, status: "working" }];
     const first = await startIn(dir, sessions, {}, clock, read);
     sessions[0] = waiting;
@@ -482,14 +522,18 @@ describe("a wait found by a run's first poll, over a history folder on disk", ()
     first.stop();
 
     clock.now = at(6, 10);
-    read.state = "error";
+    Object.assign(read, away);
+    sessions.length = 0;
     const run = await startIn(dir, sessions, {}, clock, read);
     await run.pollFor(MINUTE);
     await clear(run.port);
+    await run.pollFor(HOUR);
     read.state = "ok";
-    sessions.length = 0;
+    read.notRead = undefined;
+    sessions[0] = { ...waiting, status: "idle" };
     await run.pollFor(MINUTE);
-    expect(await eventsOf(run.port, id(5))).toEqual([]);
+    // A session of a part read at last is new to a history that holds nothing of it.
+    expect(await eventsOf(run.port, id(5))).toEqual(told);
     expect((await waitsFrom(run.port)).sevenDays).toMatchObject({ waitedMs: 0, waits: 0 });
   });
 });

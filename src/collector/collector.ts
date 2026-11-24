@@ -804,10 +804,9 @@ export function createCollector(options: CollectorOptions): Collector {
         ledger.clear();
         restarts = [];
         lastKept = null;
-        // What went is not compared with a source read only later, and a wait
-        // that goes on is found again.
-        poller.resume([]);
-        addSightings(poller.seenWaiting());
+        // What went is not compared with a source, or a part of one, read only
+        // later, and a wait that goes on is found again.
+        addSightings(poller.forget());
       },
     }),
     historyKept: () => ({

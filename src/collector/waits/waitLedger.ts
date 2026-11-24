@@ -3,7 +3,7 @@ import type { HistoryPoint, SessionEvent, SessionsSnapshot } from "../../core/se
 import { needsYou } from "../../core/waits/answeredWaits.ts";
 import { addPoll, type Span } from "../../core/waits/measured.ts";
 import type { WaitSighting } from "../../core/waits/waitSightings.ts";
-import { isWaitEvent, waitTotals, type WaitMark } from "../../core/waits/waitTotals.ts";
+import { isSighting, isWaitEvent, waitTotals, type WaitMark } from "../../core/waits/waitTotals.ts";
 import type { EventStore } from "../eventStore.ts";
 import type { HistoryStore } from "../historyStore.ts";
 
@@ -41,9 +41,9 @@ export interface WaitsContext {
  * Holds, compactly, what `GET /api/waits` is worked out from, further back than
  * the stores in memory hold: every event into or out of needs-you, the
  * stretches Agent Lookout measured and how the sessions in a wait were seen,
- * for nine days. The stores hold a thousand
- * events and six hours of points, which the charts need; a week of waits needs
- * a few thousand events and a few hundred stretches.
+ * for nine days, and of a wait that goes on past them, from where it began. The
+ * stores hold a thousand events and six hours of points, which the charts need;
+ * a week of waits needs a few thousand events and a few hundred stretches.
  *
  * It starts from what the history kept on disk held, all of it, and takes
  * every event and point the poller hands the stores from then on. With
@@ -65,9 +65,28 @@ export interface WaitLedger {
   answer(context: WaitsContext): WaitsResponse;
 }
 
+/**
+ * Of the marks let go, the starts and those of each wait that `kept` goes on
+ * with, from where it began: without them it would begin at the first kept.
+ */
+function goneOnWith(gone: readonly WaitMark[], kept: readonly WaitMark[]): WaitMark[] {
+  const going = new Set(kept.flatMap((mark) => ("sessionId" in mark ? [mark.sessionId] : [])));
+  const held: WaitMark[] = [];
+  for (const mark of [...gone].reverse()) {
+    if (!("sessionId" in mark)) held.push(mark);
+    else if (!going.has(mark.sessionId)) continue;
+    else if (isSighting(mark) || mark.to === "needs-you") held.push(mark);
+    // It ended an earlier wait.
+    else going.delete(mark.sessionId);
+  }
+  return held.reverse();
+}
+
 export function createWaitLedger(): WaitLedger {
-  // In the order they were added.
+  // Those of nine days, in the order they were added, and those before them
+  // of the waits they go on with.
   let marks: WaitMark[] = [];
+  let older: WaitMark[] = [];
   let spans: Span[] = [];
   let fresh = true;
 
@@ -76,7 +95,11 @@ export function createWaitLedger(): WaitLedger {
     let firstMark = 0;
     while (firstMark < marks.length && (marks[firstMark] as WaitMark).at < cutoff) firstMark += 1;
     firstMark = Math.max(firstMark, marks.length - MAX_MARKS);
-    if (firstMark > 0) marks = marks.slice(firstMark);
+    if (firstMark > 0) {
+      const gone = [...older, ...marks.slice(0, firstMark)];
+      marks = marks.slice(firstMark);
+      older = goneOnWith(gone, marks).slice(-MAX_MARKS);
+    }
     let firstSpan = 0;
     while (firstSpan < spans.length && (spans[firstSpan] as Span).to < cutoff) firstSpan += 1;
     firstSpan = Math.max(firstSpan, spans.length - MAX_SPANS);
@@ -105,12 +128,13 @@ export function createWaitLedger(): WaitLedger {
     },
     clear() {
       marks = [];
+      older = [];
       spans = [];
       fresh = true;
     },
     answer({ now, snapshot, since, where }) {
       const totals = waitTotals({
-        marks,
+        marks: [...older, ...marks],
         measured: spans,
         // Not a session in a wait Agent Lookout answered, whatever its source still says.
         waitingNow: snapshot.sessions

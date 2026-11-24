@@ -1226,25 +1226,91 @@ describe("a wait whose session leaves every listing", () => {
     ]);
   });
 
-  test("asked, it says which waits are in sight, and nothing of what they ask", async () => {
+  test("as the history is cleared it says which waits are in sight, and nothing of what they ask", async () => {
     const { adapter } = scriptedAdapter(
       main(moved, { ...moved, id: "claude-code:b" }),
       main({ ...asking, waitingText: "Run: npm test" }, { ...asking, id: "claude-code:b" }),
-      main(asking),
+      fallback(asking),
+      main({ ...asking, status: "idle" }, { ...asking, id: "claude-code:b" }),
     );
     const poller = createPoller({
       adapters: [adapter],
       events: createEventStore(),
       history: createHistoryStore(),
     });
-    expect(poller.seenWaiting()).toEqual([]);
+    expect(poller.forget()).toEqual([]);
     await poller.pollOnce();
-    expect(poller.seenWaiting()).toEqual([]);
+    expect(poller.forget()).toEqual([]);
     await poller.pollOnce();
     const seen = { sessionId: asking.id, sessionName: "demo-a", at: Date.now(), way: "main" };
-    expect(poller.seenWaiting()).toEqual([seen, { ...seen, sessionId: "claude-code:b" }]);
+    expect(poller.forget()).toEqual([seen, { ...seen, sessionId: "claude-code:b" }]);
     await poller.pollOnce();
-    expect(poller.seenWaiting()).toEqual([seen]);
+    expect(poller.forget()).toEqual([{ ...seen, way: "fallback" }]);
+    await poller.pollOnce();
+    expect(poller.forget()).toEqual([{ ...seen, sessionId: "claude-code:b" }]);
+  });
+
+  describe("with no event to say it began", () => {
+    const idle: Session = { ...asking, status: "idle" };
+    const found: [number, AdapterResult][] = [
+      [0, fallback(asking)],
+      [10 * SECOND, fallback(asking)],
+      [12 * SECOND, main(idle)],
+      [3 * HOUR, main(idle)],
+    ];
+
+    test("it stops at the last poll that listed it waiting, once another way lists it idle", async () => {
+      const history = kept();
+      await run(history, ...found);
+      expect(totals(history, 3 * HOUR, false)).toEqual([10 * SECOND, 0, 1]);
+      expect(told(history)).toEqual([]);
+      await run(history, [3 * HOUR + MINUTE, main(idle)]);
+      expect(totals(history, 4 * HOUR, false)).toEqual([10 * SECOND, 0, 1]);
+    });
+
+    test("listed waiting again it is one wait, and its end is told as the other way shows it", async () => {
+      const history = kept();
+      const still = fallback({ ...asking, statusSince: null });
+      await run(history, ...found, [4 * HOUR, still], [5 * HOUR, main()]);
+      expect(totals(history, 6 * HOUR, false)).toEqual([4 * HOUR, 0, 1]);
+
+      const other = kept();
+      await run(other, ...found, [4 * HOUR, main()]);
+      expect(told(other)).toEqual([[4 * HOUR, "ended", "needs-you", undefined]]);
+      expect(other.events.list()[0]?.lastSeen).toBe(T0 + 10 * SECOND);
+    });
+
+    test("while a wait an event began goes on, though a fallback lists it working, through a restart too", async () => {
+      const history = kept();
+      await run(history, [0, main(moved)], [MINUTE, main(asking)], [2 * MINUTE, fallback(moved)]);
+      expect(totals(history, HOUR, false)).toEqual([59 * MINUTE, 0, 1]);
+      await run(history, [HOUR, main(asking)], [2 * HOUR, fallback(moved)]);
+      expect(totals(history, 3 * HOUR, false)).toEqual([179 * MINUTE, 0, 1]);
+    });
+
+    test("beside one an event of the same poll began, each goes by its own", async () => {
+      const history = kept();
+      const b = (status: Session["status"]): Session => ({
+        ...asking,
+        id: "claude-code:b",
+        status,
+      });
+      const third = { ...result([moved, b("idle")]), basis: "third" };
+      await run(
+        history,
+        [0, main({ ...asking, status: "finished" })],
+        [MINUTE, fallback(asking, b("needs-you"))],
+        [2 * MINUTE, third],
+      );
+      expect(told(history)).toEqual([[MINUTE, "status-changed", "finished", "needs-you"]]);
+      const lastSeen = history.sightings
+        .filter((sighting) => sighting.at === T0 + 2 * MINUTE)
+        .map((sighting) => [sighting.sessionId, sighting.lastSeen]);
+      expect(lastSeen).toEqual([
+        [asking.id, undefined],
+        ["claude-code:b", T0 + MINUTE],
+      ]);
+    });
   });
 
   test("seen waiting when the main way is back, it is one wait, and the time out of sight counts", async () => {

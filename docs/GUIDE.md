@@ -231,7 +231,7 @@ A session can leave the list while it waits: its agent closes and the way Agent 
 
 If it is then seen still waiting, it is one wait, and the time out of the list counts. Its notification comes again all the same: a dashboard page takes it down when the session leaves the list and shows it when the session is back, and Agent Lookout's own shows a second one. An email, a post or a push is not sent again for the same status time, but one is for an agent that gives no time for when its status began. If its agent gives a status time later than that last poll, the wait ended unseen and a new one began then: Waits counts the first up to that last poll and the second from that time, while the Events log, the Timeline and Waited on you show one wait.
 
-If a way shows it answered or finished, or the way that last listed it shows it gone, the Events log says so at that moment, and the wait counts only up to that last poll, since nobody saw when it ended. The Events log's line, the Timeline, Waited on you and the last wait in the Needs you panel stop there too. A session another way still lists goes on counting until that way shows it change.
+If a way shows it answered or finished, or the way that last listed it shows it gone, the Events log says so at that moment, and the wait counts only up to that last poll, since nobody saw when it ended. The Events log's line, the Timeline, Waited on you and the last wait in the Needs you panel stop there too. A session another way still lists goes on counting until that way shows it change. One that Agent Lookout found waiting, with no change of its own in the history, as when it started, counts only while it is listed waiting.
 
 ### Sources
 

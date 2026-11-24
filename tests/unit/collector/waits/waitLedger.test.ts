@@ -237,25 +237,81 @@ describe("createWaitLedger", () => {
     expect(answer.today).toMatchObject({ waitedMs: 0, waits: 0, measuredMs: 0 });
   });
 
-  test("it holds nine days, and lets older go as polls come: a wait begun before then is counted from the run that saw it end", () => {
-    const ledger = createWaitLedger();
-    const old = T0 - LEDGER_KEPT_MS - 60 * MINUTE;
-    ledger.restore({
-      marks: [
-        changed(old, "working", "needs-you"),
-        { kind: "start", at: T0 - 30 * MINUTE },
-        changed(T0 - 10 * MINUTE, "needs-you", "idle"),
+  describe("a wait that began before the nine days it holds", () => {
+    const DAY = 24 * 60 * MINUTE;
+    const old = T0 - LEDGER_KEPT_MS - DAY;
+    const start = (at: number) => ({ kind: "start" as const, at });
+    const seen = (at: number, way = "main") => ({
+      sessionId: ID,
+      sessionName: "demo-project",
+      at,
+      way,
+    });
+    const begun = [start(old), changed(old + MINUTE, "working", "needs-you"), seen(old + MINUTE)];
+    const back = seen(T0 - 5 * DAY, "fallback");
+
+    test.each([
+      ["seen another way since, is whole", [back], Infinity],
+      ["seen by a run since, is whole", [start(T0 - 5 * DAY), seen(T0 - 5 * DAY)], Infinity],
+      ["not seen by a run since, stops there", [start(T0 - 5 * DAY)], T0 - 5 * DAY],
+      ["not seen by a run as old, counts for nothing", [start(old + DAY / 2)], old + DAY / 2],
+      [
+        "not seen by a run as old, and by the next, is one wait",
+        [start(old + DAY / 2), start(T0 - 5 * DAY), seen(T0 - 5 * DAY)],
+        Infinity,
       ],
-      measured: [{ from: old - MINUTE, to: T0 - 2 * SECOND }],
+    ])("%s", (_, since, stopped) => {
+      const ledger = createWaitLedger();
+      const answered = changed(T0 - 10 * MINUTE, "needs-you", "idle");
+      // Let go by the second poll, once more has been let go by the first.
+      const another = { ...seen(T0 - LEDGER_KEPT_MS + SECOND), sessionId: "claude-code:b" };
+      ledger.restore({
+        marks: [...begun, another, ...since, answered].sort((a, b) => a.at - b.at),
+        measured: [{ from: old, to: T0 }],
+      });
+      for (const at of [T0, T0 + 2 * SECOND]) ledger.addPoint(point(at));
+      const { sevenDays } = ledger.answer({
+        now: T0,
+        snapshot: nobodyWaiting,
+        since: { at: old, by: "started" },
+        where: "disk",
+      });
+      const ended = Math.min(answered.at, stopped);
+      expect(sevenDays.waitedMs).toBe(Math.max(0, ended - sevenDays.from));
     });
-    ledger.addPoint(point(T0));
-    const answer = ledger.answer({
-      now: T0,
-      snapshot: nobodyWaiting,
-      since: { at: old - 60 * MINUTE, by: "started" },
-      where: "disk",
+
+    test("and ended before them is let go, and one found since counts from then", () => {
+      const ledger = createWaitLedger();
+      ledger.restore({
+        marks: [...begun, changed(old + 2 * MINUTE, "needs-you", "idle"), back],
+        measured: [{ from: old, to: T0 }],
+      });
+      ledger.addPoint(point(T0));
+      const { sevenDays } = ledger.answer({
+        now: T0,
+        snapshot: { sessions: [makeSession({ id: ID, status: "needs-you" })] },
+        since: { at: old, by: "started" },
+        where: "disk",
+      });
+      expect(sevenDays.waitedMs).toBe(5 * DAY);
     });
-    expect(answer.today).toMatchObject({ waitedMs: 20 * MINUTE, waits: 1 });
+
+    test("goes with the rest as the history is cleared", () => {
+      const ledger = createWaitLedger();
+      ledger.restore({ marks: [...begun, back], measured: [{ from: old, to: T0 }] });
+      ledger.addPoint(point(T0));
+      ledger.clear();
+      pollEvery2s((added) => ledger.addPoint(added), T0, T0 + MINUTE);
+      ledger.addSightings([seen(T0 + MINUTE)]);
+      pollEvery2s((added) => ledger.addPoint(added), T0 + MINUTE, T0 + 2 * MINUTE);
+      const { sevenDays } = ledger.answer({
+        now: T0 + 2 * MINUTE,
+        snapshot: { sessions: [makeSession({ id: ID, status: "needs-you" })] },
+        since: { at: old, by: "started" },
+        where: "disk",
+      });
+      expect(sevenDays.waitedMs).toBe(MINUTE);
+    });
   });
 });
 

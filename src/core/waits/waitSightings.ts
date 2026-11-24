@@ -18,7 +18,9 @@ export interface WaitSighting {
   way: string;
   /**
    * Present when a poll left the session out: the last poll that listed it, or
-   * for one an earlier run still listed, when the run after that began.
+   * for one an earlier run still listed, when the run after that began. Also
+   * when a poll listed one in another status, whose wait no event began: the
+   * last poll that listed it waiting.
    */
   lastSeen?: number;
   /**
