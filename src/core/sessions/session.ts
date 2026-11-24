@@ -745,7 +745,8 @@ export interface SourceHealth {
    * safe or not laid out to be read, or one not reached for want of time that
    * has no earlier read. The answer says nothing of their sessions, so the
    * first good poll of a run leaves them out of its compare with the history,
-   * and the first poll that reads their part compares them instead.
+   * and the first poll that reads their part compares them instead. After that
+   * each stays as it was last seen (`keptUnread`).
    *
    * - Hermes Agent names each such profile, as `hermes-agent:<profile>/`.
    * - Crush names each such project, as `crush:<hash of its folder>/`.
@@ -808,6 +809,27 @@ export function readWays(source: Pick<SourceHealth, "basis" | "parts">): ReadWay
       return part ? keyFor(part) : basis;
     },
   };
+}
+
+/** The most sessions read one way that are kept unread: as many as one machine lists. */
+const MAX_KEPT_UNREAD = 500;
+
+/**
+ * Of what was remembered of a source's sessions, by id, what an answer that
+ * does not list them says nothing of: those of a part it did not read
+ * (`notRead`). They stay as they were last seen, neither ended nor new when
+ * they are read again, even those of another machine's agent that this version
+ * does not know, which have no way of their own.
+ */
+export function keptUnread<T>(
+  { notRead = [] }: Pick<SourceHealth, "notRead">,
+  remembered: Iterable<readonly [string, T]>,
+  listed: ReadonlySet<string>,
+): (readonly [string, T])[] {
+  if (notRead.length === 0) return [];
+  return [...remembered]
+    .filter(([id]) => !listed.has(id) && notRead.some((start) => id.startsWith(start)))
+    .slice(0, MAX_KEPT_UNREAD);
 }
 
 export interface SessionsSnapshot {

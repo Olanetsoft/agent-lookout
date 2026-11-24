@@ -4,6 +4,7 @@ import {
   isMachineName,
   isPartKey,
   isRemoteSource,
+  keptUnread,
   machineInId,
   nameOnMachine,
   readWays,
@@ -247,4 +248,17 @@ test("a part's key is told from a source's own way", () => {
   // A session of no part named is read the source's own way.
   expect(isPartKey(ways.keyOf("hermes-agent:default/20261001_110000_0000a1"))).toBe(false);
   expect(isPartKey("")).toBe(false);
+});
+
+test("what an answer says nothing of stays as it was last seen: what it does not list of a part it did not read", () => {
+  const remembered = ["next-agent:a", "next-agent:b", "other:c"].map((id) => [id, id] as const);
+  const listed = new Set(["next-agent:b"]);
+  expect(keptUnread({ notRead: ["next-agent:"] }, remembered, listed)).toEqual([
+    ["next-agent:a", "next-agent:a"],
+  ]);
+  expect(keptUnread({ notRead: [] }, remembered, listed)).toEqual([]);
+  expect(keptUnread({}, remembered, listed)).toEqual([]);
+  // A machine that lists new sessions of a part it does not read cannot fill the memory.
+  const many = Array.from({ length: 700 }, (_, index) => [`next-agent:${index}`, index] as const);
+  expect(keptUnread({ notRead: ["next-agent:"] }, many, listed)).toEqual(many.slice(0, 500));
 });

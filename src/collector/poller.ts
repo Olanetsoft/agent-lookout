@@ -7,6 +7,7 @@ import {
 import { historyPointFor } from "../core/history.ts";
 import {
   isStatusEvent,
+  keptUnread,
   readWays,
   withoutWaitingText,
   type ReadWays,
@@ -657,14 +658,17 @@ export function createPoller(options: PollerOptions): Poller {
       const moves: SessionEvent[] = [];
       const read = new Map<string, Session[]>(ways.keys.map((key) => [key, []]));
       for (const session of result.sessions) read.get(ways.keyOf(session.id))?.push(session);
+      const listed = new Set(result.sessions.map((session) => session.id));
       for (const [way, found] of read) {
         const previous = baselines.get(way);
         // A baseline takes every session as it is found, as it always has.
         const sessions = previous ? forEvents(found, previous, answered) : found;
+        const was = (previous ?? []).map((session) => [session.id, session] as const);
+        const kept = keptUnread(result.health, was, listed).map(([, session]) => session);
         if (previous) {
           // A change seen while another way of reading was in use shows up again
           // here, against this way's older poll. It is reported only once.
-          const diff = diffSessions(previous, sessions, at).filter(
+          const diff = diffSessions(previous, [...sessions, ...kept], at).filter(
             (event) => !endsWaitUnseen(event, way, waits),
           );
           moves.push(...withoutRepeats(diff, reported));
@@ -697,7 +701,7 @@ export function createPoller(options: PollerOptions): Poller {
         // What a waiting session is asking belongs to its wait. A baseline can
         // outlive the wait, while the source is read another way, so it is kept
         // without it.
-        baselines.set(way, sessions.map(withoutWaitingText));
+        baselines.set(way, [...sessions, ...kept].map(withoutWaitingText));
       }
       for (const event of moves) {
         const wait = waits.get(event.sessionId);

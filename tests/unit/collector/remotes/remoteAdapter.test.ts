@@ -637,6 +637,88 @@ describe("the way a machine is read", () => {
     expect(machine.changes()).toEqual([]);
   });
 
+  describe("an agent this version does not know there", () => {
+    /** An agent there of a newer version, in the state given, with these sessions once it is read. */
+    function newerThere(
+      source: Partial<SourceHealth>,
+      statuses: [string, SessionStatus][],
+    ): SessionsSnapshot {
+      return {
+        generatedAt: NOW,
+        sources: [{ ...sourceThere("next-agent", "Next Agent", "files"), ...source }],
+        sessions: statuses.map(([id, status]) => sessionThere("next-agent", id, status)),
+      };
+    }
+    const both: [string, SessionStatus][] = [
+      ["waiting", "needs-you"],
+      ["busy", "working"],
+    ];
+    const ok = newerThere({}, both);
+
+    test.each(["error", "searching", "unavailable"] as const)(
+      "that is %s there for a while sends nothing for its sessions, nor again for a wait",
+      async (state) => {
+        const machine = watched(ok);
+        await machine.poll();
+        await machine.poll();
+        await machine.poll(newerThere({ state }, []));
+        await machine.poll();
+        await machine.poll(ok);
+        await machine.poll(newerThere({ state }, []));
+        await machine.poll(ok);
+        expect(machine.notices).toEqual([]);
+        expect(machine.changes()).toEqual([]);
+      },
+    );
+
+    test("tells once it is read what changed meanwhile: a finish, an end, a wait", async () => {
+      const machine = watched(ok);
+      await machine.poll();
+      await machine.poll();
+      await machine.poll(newerThere({ state: "error" }, []));
+      await machine.poll();
+      await machine.poll(
+        newerThere({}, [
+          ["busy", "finished"],
+          ["new", "needs-you"],
+        ]),
+      );
+      expect(machine.notices).toEqual([
+        "needs-you remote:devbox:next-agent:new",
+        "finished remote:devbox:next-agent:busy",
+        "ended remote:devbox:next-agent:waiting",
+      ]);
+      expect(machine.changes().toSorted()).toEqual([
+        "appeared",
+        "ended",
+        "remote:devbox:next-agent:busy working->finished",
+      ]);
+    });
+
+    test("that is read in parts ends none of a part it names as not read", async () => {
+      const parted = (read: string[]) =>
+        newerThere(
+          {
+            notRead: ["a/", "b/"]
+              .filter((part) => !read.includes(part))
+              .map((p) => `next-agent:${p}`),
+          },
+          read.map((part) => [`${part}waiting`, "needs-you"]),
+        );
+      const machine = watched(parted(["a/", "b/"]));
+      await machine.poll();
+      await machine.poll();
+      await machine.poll(parted(["a/"]));
+      await machine.poll(parted(["b/"]));
+      await machine.poll(parted(["a/", "b/"]));
+      expect(machine.notices).toEqual([]);
+      expect(machine.changes()).toEqual([]);
+      // Read, and gone.
+      await machine.poll(newerThere({}, [["a/waiting", "needs-you"]]));
+      expect(machine.notices).toEqual(["ended remote:devbox:next-agent:b/waiting"]);
+    });
+  });
+
   test("a way this version does not name for a source there is left out, and that source is compared under api", async () => {
     for (const basis of ["database closed\n", "Database-Closed", "files"]) {
       const odd = opencodeThere(basis, [["ses_a", "idle"]]);
