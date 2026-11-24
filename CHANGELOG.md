@@ -23,6 +23,7 @@ Changes that a user of Agent Lookout would notice, newest first.
 - A double click on Remove in Permission rules, or Enter held on it, removes one rule, not the next one too. The same goes for Move up and Move down, for Hide until it changes and for the other buttons like them: the second half of a double click, or a key held down, presses nothing that took the first one's place. (#448)
 - A double click or a double tap on Clear history asks, and no longer also answers the question in a narrow window, where the button that clears comes up in the same place. Cancel is inactive while the history is being cleared. (#450)
 - A page left open while Agent Lookout restarts keeps the Events log, the Timeline, the waits and Last wait. Before, it lost everything from before the restart, until it was loaded again, when a session had changed meanwhile. (#449)
+- In the search, the session lit at the top stays lit when another moves above it, as when one starts waiting, so Enter goes to the session you saw. (#451)
 
 ## 0.2.30 - 2026-11-24
 

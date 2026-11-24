@@ -190,8 +190,9 @@ interface SearchBodyProps {
  * round to the first and from the first to the last, and the field says which
  * one it is through `aria-activedescendant`. The lit option is followed by
  * session, not by place, so a poll that moves the sessions about keeps the
- * same one lit. A pointer moving over an option lights it, and a click
- * chooses it.
+ * same one lit, the first one found as much as one the keys went to. Once it is
+ * no longer found, the first is lit in its place. A pointer moving over an
+ * option lights it, and a click chooses it.
  */
 function SearchBody({ state, now, onChoose, onShortcuts }: SearchBodyProps) {
   const [query, setQuery] = useState("");
@@ -204,8 +205,10 @@ function SearchBody({ state, now, onChoose, onShortcuts }: SearchBodyProps) {
   const agentOf = (session: Session) => agentLabel(session, sources);
   const results = searchSessions(sessions, query, agentOf);
   const found = results.findIndex((session) => session.id === litId);
-  const lit = results.length === 0 ? -1 : Math.max(0, found);
+  const lit = Math.max(0, found);
   const litSession = results[lit];
+  // The first, lit for want of another, is followed from then on.
+  if (found === -1 && litSession) setLitId(litSession.id);
   // An option's id is its session's, so the field's attribute changes when another session is lit.
   const optionId = (session: Session) => `${listId}-${encodeURIComponent(session.id)}`;
   const litOption = litSession ? optionId(litSession) : undefined;
