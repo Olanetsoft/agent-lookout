@@ -21,7 +21,7 @@ export interface AntigravityProfile {
 
 /**
  * The Antigravity CLI, `agy`. It runs in a terminal, in an editor over ACP
- * (`agy acp`), from a script or as a service, and nothing read here says which.
+ * (`agy acp`), from a script or as a service, and no transcript says which.
  */
 export const CLI_PROFILE: AntigravityProfile = {
   sourceId: "antigravity-cli",

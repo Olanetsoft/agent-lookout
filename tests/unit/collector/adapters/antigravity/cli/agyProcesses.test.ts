@@ -184,6 +184,25 @@ describe("readAgyCommandLine", () => {
     }
   });
 
+  test("agy acp that signs in, or prints its help, is not a session", () => {
+    for (const rest of [
+      "acp --login",
+      "acp --sandbox --login",
+      "acp --login --log-file /Users/example/acp.log",
+      "acp --help",
+      "acp -h",
+    ]) {
+      expect(readAgyCommandLine(`/Users/example/.local/bin/agy ${rest}`), rest).toEqual({
+        session: false,
+      });
+    }
+    // Only as a whole word, and only of an agy acp.
+    for (const rest of ["acp --login-hint demo", "acp --add-dir /Users/example/code/--help"]) {
+      expect(readAgyCommandLine(`agy ${rest}`), rest).toEqual({ session: true, acp: true });
+    }
+    expect(readAgyCommandLine("agy -p explain what acp --login does")).toEqual({ session: true });
+  });
+
   test("agy's own commands, and options that print and end, are not sessions", () => {
     for (const command of [
       "remote-control start",

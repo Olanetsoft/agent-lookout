@@ -92,7 +92,7 @@ const LABEL = CLI_PROFILE.label;
 
 /** Said whenever the Antigravity CLI is watched, because it is what a person would otherwise expect to see. */
 export const NEEDS_YOU_NOTE =
-  "A session needs you while agy asks you to approve a tool, which its own log records. A question it asks you is not known to be recorded, and an agy acp session's approvals are not seen, so both show as working.";
+  "A session needs you while agy's log says it asks you to approve a tool. A question, or any wait under agy acp, shows as working.";
 
 /** Said whenever the Antigravity CLI is watched, until the adapter has been checked against more of agy. */
 export const UNCHECKED_NOTE =
@@ -129,8 +129,8 @@ export const UNMATCHED_NOTE =
  * - Failed is an error agy records as a step of its own, or a reply that failed.
  * - The name is the title agy gives a conversation, and the folder the one its
  *   program's log names.
- * - The app is not known: nothing says whether a conversation is in a terminal,
- *   in an editor over ACP or in neither.
+ * - The app is not known: no transcript says whether it is in a terminal, in an
+ *   editor over ACP or in neither, or which program it belongs to.
  * - No Jump, Stop or Answer: nothing ties a conversation to one window, and agy
  *   takes its answers only in that window or in Remote Control.
  * - Quiet for is the newest modified time of the conversation's files.
@@ -175,7 +175,7 @@ export const ANTIGRAVITY_CAPABILITIES: SourceCapabilities = {
   answer: {
     level: "no",
     reason:
-      "agy takes an answer in its terminal, an editor or Remote Control, and Agent Lookout reaches none of them.",
+      "An answer is taken in agy's terminal, an editor or Remote Control, and Agent Lookout reaches none of them.",
   },
 };
 

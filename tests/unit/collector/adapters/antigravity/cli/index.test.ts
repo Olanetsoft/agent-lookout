@@ -632,6 +632,12 @@ test("never throws: anything unexpected is a sentence", async () => {
   });
 });
 
+test("what the card says of Needs you is short, and names what is not seen", () => {
+  expect(NEEDS_YOU_NOTE.length).toBeLessThanOrEqual(130);
+  expect(NEEDS_YOU_NOTE).toContain("question");
+  expect(NEEDS_YOU_NOTE).toContain("agy acp");
+});
+
 describe("an agy program's own log and a conversation's title", () => {
   const ASKING = conversationId("e5");
   const STARTED = NOW - 10 * MINUTE;
@@ -748,11 +754,14 @@ describe("an agy program's own log and a conversation's title", () => {
     expect(basis).toBe(BASIS);
     expect(files.opened()).not.toContain(LOG);
 
-    // While both run, the log is tied to neither.
+    // While both run, the log is the other one's, so its approval shows.
     processes.set([{ startedAt: STARTED - 2 * SECOND, acp: true }, { startedAt: STARTED }]);
     const both = await antigravityAdapterFor(files, processes).poll();
-    expect(find(both.sessions, ASKING)).toMatchObject({ status: "working", cwd: null });
-    expect(files.opened()).not.toContain(LOG);
+    expect(find(both.sessions, ASKING)).toMatchObject({
+      status: "needs-you",
+      waitingReason: "permission",
+      cwd: WORKSPACE,
+    });
   });
 
   test("a log that cannot be tied to one running program is not read", async () => {

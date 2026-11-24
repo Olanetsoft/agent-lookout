@@ -67,6 +67,18 @@ export const AGY_COMMANDS: ReadonlySet<string> = new Set([
  */
 const ACP_COMMAND = "acp";
 
+/**
+ * Options with which an `agy acp` signs in or prints its help and ends, so it
+ * runs no session. Its line holds no prompt, so one counts anywhere in it.
+ */
+const ACP_OPTIONS_THAT_END: ReadonlySet<string> = new Set([
+  "-h",
+  "-help",
+  "--help",
+  "-login",
+  "--login",
+]);
+
 /** The option that runs a session's conversations on remote agents, kept with a remote project. */
 const REMOTE_AGENT_OPTIONS: ReadonlySet<string> = new Set(["-remote-agent", "--remote-agent"]);
 
@@ -173,8 +185,9 @@ function conversationNamedBy(word: string, next: string | undefined): string | u
  * kept. `ps` joins the arguments with spaces, so one that holds spaces cannot
  * be told apart: a line is a session unless its first word after the program
  * is one of agy's commands or of `NOT_A_SESSION_OPTIONS`, which a prompt given
- * with `-p` never is, since `-p` comes first. A line that does not show the
- * program is taken as a session that names no conversation.
+ * with `-p` never is, since `-p` comes first, or an `agy acp` is given one of
+ * `ACP_OPTIONS_THAT_END`. A line that does not show the program is taken as a
+ * session that names no conversation.
  *
  * The conversation is the first of `CONVERSATION_OPTIONS` that a whole id
  * follows, anywhere in the line, since agy takes one after a prompt too. So
@@ -194,7 +207,11 @@ export function readAgyCommandLine(line: string): AgyCommandLine {
       ? { session: false, remoteAgent: true }
       : { session: false };
   }
-  if (first === ACP_COMMAND) return { session: true, acp: true };
+  if (first === ACP_COMMAND) {
+    return words.some((word) => ACP_OPTIONS_THAT_END.has(word))
+      ? { session: false }
+      : { session: true, acp: true };
+  }
   for (const [index, word] of words.entries()) {
     const value = conversationNamedBy(word, words[index + 1]);
     if (value !== undefined && UUID.test(value)) {

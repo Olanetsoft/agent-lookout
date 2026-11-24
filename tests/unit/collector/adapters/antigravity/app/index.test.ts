@@ -755,6 +755,11 @@ test("carries its own declaration of what it can report, with Partly for Needs y
   expect(adapter.capabilities).toBe(ANTIGRAVITY_APP_CAPABILITIES);
   expect(ANTIGRAVITY_APP_CAPABILITIES["needs-you"].level).toBe("partly");
   expect(ANTIGRAVITY_APP_CAPABILITIES.tokens.level).toBe("yes");
+  // Google documents Remote Control, which reaches the app from a browser.
+  expect(ANTIGRAVITY_APP_CAPABILITIES.answer).toMatchObject({
+    level: "no",
+    reason: expect.stringContaining("Remote Control"),
+  });
   expect(adapter.lookingIn).toBe(
     "Looking for Antigravity sessions in ~/.gemini/antigravity/brain.",
   );

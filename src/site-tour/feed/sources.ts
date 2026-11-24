@@ -147,7 +147,7 @@ export const ANTIGRAVITY_CAPABILITIES: SourceCapabilities = {
   answer: {
     level: "no",
     reason:
-      "agy takes an answer in its terminal, an editor or Remote Control, and Agent Lookout reaches none of them.",
+      "An answer is taken in agy's terminal, an editor or Remote Control, and Agent Lookout reaches none of them.",
   },
 };
 
@@ -184,7 +184,8 @@ export const ANTIGRAVITY_APP_CAPABILITIES: SourceCapabilities = {
   },
   answer: {
     level: "no",
-    reason: "Antigravity documents no way to answer one of its approvals from outside the app.",
+    reason:
+      "Antigravity documents no way to answer one of its approvals but in the app or through Remote Control.",
   },
 };
 
