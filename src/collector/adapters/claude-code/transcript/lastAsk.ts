@@ -1,3 +1,4 @@
+import type { Session } from "../../../../core/sessions/session.ts";
 import { waitingText } from "../../../../core/text.ts";
 import { blocksOf, isRecord, linesOf, nonEmpty } from "./transcriptLines.ts";
 
@@ -22,6 +23,12 @@ import { blocksOf, isRecord, linesOf, nonEmpty } from "./transcriptLines.ts";
  *   after it. While it waits on a question, that `tool_use` is named
  *   `AskUserQuestion`, with `input.questions` a list of `{ question, header,
  *   options, multiSelect }`.
+ * - A tool that runs has no result yet either, and a subagent in the background
+ *   asks in the session while the session's own tool runs. Its `tool_use` has a
+ *   result at once, whose line's `toolUseResult` has `isAsync: true` and the
+ *   `status` `async_launched`, where one that has finished has `completed`. A
+ *   later line holds a `<task-notification>` that names it when it ends.
+ * - A line's `timestamp` is when it was written, as ISO text.
  *
  * So a line that does not parse is skipped, a field of the wrong kind is no
  * field, and anything unexpected gives no text at all, never a guess.
@@ -34,6 +41,46 @@ interface ToolUse {
   input: Record<string, unknown>;
   /** The `message.id` of the assistant message it is part of, when the line gives one. */
   messageId: string | null;
+  /** When its line was written, in epoch milliseconds, or null when the line does not say. */
+  at: number | null;
+}
+
+/** The wait a session is in: when it began, and what for. */
+export type Wait = Pick<Session, "statusSince" | "waitingReason">;
+
+/**
+ * How long before a wait the session's own newest step may have been written.
+ * Claude Code asks a moment after it writes the tool use it asks about, so
+ * with an older one something else is asking, such as a subagent started
+ * before the tail.
+ */
+export const ASKED_WITHIN_MS = 15_000;
+
+/** A wait and the line it is for are written a moment apart, in either order. */
+const WRITE_ORDER_SLACK_MS = 1_000;
+
+/** How a `<task-notification>` says an agent has ended. */
+const ENDED = /<status>(?:completed|failed|killed|stopped)</;
+
+/** When a line was written, or null when it does not say. */
+function writtenAt(line: Record<string, unknown>): number | null {
+  const at = typeof line.timestamp === "string" ? Date.parse(line.timestamp) : NaN;
+  return Number.isNaN(at) ? null : at;
+}
+
+/**
+ * Whether a result says its tool use started an agent that runs on after it, in
+ * the background or as a teammate. For a tool that starts a subagent anything
+ * but a finished agent or an error is taken so.
+ */
+function startedAgent(
+  name: string | undefined,
+  block: Record<string, unknown>,
+  result: Record<string, unknown>,
+): boolean {
+  if (result.isAsync === true || result.status === "async_launched") return true;
+  if (name === undefined || !SUBAGENT_TOOLS.has(name)) return false;
+  return result.status !== "completed" && block.is_error !== true;
 }
 
 /** Whether a `user` line is something the person said, rather than a tool's result or a note of Claude Code's own. */
@@ -50,16 +97,26 @@ function isPrompt(line: Record<string, unknown>): boolean {
  * tool use of the newest message has a result after it, the conversation has
  * gone on past it, or there is none in the tail.
  *
- * One message can ask for several tools at once. Claude Code asks about them
- * in their order, so the one it waits on is the first of that message's that
- * has no result yet, even when a later one already has its result. A line
+ * One message can ask for several tools at once, and one that runs has no
+ * result either, so with more than one left it is not known which is waited on.
+ * Nor is it while an agent the session started runs in the background, or when
+ * the session's own newest step is older than the wait, or newer. A question
+ * the session put is known all the same, in a wait on a question. A line
  * that gives no `message.id` cannot be told to be part of the same message,
  * so then only the newest tool use is looked at, and any later assistant line
  * is the conversation going on.
  */
-function pendingToolUse(lines: readonly Record<string, unknown>[]): ToolUse | null {
+function pendingToolUse(lines: readonly Record<string, unknown>[], wait: Wait): ToolUse | null {
   const uses: ToolUse[] = [];
   const answered = new Set<string>();
+  /** The agents that may still run: by the tool use that started each, the ids that name it. */
+  const agents = new Map<string, string[]>();
+  const latest = (wait.statusSince ?? 0) + WRITE_ORDER_SLACK_MS;
+  /** When the session last took a step before the wait, as far as its lines say. */
+  let steppedAt = 0;
+  const step = (at: number | null) => {
+    if (at !== null && at <= latest) steppedAt = Math.max(at, steppedAt);
+  };
   /**
    * Whether the conversation went on after the newest tool use: a reply of
    * another message, or of a message that cannot be told apart, or a prompt.
@@ -79,13 +136,35 @@ function pendingToolUse(lines: readonly Record<string, unknown>[]): ToolUse | nu
         const id = nonEmpty(block.id);
         const name = nonEmpty(block.name);
         if (id === null || name === null) continue;
-        uses.push({ id, name, input: isRecord(block.input) ? block.input : {}, messageId });
+        const at = writtenAt(line);
+        uses.push({ id, name, input: isRecord(block.input) ? block.input : {}, messageId, at });
+        step(at);
         movedOn = false;
       }
-    } else if (line.type === "user") {
+      continue;
+    }
+    if (agents.size > 0) {
+      const said = JSON.stringify(line);
+      if (said.includes("<task-notification>") && ENDED.test(said)) {
+        for (const [id, names] of agents) {
+          if (names.some((name) => said.includes(`>${name}<`))) agents.delete(id);
+        }
+      }
+    }
+    if (line.type === "user") {
       for (const block of blocksOf(line)) {
         const id = block.type === "tool_result" ? nonEmpty(block.tool_use_id) : null;
-        if (id !== null) answered.add(id);
+        if (id === null) continue;
+        answered.add(id);
+        step(writtenAt(line));
+        const result = isRecord(line.toolUseResult) ? line.toolUseResult : {};
+        const name = uses.find((use) => use.id === id)?.name;
+        if (!startedAgent(name, block, result)) continue;
+        const names = [id, nonEmpty(result.agentId), nonEmpty(result.taskId)];
+        agents.set(
+          id,
+          names.filter((each) => each !== null),
+        );
       }
       if (uses.length > 0 && isPrompt(line)) movedOn = true;
     }
@@ -93,8 +172,20 @@ function pendingToolUse(lines: readonly Record<string, unknown>[]): ToolUse | nu
 
   const newest = uses.at(-1);
   if (newest === undefined || movedOn) return null;
-  if (newest.messageId === null) return answered.has(newest.id) ? null : newest;
-  return uses.find((use) => use.messageId === newest.messageId && !answered.has(use.id)) ?? null;
+  const left = uses.filter(
+    (use) =>
+      !answered.has(use.id) &&
+      (use === newest || (use.messageId !== null && use.messageId === newest.messageId)),
+  );
+  if (wait.waitingReason === "question") {
+    const question = left.find((use) => use.name === "AskUserQuestion");
+    if (question !== undefined) return question;
+  }
+  const [only] = left;
+  if (only === undefined || left.length > 1 || agents.size > 0) return null;
+  if (wait.statusSince === null || only.at === null) return only;
+  const asked = only.at <= latest && steppedAt >= wait.statusSince - ASKED_WITHIN_MS;
+  return asked ? only : null;
 }
 
 /** The first line of a command that has anything on it. */
@@ -182,7 +273,8 @@ export function describeToolUse(
 /**
  * What the session is asking, from the end of its transcript, as plain text
  * fit to show: cleaned of control characters and cut to 200 characters. Left
- * out when the tail shows no tool use still waiting, or anything unexpected.
+ * out when the tail shows no tool use still waiting, or does not say which one
+ * the wait is for, or anything unexpected.
  *
  * `fromStart` says whether the tail is the whole file. When it is not, its
  * first line is a part of a longer one and is not read, so a last line too
@@ -192,8 +284,9 @@ export function askedInTail(
   tail: string,
   fromStart: boolean,
   cwd: string | null,
+  wait: Wait = { statusSince: null },
 ): string | undefined {
-  const pending = pendingToolUse(linesOf(tail, fromStart));
+  const pending = pendingToolUse(linesOf(tail, fromStart), wait);
   if (pending === null) return undefined;
   return waitingText(describeToolUse(pending.name, pending.input, cwd));
 }

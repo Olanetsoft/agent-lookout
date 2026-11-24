@@ -257,3 +257,15 @@ export function uniqueById(sessions: Session[]): Session[] {
   }
   return [...byId.values()];
 }
+
+/** The ids of the sessions two live processes have open. */
+export function openTwice(sessions: readonly Session[]): Set<string> {
+  const pids = new Map<string, number>();
+  const twice = new Set<string>();
+  for (const { id, pid, alive } of sessions) {
+    if (alive !== true || pid === undefined) continue;
+    if ((pids.get(id) ?? pid) !== pid) twice.add(id);
+    pids.set(id, pid);
+  }
+  return twice;
+}

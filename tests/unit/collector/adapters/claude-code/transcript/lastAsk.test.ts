@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  ASKED_WITHIN_MS,
   askedInTail,
   describeToolUse,
   shortPath,
@@ -9,6 +10,8 @@ import {
   otherLines,
   prompt,
   said,
+  startedInBackground,
+  taskNotification,
   toolResult,
   toolUse,
   toolUseId,
@@ -171,33 +174,26 @@ describe("what is read past", () => {
     expect(asked([toolUse(old, "Bash", { command: "ls" }, noId)])).toBe("Run: ls");
   });
 
-  test("of several tools one message asks for, the one waited on is the first with no result", () => {
+  test("of several tools one message asks for, only one left with no result is known to be waited on", () => {
     const first = toolUseId();
     const second = toolUseId();
     const third = toolUseId();
     const message = { messageId: "msg_batch" };
-    expect(
-      asked([
-        toolUse(first, "Read", { file_path: `${CWD}/a.ts` }, message),
-        toolUse(second, "Bash", { command: "npm run lint" }, message),
-        toolUse(third, "Bash", { command: "npm test" }, message),
-        toolResult(first),
-      ]),
-    ).toBe("Run: npm run lint");
-  });
-
-  test("of several tools one message asks for, an earlier one waits though the last has its result", () => {
-    const first = toolUseId();
-    const second = toolUseId();
-    const message = { messageId: "msg_pair" };
     const lines = [
-      toolUse(first, "Bash", { command: "npm test" }, message),
-      toolUse(second, "Read", { file_path: `${CWD}/b.ts` }, message),
-      toolResult(second),
+      toolUse(first, "Read", { file_path: `${CWD}/a.ts` }, message),
+      toolUse(second, "Bash", { command: "npm run lint" }, message),
+      toolUse(third, "Bash", { command: "npm test" }, message),
     ];
-    expect(asked(lines)).toBe("Run: npm test");
-    // Once every one has its result, none is waited on.
+    // Any of them can be running, and any be asked about.
+    expect(asked(lines)).toBeUndefined();
     expect(asked([...lines, toolResult(first)])).toBeUndefined();
+    expect(asked([...lines, toolResult(third)])).toBeUndefined();
+    expect(asked([...lines, toolResult(first), toolResult(second)])).toBe("Run: npm test");
+    expect(asked([...lines, toolResult(third), toolResult(first)])).toBe("Run: npm run lint");
+    // Once every one has its result, none is waited on.
+    expect(
+      asked([...lines, toolResult(first), toolResult(second), toolResult(third)]),
+    ).toBeUndefined();
   });
 
   test("a line that does not parse is skipped, and the next one is read", () => {
@@ -219,6 +215,118 @@ describe("what is read past", () => {
     expect(askedInTail("", true, CWD)).toBeUndefined();
     expect(askedInTail("\n\n", false, CWD)).toBeUndefined();
     expect(asked([prompt("Hello"), said("Hello. What shall we do?")])).toBeUndefined();
+  });
+});
+
+describe("when something else may be asking", () => {
+  const SINCE = 1_700_000_050_000;
+  const waitingSince = (lines: readonly TranscriptLine[]) =>
+    askedInTail(transcript(lines), true, CWD, { statusSince: SINCE, waitingReason: "permission" });
+  const running = toolUse(toolUseId(), "Bash", { command: "npm test" });
+
+  /** A session that started an agent, whose result says this, and then runs a command. */
+  function afterAgent(result: unknown, name = "Agent", error = false) {
+    const launch = toolUseId();
+    const lines = [
+      prompt("Look into it"),
+      toolUse(launch, name, { description: "Look into it" }),
+      toolResult(launch, { result, error }),
+    ];
+    return { launch, lines: [...lines, running] };
+  }
+
+  test("a background agent that may still run gives no text, whatever runs in the session", () => {
+    expect(asked(afterAgent(startedInBackground("a0001")).lines)).toBeUndefined();
+    expect(asked(afterAgent({ status: "async_launched" }, "Task").lines)).toBeUndefined();
+    expect(asked(afterAgent({ status: "teammate_spawned" }).lines)).toBeUndefined();
+    // Whatever tool started it, and however its result is written.
+    expect(asked(afterAgent({ status: "async_launched" }, "Workflow").lines)).toBeUndefined();
+    expect(asked(afterAgent(undefined).lines)).toBeUndefined();
+    // A launch whose own line is before the tail.
+    expect(asked(afterAgent(startedInBackground("a0001")).lines.slice(2))).toBeUndefined();
+  });
+
+  test("an agent that has finished, or was refused, is not asking", () => {
+    expect(asked(afterAgent({ status: "completed", agentId: "a0001" }).lines)).toBe(
+      "Run: npm test",
+    );
+    expect(asked(afterAgent("The person refused it", "Agent", true).lines)).toBe("Run: npm test");
+    // Nor is a command left running, which cannot ask.
+    expect(asked(afterAgent({ backgroundTaskId: "b0001" }, "Bash").lines)).toBe("Run: npm test");
+  });
+
+  test("a background agent is over once Claude Code says it has ended, and not before", () => {
+    const { launch, lines } = afterAgent(startedInBackground("a0001"));
+    const told = (...fields: Record<string, string>[]) => {
+      const [start, use, result, last] = lines as [
+        TranscriptLine,
+        TranscriptLine,
+        TranscriptLine,
+        TranscriptLine,
+      ];
+      return asked([start, use, result, ...fields.map(taskNotification), last]);
+    };
+    for (const status of ["completed", "failed", "killed", "stopped"]) {
+      expect(told({ "task-id": "a0001", status }), status).toBe("Run: npm test");
+      expect(told({ "tool-use-id": launch, status }), status).toBe("Run: npm test");
+    }
+    expect(told({ "task-id": "a0002", status: "completed" })).toBeUndefined();
+    expect(told({ "task-id": "a0001" })).toBeUndefined();
+    expect(told({ "task-id": "a0001", status: "running" })).toBeUndefined();
+    // A reply that quotes such a line is not one.
+    const quoted = taskNotification({ "task-id": "a0001", status: "completed" }).content as string;
+    expect(asked([...lines.slice(0, 3), said(quoted), running])).toBeUndefined();
+  });
+
+  test("the session's own question is known all the same, in a wait on a question", () => {
+    const question = toolUse(
+      toolUseId(),
+      "AskUserQuestion",
+      { questions: [{ question: "Which port?" }] },
+      { messageId: "msg_both" },
+    );
+    const beside = toolUse(toolUseId(), "Bash", { command: "ls" }, { messageId: "msg_both" });
+    const lines = [...afterAgent(startedInBackground("a0001")).lines.slice(0, 3), question, beside];
+    const waitingOnIt = (waitingReason: "question" | "permission") =>
+      askedInTail(transcript(lines), true, CWD, { statusSince: SINCE, waitingReason });
+    expect(waitingOnIt("question")).toBe("Which port?");
+    expect(waitingOnIt("permission")).toBeUndefined();
+  });
+
+  test("a tool use written long before the wait, or after it began, is not what is asked", () => {
+    const ran = (at: number) => [
+      toolUse(toolUseId(), "Bash", { command: "npm test" }, { at: SINCE + at }),
+    ];
+    expect(ASKED_WITHIN_MS).toBe(15_000);
+    expect(waitingSince(ran(-200))).toBe("Run: npm test");
+    expect(waitingSince(ran(-15_000))).toBe("Run: npm test");
+    expect(waitingSince(ran(-15_001))).toBeUndefined();
+    // The file and the line are written a moment apart.
+    expect(waitingSince(ran(1_000))).toBe("Run: npm test");
+    expect(waitingSince(ran(1_001))).toBeUndefined();
+    // Though the session took a step just before the wait.
+    const before = toolUseId();
+    const done = [
+      toolUse(before, "Read", { file_path: `${CWD}/a.ts` }, { at: SINCE - 900 }),
+      toolResult(before, { at: SINCE - 800 }),
+    ];
+    expect(waitingSince([...done, ...ran(5_000)])).toBeUndefined();
+    // With no time on either side, nothing says it is not.
+    expect(waitingSince([running])).toBe("Run: npm test");
+    expect(asked(ran(-60_000))).toBe("Run: npm test");
+  });
+
+  test("a step the session took just before the wait says it is the session's own", () => {
+    const first = toolUseId();
+    const message = { messageId: "msg_pair", at: SINCE - 60_000 };
+    const pair = [
+      toolUse(first, "Bash", { command: "npm run build" }, message),
+      toolUse(toolUseId(), "Bash", { command: "npm test" }, message),
+    ];
+    // The second is asked about once the first is done.
+    expect(waitingSince([...pair, toolResult(first, { at: SINCE - 100 })])).toBe("Run: npm test");
+    // A result after the wait began says nothing of it.
+    expect(waitingSince([...pair, toolResult(first, { at: SINCE + 5_000 })])).toBeUndefined();
   });
 });
 

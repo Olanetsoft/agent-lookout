@@ -260,7 +260,7 @@ Those are the adapter's three bases: `registry+feed`, `feed` and `registry`.
 
 **Transcripts are read only when needed.** A transcript holds everything a session said, so no poll reads one for its own sake.
 
-- For a session that needs you, and only then, `transcript/waitingTexts.ts` reads the last 256 KB of `~/.claude/projects/<folder>/<session id>.jsonl`. The folder is the session's folder with every character that is not a letter or digit made a `-`. `lastAsk.ts` turns the newest tool use with no result into one line, such as `Run: npm test` (#56). A parse that fails gives no text, never a guess. The file is read again only when it changes, and everything kept is dropped on the first poll the session is not waiting. Where the text may go is under [What is never sent](#what-is-never-sent).
+- For a session that needs you, and only then, `transcript/waitingTexts.ts` reads the last 256 KB of `~/.claude/projects/<folder>/<session id>.jsonl`. The folder is the session's folder with every character that is not a letter or digit made a `-`. `lastAsk.ts` turns the newest tool use with no result into one line, such as `Run: npm test` (#56). A parse that fails gives no text, never a guess. Nor does a wait that something else may be asking in: a background agent, another tool of the same message, or a second process with the session open. The file is read again only when it changes, and everything kept is dropped on the first poll the session is not waiting. Where the text may go is under [What is never sent](#what-is-never-sent).
 - What a session last said is read only when a page asks for it. [A session's last message](#a-sessions-last-message) covers it.
 - `AGENT_LOOKOUT_WAITING_TEXT=off` stops any transcript being opened.
 

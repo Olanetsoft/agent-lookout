@@ -64,6 +64,45 @@ describe("what a waiting session is asking", () => {
     expect(session?.waitingText).toBe("Run: npm test");
   });
 
+  test("says nothing when the tool use in its transcript was written long before the wait", async () => {
+    const { files, reader } = setUp();
+    const ran = (at: number) =>
+      transcript([toolUse(toolUseId(), "Bash", { command: "npm test" }, { at })]);
+    files.write(FILE, ran(SINCE - 60_000));
+    expect((await reader.annotate([waiting()]))[0]).not.toHaveProperty("waitingText");
+    files.append(FILE, ran(SINCE - 500));
+    expect((await reader.annotate([waiting()]))[0]?.waitingText).toBe("Run: npm test");
+  });
+
+  test("is read again when what the session waits for changes, though nothing else has", async () => {
+    const { files, reader } = setUp();
+    files.write(
+      FILE,
+      transcript([
+        toolUse(
+          toolUseId(),
+          "AskUserQuestion",
+          { questions: [{ question: "Which port?" }] },
+          { at: SINCE - 60_000 },
+        ),
+      ]),
+    );
+    const said = async (waitingReason: Session["waitingReason"]) =>
+      (await reader.annotate([waiting({ waitingReason })]))[0]?.waitingText;
+    expect(await said("question")).toBe("Which port?");
+    expect(await said("permission")).toBeUndefined();
+  });
+
+  test("says nothing, and is not read, while two processes have the session open", async () => {
+    const { files, reader } = setUp();
+    files.write(FILE, waitingToRun("npm test"));
+    const session = waiting();
+    const [shared] = await reader.annotate([session], new Set([session.id]));
+    expect(shared).toBe(session);
+    expect(files.calls).toEqual([]);
+    expect((await reader.annotate([session], new Set()))[0]?.waitingText).toBe("Run: npm test");
+  });
+
   test("only a waiting Claude Code session is read, and the others are handed back as they are", async () => {
     const { files, reader } = setUp();
     files.write(FILE, waitingToRun("npm test"));

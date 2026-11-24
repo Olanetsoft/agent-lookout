@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
   sessionFromFeed,
   sessionFromRegistry,
+  openTwice,
   uniqueById,
   type SessionContext,
 } from "@collector/adapters/claude-code/toSession";
@@ -701,5 +702,25 @@ describe("uniqueById", () => {
     expect(uniqueById([gone, idle])).toEqual([idle]);
     expect(uniqueById([idle, gone])).toEqual([idle]);
     expect(uniqueById([listed, idle])).toEqual([idle]);
+  });
+});
+
+describe("openTwice", () => {
+  test("gives the sessions two live processes have open", () => {
+    const copy = (id: string, pid: number | undefined, alive: boolean | undefined) =>
+      makeSession({ id: `claude-code:${id}`, pid, alive });
+    expect([
+      ...openTwice([
+        copy("a", 1, true),
+        copy("b", 2, true),
+        copy("a", 3, true),
+        copy("b", 4, false),
+        copy("c", 5, true),
+        // Listed twice, as Claude Code has done, is one process.
+        copy("c", 5, true),
+        copy("d", undefined, undefined),
+        copy("d", 6, true),
+      ]),
+    ]).toEqual(["claude-code:a"]);
   });
 });

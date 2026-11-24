@@ -5,6 +5,7 @@ import {
   mapClaudeCodeStatus,
 } from "../../../core/mapping/claudeCodeMapping.ts";
 import type {
+  Session,
   SourceCapabilities,
   SourceFact,
   SourceHealth,
@@ -50,6 +51,7 @@ import {
 } from "./registry.ts";
 import { withStopOffers } from "./stopOffers.ts";
 import {
+  openTwice,
   sessionFromFeed,
   sessionFromRegistry,
   SOURCE_ID,
@@ -657,10 +659,19 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
     };
   }
 
+  /** The sessions two processes had open at the last poll. */
+  let shared: ReadonlySet<string> = new Set();
+
+  /** One copy of each session, once it is noted which have more than one. */
+  function oneOfEach(sessions: Session[]): Session[] {
+    shared = openTwice(sessions);
+    return uniqueById(sessions);
+  }
+
   /** The sessions of a poll, each waiting one with what it is asking when its transcript says. */
   async function withWaitingText(result: AdapterResult): Promise<AdapterResult> {
     if (waitingTexts === null) return result;
-    return { ...result, sessions: await waitingTexts.annotate(result.sessions) };
+    return { ...result, sessions: await waitingTexts.annotate(result.sessions, shared) };
   }
 
   async function poll(): Promise<AdapterResult> {
@@ -805,7 +816,7 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
       }`;
       return offered({
         health: health("ok", detail),
-        sessions: finished.keepRecent(uniqueById(sessions), checkedAt),
+        sessions: finished.keepRecent(oneOfEach(sessions), checkedAt),
         basis: "registry+feed",
       });
     }
@@ -832,7 +843,7 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
       }
       return offered({
         health: health("ok", detail),
-        sessions: finished.keepRecent(uniqueById(sessions), checkedAt),
+        sessions: finished.keepRecent(oneOfEach(sessions), checkedAt),
         basis: "feed",
       });
     }
@@ -854,7 +865,7 @@ export function createClaudeCodeAdapter(options: ClaudeCodeAdapterOptions = {}):
           : COULD_NOT_RUN;
 
     if (registry.readable) {
-      const sessions = uniqueById(
+      const sessions = oneOfEach(
         live.map((entry) => sessionFromRegistry(entry, context, lastAnswer)),
       );
       let detail: string;
