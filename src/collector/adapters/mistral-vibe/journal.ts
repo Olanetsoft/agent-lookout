@@ -5,6 +5,7 @@ import {
   emptyFold,
   foldLine,
   openedBy,
+  resumedBy,
   settledBy,
   type CallbackFold,
   type CallbackLine,
@@ -45,7 +46,10 @@ import { envelopeOf, type Envelope } from "./envelope.ts";
  *   and of the line only `delta`, found by the same walk (`deltaSpanOf`,
  *   `history/replies.ts`);
  * - takes a `projection_advanced` record, a whole state that only some older
- *   builds wrote, as a state it does not read.
+ *   builds wrote, as a state it does not read;
+ * - compares the first bytes of a `projection_delta`, as bytes, with the mark
+ *   Vibe 3.1.4 journals as it takes up a turn after a restart, and keeps that
+ *   mark's turn and time (`resumedBy` in `callbacks.ts`).
  *
  * Every read is bounded. The first read of a segment looks back from its end
  * through at most 8 MiB for the newest line that sets the state, and can read
@@ -120,12 +124,14 @@ export function readJournalLine(line: Uint8Array, whole = true): Newest | null {
 }
 
 /**
- * What a whole line says of a callback, from its first bytes alone, or null
- * when it is no callback's. A line whose start was not read is never asked:
- * what looks like a record's start there can be a tool's arguments.
+ * What a whole line says of a callback, or of a turn Vibe took up after a
+ * restart, from its first bytes alone, or null when it says nothing of either.
+ * A line whose start was not read is never asked: what looks like a record's
+ * start there can be a tool's arguments.
  */
 export function readCallbackLine(line: Uint8Array): CallbackLine | null {
   const type = recordTypeOf(line);
+  if (type === "projection_delta") return resumedBy(line);
   if (type !== "callback_registered" && type !== "callback_resolved") return null;
   const bytes = Buffer.from(line.buffer, line.byteOffset, line.byteLength);
   const head = bytes.toString("utf8", 0, Math.min(bytes.byteLength, CALLBACK_HEAD_BYTES));

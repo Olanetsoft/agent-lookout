@@ -15,6 +15,7 @@ function envelope(fields: Partial<Envelope> = {}): Envelope {
     statusType: "running",
     createdAt: NOW - HOUR,
     updatedAt: NOW - 2 * MINUTE,
+    turnId: "turn-1",
     turnStatus: "in_progress",
     turnStartedAt: NOW - 5 * MINUTE,
     turnCompletedAt: null,

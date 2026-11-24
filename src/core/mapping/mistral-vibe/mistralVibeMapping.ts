@@ -7,8 +7,8 @@
 // Whether a Vibe program has the session open is its lease in `active/`, and
 // what it waits for from the person are the callbacks it journals. This
 // mapping reads only what those say, and was worked out from the source of
-// Vibe 2.26.1 and 3.0.4, not checked on a machine running it. See
-// docs/adapters/mistral-vibe.md.
+// Vibe 2.26.1 and 3.0.4, and of 3.1.4 for a turn taken up after a restart, not
+// checked on a computer running it. See docs/adapters/mistral-vibe.md.
 
 import type { SessionStatus, WaitingReason } from "../../sessions/session.ts";
 
@@ -96,6 +96,18 @@ export interface VibeCallback {
   createdAt: number;
 }
 
+/**
+ * The mark Vibe journals, from 3.1.4, as it takes up a turn a stopped Vibe
+ * left: a `checkpoint` entry of kind `resumed` (`_mark_resumed_turn` in
+ * harness/.../vibe/_runtime.py at 3.1.4). Only its turn and its time are kept.
+ */
+export interface VibeResume {
+  /** The turn Vibe took up, from the entry's `turnId`. */
+  turnId: string;
+  /** When, in Unix milliseconds, from the entry's `createdAt`. */
+  at: number;
+}
+
 /** A session's wait, as `vibeWaitOf` finds it. */
 export interface VibeWait {
   reason: WaitingReason;
@@ -121,6 +133,28 @@ export interface VibeWaitFields {
   leaseTakenAt: number | null;
   /** When the newest turn began, or null when the state does not say. */
   turnStartedAt: number | null;
+  /** The id of the newest turn, or null when the state does not say. */
+  turnId: string | null;
+  /** The newest mark of a turn taken up after a restart that the journal read holds, or null. */
+  resumed: VibeResume | null;
+}
+
+/**
+ * When the program that holds the lease took up the newest turn, or null when
+ * the journal does not show it. The mark must name that turn and be made at or
+ * after both the lease and the turn's start. Of the versions read, only 3.1.4
+ * writes it, after closing every approval no pending call holds
+ * (`_close_restarted_approval_callbacks`) and before asking again, under their
+ * ids, the approvals and questions the turn still waits on (`pending_approval`
+ * and `pending_user_question` in harness/.../vibe/_runtime.py at 3.1.4). An
+ * approval the policy now decides without asking is settled only once its
+ * call has run (`_drive` and `_settle_unasked_approval`), and the journal
+ * cannot tell it from one asked again, so it counts until then.
+ */
+function askedAgainAt(fields: VibeWaitFields, from: number): number | null {
+  const { resumed, turnId, turnStartedAt } = fields;
+  if (resumed === null || turnId === null || turnStartedAt === null) return null;
+  return resumed.turnId === turnId && resumed.at >= from ? resumed.at : null;
 }
 
 /**
@@ -134,9 +168,13 @@ export interface VibeWaitFields {
  *   cannot be listed, no wait is claimed;
  * - while a turn is in flight, as Vibe itself decides (`isVibeTurnInFlight`);
  * - when it was opened after the lease was taken. The program that holds the
- *   lease cannot be waiting on what an earlier one opened. Vibe closes an
- *   earlier program's approvals as it reopens a session, but not its questions
- *   (`_close_restarted_approval_callbacks`);
+ *   lease cannot be waiting on what an earlier one opened. Up to 3.1.3, Vibe
+ *   closes an earlier program's approvals as it reopens a session, but not its
+ *   questions (`_close_restarted_approval_callbacks`). The one exception is a
+ *   callback opened in the newest turn, when the journal holds the mark of that
+ *   turn taken up under this lease (`askedAgainAt`): from 3.1.4 Vibe asks it
+ *   again, under its old id, and journals nothing new for it. Its time is then
+ *   the mark's;
  * - when it was opened after the newest turn began. A callback whose action
  *   Vibe abandoned stays open on disk, and a later turn does not wait on it.
  *
@@ -152,13 +190,20 @@ export function vibeWaitOf(fields: VibeWaitFields): VibeWait | null {
   const { held, leaseTakenAt, turnStartedAt } = fields;
   if (held !== true || leaseTakenAt === null || !isVibeTurnInFlight(fields.statusType)) return null;
   const from = Math.max(leaseTakenAt, turnStartedAt ?? leaseTakenAt);
-  let newest: VibeCallback | null = null;
+  const askedAgain = askedAgainAt(fields, from);
+  let newest: { kind: string; at: number } | null = null;
   let since = Infinity;
   const ids: string[] = [];
   for (const callback of fields.callbacks) {
-    if (!WAIT_REASONS.has(callback.kind) || callback.createdAt < from) continue;
-    if (newest === null || callback.createdAt >= newest.createdAt) newest = callback;
-    since = Math.min(since, callback.createdAt);
+    if (!WAIT_REASONS.has(callback.kind)) continue;
+    let at: number = callback.createdAt;
+    if (at < from) {
+      // Asked again only when it was opened in the turn Vibe took up.
+      if (askedAgain === null || turnStartedAt === null || at < turnStartedAt) continue;
+      at = askedAgain;
+    }
+    if (newest === null || at >= newest.at) newest = { kind: callback.kind, at };
+    since = Math.min(since, at);
     ids.push(callback.id);
   }
   const reason = newest === null ? undefined : WAIT_REASONS.get(newest.kind);

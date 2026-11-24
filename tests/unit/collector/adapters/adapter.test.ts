@@ -663,6 +663,7 @@ describe("each declaration agrees with what its adapter does", () => {
         statusType: "running",
         createdAt: NOW - 60_000,
         updatedAt: NOW - 30_000,
+        turnId: "turn-1",
         turnStatus: "in_progress",
         turnStartedAt: NOW - 30_000,
         turnCompletedAt: null,

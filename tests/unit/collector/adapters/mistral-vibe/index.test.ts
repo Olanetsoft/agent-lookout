@@ -49,6 +49,7 @@ import {
   record,
   publicState,
   replyEntry,
+  resumedRecord,
   savedCallback,
   sessionId,
   storePath,
@@ -1802,6 +1803,241 @@ describe("waiting for the person", () => {
       clock.advance(2 * SECOND);
     }
     expect(told).toEqual(["needs-you"]);
+  });
+});
+
+describe("a turn Vibe 3.1.4 takes up after a restart", () => {
+  // The turn began at 11:55, a Vibe asked at 11:56 and stopped, and a later
+  // Vibe took the lease at 11:59 and marked the turn as taken up at 11:59:10.
+  const ASKED = NOW - 4 * MINUTE;
+  const RETAKEN = NOW - MINUTE;
+  const MARKED = NOW - 50 * SECOND;
+  const APPROVAL = "approval-call-1";
+  const QUESTION = "user-input-call-2";
+
+  const approval = (sequence: number, createdAt = ASKED) =>
+    callbackRegistered(sequence, { id: APPROVAL, createdAt });
+  const question = (sequence: number, createdAt = ASKED) =>
+    callbackRegistered(sequence, { id: QUESTION, kind: "user_input", createdAt });
+
+  /** A session whose journal holds these lines, its lease taken at 11:59 by a program that runs. */
+  function sessionWith(lines: string[], files = vibeFiles()) {
+    writeStore(files, { id: A, minor: 10, state: idle(A), journal: lines });
+    takeLease(files, A, RETAKEN);
+    return files;
+  }
+
+  const add = (files: ReturnType<typeof memoryFiles>, line: string, at = NOW + SECOND) =>
+    files.append(`${SESSION_DIR}/${journalPath(A)}`, line, { mtimeMs: at });
+
+  /** What the stopped Vibe left: the turn, and what it asked. */
+  const left = (ask: (sequence: number) => string) => [delta(5, running(A)), ask(6)];
+
+  /** What 3.1.4 journals as it takes the turn up: the mark, then a note to the model. */
+  const takenUp = (sequence = 7, at = MARKED) => [
+    resumedRecord(sequence, running(A), at),
+    otherRecord("core_input", sequence + 1),
+  ];
+
+  test("an approval it asks again needs you, from when it took the turn up", async () => {
+    const ps = standInStarts();
+    const files = sessionWith([...left(approval), ...takenUp()]);
+    const { sessions } = await vibeAdapterFor(files, standInPids(), {
+      readProcessStarts: ps.read,
+    }).poll();
+    expect(sessions[0]).toMatchObject({
+      status: "needs-you",
+      waitingReason: "permission",
+      statusSince: MARKED,
+    });
+    expect(keepsAwake(sessions[0]!, NOW)).toBe(true);
+    expect(ps.runs).toEqual([[LIVE_PID]]);
+    expect(JSON.stringify(sessions)).not.toContain("resumed");
+    expect(JSON.stringify(sessions)).not.toContain(PRIVATE_WORDS);
+  });
+
+  test("a question it asks again needs you the same way", async () => {
+    const { sessions } = await vibeAdapterFor(
+      sessionWith([...left(question), ...takenUp()]),
+    ).poll();
+    expect(sessions[0]).toMatchObject({
+      status: "needs-you",
+      waitingReason: "question",
+      statusSince: MARKED,
+    });
+  });
+
+  test("one a save carried into the generation needs you the same way", async () => {
+    const files = vibeFiles();
+    writeStore(files, {
+      id: A,
+      minor: 10,
+      sequence: 9,
+      state: running(A),
+      callbacks: [savedCallback({ id: QUESTION, kind: "user_input", createdAt: ASKED })],
+      journal: [resumedRecord(10, running(A), MARKED)],
+    });
+    takeLease(files, A, RETAKEN);
+    expect((await vibeAdapterFor(files).poll()).sessions[0]).toMatchObject({
+      status: "needs-you",
+      waitingReason: "question",
+      statusSince: MARKED,
+    });
+  });
+
+  describe.each([
+    ["an approval", approval],
+    ["a question", question],
+  ])("%s left by a Vibe from 3.1.0 to 3.1.3, which writes no mark", (_name, ask) => {
+    test("is left behind once a later program has the session, as before", async () => {
+      const files = sessionWith([...left(ask), otherRecord("core_input", 7)]);
+      expect((await vibeAdapterFor(files).poll()).sessions[0]?.status).toBe("working");
+    });
+  });
+
+  test("a Vibe from 3.1.0 to 3.1.3 closes an approval as it reopens the session, and fails a question's action, and the session works on", async () => {
+    const closed = {
+      code: "callback_closed",
+      message: "Approval request closed after App Server restart",
+    };
+    const approvalClosed = [
+      ...left(approval),
+      callbackResolved(7, APPROVAL, "failed", closed),
+      otherRecord("action_result", 8),
+      delta(9, running(A)),
+    ];
+    const questionFailed = [
+      ...left(question),
+      otherRecord("action_result", 7),
+      otherRecord("core_input", 8),
+      delta(9, running(A)),
+    ];
+    for (const lines of [approvalClosed, questionFailed]) {
+      expect((await vibeAdapterFor(sessionWith(lines)).poll()).sessions[0]?.status).toBe("working");
+    }
+  });
+
+  test("before the mark is written, as while Vibe holds the turn for another program, the session works, and needs you once it is", async () => {
+    const files = sessionWith(left(approval));
+    const adapter = vibeAdapterFor(files);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("working");
+    add(files, takenUp().join(""));
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "needs-you",
+      waitingReason: "permission",
+      statusSince: MARKED,
+    });
+  });
+
+  test.each([
+    ["answered", callbackResolved(9, APPROVAL)],
+    [
+      "settled without asking, as when the approval mode changed meanwhile",
+      callbackResolved(9, APPROVAL, "failed", {
+        code: "decided_without_asking",
+        message: "The approval policy decided the call after a restart",
+      }),
+    ],
+  ])("%s: the wait ends, and the turn goes on", async (_name, settled) => {
+    const files = sessionWith([...left(approval), ...takenUp()]);
+    const adapter = vibeAdapterFor(files);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("needs-you");
+    add(files, settled);
+    const { sessions } = await adapter.poll();
+    expect(sessions[0]).toMatchObject({ status: "working", statusSince: NOW - 5 * MINUTE });
+    expect(sessions[0]).not.toHaveProperty("waitingReason");
+  });
+
+  // A known gap: Vibe journals nothing between the mark and the end of a call
+  // the policy allowed, so that call cannot be told from an approval asked again.
+  test("an approval the policy now allows without asking needs you while the call runs, until Vibe settles it once the call returns", async () => {
+    const clock = handClock();
+    const files = sessionWith([...left(approval), ...takenUp()], vibeFiles(clock.now));
+    const adapter = vibeAdapterFor(files, standInPids(), { now: clock.now });
+    const waiting = { status: "needs-you", waitingReason: "permission", statusSince: MARKED };
+    expect((await adapter.poll()).sessions[0]).toMatchObject(waiting);
+
+    // The command runs for three minutes, and Vibe writes nothing while it does.
+    clock.advance(3 * MINUTE);
+    const meanwhile = (await adapter.poll()).sessions[0]!;
+    expect(meanwhile).toMatchObject(waiting);
+    expect(keepsAwake(meanwhile, clock.now())).toBe(true);
+
+    add(files, otherRecord("action_result", 9), clock.now());
+    add(
+      files,
+      callbackResolved(10, APPROVAL, "failed", {
+        code: "decided_without_asking",
+        message: "The approval policy decided the call after a restart",
+      }),
+      clock.now(),
+    );
+    const { sessions } = await adapter.poll();
+    expect(sessions[0]).toMatchObject({ status: "working", statusSince: NOW - 5 * MINUTE });
+    expect(sessions[0]).not.toHaveProperty("waitingReason");
+  });
+
+  test("a Vibe that ends the turn instead of taking it up closes what it left, and the session is idle", async () => {
+    const interrupted: StateFields = {
+      ...idle(A),
+      turn: { status: "interrupted", startedAt: NOW - 5 * MINUTE, completedAt: RETAKEN },
+    };
+    const files = sessionWith([
+      ...left(question),
+      callbackResolved(7, QUESTION, "failed", {
+        code: "callback_closed",
+        message: "Interrupted after the app server restarted",
+      }),
+      delta(8, interrupted),
+    ]);
+    const { sessions } = await vibeAdapterFor(files).poll();
+    expect(sessions[0]?.status).toBe("idle");
+  });
+
+  test("restarted again: finished while no program holds it, working under the next lease until that Vibe marks the turn, then needing you from its mark", async () => {
+    const clock = handClock();
+    const files = sessionWith([...left(question), ...takenUp()], vibeFiles(clock.now));
+    const adapter = vibeAdapterFor(files, standInPids(), { now: clock.now });
+    expect((await adapter.poll()).sessions[0]?.status).toBe("needs-you");
+
+    // Vibe closes, as 3.1.4 does, leaving the question open and letting go of the lease.
+    releaseLease(files, A);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("finished");
+
+    clock.advance(2 * MINUTE);
+    takeLease(files, A, NOW + MINUTE);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("working");
+
+    add(files, takenUp(9, NOW + 115 * SECOND).join(""), clock.now());
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "needs-you",
+      waitingReason: "question",
+      statusSince: NOW + 115 * SECOND,
+    });
+  });
+
+  test("a later turn does not wait on what the turn taken up left open", async () => {
+    const files = sessionWith([delta(5, running(A)), approval(6), question(7), ...takenUp(8)]);
+    const adapter = vibeAdapterFor(files);
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "needs-you",
+      statusSince: MARKED,
+    });
+
+    // The question is answered and the turn ends, its approval left open on disk.
+    add(files, callbackResolved(10, QUESTION));
+    add(files, delta(11, { ...idle(A), updatedAt: NOW - 40 * SECOND }), NOW + 2 * SECOND);
+    expect((await adapter.poll()).sessions[0]?.status).toBe("idle");
+
+    const later: StateFields = {
+      ...running(A),
+      turn: { id: "turn-2", status: "in_progress", startedAt: NOW - 20 * SECOND },
+    };
+    add(files, delta(12, later), NOW + 3 * SECOND);
+    expect((await adapter.poll()).sessions[0]).toMatchObject({
+      status: "working",
+      statusSince: NOW - 20 * SECOND,
+    });
   });
 });
 

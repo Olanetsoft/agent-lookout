@@ -78,6 +78,8 @@ export const digest = (n: number) => n.toString(16).padStart(64, "0");
 export const isoTime = (ms: number) => new Date(ms).toISOString();
 
 export interface TurnFields {
+  /** Vibe's id for the turn. Defaults to `turn-1`. */
+  id?: string;
   status: "in_progress" | "completed" | "failed" | "interrupted" | string;
   startedAt: number;
   completedAt?: number;
@@ -119,7 +121,7 @@ export function publicState(fields: StateFields): Record<string, unknown> {
     turn === null
       ? null
       : {
-          id: "turn-1",
+          id: turn.id ?? "turn-1",
           sessionId: fields.id,
           status: turn.status,
           queueItemId: null,
@@ -133,7 +135,7 @@ export function publicState(fields: StateFields): Record<string, unknown> {
           ...(turn.status === "interrupted" ? { reason: PRIVATE_WORDS } : {}),
         };
   const sessionStatus: Record<string, unknown> = { type: status };
-  if (status === "running") sessionStatus.activeTurnId = "turn-1";
+  if (status === "running") sessionStatus.activeTurnId = turn?.id ?? "turn-1";
   if (status === "failed") sessionStatus.message = PRIVATE_WORDS;
   return {
     format: "harness.public-session-state/v1",
@@ -654,6 +656,50 @@ export function checkpointEntry(id: string): Record<string, unknown> {
     message: "Conversation rewound",
     details: { entryId: "user-1", restoreFiles: false, inplace: true },
   };
+}
+
+/**
+ * The mark Vibe 3.1.4 adds to the history as it takes up a turn a stopped Vibe
+ * left, as `_resumed_entry` builds it: the `count`th such mark of the session.
+ */
+export function resumedEntry(at: number, turnId = "turn-1", count = 1): Record<string, unknown> {
+  return {
+    type: "checkpoint",
+    id: `checkpoint-resumed-${count}`,
+    sessionId: sessionId("a1"),
+    turnId,
+    createdAt: at,
+    updatedAt: at,
+    generationStatus: "completed",
+    relatedEntryId: null,
+    inputEntryId: null,
+    kind: "resumed",
+    message: "Resumed after a restart",
+    details: {},
+  };
+}
+
+/**
+ * The record Vibe 3.1.4 journals for that mark (`_mark_resumed_turn`): the
+ * entry added, then the state, whose `session.updatedAt` is the mark's time,
+ * then `session_api` as 3.1.4 writes it with the Session API on, its default:
+ * the entry's place in the history (`history_position_ids` in
+ * _session_api_entries.py at 3.1.4).
+ */
+export function resumedRecord(
+  sequence: number,
+  state: StateFields,
+  at: number,
+  turnId = state.turn?.id ?? "turn-1",
+  count = 1,
+): string {
+  return historyDelta(sequence, [appendStep(resumedEntry(at, turnId, count))], {
+    state: { ...state, updatedAt: at },
+    sessionApi: {
+      history_positions: { [`checkpoint-resumed-${count}`]: 3 + count },
+      next_history_index: 4 + count,
+    },
+  });
 }
 
 /** A notice a hook left in the history, in words the adapter must never take. */

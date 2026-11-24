@@ -18,6 +18,7 @@ import {
   PRIVATE_WORDS,
   publicState,
   record,
+  resumedRecord,
   sessionApiFacts,
   sessionId,
   usage,
@@ -71,6 +72,7 @@ describe("one line of a journal", () => {
         statusType: "running",
         createdAt: NOW - 60 * MINUTE,
         updatedAt: NOW - 60 * MINUTE,
+        turnId: "turn-1",
         turnStatus: "in_progress",
         turnStartedAt: NOW - MINUTE,
         turnCompletedAt: null,
@@ -179,6 +181,7 @@ describe("one line of a journal", () => {
         statusType: "running",
         createdAt: NOW - 60 * MINUTE,
         updatedAt: NOW - MINUTE,
+        turnId: "turn-1",
         turnStatus: "in_progress",
         turnStartedAt: NOW - MINUTE,
         turnCompletedAt: null,
@@ -490,6 +493,41 @@ describe("the callbacks in a segment", () => {
     expect(readCallbackLine(line(callbackResolved(7, ID_A)))).toEqual({ settled: ID_A });
     expect(readCallbackLine(line(delta(5, running)))).toBeNull();
     expect(readCallbackLine(line(otherRecord("action_intent", 6)))).toBeNull();
+  });
+
+  test("the mark of a turn Vibe 3.1.4 took up says which turn and when, and still gives its state", () => {
+    const mark = line(resumedRecord(8, running, NOW - 10_000));
+    expect(readCallbackLine(mark)).toEqual({ resumed: { turnId: "turn-1", at: NOW - 10_000 } });
+    expect(statusOf(readJournalLine(mark) as Newest)).toBe("state:running");
+  });
+
+  test("the first read finds the mark among a turn's callbacks, and later reads take in a newer one", async () => {
+    const files = memoryFiles();
+    files.write(
+      FILE,
+      [
+        delta(5, running),
+        callbackRegistered(6, OPENED),
+        otherRecord("core_input", 7),
+        resumedRecord(8, running, NOW - 10_000),
+      ].join(""),
+    );
+    const reader = createJournalReader(files.io);
+    const fold = await foldOf(files, reader);
+    expect(fold.resumed).toEqual({ turnId: "turn-1", at: NOW - 10_000 });
+    expect(open(fold)).toEqual([OPENED]);
+
+    files.append(FILE, resumedRecord(9, running, NOW - 1_000, "turn-1", 2), { mtimeMs: NOW + 1 });
+    expect((await foldOf(files, reader)).resumed).toEqual({ turnId: "turn-1", at: NOW - 1_000 });
+  });
+
+  test("a segment with no mark, as each Vibe before 3.1.4 writes, has none", async () => {
+    const files = memoryFiles();
+    files.write(
+      FILE,
+      [delta(5, running), callbackRegistered(6, OPENED), delta(7, running)].join(""),
+    );
+    expect((await foldOf(files)).resumed).toBeNull();
   });
 
   test("a line whose type says callback but whose start does not read as one says nothing", () => {
