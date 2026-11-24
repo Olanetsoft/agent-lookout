@@ -583,7 +583,7 @@ The server looks the session up in its own latest snapshot, and stops only one w
 | 202    | `{ "ok": false, "reason": "still-running" }`: SIGTERM was sent, and the process is still running 10 seconds later. Nothing more is sent |
 | 404    | `reason: "gone"`: the session is not listed, or its process has already ended                                                           |
 | 409    | `reason: "unsupported"`: Agent Lookout does not stop this session, such as one in the desktop app or one whose kind is not known        |
-| 409    | `reason: "cannot-confirm"`: its registry file changed, or `ps` did not give the same start time                                         |
+| 409    | `reason: "cannot-confirm"`: its registry file changed, `ps` did not give the same start time, or `key` stands for another process       |
 | 403    | `reason: "not-allowed"`: the process is another user's, or one Agent Lookout never stops                                                |
 | 429    | `reason: "too-soon"`, with `Retry-After: 1`                                                                                             |
 | 500    | `reason: "failed"`: the signal could not be sent, or `claude stop` failed                                                               |
