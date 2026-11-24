@@ -7,6 +7,7 @@ Changes that a user of Agent Lookout would notice, newest first.
 ### Fixed
 
 - An Antigravity CLI conversation opened with `agy -r <id>` or `agy --resume <id>`, as agy 1.5.16 also spells `--conversation`, is taken as open from the start. Before, it could show as finished while it was open, once another agy wrote to a conversation of its own. An agy started with `--remote-agent` as its first option, whose conversations are kept with a remote project, no longer keeps conversations on this computer from showing as finished. (#437)
+- A Hermes Agent scheduled run no longer shows the start of its prompt as its name, in the dashboard, in notifications or in the history. Hermes Agent names a job you gave no name after the first 50 characters of its prompt, and titles each run with the job's name and the date, marked as yours. So a run, and a branch of one, now takes its folder's name, or its ID, unless a model titled it, whatever you named the run or its job. So does any other Hermes Agent session whose title ends as a run's does, such as `Ticket 81 · Nov 24 10:00`. A run's title that an earlier version kept in the history, or that an older Agent Lookout on another computer sends over SSH, no longer shows either. Built from Hermes Agent's source at v0.23.4, and not yet checked on a computer running Hermes Agent. (#436)
 
 ## 0.2.30 - 2026-11-24
 

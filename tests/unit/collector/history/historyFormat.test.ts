@@ -357,6 +357,30 @@ describe("parsing", () => {
     expect(extra).toEqual({ kind: "event", event: EVENT });
   });
 
+  test("a Hermes Agent run's title an earlier version kept is read back as the session's ID, in an event and in a sighting, since it can be the start of a prompt", () => {
+    const sessionId = "hermes-agent:default/local-0a1b2c3d";
+    const sessionName = "Read my inbox and say what matters · Nov 24 10:00";
+    const event: SessionEvent = { ...EVENT, sessionId, sessionName };
+    const sighting = { sessionId, sessionName, at: T0, way: "database" };
+    const read = (record: Parameters<typeof encodeRecord>[0]) =>
+      parseRecord(encodeRecord(record).trim());
+
+    expect(read({ kind: "event", event })).toEqual({
+      kind: "event",
+      event: { ...event, sessionName: sessionId },
+    });
+    expect(read({ kind: "sighting", sighting })).toEqual({
+      kind: "sighting",
+      sighting: { ...sighting, sessionName: sessionId },
+    });
+
+    // Any other name of its, and another agent's name of the same form, is read back as it was.
+    const renamed = { ...event, sessionName: "Rename the helper" };
+    expect(read({ kind: "event", event: renamed })).toEqual({ kind: "event", event: renamed });
+    const other = { ...event, sessionId: "claude-code:demo" };
+    expect(read({ kind: "event", event: other })).toEqual({ kind: "event", event: other });
+  });
+
   test("a line longer than any record is not read", () => {
     const long = JSON.stringify({ event: { ...EVENT, sessionName: "x".repeat(MAX_LINE_LENGTH) } });
     expect(parseRecord(long)).toBeNull();

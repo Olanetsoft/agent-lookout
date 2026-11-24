@@ -27,9 +27,11 @@ import {
   SCENE,
   SCHEMA,
   sceneRows,
+  scheduledTitle,
   SECRET_WORDS,
   sessionId,
   sessionRow,
+  type SessionFields,
 } from "@tests/fixtures/hermes-agent/hermesAgent";
 import { tempDir } from "@tests/support/node/tempFiles";
 
@@ -307,6 +309,41 @@ function compressed(now: number, root: Titled, tip: Titled): string[] {
     }),
     sessionRow({ id: tipId, parentId: rootId, ...tip, startedAt: now - MINUTE }),
   ];
+}
+
+/** A scheduled run's id as Hermes Agent v0.22.1 and later give it, from its gateway, and as earlier ones did. */
+const RUN = "local-0a1b2c3d4e5f60718293a4b5c6d7e8f9";
+const OLDER_RUN = "cron_0a1b2c3d4e5f_20261001_110000";
+
+/** The title the scheduler gave a run of a job made with no name: the start of its prompt, and the date. */
+const RUN_TITLE = scheduledTitle(PRIVATE_WORDS);
+
+/** A scheduled run's row an hour old, as the scheduler makes it, with the title it gives it. */
+function runRow(now: number, fields: Partial<SessionFields> = {}): string {
+  return sessionRow({
+    id: RUN,
+    source: "cron",
+    createdSource: "cron",
+    title: RUN_TITLE,
+    titleSource: "user",
+    startedAt: now - 60 * MINUTE,
+    ...fields,
+  });
+}
+
+/** The names of the conversations in a database of these rows, by their roots' ids, read with the real sqlite3. */
+async function namesOf(rows: string[], now: number): Promise<Record<string, string | undefined>> {
+  const { file } = await makeDatabase("rollback", rows);
+  // What sqlite3 prints never holds the words that stand for a prompt, whatever the name becomes.
+  expect(await answers(file, "rollback")).not.toContain(PRIVATE_WORDS);
+  const read = await readerFor(file).reader.read(now);
+  expect(read.state).toBe("read");
+  return Object.fromEntries(
+    [...chainsOf(read.rows)].map(([root, chain]) => [
+      root,
+      hermesAgentSession({ profile: "default", chain, holderAlive: () => null, now })?.name,
+    ]),
+  );
 }
 
 const NEW = sessionId("e9");
@@ -706,6 +743,338 @@ describe.skipIf(sqlite === null)("reading Hermes Agent's database with the real 
       expect(Object.keys(row)).toEqual(PRINTED);
       expect([row.title, row.root_title]).toEqual([null, null]);
     }
+  });
+
+  test.each<[string, Partial<SessionFields>]>([
+    ["as the scheduler makes it", {}],
+    ["with no created_source", { createdSource: null }],
+    [
+      "a chat resumed, which has Hermes Agent write its platform over the source",
+      { source: "telegram", sessionKey: "agent:main:telegram:dm:1" },
+    ],
+    ["the gateway keeps as local", { source: "local" }],
+    ["of an older Hermes Agent, with the id it had then", { id: OLDER_RUN }],
+    [
+      "of an older Hermes Agent that a chat resumed, with its id alone left to tell it by",
+      { id: OLDER_RUN, source: "telegram", createdSource: null },
+    ],
+    ["whose title is numbered, since another run had it", { title: `${RUN_TITLE} #2` }],
+    ["restored from an export, with no title_source", { titleSource: null }],
+    [
+      "that started no agent, ended with no message",
+      { endedAt: Date.now(), endReason: "cron_suppressed" },
+    ],
+    ["with a name that is not ASCII", { title: `${PRIVATE_WORDS} まとめ · Oct 01 11:00` }],
+  ])("the title of a scheduled run %s is no name, and is never printed", async (_, fields) => {
+    const now = Date.now();
+    expect(Object.values(await namesOf([runRow(now, fields)], now))).toEqual(["demo"]);
+    // Whatever its form: a person's rename is marked as the scheduler's own title is, and nothing
+    // says the form stays as it is.
+    for (const title of [`${PRIVATE_WORDS}, the good one`, `${PRIVATE_WORDS} (11:00)`]) {
+      const names = await namesOf([runRow(now, { ...fields, title })], now);
+      expect(Object.values(names)).toEqual(["demo"]);
+    }
+  });
+
+  test("a scheduled run with no folder takes its ID, as one that sets no working folder has none", async () => {
+    const now = Date.now();
+    expect(await namesOf([runRow(now, { cwd: null })], now)).toEqual({
+      [RUN]: `hermes-agent:default/${RUN}`,
+    });
+  });
+
+  test("a scheduled run a model titled, as one resumed in a chat with no title of its own can be, shows that title", async () => {
+    const now = Date.now();
+    const titled = { title: "Rename the helper", titleSource: "llm" };
+    expect(await namesOf([runRow(now, titled)], now)).toEqual({ [RUN]: "Rename the helper" });
+  });
+
+  test("a run's title is no name on the row it went on in once it was compressed, nor on its first row", async () => {
+    const now = Date.now();
+    const tip = sessionId("c3");
+    const compressedRun = (root: Partial<SessionFields>, next: Partial<SessionFields>) => [
+      runRow(now, { endedAt: now - 2 * MINUTE, endReason: "compression", ...root }),
+      sessionRow({
+        id: tip,
+        parentId: RUN,
+        source: "cron",
+        createdSource: "cron",
+        titleSource: "user",
+        startedAt: now - 2 * MINUTE,
+        ...next,
+      }),
+    ];
+    // The scheduler titles the row a run ended on, and Hermes Agent carries a title on to the next.
+    for (const rows of [
+      compressedRun({ title: null, titleSource: null }, { title: RUN_TITLE }),
+      compressedRun({}, { title: null, titleSource: null }),
+      compressedRun({}, { title: `${RUN_TITLE} #2` }),
+      // Neither row says so any more but the first, by what made it.
+      compressedRun(
+        { source: "telegram" },
+        { source: "telegram", createdSource: "telegram", title: `${PRIVATE_WORDS} again` },
+      ),
+    ]) {
+      expect(await namesOf(rows, now)).toEqual({ [RUN]: "demo" });
+    }
+  });
+
+  test("a branch of a scheduled run, and a branch of that, show no title marked as a person's, which can be the run's with a number after it", async () => {
+    const now = Date.now();
+    const [first, second] = [sessionId("f2"), sessionId("f3")];
+    const branch = (id: string, parentId: string, fields: Partial<SessionFields>) =>
+      sessionRow({
+        id,
+        parentId,
+        marker: "_branched_from",
+        titleSource: "user",
+        startedAt: now - 10 * MINUTE,
+        ...fields,
+      });
+    const names = async (title: string, again: string, fields: Partial<SessionFields> = {}) =>
+      namesOf(
+        [
+          runRow(now),
+          branch(first, RUN, { title, ...fields }),
+          branch(second, first, { title: again, ...fields }),
+        ],
+        now,
+      );
+    const none = { [RUN]: "demo", [first]: "demo", [second]: "demo" };
+    // As `/branch` numbers it, and as the API server's fork writes it when it cannot.
+    expect(await names(`${RUN_TITLE} #2`, `${RUN_TITLE} #3`)).toEqual(none);
+    expect(await names(`${RUN_TITLE} fork`, `${RUN_TITLE} fork #2`)).toEqual(none);
+    // Whatever its words: a title typed for a branch is marked as a copy of the run's is.
+    expect(await names(`${PRIVATE_WORDS} #2`, PRIVATE_WORDS)).toEqual(none);
+    // Not marked at all, as restored from an export.
+    expect(await names(`${PRIVATE_WORDS} #2`, PRIVATE_WORDS, { titleSource: null })).toEqual(none);
+    // A title a model gives the branch is its name.
+    expect(await names("Rename the helper", "Write the notes", { titleSource: "llm" })).toEqual({
+      [RUN]: "demo",
+      [first]: "Rename the helper",
+      [second]: "Write the notes",
+    });
+  });
+
+  test("a branch of an older kind, told by its parent's end alone, shows no title of a scheduled run", async () => {
+    const now = Date.now();
+    const id = sessionId("f4");
+    expect(
+      await namesOf(
+        [
+          runRow(now, { endedAt: now - 11 * MINUTE, endReason: "branched" }),
+          sessionRow({
+            id,
+            parentId: RUN,
+            title: `${PRIVATE_WORDS} #2`,
+            titleSource: "user",
+            startedAt: now - 10 * MINUTE,
+          }),
+        ],
+        now,
+      ),
+    ).toEqual({ [RUN]: "demo", [id]: "demo" });
+  });
+
+  test("a branch whose run Hermes Agent has deleted, which leaves it no parent, shows no title of the form the scheduler writes", async () => {
+    const now = Date.now();
+    const rows = (title: string) => [
+      sessionRow({
+        id: sessionId("f5"),
+        marker: "_branched_from",
+        markerOf: RUN,
+        title,
+        titleSource: "user",
+        startedAt: now - 10 * MINUTE,
+      }),
+    ];
+    for (const title of [`${RUN_TITLE} #2`, `${RUN_TITLE} fork`]) {
+      expect(await namesOf(rows(title), now)).toEqual({ [sessionId("f5")]: "demo" });
+    }
+    // Any other title of such a branch is its name, as another branch's is.
+    expect(await namesOf(rows("Read the logs again"), now)).toEqual({
+      [sessionId("f5")]: "Read the logs again",
+    });
+  });
+
+  test("a session that came out of no run shows a title with a date in it, unless the title ends as the scheduler's does or its copies do", async () => {
+    const now = Date.now();
+    const titles: [string, string | null, string][] = [
+      ["Team call · Tue 12 14:30 with Ana", "user", "Team call · Tue 12 14:30 with Ana"],
+      ["Team call · Nov 24 10:00, moved", "user", "Team call · Nov 24 10:00, moved"],
+      ["Read the logs - Nov 24 10:00", null, "Read the logs - Nov 24 10:00"],
+      // A model's is let through, whatever its form.
+      ["Release plan · Friday 24 10:00", "llm", "Release plan · Friday 24 10:00"],
+      // Nothing tells these from a run's, or from the copy on a branch whose run is gone, and the
+      // last is taken with them, since any words can be another locale's month.
+      ["Ticket 81 · Nov 24 10:00", null, "demo"],
+      ["Ticket 82 · Nov 24 10:00 #2", "user", "demo"],
+      ["Ticket 83 · Nov 24 10:00 fork", "user", "demo"],
+      ["Planning · see the notes of 12 14:30", "user", "demo"],
+    ];
+    const rows = titles.map(([title, titleSource], at) =>
+      sessionRow({ id: sessionId(`f${at}0`), title, titleSource, startedAt: now - at * MINUTE }),
+    );
+    expect(await namesOf(rows, now)).toEqual(
+      Object.fromEntries(titles.map(([, , name], at) => [sessionId(`f${at}0`), name])),
+    );
+  });
+
+  test("a chat reset thousands of times in two days is read in time, and one that began as a scheduled run still shows no title", async () => {
+    const now = Date.now();
+    const count = 3000;
+    const began = now - 47 * 60 * MINUTE;
+    // No reset has a mark of its own, as an older Hermes Agent's has none, so each row is a
+    // conversation, and every row before it is one it came from.
+    const chat = (id: string, source: string) =>
+      [
+        sessionRow({
+          id,
+          source,
+          createdSource: source,
+          cwd: null,
+          title: id,
+          titleSource: "user",
+          sessionKey: `agent:main:telegram:dm:${id}`,
+          startedAt: began,
+          endedAt: began,
+          endReason: "session_reset",
+        }),
+        `WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ${count})`,
+        "INSERT INTO sessions (id, source, created_source, session_key, parent_session_id, started_at, ended_at, end_reason, title, title_source)",
+        `SELECT s.id || '-' || i, 'telegram', 'telegram', s.session_key, CASE i WHEN 1 THEN s.id ELSE s.id || '-' || (i - 1) END,`,
+        `s.started_at + i * 45, s.started_at + i * 45, 'session_reset', s.title || ' ' || i, 'user' FROM n, sessions s WHERE s.id = '${id}';`,
+      ].join("\n");
+    const names = await namesOf(
+      [
+        "PRAGMA foreign_keys = OFF;",
+        // As Hermes Agent has it.
+        "CREATE INDEX idx_sessions_parent ON sessions(parent_session_id);",
+        chat("chat", "telegram"),
+        chat("run", "cron"),
+        sessionRow({ id: sessionId("a7"), title: "Read the logs", startedAt: now }),
+      ],
+      now,
+    );
+    expect(Object.keys(names)).toHaveLength(500);
+    expect(names[sessionId("a7")]).toBe("Read the logs");
+    expect(names[`chat-${count}`]).toBe(`chat ${count}`);
+    expect(names[`run-${count}`]).toBe(`hermes-agent:default/run-${count}`);
+  });
+
+  test("a reset child of a scheduled run shows no title moved to it from the run, and a chat that went on after one shows its own", async () => {
+    const now = Date.now();
+    const child = sessionId("92");
+    const reset = (fields: Partial<SessionFields>) =>
+      namesOf(
+        [
+          runRow(now, {
+            title: null,
+            titleSource: null,
+            endedAt: now - 11 * MINUTE,
+            endReason: "session_reset",
+          }),
+          sessionRow({
+            id: child,
+            parentId: RUN,
+            marker: "_reset_from",
+            titleSource: "user",
+            startedAt: now - 10 * MINUTE,
+            ...fields,
+          }),
+        ],
+        now,
+      );
+    // Reset where it is, it keeps what made the run, whatever its source becomes.
+    for (const fields of [
+      { source: "cron", createdSource: "cron", title: `${PRIVATE_WORDS} again` },
+      { source: "telegram", createdSource: "cron", title: `${PRIVATE_WORDS} again` },
+      // With no mark left, the form is what tells it.
+      { source: "telegram", createdSource: null, title: RUN_TITLE },
+    ]) {
+      expect(await reset(fields)).toEqual({ [RUN]: "demo", [child]: "demo" });
+    }
+    // A chat's own `/new` takes no title from the run before it, so one typed there is a name.
+    expect(
+      await reset({ source: "telegram", createdSource: "telegram", title: "Afternoon chat" }),
+    ).toEqual({ [RUN]: "demo", [child]: "Afternoon chat" });
+  });
+
+  test("a subagent's run a scheduled run started is not listed, and nothing of its title is printed", async () => {
+    const now = Date.now();
+    expect(
+      await namesOf(
+        [
+          runRow(now),
+          sessionRow({
+            id: sessionId("ff08"),
+            parentId: RUN,
+            marker: "_delegate_from",
+            source: "subagent",
+            title: `Subagent: ${PRIVATE_WORDS}`,
+            titleSource: "derived",
+            startedAt: now - 5 * MINUTE,
+          }),
+        ],
+        now,
+      ),
+    ).toEqual({ [RUN]: "demo" });
+  });
+
+  test("rows that name each other as the row they came from end the walk, and the scheduled run among them is still told", async () => {
+    const now = Date.now();
+    const id = sessionId("f6");
+    expect(
+      await namesOf(
+        [
+          runRow(now, { parentId: id, marker: "_branched_from" }),
+          sessionRow({
+            id,
+            parentId: RUN,
+            marker: "_branched_from",
+            title: PRIVATE_WORDS,
+            titleSource: "user",
+            startedAt: now - 10 * MINUTE,
+          }),
+        ].map((row) => `PRAGMA foreign_keys = OFF; ${row}`),
+        now,
+      ),
+    ).toEqual({ [RUN]: "demo", [id]: "demo" });
+  });
+
+  test("a scheduled run beside them leaves every other conversation's title be, a branch's and a chat's among them", async () => {
+    const now = Date.now();
+    const [one, two, three] = [sessionId("a8"), sessionId("a9"), "cron_digest"];
+    expect(
+      await namesOf(
+        [
+          runRow(now),
+          sessionRow({ id: one, title: "Rename the helper", titleSource: "user", startedAt: now }),
+          sessionRow({
+            id: two,
+            parentId: one,
+            marker: "_branched_from",
+            title: "Rename the helper #2",
+            titleSource: "user",
+            startedAt: now,
+          }),
+          // An id a client of the API server chose, not of the form a run's was.
+          sessionRow({
+            id: three,
+            source: "api_server",
+            title: "Digest for Oct 01",
+            titleSource: null,
+            startedAt: now,
+          }),
+        ],
+        now,
+      ),
+    ).toEqual({
+      [RUN]: "demo",
+      [one]: "Rename the helper",
+      [two]: "Rename the helper #2",
+      [three]: "Digest for Oct 01",
+    });
   });
 
   test("once a model's title takes a derived one's place, the next read has it", async () => {

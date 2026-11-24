@@ -1734,7 +1734,7 @@ test("what Hermes Agent can report, in the words of the design, each reason shor
     names: {
       level: "partly",
       reason:
-        "The title a model or you give a session. Until it has one, or with Hermes Agent's model titles turned off, its folder's name.",
+        "A model's title or yours, but not a scheduled run's. Without one, or with Hermes Agent's model titles off, its folder's name.",
     },
     jump: {
       level: "no",

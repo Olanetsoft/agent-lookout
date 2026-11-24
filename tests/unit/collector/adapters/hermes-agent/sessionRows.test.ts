@@ -34,9 +34,24 @@ import {
 const A = sessionId("a1");
 const B = sessionId("b2");
 
-/** What the sessions query puts before a table's title: a test of `title_source`, made inside SQLite. */
+/** The forms of the title Hermes Agent's scheduler gives a run, and of a copy of it, as the sessions query tests them. */
+const SCHEDULED_FORMS = [
+  "* · * [0-9][0-9] [0-9][0-9]:[0-9][0-9]",
+  "* · * [0-9][0-9] [0-9][0-9]:[0-9][0-9] #[0-9]*",
+  "* · * [0-9][0-9] [0-9][0-9]:[0-9][0-9] fork*",
+];
+
+/** The id a run had before Hermes Agent v0.22.1, as the sessions query tests it. */
+const RUN_ID_FORM =
+  "cron_*_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_[0-9][0-9][0-9][0-9][0-9][0-9]";
+
+/**
+ * A table's title in the sessions query: cut, behind a test of its
+ * `title_source`, of where its conversation came from and of its form, all made
+ * inside SQLite.
+ */
 const titleTest = (table: string) =>
-  `(CASE WHEN ${table}.title_source IS NULL OR ${table}.title_source IN ('llm', 'user') THEN '' END) || `;
+  `(CASE WHEN ${table}.title_source = 'llm' OR ((${table}.title_source IS NULL OR ${table}.title_source = 'user') AND h.root NOT IN (SELECT id FROM scheduled) ${SCHEDULED_FORMS.map((form) => `AND substr(${table}.title, 1, 1000) NOT GLOB '${form}'`).join(" ")} ) THEN '' END) || substr(${table}.title, 1, 1000)`;
 
 /** The one row kept from an answer of one row with these fields. */
 function row(fields: Record<string, unknown> = {}) {
@@ -61,10 +76,15 @@ describe("the two questions", () => {
 
   test("ask for no whole row, and name no table but the three, nor any column that holds what was written or who wrote it", () => {
     for (const query of [PROBE_QUERY, SESSIONS_QUERY]) {
-      // No `SELECT *` and no `s.*`: only `count(*)`, and the pattern a holder's pid is matched by.
-      expect(query.replaceAll("count(*)", "").replaceAll("GLOB 'pid=[0-9]*'", "")).not.toContain(
-        "*",
-      );
+      // No `SELECT *` and no `s.*`: only `count(*)`, and the patterns a holder's pid, a run's
+      // title and a run's id are matched by.
+      const patterns = ["pid=[0-9]*", RUN_ID_FORM, ...SCHEDULED_FORMS];
+      expect(
+        patterns.reduce(
+          (left, pattern) => left.replaceAll(`GLOB '${pattern}'`, ""),
+          query.replaceAll("count(*)", ""),
+        ),
+      ).not.toContain("*");
       // Its one use of `title_source`, a test that prints nothing of it, is looked at below, and
       // so is its one use of `content_refused`, a row's kind.
       const rest = query
@@ -116,10 +136,21 @@ describe("the two questions", () => {
     );
   });
 
-  test("ask for a title only behind a test of its title_source inside SQLite, which prints neither that nor a title it stops", () => {
-    expect(SESSIONS_QUERY).toContain(`${titleTest("r")}substr(r.title, 1, 1000) AS root_title,`);
-    expect(SESSIONS_QUERY).toContain(`${titleTest("c")}substr(c.title, 1, 1000) AS title,`);
-    expect(SESSIONS_QUERY.match(/\.title\b/g)).toHaveLength(2);
+  test("ask for a title only behind a test inside SQLite of its title_source, of where its conversation came from and of its form, which prints none of them, nor a title it stops", () => {
+    expect(SESSIONS_QUERY).toContain(`${titleTest("r")} AS root_title,`);
+    expect(SESSIONS_QUERY).toContain(`${titleTest("c")} AS title,`);
+    // Each of the two is cut for its three tests and cut again to be printed, and asked for nowhere else.
+    expect(SESSIONS_QUERY.match(/\.title\b/g)).toHaveLength(8);
+    // Where it is made, its own step, which names it twice, and the test of each of the two titles.
+    expect(SESSIONS_QUERY.split("scheduled").length - 1).toBe(5);
+  });
+
+  test("tell a scheduled run by its source, its created_source or its older id, and follow it down to what came out of it through branches and compressions, not through a reset, taking each row once", () => {
+    expect(SESSIONS_QUERY).toContain(
+      `scheduled(id) AS ( SELECT s.id FROM sessions s WHERE (s.source = 'cron' OR s.created_source = 'cron' OR s.id GLOB '${RUN_ID_FORM}') UNION SELECT s.id FROM scheduled JOIN sessions s ON s.parent_session_id = scheduled.id WHERE (CASE WHEN json_valid(s.model_config) THEN json_extract(s.model_config, '$._reset_from') END) IS NULL ) SELECT h.root AS root_id,`,
+    );
+    // No part of the session's messages is looked at to tell a name from a prompt.
+    expect(SESSIONS_QUERY).not.toMatch(/\bcontent\b/);
   });
 
   test("test a JSON column only at the paths named, and only once json_valid says it is JSON", () => {
@@ -137,7 +168,12 @@ describe("the two questions", () => {
       ]),
     );
     // Each column of JSON is read only behind its own json_valid.
-    for (const column of ["c.model_config", "r.model_config", "n.display_metadata"]) {
+    for (const column of [
+      "c.model_config",
+      "r.model_config",
+      "s.model_config",
+      "n.display_metadata",
+    ]) {
       const uses = SESSIONS_QUERY.split(`json_valid(${column})`).length - 1;
       const reads =
         SESSIONS_QUERY.split(`json_extract(${column}`).length -
