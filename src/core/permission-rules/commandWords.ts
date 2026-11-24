@@ -463,7 +463,8 @@ function ownPlaces(ownPaths: readonly string[]): string[] {
  * the same steps back reach less far up. So it is read with every number of
  * steps back, from the session's folder and from each whole path an option
  * names, up to its own and those the other options climb together, and is
- * refused where it stops at, or goes on to name, one of their folders:
+ * refused where it stops at, or goes on to name, one of their folders, or
+ * where it reaches `/` and goes on through one of `WAYS_AROUND`:
  * `-C src -C ../../../../example` is `/Users/example` with three of its four.
  */
 export function namesOwnFiles(
@@ -526,11 +527,14 @@ export function namesOwnFiles(
         if (kept.has(at)) levels.set(at, Math.min(index + 1, levels.get(at) ?? Infinity));
       }
     }
-    return climbing.some(({ back, names: [first] }) =>
+    return climbing.some(({ back, names: [first], around }) =>
       [...levels].some(
         ([at, level]) =>
           level <= back + climbs &&
-          (first === undefined || kept.has(`${at === "/" ? "" : at}/${first}`)),
+          (first === undefined ||
+            kept.has(`${at === "/" ? "" : at}/${first}`) ||
+            // It steps back again, from wherever the way around leads.
+            (around && at === "/")),
       ),
     );
   };

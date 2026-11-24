@@ -787,9 +787,11 @@ describe("several requests of one session at once, as parallel tool calls make t
     expect(answered()).toEqual([ID]);
     await waits();
     expect(hooks.map(({ sent }) => sent)).toEqual([[ALLOW_OUTPUT], [DENY_OUTPUT], [ALLOW_OUTPUT]]);
-    expect(events.map((event) => event.kind === "answered" && event.decision)).toEqual(
-      expect.arrayContaining(["allow", "deny", "allow"]),
-    );
+    expect(events.map((event) => event.kind === "answered" && event.decision).sort()).toEqual([
+      "allow",
+      "allow",
+      "deny",
+    ]);
     expect(shown()).toBeUndefined();
     expect(answered()).toEqual([ID]);
     expect([drops, asks.size]).toEqual([[], 0]);
@@ -949,6 +951,52 @@ describe("several requests of one session at once, as parallel tool calls make t
       clock.now += GRACE_MS;
       expect(answered(waiting({ statusSince })), `${polled}`).toEqual(polled ? [ID] : []);
     }
+  });
+
+  test("a rule's answer read in an older wait, and given late, leaves the answer in a newer one standing", async () => {
+    const readings: ((reading: RegistryReading) => void)[] = [];
+    const answers = createRuleAnswers({
+      rules: () => [ALLOW_TESTS],
+      poller: {
+        getSnapshot: () => snapshot([waiting()]),
+        pollOnce: async () => snapshot([waiting()]),
+      },
+      events: { add: () => {} },
+      now: () => T0,
+    });
+    const asks = createHeldAsks({
+      status: { statusOf: () => new Promise((resolve) => readings.push(resolve)) },
+      holdMs: HOLD_MS,
+      now: () => T0 + 2_100,
+      every: () => () => {},
+      rules: answers,
+    });
+    const turn = () => new Promise((resolve) => setTimeout(resolve, 0));
+    const reads = async (since: number) => {
+      readings.pop()?.(reading("waiting", `${since}|permission prompt`, since));
+      await turn();
+    };
+    const first = standInReply();
+    asks.receive(bash("npm test a"), first.reply);
+    await reads(T0 + 1_500);
+    // The rule's answer is reading the file again as the session moves on to its next wait.
+    const late = readings.pop();
+    const second = standInReply();
+    asks.receive(bash("npm test b"), second.reply);
+    await turn();
+    await reads(T0 + 2_000);
+    await reads(T0 + 2_000);
+    expect(second.sent).toEqual([ALLOW_OUTPUT]);
+    late?.(reading("waiting", `${T0 + 1_500}|permission prompt`, T0 + 1_500));
+    await turn();
+    expect(first.sent).toEqual([ALLOW_OUTPUT]);
+
+    const polled = (since: number) =>
+      asks.answeredIn({
+        sources: [{ id: "claude-code", label: "Claude Code", state: "ok", checkedAt: T0 }],
+        sessions: [waiting({ statusSince: since })],
+      });
+    expect([...polled(T0 + 2_000)]).toEqual([ID]);
   });
 
   test("a newer one in a later wait than the one let go was in is answered in that wait alone", async () => {
@@ -1586,8 +1634,11 @@ describe("a session two processes have open", () => {
     await at(900);
     expect(reply.sent).toEqual([ALLOW_OUTPUT]);
     row.pid = A;
-    await at(1_100);
+    await at(900 + GRACE_MS - 1);
     expect([...asks.answeredIn(poll())]).toEqual([ID]);
+    // By then Claude Code has rewritten A's file, so a wait of A's is the prompt let go.
+    await at(900 + GRACE_MS);
+    expect([...asks.answeredIn(poll())]).toEqual([]);
   });
 
   test("one answered while the other's older wait is read is answered in its own process's wait for good", async () => {

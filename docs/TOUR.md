@@ -1759,7 +1759,7 @@ sequenceDiagram
 3. `createHookSocket` in `src/collector/answers/hookSocket.ts` accepts only `POST /hooks/permission-request` that carries `X-Agent-Lookout-Hook: permission-request`, has a body of at most 1 MiB and has no `Origin`. Anything else gets an empty 200, and the session's own prompt decides.
 4. `createHeldAsks` in `heldAsks.ts` holds the open response, one per session, beside older ones a permission rule will answer. `shownAsk` in `shownAsk.ts` works out what to show and whether to offer Allow.
 5. `createRegistryStatus` in `registryStatus.ts` re-reads the session's registry file every 500 ms. A request is shown only after the file says the session is waiting for permission. It is let go with no answer in four cases:
-   - the file stops saying that, because you answered in the session (for up to 3 seconds after an answer it can still say the wait before, and the request is kept for its own)
+   - the file stops saying that, or says it of a later wait, because you answered in the session (for up to 3 seconds after an answer it can still say the wait before, and the request is kept for its own)
    - the hook's connection closes
    - a newer request from the same session arrives, and no permission rule answers this one
    - `AGENT_LOOKOUT_ANSWER_WAIT` runs out (300 seconds by default)

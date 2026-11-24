@@ -711,6 +711,7 @@ describe("Agent Lookout's own files and the folders above them", () => {
     "tar -xf p.tar -C /Users/example/code/other -C ..",
     "vitest run src/proc/root.test.ts ../proc/lib/cwd.test.ts src/.resolve-x/a.ts src/.vol/a.ts",
     "ls src/System/Volumes/Data ../proc /System/Library/Fonts",
+    "cp notes.txt ../proc/lib/../../other proc/../build ../../proc/lib/../../notes",
   ])("an option or a path that names neither: %s", (command) => {
     expect(namesOwnFiles(command.split(" "), own, shop)).toBe(false);
   });
@@ -773,9 +774,17 @@ describe("Agent Lookout's own files and the folders above them", () => {
       "-C/proc/self",
       "-C/proc",
       "/proc/net/../root/home",
+      // Back out of the way around, so that nothing of it is left to read.
+      "../../../../proc/123/cwd/../../../notes",
+      "-C../../../../proc/123/cwd/../../../notes",
+      "../../../../System/Volumes/Data/../../../notes",
+      "../../../../.vol/1/2/../../../notes",
     ]) {
       expect(namesOwnFiles(["tar", word], own, shop), word).toBe(true);
     }
+    const together = ["tar", "-C..", "-C../../..", "--directory=../proc/1/cwd/../../../notes"];
+    expect(namesOwnFiles(together, own, "/srv/a/b/c/d")).toBe(true);
+    expect(namesOwnFiles(together, own, "/srv/a/b/c/d/e")).toBe(false);
     const onward = ["tar", "-C/System/Library", "-C../Volumes/Data/Users/example"];
     expect(namesOwnFiles(onward, own, shop)).toBe(true);
     expect(folderReachesOwnFiles("/System/Volumes/Data/Users/example", own)).toBe(true);

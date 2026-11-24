@@ -477,7 +477,10 @@ export function createHeldAsks(options: HeldAsksOptions): HeldAsks {
       ...(moves && { from: Math.max(earliest(entry), open?.arrivedAt ?? 0) }),
       ...(open && { until: at + GRACE_MS }),
     };
-    if (!othersOpen(entry)) answers.set(sessionId, given);
+    // One read before an answer to a newer wait was given says nothing of that wait.
+    const last = answers.get(sessionId)?.since ?? null;
+    const late = last !== null && entry.since !== null && last > entry.since;
+    if (!late && !othersOpen(entry)) answers.set(sessionId, given);
     // The file can move on from this wait to that of one still held.
     for (const other of all()) {
       if (other.sessionId === sessionId && !other.answering) other.before = given;
