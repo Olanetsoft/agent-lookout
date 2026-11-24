@@ -1195,6 +1195,27 @@ describe("a wait whose session leaves every listing", () => {
     ]);
   });
 
+  test("asked, it says which waits are in sight, and nothing of what they ask", async () => {
+    const { adapter } = scriptedAdapter(
+      main(moved, { ...moved, id: "claude-code:b" }),
+      main({ ...asking, waitingText: "Run: npm test" }, { ...asking, id: "claude-code:b" }),
+      main(asking),
+    );
+    const poller = createPoller({
+      adapters: [adapter],
+      events: createEventStore(),
+      history: createHistoryStore(),
+    });
+    expect(poller.seenWaiting()).toEqual([]);
+    await poller.pollOnce();
+    expect(poller.seenWaiting()).toEqual([]);
+    await poller.pollOnce();
+    const seen = { sessionId: asking.id, sessionName: "demo-a", at: Date.now(), way: "main" };
+    expect(poller.seenWaiting()).toEqual([seen, { ...seen, sessionId: "claude-code:b" }]);
+    await poller.pollOnce();
+    expect(poller.seenWaiting()).toEqual([seen]);
+  });
+
   test("seen waiting when the main way is back, it is one wait, and the time out of sight counts", async () => {
     const history = kept();
     await run(history, ...lost, [3 * HOUR, fallback()], [4 * HOUR, main(asking)]);

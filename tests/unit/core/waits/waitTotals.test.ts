@@ -530,7 +530,7 @@ describe("a wait whose session left every listing", () => {
           waitingNow: [{ id: id(1), name: "project-1" }],
         }),
       ).toEqual([
-        [START, at(6, 11), false],
+        [at(6, 10), at(6, 11), false],
         [at(6, 12), NOW, true],
       ]);
     });
@@ -673,6 +673,52 @@ describe("a wait whose session left every listing", () => {
           waitingNow: [{ id: id(1), name: "project-1" }],
         }),
       ).toEqual([[at(6, 10), NOW, true]]);
+    });
+  });
+
+  describe("found waiting with no event", () => {
+    const runs = { runStarts: [START, at(6, 12), at(6, 14)] };
+    const now = [{ id: id(1), name: "project-1" }];
+
+    test("it counts from the first poll that listed it, through each run that saw it, and is one wait", () => {
+      const sightings = [seen(1, at(6, 10)), seen(1, at(6, 12)), seen(1, at(6, 14))];
+      expect(spans({ ...runs, sightings, waitingNow: now })).toEqual([[at(6, 10), NOW, true]]);
+      // Its source is in error: the latest poll does not list it.
+      expect(spans({ ...runs, sightings })).toEqual([[at(6, 10), NOW, false]]);
+      const answered = [out(1, at(6, 14, 30))];
+      expect(spans({ ...runs, sightings, events: answered })).toEqual([
+        [at(6, 10), at(6, 14, 30), false],
+      ]);
+    });
+
+    test("it ends at the start of the first run that did not see it", () => {
+      for (const sightings of [
+        [seen(1, at(6, 10))],
+        [seen(1, at(6, 10)), lost(1, at(6, 10, 0, 4), at(6, 12))],
+      ]) {
+        expect(spans({ ...runs, sightings })).toEqual([[at(6, 10), at(6, 12), false]]);
+      }
+    });
+
+    test("seen waiting after a run that did not see it, it is another wait", () => {
+      const sightings = [seen(1, at(6, 10)), seen(1, at(6, 14))];
+      expect(spans({ ...runs, sightings, waitingNow: now })).toEqual([
+        [at(6, 10), at(6, 12), false],
+        [at(6, 14), NOW, true],
+      ]);
+    });
+
+    test("a move into needs-you in a later run begins another wait", () => {
+      const sightings = [seen(1, at(6, 10)), seen(1, at(6, 13))];
+      expect(spans({ ...runs, sightings, events: [into(1, at(6, 13))] })).toEqual([
+        [at(6, 10), at(6, 12), false],
+        [at(6, 13), at(6, 14), false],
+      ]);
+    });
+
+    test("an end that says where sight of it was lost, with nothing else held of it, counts for nothing after that", () => {
+      const ended = { ...out(1, at(6, 14, 30)), lastSeen: at(6, 12) };
+      expect(spans({ ...runs, events: [ended] })).toEqual([]);
     });
   });
 

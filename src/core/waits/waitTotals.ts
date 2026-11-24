@@ -61,8 +61,8 @@ export interface WaitTotalsInput {
   /** Where a session in a wait was lost sight of, or seen again, in any order. */
   sightings?: readonly WaitSighting[];
   /**
-   * When each run of Agent Lookout began, in any order. A wait whose start the
-   * history does not hold is counted from the run it was seen in.
+   * When each run of Agent Lookout began, in any order. A wait that no event
+   * and no sighting began is counted from the run it was seen in.
    */
   runStarts: readonly number[];
   /** The sessions that need the person now, as the latest poll found them. */
@@ -123,6 +123,8 @@ interface Standing {
   nextRun?: number;
   /** Whether a sighting is of it. A file from before there were any has none. */
   sighted?: boolean;
+  /** Whether a sighting found it, with no event to say it began. */
+  found?: boolean;
 }
 
 /** What the waits are worked out from, oldest first. At one moment a run starts, then a session moves, then it is seen. */
@@ -137,15 +139,17 @@ function marksOf({ runStarts, events, sightings = [], now }: WaitTotalsInput) {
  * Every wait the history holds, oldest first: a move into needs-you, to the
  * session's next move out of it. A wait that was already under way when the
  * history first saw the session, such as one Agent Lookout found as it
- * started, is counted from that run's start, or from the session's previous
- * event when that is later. A wait with no end runs to the present, and is
- * open while the session still needs the person.
+ * started, is counted from the first poll that listed it. A wait with no end
+ * runs to the present, and is open while the session still needs the person.
  *
  * Each run writes a sighting of a wait at the first poll that lists its
  * session. So a wait is known up to the start of the run after the last that
  * saw it, whether an end is seen later or not: its source may not have been
- * read since. A wait in a file from before there were sightings, with an end,
- * runs to that end.
+ * read since. A wait no event began ends there for good when a whole run has
+ * not seen it: no event would say that run found it over. A file from before
+ * there were sightings says nothing of the runs that saw a wait. One that ends
+ * in it runs to that end, and one that began unseen counts from that run's
+ * start, or the session's previous event when that is later.
  *
  * A wait whose session left every listing stops at the last poll that listed
  * it (`WaitSighting`), whether or not an end is seen later. An end seen once
@@ -164,11 +168,18 @@ export function waitsOf(input: WaitTotalsInput): { waits: Wait[]; names: Map<str
   /** Each session's newest move into needs-you or out of it. */
   const moved = new Map<string, number>();
   let run = since;
-  /** A wait no event says began: from this run's start, or from the session's previous event. */
-  const found = (id: string): Standing => ({ from: Math.max(run, moved.get(id) ?? run) });
+  /** A wait nothing says when it began: from this run's start, or from the session's previous event. */
+  const unbegun = (id: string): Standing => ({ from: Math.max(run, moved.get(id) ?? run) });
   const close = (sessionId: string, { from }: Standing, to: number, open = false) => {
     waits.push({ sessionId, from, to, open });
     standing.delete(sessionId);
+  };
+  /** The wait a session stands in, unless no event began it and a whole run has not seen it. */
+  const standingIn = (id: string) => {
+    const wait = standing.get(id);
+    if (!wait?.found || wait.nextRun === undefined || wait.nextRun === run) return wait;
+    close(id, wait, wait.lost ?? wait.nextRun);
+    return undefined;
   };
 
   for (const mark of marksOf(input)) {
@@ -179,13 +190,12 @@ export function waitsOf(input: WaitTotalsInput): { waits: Wait[]; names: Map<str
     }
     const { sessionId, at } = mark;
     names.set(sessionId, mark.sessionName);
-    let wait = standing.get(sessionId);
+    let wait = standingIn(sessionId);
     const gone = wait?.lost ?? wait?.nextRun;
     if ("way" in mark) {
       if (!wait) {
-        // Found waiting with no event, and lost: counted up to there.
-        if (mark.lastSeen === undefined) continue;
-        wait = found(sessionId);
+        const from = mark.lastSeen === undefined ? at : unbegun(sessionId).from;
+        wait = { from, found: true };
       } else if (mark.began !== undefined && gone !== undefined) {
         waits.push({ sessionId, from: wait.from, to: gone, open: false });
         wait.from = mark.began;
@@ -193,21 +203,23 @@ export function waitsOf(input: WaitTotalsInput): { waits: Wait[]; names: Map<str
       // An earlier version says a wait lost by this run's first poll was seen
       // up to this run, whichever run last saw it.
       const lost = mark.lastSeen && Math.min(mark.lastSeen, wait.nextRun ?? mark.lastSeen);
-      standing.set(sessionId, { from: wait.from, lost, sighted: true });
+      standing.set(sessionId, { ...wait, lost, nextRun: undefined, sighted: true });
       continue;
     }
     if (mark.kind !== "ended" && mark.to === "needs-you") {
-      if (!wait) standing.set(sessionId, { from: at });
+      // It waits anew, so the wait an earlier run saw ended unseen.
+      if (wait?.nextRun !== undefined) close(sessionId, wait, gone ?? wait.nextRun);
+      if (!standing.has(sessionId)) standing.set(sessionId, { from: at });
     } else {
-      wait ??= found(sessionId);
-      close(sessionId, wait, (wait.sighted ? gone : undefined) ?? at);
+      wait ??= unbegun(sessionId);
+      close(sessionId, wait, (wait.sighted ? gone : mark.lastSeen) ?? at);
     }
     moved.set(sessionId, at);
   }
   for (const [sessionId, name] of input.names ?? []) names.set(sessionId, name);
   for (const { id, name } of input.waitingNow) {
     names.set(id, name);
-    close(id, standing.get(id) ?? found(id), now, true);
+    close(id, standingIn(id) ?? unbegun(id), now, true);
   }
   for (const [id, wait] of standing) close(id, wait, wait.lost ?? wait.nextRun ?? now);
 

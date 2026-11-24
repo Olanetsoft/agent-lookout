@@ -181,6 +181,8 @@ export interface Poller {
     sightings?: readonly WaitSighting[],
     restarts?: readonly number[],
   ): void;
+  /** A sighting of each wait in sight, for a history that begins again: its event is gone, and it goes on. */
+  seenWaiting(): WaitSighting[];
   /** When the collector began. History before this was not measured. */
   readonly startedAt: number;
 }
@@ -802,6 +804,14 @@ export function createPoller(options: PollerOptions): Poller {
         });
         resumed.set(source, list);
       }
+    },
+    seenWaiting() {
+      const at = now();
+      return [...memory.values()].flatMap(({ waits }) =>
+        [...waits]
+          .filter(([, wait]) => !wait.unseen)
+          .map(([sessionId, { name, way }]) => ({ sessionId, sessionName: name, at, way })),
+      );
     },
     getSnapshot() {
       if (latest) return latest;
