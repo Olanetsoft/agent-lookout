@@ -81,8 +81,8 @@ export type UpdatePhase =
       /** Bytes so far, and the size the release gives. */
       received: number;
       total: number;
-      /** Set when it was downloaded before, and was no longer whole on the disk. */
-      again?: true;
+      /** The version that was ready before, this one or an older one, and was no longer whole on the disk. */
+      lost?: string;
     }
   | {
       phase: "ready";

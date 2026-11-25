@@ -53,7 +53,7 @@ describe("readUpdateStatus", () => {
         notesUrl: NOTES,
         received: 10,
         total: 100,
-        again: true,
+        lost: "0.2.1",
       },
       { phase: "ready", version: "0.2.1", notesUrl: NOTES },
       { phase: "ready", version: "0.2.1", notesUrl: NOTES, newer: "0.2.2" },

@@ -11,7 +11,7 @@
 
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, rmSync } from "node:fs";
+import { existsSync, readdirSync, rmSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, truncate, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
@@ -166,8 +166,8 @@ async function setUp(release: FakeRelease = {}) {
   const warn = vi.fn();
   const unpack = onMac ? runProgram : standInDitto;
   let unpacked = 0;
-  const run: RunProgram = async (file, args) => {
-    const answer = await unpack(file, args);
+  const run: RunProgram = async (file, args, stop) => {
+    const answer = await unpack(file, args, stop);
     if (file === DITTO) release.unpacking?.((unpacked += 1));
     return answer;
   };
@@ -376,10 +376,10 @@ describe("the updater, against a release of the test's own", () => {
       expect(answer.status.update).toMatchObject({
         phase: "downloading",
         version: "0.2.1",
-        again: true,
+        lost: "0.2.1",
       });
       expect(warn).toHaveBeenCalledWith(
-        "Version 0.2.1 of Agent Lookout could not be installed: its download was no longer whole, and is downloaded again.",
+        "Version 0.2.1 of Agent Lookout can no longer be installed: its download is no longer whole.",
       );
       expect(started).toEqual([]);
       expect(quit).not.toHaveBeenCalled();
@@ -397,7 +397,7 @@ describe("the updater, against a release of the test's own", () => {
   test.each(Object.keys(CLEARED))(
     "the next check notices a ready version whose download is %s, and downloads it again",
     async (what) => {
-      const { updater, data, asked } = await setUp();
+      const { updater, data, asked, warn } = await setUp();
       await updater.check();
       await isReady(updater);
       // One that is whole is left as it is.
@@ -407,7 +407,10 @@ describe("the updater, against a release of the test's own", () => {
       expect(zips()).toBe(1);
 
       await CLEARED[what]!(path.join(await folderIn(data), ZIP_NAME));
-      expect((await updater.check()).update).toMatchObject({ phase: "downloading", again: true });
+      expect((await updater.check()).update).toMatchObject({ phase: "downloading", lost: "0.2.1" });
+      expect(warn).toHaveBeenCalledExactlyOnceWith(
+        "Version 0.2.1 of Agent Lookout can no longer be installed: its download is no longer whole.",
+      );
       await isReady(updater);
       expect(zips()).toBe(2);
       expect(await readdir(await folderIn(data))).toEqual([ZIP_NAME]);
@@ -433,6 +436,18 @@ describe("the updater, against a release of the test's own", () => {
     },
   );
 
+  test("quitting as a version that is gone is checked again to be installed says nothing", async () => {
+    const { updater, data, warn } = await setUp();
+    await updater.check();
+    await isReady(updater);
+    await rm(path.join(await folderIn(data), ZIP_NAME));
+    const answer = updater.install();
+    updater.stop();
+    expect((await answer).ok).toBe(false);
+    expect(warn).not.toHaveBeenCalled();
+    expect(updater.status().update.phase).toBe("installing");
+  });
+
   test("quitting without installing removes what was downloaded", async () => {
     const { updater, data } = await setUp();
     await updater.check();
@@ -449,11 +464,12 @@ describe("the updater, against a release of the test's own", () => {
   }
 
   /** Starts the updater, with no check of its own due, and lets its first timer run. */
-  async function startAndWait(updater: SetUp["updater"]) {
+  async function startAndWait(updater: SetUp["updater"], then = () => {}) {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
     try {
       updater.start();
-      await vi.advanceTimersByTimeAsync(FIRST_CHECK_DELAY_MS);
+      vi.advanceTimersByTime(FIRST_CHECK_DELAY_MS);
+      then();
     } finally {
       vi.useRealTimers();
     }
@@ -497,6 +513,16 @@ describe("the updater, against a release of the test's own", () => {
     await moment(200);
     expect(await readdir(data)).toEqual(["agent-lookout-update-a1B2c3"]);
     expect(await readdir(temp)).toEqual(["agent-lookout-update-d4E5f6"]);
+  });
+
+  test("removes nothing of an earlier run once it has quit", async () => {
+    const { updater, data } = await setUp();
+    updater.setAutomatic(false);
+    await leave(data, "agent-lookout-update-a1B2c3", "Info.plist");
+    await startAndWait(updater, () => updater.stop());
+    // Long enough for a removal to have begun.
+    await moment(200);
+    expect(await readdir(data)).toEqual(["agent-lookout-update-a1B2c3"]);
   });
 
   test("reads the app's own identifier again when it could not be read before", async () => {
@@ -621,6 +647,39 @@ describe("a version that is ready, and a newer one", () => {
     expect(world.log).toEqual([]);
   });
 
+  // ditto is a program of its own, which would go on writing once the app has quit.
+  test.each(["to be installed", "as it was downloaded"])(
+    "quitting while a version is unpacked %s stops that, before its folder is removed",
+    async (why) => {
+      const world = await makeUpdateWorld();
+      world.latest = "0.2.1";
+      if (why === "to be installed") {
+        await world.updater.check();
+        await isAt(world, { phase: "ready", version: "0.2.1" });
+      }
+      let stopped: AbortSignal | undefined;
+      const unpacking = new Promise<void>((resolve) => {
+        world.unpacking = (stop) => {
+          stopped = stop;
+          resolve();
+          // It is still unpacking when the app quits.
+          return new Promise(() => {});
+        };
+      });
+      void (why === "to be installed" ? world.updater.install() : world.updater.check());
+      await unpacking;
+      expect(stopped?.aborted).toBe(false);
+      let whole: boolean | undefined;
+      stopped?.addEventListener("abort", () => {
+        whole = existsSync(world.data) && readdirSync(world.data).length === 1;
+      });
+      world.updater.stop();
+      expect(stopped?.aborted).toBe(true);
+      expect(whole).toBe(true);
+      expect(await world.folders()).toEqual([]);
+    },
+  );
+
   test("an answer that comes once the app has quit downloads nothing", async () => {
     const world = await withOneReady();
     world.checks = "hold";
@@ -639,11 +698,30 @@ describe("a version that is ready, and a newer one", () => {
     await world.updater.check();
     await rm((await world.zip())!);
     expect((await world.updater.install()).ok).toBe(false);
-    expect(updateIn(world)).toMatchObject({ phase: "downloading", version: "0.2.2" });
-    expect(updateIn(world)).not.toHaveProperty("again");
+    expect(updateIn(world)).toMatchObject({
+      phase: "downloading",
+      version: "0.2.2",
+      lost: "0.2.1",
+    });
     await vi.waitFor(() => expect(world.heldDownloads).toHaveLength(1));
     world.heldDownloads[0]!.answer("whole");
     await isAt(world, { phase: "ready", version: "0.2.2" });
+    // Once one is ready again, nothing more is said of the one that was lost.
+    world.latest = "0.2.1";
+    expect((await world.updater.check()).update).toMatchObject({ phase: "downloading" });
+    expect(updateIn(world)).not.toHaveProperty("lost");
+  });
+
+  test("one found lost by a check as it is installed is lost once, and downloaded again once", async () => {
+    const world = await withOneReady();
+    world.latest = "0.2.1";
+    await rm((await world.zip())!);
+    const checked = world.updater.check();
+    expect((await world.updater.install()).ok).toBe(false);
+    await checked;
+    await isAt(world, { phase: "ready", version: "0.2.1" });
+    expect(world.log).toHaveLength(1);
+    expect(world.asked).toBe(2);
   });
 
   test("it goes when it is no longer whole, and the newer one is still downloaded", async () => {
@@ -654,8 +732,44 @@ describe("a version that is ready, and a newer one", () => {
     expect((await world.updater.check()).update).toMatchObject({
       phase: "downloading",
       version: "0.2.2",
+      lost: "0.2.1",
     });
     expect(world.asked).toBe(2);
+  });
+
+  test("one that is lost while GitHub cannot be reached is not offered, and is said to be lost once it is downloaded again", async () => {
+    const world = await withOneReady();
+    world.latest = "0.2.1";
+    await rm((await world.zip())!);
+    world.checks = "fail";
+    expect((await world.updater.check()).update).toMatchObject({ phase: "failed", step: "check" });
+    expect(world.log[0]).toBe(
+      "Version 0.2.1 of Agent Lookout can no longer be installed: its download is no longer whole.",
+    );
+    expect((await world.updater.install()).ok).toBe(false);
+
+    world.checks = "answer";
+    world.downloads = "network";
+    await world.updater.check();
+    await isAt(world, { phase: "failed", step: "download" });
+    // Also when that download has failed before.
+    world.downloads = "hold";
+    expect((await world.updater.check()).update).toMatchObject({
+      phase: "downloading",
+      version: "0.2.1",
+      lost: "0.2.1",
+    });
+  });
+
+  test("nothing is said of a lost one that is no longer out", async () => {
+    const world = await withOneReady();
+    world.latest = "0.2.0";
+    await rm((await world.zip())!);
+    expect((await world.updater.check()).update).toEqual({ phase: "up-to-date" });
+    world.latest = "0.2.2";
+    world.downloads = "hold";
+    expect((await world.updater.check()).update).toMatchObject({ phase: "downloading" });
+    expect(updateIn(world)).not.toHaveProperty("lost");
   });
 
   test("one that was withdrawn is not kept for an older one", async () => {
@@ -694,6 +808,39 @@ describe("a version that is ready, and a newer one", () => {
       }
     };
   }
+
+  test("the check the app makes by itself each day notices one that is lost", async () => {
+    const world = await withOneReady();
+    world.latest = "0.2.1";
+    const pass = await hoursOf(world);
+    await rm((await world.zip())!);
+    await pass(23);
+    expect(world.asked).toBe(1);
+    await pass(1);
+    await vi.waitFor(() => expect(world.asked).toBe(2));
+    await isAt(world, { phase: "ready", version: "0.2.1" });
+    expect(world.log).toHaveLength(1);
+  });
+
+  test("a check with no answer that finds one lost is made again after six hours, not the next day", async () => {
+    const world = await withOneReady();
+    world.latest = "0.2.1";
+    const pass = await hoursOf(world);
+    await pass(1);
+    await rm((await world.zip())!);
+    world.checks = "fail";
+    await world.updater.check();
+    world.checks = "answer";
+    const looked = world.looked;
+    await pass(5);
+    expect(world.looked).toBe(looked);
+    await pass(1);
+    await isAt(world, { phase: "ready", version: "0.2.1" });
+    // It had an answer, so the next is a day later.
+    const found = world.looked;
+    await pass(23);
+    expect(world.looked).toBe(found);
+  });
 
   test.each(["network", "timed-out", "too-slow", "status"] as const)(
     "a download that had no answer, as %s, is tried again after six hours, as a check is",

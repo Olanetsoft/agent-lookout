@@ -33,6 +33,14 @@ function megabytes(bytes: number): string {
   return `${Math.round(bytes / MEGABYTE)} MB`;
 }
 
+/** That a version is being downloaded, and what became of the one that was ready before. */
+function downloadingWords(version: string, lost: string | undefined): string {
+  if (lost === undefined) return "Downloading it";
+  return lost === version
+    ? "What was downloaded is no longer whole. Downloading it again"
+    : `Version ${lost}, downloaded before, is no longer whole. Downloading this one instead`;
+}
+
 /** When the app last had an answer: "14:02", "14:02 on Oct 4", or "Not yet". */
 export function lastCheckedWords(status: AppUpdateStatus, now: number): string {
   return status.lastCheckedAt === null ? "Not yet" : clockAt(status.lastCheckedAt, now);
@@ -58,15 +66,12 @@ export function updateWords(status: AppUpdateStatus): UpdateWords {
     case "not-for-this-mac":
       return { ...quiet, state: "The latest release has no app for this kind of Mac." };
     case "downloading": {
-      const lost = update.again === true ? "What was downloaded is no longer whole. " : "";
-      const downloading = update.again === true ? "Downloading it again" : "Downloading it";
+      const progress =
+        update.total > 0 ? `: ${megabytes(update.received)} of ${megabytes(update.total)}.` : ".";
       return {
         ...quiet,
         state: `Version ${update.version} is available.`,
-        detail:
-          update.total > 0
-            ? `${lost}${downloading}: ${megabytes(update.received)} of ${megabytes(update.total)}.`
-            : `${lost}${downloading}.`,
+        detail: `${downloadingWords(update.version, update.lost)}${progress}`,
         notesUrl: update.notesUrl,
       };
     }

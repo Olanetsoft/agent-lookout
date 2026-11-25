@@ -70,13 +70,30 @@ describe("updateWords", () => {
       notesUrl: NOTES,
       received: 0,
       total: 101 * 1024 * 1024,
-      again: true,
+      lost: "0.2.1",
     } as const;
     expect(updateWords(status(update)).detail).toBe(
       "What was downloaded is no longer whole. Downloading it again: 0 MB of 101 MB.",
     );
     expect(updateWords(status({ ...update, total: 0 })).detail).toBe(
       "What was downloaded is no longer whole. Downloading it again.",
+    );
+  });
+
+  test("a newer version downloaded in place of one that was lost says so", () => {
+    expect(
+      updateWords(
+        status({
+          phase: "downloading",
+          version: "0.2.2",
+          notesUrl: NOTES,
+          received: 0,
+          total: 101 * 1024 * 1024,
+          lost: "0.2.1",
+        }),
+      ).detail,
+    ).toBe(
+      "Version 0.2.1, downloaded before, is no longer whole. Downloading this one instead: 0 MB of 101 MB.",
     );
   });
 

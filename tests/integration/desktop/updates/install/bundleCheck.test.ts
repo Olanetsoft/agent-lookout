@@ -1,13 +1,14 @@
 import { execFile } from "node:child_process";
-import { mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import {
   bundleFacts,
   DITTO,
+  runProgram,
   unpackApp,
   type RunProgram,
 } from "@desktop/updates/install/bundleCheck";
@@ -67,8 +68,8 @@ describe("bundleFacts", () => {
 
 /**
  * Lays out what a zip of each kind would unpack to, with a link where the
- * bundle, its Contents or its Info.plist should be, each pointing at a real
- * bundle elsewhere in the test's folder.
+ * bundle, its Contents, its Info.plist or its program should be, each pointing
+ * at a real bundle elsewhere in the test's folder.
  */
 const LINKED = {
   "the bundle itself": async (into: string, other: string) => {
@@ -84,6 +85,12 @@ const LINKED = {
       path.join(other, "Contents", "Info.plist"),
       path.join(into, "Demo.app", "Contents", "Info.plist"),
     );
+  },
+  "its program": async (into: string, other: string) => {
+    const bundle = await makeBundle(into, "Demo.app", "dev.example.demo", "0.2.1");
+    const program = path.join(bundle, "Contents", "MacOS", "demo");
+    await rm(program);
+    await symlink(path.join(other, "Contents", "MacOS", "demo"), program);
   },
 } as const;
 
@@ -104,6 +111,26 @@ describe("unpackApp, with a link in the bundle", () => {
       expect(await unpackApp(path.join(work, "linked.zip"), into, unpack)).toBeNull();
     },
   );
+});
+
+// A process is asked whether it runs the way POSIX has it.
+test.skipIf(process.platform === "win32")("a program that is stopped ends at once", async () => {
+  const noted = path.join(await tempDir(), "pid.txt");
+  const stop = new AbortController();
+  const answer = runProgram(
+    "/bin/sh",
+    ["-c", 'echo $$ > "$1"; exec /bin/sleep 60', "sh", noted],
+    stop.signal,
+  );
+  const pid = await vi.waitFor(async () => {
+    const text = await readFile(noted, "utf8");
+    expect(text).toMatch(/^\d+\n$/);
+    return Number(text);
+  });
+  expect(process.kill(pid, 0)).toBe(true);
+  stop.abort();
+  expect(await answer).toEqual({ ok: false });
+  await vi.waitFor(() => expect(() => process.kill(pid, 0)).toThrow("ESRCH"));
 });
 
 test("unpackApp refuses a bundle with no program", async () => {

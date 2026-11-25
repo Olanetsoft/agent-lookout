@@ -4,7 +4,7 @@
 // process it waits for is one of the test's own.
 
 import { spawn } from "node:child_process";
-import { chmod, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { describe, expect, test } from "vitest";
@@ -57,12 +57,15 @@ async function setUp() {
   };
   /** Opens a bundle as macOS would: its program runs, or it cannot be opened. */
   const OPEN = `"$1"/Contents/MacOS/"Agent Lookout" >> '${opened}' 2>/dev/null`;
+  /** Says that whatever it is given was opened. */
+  const OPEN_ANY = `echo "$1" >> '${opened}'`;
   return {
     folder,
     app,
     replacement,
     aside,
     OPEN,
+    OPEN_ANY,
     run,
     opened: async () => (await readFile(opened, "utf8")).trim().split("\n"),
   };
@@ -95,13 +98,18 @@ describe.skipIf(process.platform === "win32")("the helper's script", () => {
     "is gone": (replacement) => rm(replacement, { recursive: true }),
   };
 
+  // The open here never fails, so nothing it says puts back what was moved.
   test.each(Object.keys(CLEARED))("moves nothing for a new version that %s", async (what) => {
-    const { app, replacement, aside, OPEN, run, opened } = await setUp();
+    const { app, replacement, aside, OPEN_ANY, run, opened } = await setUp();
     await CLEARED[what]!(replacement);
-    expect(await run(OPEN)).toBe(1);
+    /** Changes when anything is moved in or out of the folder the app is in, also when it is put back. */
+    const moved = async () => (await stat(path.dirname(app), { bigint: true })).mtimeNs;
+    const before = await moved();
+    expect(await run(OPEN_ANY)).toBe(1);
+    expect(await moved()).toBe(before);
     expect(await versionOf(app)).toBe("old");
     expect(await versionOf(aside)).toBeNull();
-    expect(await opened()).toEqual(["old"]);
+    expect(await opened()).toEqual([app]);
   });
 
   test("puts the old version back, and opens it, when the new one cannot be opened", async () => {
@@ -139,6 +147,20 @@ describe.skipIf(process.platform === "win32")("the helper's script", () => {
       expect(await readdir(app)).toEqual(["Contents"]);
       expect(await versionOf(aside)).toBeNull();
       expect(await opened()).toEqual(["old"]);
+    },
+  );
+
+  // As root, a folder that cannot be written can be.
+  test.skipIf(process.getuid?.() === 0)(
+    "puts the old version inside nothing when the new one cannot be opened or moved out",
+    async () => {
+      const { app, replacement, aside, run } = await setUp();
+      const folder = path.dirname(replacement);
+      expect(await run(`/bin/chmod 555 '${folder}'; exit 1`)).toBe(1);
+      await chmod(folder, 0o755);
+      expect(await readdir(app)).toEqual(["Contents"]);
+      expect(await versionOf(app)).toBe("new");
+      expect(await versionOf(aside)).toBe("old");
     },
   );
 

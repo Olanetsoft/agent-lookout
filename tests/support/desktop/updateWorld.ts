@@ -82,8 +82,8 @@ export interface UpdateWorld {
   /** How many checks were made, and how many downloads asked for. */
   looked: number;
   asked: number;
-  /** Called once a zip has been read to be unpacked, before what is in it is written. */
-  unpacking: () => void;
+  /** Called once a zip has been read to be unpacked, before what is in it is written, with what stops that. */
+  unpacking: (stop: AbortSignal | undefined) => void | Promise<void>;
   /** Whether the app can change its own bundle. */
   writable: boolean;
   /** Whether the helper starts, and whether what it opens can be opened. */
@@ -203,12 +203,12 @@ export async function makeUpdateWorld(version = "0.2.0"): Promise<UpdateWorld> {
     },
   };
 
-  const unpack: RunProgram = async (file, args) => {
+  const unpack: RunProgram = async (file, args, stop) => {
     const [, , zip, into] = args;
     if (file !== DITTO) return { ok: false };
     try {
       const { version } = JSON.parse(await readFile(zip!, "utf8")) as { version: string };
-      world.unpacking();
+      await world.unpacking(stop);
       await makeBundle(into!, version);
       return { ok: true, stdout: "" };
     } catch {

@@ -206,7 +206,7 @@ test("says it is installing as soon as Install and Restart is pressed, and that 
     notesUrl: NOTES,
     received: 0,
     total: 100 * 1024 * 1024,
-    again: true,
+    lost: "0.2.1",
   };
   let answer = () => {};
   installHeld = new Promise((resolve) => {

@@ -146,7 +146,7 @@ export async function playHistory(seed: number, met: Set<string>): Promise<void>
     }
     met.add(update.phase);
     if (update.phase === "ready" && update.newer !== undefined) met.add("a newer one coming");
-    if (update.phase === "downloading" && update.again === true) met.add("downloaded again");
+    if (update.phase === "downloading" && update.lost !== undefined) met.add("downloaded again");
     if (kept !== null && ready !== null && ready !== kept) met.add("a newer one ready");
     kept = ready;
     if (ready === null) mayGo = false;

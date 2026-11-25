@@ -36,3 +36,9 @@ test("what removes an update is Electron's own original-fs, which removes an .as
   expect(main).toContain('import { promises as originalFiles, rmSync } from "original-fs";');
   expect(main).toContain("removal: { rm: originalFiles.rm, rmSync },");
 });
+
+test("an update waits in the app's folder of user data, and only what 0.2.31 and earlier left is looked for in the temporary folder", async () => {
+  const main = await readFile(path.join(desktop, "main.ts"), "utf8");
+  expect(main).toContain('dataDir: app.getPath("userData"),');
+  expect(main).toContain('tempDir: app.getPath("temp"),');
+});
