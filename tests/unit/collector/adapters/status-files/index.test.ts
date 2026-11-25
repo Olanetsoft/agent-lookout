@@ -41,6 +41,8 @@ function setUp(options: Partial<StatusFileAdapterOptions> = {}) {
     now: () => clock.now,
     io: files.io,
     isAlive: (pid) => alive.has(pid),
+    // Where `ps` is never asked, unless a test says otherwise.
+    platform: "linux",
     ...options,
   });
   /** Moves the clock on and polls. */
@@ -62,6 +64,7 @@ function facts(read: number, skipped: number) {
     { label: "Read", value: "every 2 seconds" },
     { label: "Files read", value: String(read) },
     { label: "Files skipped", value: String(skipped) },
+    { label: "Process check", value: "signal 0 alone, every 2 seconds" },
   ];
 }
 
@@ -430,6 +433,84 @@ describe("its sessions", () => {
     expect(result.health.detail).toBe(
       `${BASE} 2 files name a process that has ended, so their sessions are not shown.`,
     );
+  });
+
+  test("a session whose process was found gone does not come back when another program gets its process ID, until its file is written again", async () => {
+    const { files, alive, first, poll } = setUp();
+    const file = `${STATUS_DIR}/a.json`;
+    const waiting = statusFile({ status: "waiting", since: NOW - DAY, pid: 200 });
+    put(files, "a.json", waiting, NOW - DAY);
+    put(files, "b.json", statusFile({ name: "done", status: "finished", pid: 201 }), NOW - HOUR);
+    const left = (await first()).sessions;
+    expect(left.map((session) => [session.name, session.alive])).toEqual([["done", false]]);
+
+    // Both IDs go to other programs, and the files stay as they were.
+    alive.add(200).add(201);
+    const reused = await poll();
+    expect(reused.sessions.map((session) => [session.name, session.alive])).toEqual([
+      ["done", false],
+    ]);
+    expect(reused.health.detail).toBe(
+      `${BASE} 1 file names a process that has ended, so its session is not shown.`,
+    );
+
+    // Caught half written it is still the one left behind, and whole it is a session again.
+    files.rewrite(file, waiting.slice(0, 20));
+    expect((await poll()).sessions).toHaveLength(1);
+    files.rewrite(file, statusFile({ status: "waiting", pid: 200 }));
+    expect((await poll()).sessions.map((session) => [session.name, session.alive])).toEqual([
+      ["checkout-flow", true],
+      ["done", false],
+    ]);
+  });
+
+  test("on a Mac, a session whose process ID another program has from the first poll is not shown, and a finished one has no process", async () => {
+    const asked: number[][] = [];
+    const { files, alive, first } = setUp({
+      platform: "darwin",
+      readProcessStarts: async (pids) => {
+        asked.push([...pids]);
+        return new Map(pids.map((pid) => [pid, "Mon Oct  5 11:00:00 2026"]));
+      },
+    });
+    alive.add(100).add(200).add(300);
+    put(files, "a.json", statusFile({ name: "api-rate-limits", pid: 100 }), NOW - MINUTE);
+    put(files, "b.json", statusFile({ name: "left", status: "waiting", pid: 200 }), NOW - DAY);
+    put(files, "c.json", statusFile({ name: "done", status: "failed", pid: 300 }), NOW - 2 * HOUR);
+    const result = await first();
+
+    expect(result.sessions.map((session) => [session.name, session.alive])).toEqual([
+      ["api-rate-limits", true],
+      ["done", false],
+    ]);
+    expect(asked).toEqual([[100, 200, 300]]);
+    expect(result.health.watching).toEqual([
+      ...facts(3, 0).slice(0, 4),
+      { label: "Process check", value: "ps -o pid=,lstart= -p <pids>" },
+      {
+        label: "Process check run",
+        value: "every 30 seconds while a file's process runs, and sooner when another appears",
+      },
+    ]);
+  });
+
+  test("a file left behind stays so while its folder cannot be read, and one that folder then shows was not seen written", async () => {
+    const { files, alive, first, poll } = setUp({
+      platform: "darwin",
+      readProcessStarts: async (pids) =>
+        new Map(pids.map((pid) => [pid, "Mon Oct  5 11:00:00 2026"])),
+    });
+    put(files, "a.json", statusFile({ pid: 200 }), NOW - 30 * MINUTE);
+    expect((await first()).sessions).toEqual([]);
+    for (const code of ["EACCES", "ENOENT"]) {
+      files.fail(STATUS_DIR, code);
+      expect((await poll()).sessions).toEqual([]);
+    }
+    // As a disk that was away: both IDs are another program's by now, started an hour ago.
+    files.heal(STATUS_DIR);
+    put(files, "b.json", statusFile({ pid: 201 }), NOW - DAY);
+    alive.add(200).add(201);
+    expect((await poll()).sessions).toEqual([]);
   });
 
   test("one that finished or failed is expected to have no process, and stays", async () => {

@@ -677,7 +677,13 @@ export function createCollector(options: CollectorOptions): Collector {
       platform,
       readProcessStarts: options.readProcessStarts,
     }),
-    createStatusFileAdapter({ env: options.env, now, pollIntervalMs: intervalMs }),
+    createStatusFileAdapter({
+      env: options.env,
+      now,
+      pollIntervalMs: intervalMs,
+      platform,
+      readProcessStarts: options.readProcessStarts,
+    }),
   ];
   // How a session in a wait is seen is for the waits alone: the ledger holds
   // it and the history keeps it, and neither shows it in the Events log.

@@ -17,8 +17,14 @@ import { tildify } from "../../files/paths.ts";
 import { isMissing, nodeIo, type OpenFile, type ReadOnlyIo } from "../../files/readOnlyIo.ts";
 import { POLL_INTERVAL_MS } from "../../poller.ts";
 import { isProcessAlive } from "../../processes/pids.ts";
+import {
+  readProcessStartsWithPs,
+  START_CHECK_TTL_MS,
+  type ReadProcessStarts,
+} from "../../processes/processStart.ts";
 import type { Adapter, AdapterResult } from "../adapter.ts";
 import { every } from "../words.ts";
+import { createStatusFileProcesses, type NamedProcess } from "./processes.ts";
 import {
   isStatusFileName,
   MAX_FILE_BYTES,
@@ -76,6 +82,10 @@ export interface StatusFileAdapterOptions {
   /** How the folder is read: the same reading-only access the Codex adapter has. */
   io?: ReadOnlyIo;
   isAlive?: (pid: number) => boolean;
+  /** Whether `ps` is asked when a process started: on a Mac alone. Defaults to this system. */
+  platform?: NodeJS.Platform;
+  /** Reads when processes started, on a Mac. Defaults to asking `ps`. */
+  readProcessStarts?: ReadProcessStarts;
   /**
    * How often the poller calls `poll()`, which is how often the folder is read.
    * The adapter keeps no timer of its own: this is only stated in `watching`.
@@ -103,6 +113,23 @@ interface Read {
   mtimeMs: number;
 }
 
+/**
+ * What Sources says tells a file's process from another program given its
+ * process ID, and how often that is asked.
+ */
+function processCheckFacts(asksPs: boolean, pollIntervalMs: number): SourceFact[] {
+  if (!asksPs) {
+    return [{ label: "Process check", value: `signal 0 alone, ${every(pollIntervalMs)}` }];
+  }
+  return [
+    { label: "Process check", value: "ps -o pid=,lstart= -p <pids>" },
+    {
+      label: "Process check run",
+      value: `${every(START_CHECK_TTL_MS)} while a file's process runs, and sooner when another appears`,
+    },
+  ];
+}
+
 /** "1 file was", "3 files were": a count and its words, singular or plural. */
 function counted(count: number, one: string, many: string): string {
   return `${count} ${count === 1 ? one : many}`;
@@ -128,7 +155,8 @@ function counted(count: number, one: string, many: string): string {
  * file, is skipped and counted, the first one by name is named, and the rest
  * are read as before. `statusFile.ts` has the format.
  *
- * - A file that names a process which has gone is a leftover from an agent that
+ * - A file that names a process which has gone, or whose pid another program
+ *   has since been given (`processes.ts`), is a leftover from an agent that
  *   stopped without tidying up, and its session is not shown, unless it says
  *   it finished or failed: those are expected to have no process.
  * - A finished or failed session is shown for 24 hours, counted from its
@@ -152,8 +180,13 @@ export function createStatusFileAdapter(options: StatusFileAdapterOptions = {}):
   const homeDir = options.homeDir ?? os.homedir();
   const now = options.now ?? Date.now;
   const io = options.io ?? nodeIo;
-  const isAlive = options.isAlive ?? isProcessAlive;
   const pollIntervalMs = options.pollIntervalMs ?? POLL_INTERVAL_MS;
+  const asksPs = (options.platform ?? process.platform) === "darwin";
+  const processes = createStatusFileProcesses({
+    isAlive: options.isAlive ?? isProcessAlive,
+    readStarts: asksPs ? (options.readProcessStarts ?? readProcessStartsWithPs) : null,
+    now,
+  });
 
   const override = env[STATUS_DIR_ENV]?.trim() || undefined;
   const dir = path.resolve(override ?? path.join(homeDir, ".agent-lookout", "sessions"));
@@ -179,6 +212,7 @@ export function createStatusFileAdapter(options: StatusFileAdapterOptions = {}):
       facts.push(
         { label: "Files read", value: String(files.read) },
         { label: "Files skipped", value: String(files.skipped) },
+        ...processCheckFacts(asksPs, pollIntervalMs),
       );
     }
     return facts;
@@ -280,6 +314,7 @@ export function createStatusFileAdapter(options: StatusFileAdapterOptions = {}):
     try {
       names = await io.readdir(dir);
     } catch (error) {
+      processes.notListed();
       if (!isMissing(error)) {
         const answer = result(
           "error",
@@ -309,9 +344,8 @@ export function createStatusFileAdapter(options: StatusFileAdapterOptions = {}):
     let old = 0;
     /** The first file skipped, by name, and why, so the person knows where to look. */
     let firstSkipped: { name: string; why: string } | undefined;
-    const sessions: Session[] = [];
+    const files: { fileName: string; kept: Read }[] = [];
     const nextRead = new Map<string, Read>();
-    const nextStatuses = new Map<string, { status: SessionStatus; since: number | null }>();
 
     for (const fileName of await toRead(listed)) {
       const reading = await readOne(path.join(dir, fileName));
@@ -334,12 +368,24 @@ export function createStatusFileAdapter(options: StatusFileAdapterOptions = {}):
         continue;
       }
       read += 1;
+      files.push({ fileName, kept });
+    }
 
+    const running = await processes.running(
+      files.flatMap(({ fileName, kept: { file, mtimeMs } }): NamedProcess[] =>
+        file.pid === undefined ? [] : [{ fileName, pid: file.pid, mtimeMs, since: file.since }],
+      ),
+      new Set(listed),
+    );
+
+    const sessions: Session[] = [];
+    const nextStatuses = new Map<string, { status: SessionStatus; since: number | null }>();
+    for (const { fileName, kept } of files) {
       const { file, mtimeMs } = kept;
       const { status } = mapStatusFileStatus(file);
       // The file says the session is over, whether or not its process still runs.
       const over = status === "finished" || status === "failed";
-      const alive = file.pid === undefined ? undefined : isAlive(file.pid);
+      const alive = file.pid === undefined ? undefined : running.has(fileName);
       if (alive === false && !over) {
         ended += 1;
         continue;

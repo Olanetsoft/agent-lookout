@@ -347,6 +347,16 @@ describe("createCollector", () => {
         { label: "Read", value: "every 2 seconds" },
         { label: "Files read", value: "1" },
         { label: "Files skipped", value: "0" },
+        ...(process.platform === "darwin"
+          ? [
+              { label: "Process check", value: "ps -o pid=,lstart= -p <pids>" },
+              {
+                label: "Process check run",
+                value:
+                  "every 30 seconds while a file's process runs, and sooner when another appears",
+              },
+            ]
+          : [{ label: "Process check", value: "signal 0 alone, every 2 seconds" }]),
       ],
     });
     // It needs the person, so it is listed first, ahead of every Codex session.
