@@ -22,13 +22,13 @@ const CLONED = `[core]
 `;
 
 describe("reading a repository's config", () => {
-  test("keeps each remote's address and each branch's remote, and nothing else", () => {
+  test("keeps each remote's address and each branch's remote and merge, and nothing else", () => {
     const config = parseGitConfig(CLONED);
     expect(config).toEqual({
       remotes: new Map([["origin", { url: "git@github.com:example-org/storefront.git" }]]),
       branches: new Map([
-        ["main", { remote: "origin" }],
-        ["checkout-flow", { remote: "origin" }],
+        ["main", { remote: "origin", merge: "refs/heads/main" }],
+        ["checkout-flow", { remote: "origin", merge: "refs/heads/main" }],
       ]),
     });
   });

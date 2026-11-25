@@ -13,6 +13,8 @@ Changes that a user of Agent Lookout would notice, newest first.
 - The menu bar names a session on another computer with that computer, as notifications do: `docs-site on devbox`. Before, it and a session of the same name on this computer looked the same. (#491)
 - An `&` in a session's name, or in what it asks, is drawn in the menu bar as it is written. Before, `R&D` showed as `RD`, and `cd api && npm test` as `cd api & npm test`. (#492)
 - A pull request's failing check is no longer dropped, and shown as passing, when its workflow runs on both `push` and `pull_request` and the other event's run of it passed. The two runs count as two checks. A push run that had finished before the pull request's own run began is still taken for a run of the same check, since `gh` gives no event. (#493)
+- A pull request's failing check is no longer dropped, and shown as passing, when its workflow runs on both `push` and `pull_request` and the other event's run of it passed. The two runs count as two checks. A push run that had finished before the pull request's own run began is still taken for a run of the same check, since `gh pr view` gives no event. (#493)
+- A branch checked out from a fork with `gh pr checkout`, or pushed to one with `git push -u <address>`, shows its own pull request. Before, it showed none, or another person's whose branch had that name. A branch `gh pr checkout` made from a pull request you cannot push to is asked for by that pull request's number. (#494)
 
 ## 0.2.31 - 2026-11-25
 

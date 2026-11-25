@@ -1,6 +1,6 @@
 import path from "node:path";
 
-import type { GitHubRepository } from "../../core/sessions/pullRequest.ts";
+import { isPullRequestNumber, type GitHubRepository } from "../../core/sessions/pullRequest.ts";
 import { MAX_BRANCH_LENGTH } from "./gitHead.ts";
 import { nodeIo } from "../files/readOnlyIo.ts";
 import { readGitFile, type GitIo } from "./branchFinder.ts";
@@ -25,7 +25,10 @@ import { gitHubRepositoryOf } from "./remoteUrl.ts";
 export interface PullRequestTarget {
   /** The repository on github.com it is looked for in. */
   repository: GitHubRepository;
-  /** The branch, or `owner:branch` for a branch pushed to someone else's copy, a fork. */
+  /**
+   * The branch, or `owner:branch` for a branch pushed to someone else's copy, a
+   * fork, or the number of the pull request whose own ref is checked out.
+   */
   head: string;
 }
 
@@ -120,6 +123,9 @@ export function parseRemoteHead(content: string, remote: string): string | null 
   return branch === "" ? null : branch;
 }
 
+/** A pull request's own ref, as `gh pr checkout` sets it for one that cannot be pushed to. */
+const PULL_REQUEST_REF = /^refs\/pull\/(\d+)\/head$/;
+
 /**
  * Where to look for the pull request of `branch`, or null when there is none
  * to look for: no remote on github.com, or the default branch, which is the
@@ -128,7 +134,10 @@ export function parseRemoteHead(content: string, remote: string): string | null 
  * A branch pushed to a remote on github.com whose owner is not the base's, as
  * from a fork, is asked for as `owner:branch`, as gh asks for it. The remote
  * it is pushed to is its `pushRemote`, else `remote.pushDefault`, else its
- * `remote`.
+ * `remote`. Each is a remote's name, or the address of a repository, as
+ * `gh pr checkout` and `git push -u <address>` write it. A branch checked out
+ * as a pull request's own ref is asked for by its number, in the repository
+ * the ref is in, and never by its name.
  */
 export function targetOf(
   config: GitConfig,
@@ -141,9 +150,17 @@ export function targetOf(
     return null;
   }
   const own = config.branches.get(branch);
-  const pushedTo = own?.pushRemote ?? config.pushDefault ?? own?.remote;
-  const url = pushedTo === undefined ? undefined : config.remotes.get(pushedTo)?.url;
-  const fork = url === undefined ? null : gitHubRepositoryOf(url);
+  const repositoryAt = (remote: string | undefined) =>
+    remote === undefined ? null : gitHubRepositoryOf(config.remotes.get(remote)?.url ?? remote);
+  const ref = PULL_REQUEST_REF.exec(own?.merge ?? "");
+  if (ref !== null) {
+    const repository = repositoryAt(own?.remote);
+    const number = Number(ref[1]);
+    return repository === null || !isPullRequestNumber(number)
+      ? null
+      : { repository, head: String(number) };
+  }
+  const fork = repositoryAt(own?.pushRemote ?? config.pushDefault ?? own?.remote);
   const elsewhere =
     fork !== null && fork.owner.toLowerCase() !== base.repository.owner.toLowerCase();
   return { repository: base.repository, head: elsewhere ? `${fork.owner}:${branch}` : branch };
