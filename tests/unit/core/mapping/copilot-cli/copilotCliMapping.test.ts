@@ -140,6 +140,55 @@ describe("each row of the table", () => {
     });
   });
 
+  test("5: a request asked while a question was open goes on with its wait once that is answered", () => {
+    const made = fold(
+      user,
+      turnStart("0"),
+      { sort: "tool-start", call: "c-1", ask: true, at: NOW - 15_000 },
+      { sort: "permission", request: "r-1", byHook: false, at: NOW - 5_000 },
+      { sort: "tool-end", call: "c-1" },
+    );
+    expect(statusOf(made)).toMatchObject({
+      since: NOW - 15_000,
+      waitingReason: "permission",
+      wait: { since: NOW - 15_000, ids: ["permission:r-1"] },
+    });
+    // A wait that began at a time that cannot be right is as old as what is open.
+    for (const at of [0, NOW + 3_600_000]) {
+      made.waitingSince = at;
+      expect(statusOf(made).since).toBe(NOW - 5_000);
+    }
+  });
+
+  test("5 and 6: a question the main agent passed by is a wait only while nothing else is", () => {
+    const passed: CopilotRecord[] = [
+      user,
+      turnStart("0"),
+      { sort: "tool-start", call: "c-1", ask: true, at: NOW - 15_000 },
+      turnStart("1", NOW - 10_000),
+    ];
+    const alone = { since: NOW - 15_000, waitingReason: "question" };
+    const ids = (...of: string[]) => ({ wait: { ids: of } });
+    expect(statusOf(fold(...passed))).toMatchObject({ ...alone, ...ids("question:c-1") });
+
+    const request = (at: number) =>
+      fold(...passed, { sort: "permission", request: "r-1", byHook: false, at });
+    expect(statusOf(request(NOW - 5_000))).toMatchObject({
+      since: NOW - 5_000,
+      waitingReason: "permission",
+      ...ids("permission:r-1"),
+    });
+    expect(statusOf(request(NOW - 500))).toMatchObject({ ...alone, ...ids("question:c-1") });
+
+    const question = fold(...passed, {
+      sort: "tool-start",
+      call: "c-2",
+      ask: true,
+      at: NOW - 5_000,
+    });
+    expect(statusOf(question)).toMatchObject({ since: NOW - 5_000, ...ids("question:c-2") });
+  });
+
   test("5: a request younger than a second is not yet a wait, by its time or by when it was first seen", () => {
     const young = fold(user, turnStart("0"), {
       sort: "permission",

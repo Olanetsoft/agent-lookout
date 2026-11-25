@@ -349,7 +349,40 @@ describe("a session's status", () => {
     },
   );
 
-  test("agrees with the model of open waits, through answers, new questions, a log that cannot be read and restarts", async () => {
+  test("a question whose end Copilot never wrote goes on showing, and hides nothing asked after it", async () => {
+    const files = memoryFiles();
+    const clock = handClock();
+    writeLog(files, `${sessionStart(T)}${userMessage(T + 1)}${turnStart("0", T + 2)}`);
+    writeLock(files);
+    const watch = watchWaits(copilotCliAdapterFor(files, { now: clock.now }), clock.now);
+    const poll = async (...lines: ((at: number) => string)[]) => {
+      const at = clock.now();
+      appendLog(files, lines.map((line) => line(at)).join(""), { mtimeMs: at });
+      clock.advance(2 * SECOND);
+      return { at, ...(await watch()) };
+    };
+    const shown = (since: number) => ({ status: "needs-you", since, started: 0, stopped: 0 });
+    /** A new wait, since it was asked, told in place of the one that showed. */
+    const told = { status: "needs-you", started: 1, stopped: 1 };
+
+    await poll();
+    const stuck = await poll((at) => toolStart("q-1", "ask_user", at));
+    expect(stuck).toMatchObject({ since: stuck.at, started: 1 });
+    expect(await poll(aborted)).toMatchObject(shown(stuck.at));
+    expect(await poll(userMessage, (at) => turnStart("1", at))).toMatchObject(shown(stuck.at));
+
+    for (const request of ["r-1", "r-2"]) {
+      const asked = await poll((at) => permissionRequested(request, at));
+      expect(asked).toMatchObject({ ...told, since: asked.at });
+      expect(await poll((at) => permissionCompleted(request, at))).toMatchObject(shown(stuck.at));
+    }
+    const question = await poll((at) => toolStart("q-2", "ask_user", at));
+    expect(question).toMatchObject({ ...told, since: question.at });
+    // In a turn of its own, it and a permission are one wait.
+    expect(await poll((at) => permissionRequested("r-3", at))).toMatchObject(shown(question.at));
+  });
+
+  test("agrees with the model of open waits, through answers, waits that pass from one thing to another unseen, a log that cannot be read and restarts", async () => {
     for (let seed = 1; seed <= 150; seed += 1) {
       const random = seeded(seed);
       const files = memoryFiles();
@@ -360,10 +393,9 @@ describe("a session's status", () => {
       const announcements = createAnnouncements();
       let watch = watchWaits(copilotCliAdapterFor(files, { now: clock.now }), clock.now);
       let asked = 0;
-      let told: number | null = null;
-      let unread = false;
+      let last = { open: new Map<string, number>(), since: null as number | null };
       const ask = () => {
-        // Each with an ID of its own, as Copilot gives them, and each open a second before a poll.
+        // Each with an ID of its own, as Copilot gives them.
         const id = `${random() < 0.5 ? "r" : "q"}-${++asked}`;
         const at = clock.now();
         const line = id.startsWith("r")
@@ -382,25 +414,25 @@ describe("a session's status", () => {
         model.answer(id);
       };
       for (let polled = 0; polled < 60; polled += 1) {
-        // One step between two reads, so that no wait passes to another unseen.
-        const step = unread ? 1 : random();
-        if (step < 0.35) ask();
-        else if (step < 0.65) answer();
-        else if (step < 0.75) {
-          answer();
-          clock.advance(100);
-          ask();
+        for (let left = Math.floor(random() * 4); left > 0; left -= 1) {
+          clock.advance(1 + Math.floor(random() * 900));
+          if (random() < 0.5) ask();
+          else answer();
         }
-        unread = polled > 0 && !unread && random() < 0.15;
+        const unread = polled > 0 && random() < 0.15;
         if (unread) files.failOpen(eventsPath());
-        clock.advance(2 * SECOND);
+        clock.advance(random() < 0.3 ? SECOND / 2 : 2 * SECOND);
         if (random() < 0.05 && !unread) {
           watch = watchWaits(copilotCliAdapterFor(files, { now: clock.now }), clock.now);
           announcements.restart();
-          model.forgetAnswered();
         }
         // What a log last said stands while it cannot be read.
-        if (!unread) told = model.since();
+        if (!unread) last = { open: new Map(model.open), since: model.since() };
+        // A permission shows once it has been open a second.
+        const shows = [...last.open].some(
+          ([id, at]) => id.startsWith("q") || clock.now() - at >= SECOND,
+        );
+        const told = shows ? last.since : null;
         const { status, ...shown } = await watch();
         expect(shown, `seed ${seed}, poll ${polled}`).toEqual({
           since: told,

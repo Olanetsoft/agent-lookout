@@ -38,10 +38,6 @@ export function createOpenWaits() {
       asked.clear();
       since = null;
     },
-    /** A run that remembers nothing knows of what is open, and of nothing answered before it. */
-    forgetAnswered() {
-      since = asked.size === 0 ? null : Math.min(...asked.values());
-    },
   };
 }
 

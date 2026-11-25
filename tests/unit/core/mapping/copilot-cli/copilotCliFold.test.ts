@@ -245,6 +245,85 @@ describe("waits and tool calls", () => {
     expect(made.questions.size + made.tools.size).toBe(0);
   });
 
+  const permission = (request: string, at: number | null): CopilotRecord => ({
+    sort: "permission",
+    request,
+    byHook: false,
+    at,
+  });
+  const question = (call: string, at: number | null): CopilotRecord => ({
+    sort: "tool-start",
+    call,
+    ask: true,
+    at,
+  });
+  const answered = (call: string): CopilotRecord => ({ sort: "tool-end", call });
+
+  test("has waited since the first thing open was asked, for as long as anything stays open", () => {
+    const since = (...records: CopilotRecord[]) => fold(start(), ...records).waitingSince;
+    const first = question("c-1", T + 1);
+    const second = permission("r-1", T + 2);
+    expect(since()).toBeNull();
+    expect(since(first, second)).toBe(T + 1);
+    // One asked before the last was answered goes on with its wait, and one asked after is another.
+    expect(since(first, second, answered("c-1"))).toBe(T + 1);
+    expect(since(first, answered("c-1"))).toBeNull();
+    expect(since(first, answered("c-1"), second)).toBe(T + 2);
+    expect(since(second, { sort: "permission-end", request: "r-1" })).toBeNull();
+    // No other tool call is a wait, and a first with no time leaves it not known.
+    expect(since({ sort: "tool-start", call: "c-9", ask: false, at: T + 1 })).toBeNull();
+    expect(since(question("c-1", null), second)).toBeNull();
+    // What drops everything open ends it.
+    expect(since(first, { sort: "gap" })).toBeNull();
+    expect(since(first, start())).toBeNull();
+  });
+
+  test("a main turn's start or end, or an abort, passes the open questions by, until they are answered", () => {
+    const turn = (sort: "turn-start" | "turn-end", sub: string | null = null): CopilotRecord => ({
+      sort,
+      turn: sort === "turn-start" ? "1" : "0",
+      sub,
+      at: T + 5,
+    });
+    const asked = (...records: CopilotRecord[]) =>
+      fold(
+        start(),
+        { sort: "turn-start", turn: "0", sub: null, at: T },
+        question("c-1", T + 1),
+        ...records,
+      );
+    const passing: CopilotRecord[] = [
+      turn("turn-start"),
+      turn("turn-end"),
+      { sort: "abort", at: T + 5 },
+    ];
+    for (const record of passing) {
+      const made = asked(record);
+      expect([...made.questions.keys()]).toEqual(["c-1"]);
+      expect([...made.passed]).toEqual(["c-1"]);
+      expect(made.waitingSince).toBeNull();
+      // What is asked after it has waited since then, and what was open beside it goes on.
+      applyCopilotRecord(made, question("c-2", T + 7));
+      expect([...made.passed]).toEqual(["c-1"]);
+      expect(made.waitingSince).toBe(T + 7);
+      expect(asked(permission("r-1", T + 2), record).waitingSince).toBe(T + 1);
+      applyCopilotRecord(made, answered("c-1"));
+      expect(made.passed.size).toBe(0);
+    }
+    const staying: CopilotRecord[] = [
+      turn("turn-start", "task-1"),
+      turn("turn-end", "task-1"),
+      { sort: "turn-end", turn: "9", sub: null, at: T + 5 },
+      { sort: "user", at: T + 5 },
+      { sort: "error", at: T + 5 },
+      { sort: "resume", cwd: null, continuePending: true, at: T + 5 },
+    ];
+    for (const record of staying) {
+      expect(asked(record)).toMatchObject({ passed: new Set(), waitingSince: T + 1 });
+    }
+    expect(asked(turn("turn-start"), start()).passed.size).toBe(0);
+  });
+
   test("more open than it keeps makes the fold unsure, and lets go of what it held", () => {
     const made = fold(start());
     for (let n = 0; n <= OPEN_MAX; n += 1) {
@@ -283,10 +362,12 @@ describe("lines that are not read", () => {
 
   test("a copy stands apart from the fold it was made from", () => {
     const made = fold(start(), { sort: "permission", request: "r-1", byHook: false, at: T });
+    applyCopilotRecord(made, { sort: "tool-start", call: "c-1", ask: true, at: T });
     const copy = copyCopilotFold(made);
     applyCopilotRecord(copy, { sort: "permission-end", request: "r-1" });
     applyCopilotRecord(copy, { sort: "turn-start", turn: "0", sub: null, at: T });
     expect(made.permissions.size).toBe(1);
+    expect([copy.passed.size, made.passed.size]).toEqual([1, 0]);
     expect(made.turn).toEqual({ state: "closed" });
   });
 });
