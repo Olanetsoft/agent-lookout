@@ -19,6 +19,7 @@ Changes that a user of Agent Lookout would notice, newest first.
 - A settings change that the disk takes only part of, as on a nearly full disk on Linux or at a quota, is answered as not saved, and the settings file stays as it was. Before, it was answered as saved, and the cut file turned every time rule and permission rule off. (#497)
 - Pull requests show with `CLICOLOR_FORCE` set where Agent Lookout starts. `gh` is run without it. Before, `gh` coloured its answer, which then could not be read. (#498)
 - A status file left by an agent that was killed no longer comes back when its process ID goes to another program, as a session that needs you, with a wait of a day and a notification, that also kept the Mac awake. Once Agent Lookout has found the process gone, the file stays left behind until it is written again. On a Mac, a process that started more than a minute after the file was last written is not taken for its agent. On Linux and Windows such a file can still show while another program has its process ID, when that program was given it before Agent Lookout found the process gone. (#499)
+- A Kiro CLI session that waits on two approvals is announced once, and keeps the time it began to wait until both are answered. Before, answering the older one moved its time to the other's and announced it again as a new wait. (#500)
 
 ## 0.2.31 - 2026-11-25
 

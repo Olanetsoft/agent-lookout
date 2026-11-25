@@ -129,7 +129,7 @@ The log brackets each turn: `turn_start` follows the person's row, and `turn_end
 
 A line since the newest turn row that cannot be read, or a `pending_interaction` or `interaction_resolved` with no `toolCallId`, makes it unknown until the next turn row. A link, a folder or anything but an ordinary file at the log's name, or a log that cannot be looked up or read, makes it unknown too, in both stores. Only nothing at its name is no log yet. A wait for a `tool_approval` needs you for permission, and any other `interactionType` for another reason. Every other row is bookkeeping, a message or a tool's call or result, and does not change the status.
 
-The status time is when the oldest unanswered wait was asked while it needs you, when the turn started while it works, and when it ended while it is idle, each as its row says. An idle session with no turn row has been idle since its log, or its header with no log, was last written.
+The status time is when its wait began while it needs you, when the turn started while it works, and when it ended while it is idle, each as its row says. A wait begins when something is asked with nothing else open, and goes on for as long as anything stays open, so with two approvals open, answering the older does not move its time, and it is announced once. A call answered and asked again with nothing else open is a new wait. All of it is read from the turn's rows, so a poll that could not read the log, or a restart of Agent Lookout, does not move it. An idle session with no turn row has been idle since its log, or its header with no log, was last written.
 
 ### V2
 
