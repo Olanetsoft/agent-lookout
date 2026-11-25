@@ -308,7 +308,10 @@ export function createUpdater(options: UpdaterOptions): Updater {
     return {
       phase: "failed",
       step,
-      reason,
+      reason:
+        lostVersion === null
+          ? reason
+          : `version ${lostVersion}, downloaded before, is no longer whole, and ${reason}`,
       version,
       notesUrl: version === null ? null : endpoints.notes(version),
     };

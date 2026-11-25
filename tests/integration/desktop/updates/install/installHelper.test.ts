@@ -1,7 +1,8 @@
 // The helper's own script, run by the real `/bin/sh` with the real `mv`, on
 // made-up bundles in a folder of the test's own. Only `/usr/bin/open` in it is
-// another program, one that runs the bundle's own, so no app is opened. The
-// process it waits for is one of the test's own.
+// another program, one that runs the bundle's own, so no app is opened, and
+// where a test says so `/bin/mv` is one that refuses one move. The process it
+// waits for is one of the test's own.
 
 import { spawn } from "node:child_process";
 import { chmod, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
@@ -36,13 +37,22 @@ async function setUp() {
   const opened = path.join(work, "opened.txt");
   await writeFile(opened, "");
   const open = path.join(work, "open");
+  const mv = path.join(work, "mv");
 
-  /** Runs the script as the app does, once a process of the test's own has ended, and gives its exit code. */
-  const run = async (opener: string): Promise<number | null> => {
+  /**
+   * Runs the script as the app does, once a process of the test's own has
+   * ended, and gives its exit code. `refused` is the shell's own test for a
+   * move that does not work.
+   */
+  const run = async (opener: string, refused = "false"): Promise<number | null> => {
     await writeFile(open, `#!/bin/sh\n${opener}\n`, { mode: 0o755 });
     await chmod(open, 0o755);
+    await writeFile(mv, `#!/bin/sh\nif ${refused}; then exit 1; fi\nexec /bin/mv "$@"\n`, {
+      mode: 0o755,
+    });
     const running = spawn("/bin/sleep", ["0.3"], { stdio: "ignore" });
-    const script = HELPER_SCRIPT.replaceAll("/usr/bin/open", `'${open}'`);
+    let script = HELPER_SCRIPT.replaceAll("/usr/bin/open", `'${open}'`);
+    if (refused !== "false") script = script.replaceAll("/bin/mv", `'${mv}'`);
     const args = [
       "-c",
       script,
@@ -172,14 +182,39 @@ describe.skipIf(process.platform === "win32")("the helper's script", () => {
   );
 
   // As root, a folder that cannot be written can be.
+  test.skipIf(process.getuid?.() === 0)(
+    "leaves a new version that cannot be opened beside the old one when it can go nowhere else",
+    async () => {
+      const { app, replacement, aside, OPEN, run, opened } = await setUp();
+      await writeFile(
+        path.join(replacement, "Contents", "MacOS", "Agent Lookout"),
+        "#!/bin/sh\nexit 1\n",
+      );
+      const folder = path.dirname(replacement);
+      // From beside the app to where the old one waited.
+      const refused = `[ "$1" != '${app}' ] && [ "$2" = '${aside}' ]`;
+      expect(await run(`/bin/chmod 555 '${folder}'\n${OPEN}`, refused)).toBe(1);
+      await chmod(folder, 0o755);
+      expect(await versionOf(app)).toBe("old");
+      expect(await readdir(app)).toEqual(["Contents"]);
+      expect(await opened()).toEqual(["old"]);
+      const [first, beside, ...more] = (await readdir(path.dirname(app))).sort();
+      expect([first, more]).toEqual(["Agent Lookout.app", []]);
+      expect(beside).toMatch(/^Agent Lookout\.app\.\d+$/);
+      expect(await versionOf(path.join(path.dirname(app), beside!))).toBe("new");
+    },
+  );
+
+  // As root, a folder that cannot be written can be.
   test.skipIf(process.getuid?.() === 0).each([
-    ["the old one cannot be moved back", "aside"],
-    ["it can neither be moved back nor make way", "app"],
+    ["it and the old one cannot be moved back", ["replacement", "aside"]],
+    ["it has gone back and the old one cannot be", ["aside"]],
+    ["it can neither be moved back nor make way", ["replacement", "app"]],
   ] as const)(
     "leaves a new version that cannot be opened, with nothing put inside it, when %s",
-    async (_what, shutToo) => {
+    async (_what, shutIn) => {
       const { app, replacement, aside, run } = await setUp();
-      const folders = [replacement, { app, aside }[shutToo]].map((of) => path.dirname(of));
+      const folders = shutIn.map((of) => path.dirname({ app, replacement, aside }[of]));
       const shut = folders.map((folder) => `/bin/chmod 555 '${folder}'`).join("\n");
       expect(await run(`${shut}\nexit 1`)).toBe(1);
       for (const folder of folders) await chmod(folder, 0o755);

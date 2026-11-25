@@ -965,9 +965,13 @@ describe("a version that is ready, and a newer one", () => {
     const pass = await hoursOf(world);
     await rm((await world.zip())!);
     world.checks = "fail";
-    expect((await world.updater.install()).status.update).toMatchObject({
+    expect((await world.updater.install()).status.update).toEqual({
       phase: "failed",
       step: "check",
+      reason:
+        "version 0.2.1, downloaded before, is no longer whole, and GitHub could not be reached",
+      version: null,
+      notesUrl: null,
     });
     expect(world.asked).toBe(1);
     world.checks = "answer";
@@ -1049,16 +1053,27 @@ describe("a version that is ready, and a newer one", () => {
     world.latest = "0.2.1";
     await rm((await world.zip())!);
     world.checks = "fail";
-    expect((await world.updater.check()).update).toMatchObject({ phase: "failed", step: "check" });
-    expect(world.log[0]).toBe(
+    expect((await world.updater.check()).update).toMatchObject({
+      phase: "failed",
+      step: "check",
+      reason:
+        "version 0.2.1, downloaded before, is no longer whole, and GitHub could not be reached",
+    });
+    expect(world.log).toEqual([
       "Version 0.2.1 of Agent Lookout can no longer be installed: its download is no longer whole.",
-    );
+      "The check for a newer version of Agent Lookout did not work: GitHub could not be reached.",
+    ]);
     expect((await world.updater.install()).ok).toBe(false);
 
     world.checks = "answer";
     world.downloads = "network";
     await world.updater.check();
-    await isAt(world, { phase: "failed", step: "download" });
+    await isAt(world, {
+      phase: "failed",
+      step: "download",
+      reason:
+        "version 0.2.1, downloaded before, is no longer whole, and GitHub could not be reached",
+    });
     // Also when that download has failed before.
     world.downloads = "hold";
     expect((await world.updater.check()).update).toMatchObject({

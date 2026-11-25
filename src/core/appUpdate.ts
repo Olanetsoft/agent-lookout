@@ -99,7 +99,10 @@ export type UpdatePhase =
   | {
       phase: "failed";
       step: "check" | "download" | "install";
-      /** What went wrong, as the end of a sentence: "GitHub did not answer in time". */
+      /**
+       * What went wrong, as the end of a sentence: "GitHub did not answer in time".
+       * It says so first when the version that was ready was no longer whole.
+       */
       reason: string;
       /** The version that was found, when the download or the install is what failed. */
       version: string | null;

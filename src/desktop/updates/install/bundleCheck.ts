@@ -123,7 +123,8 @@ function canRun(program: string): boolean {
 
 /**
  * Whether a bundle is a folder, with a `Contents` folder and an `Info.plist`
- * file, none of them a link, and a program in its `Contents/MacOS`.
+ * file, none of them a link, and a program that can be run in its
+ * `Contents/MacOS`.
  */
 async function isRealBundle(bundle: string): Promise<boolean> {
   const programsIn = path.join(bundle, "Contents", "MacOS");

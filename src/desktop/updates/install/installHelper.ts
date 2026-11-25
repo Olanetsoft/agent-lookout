@@ -4,9 +4,10 @@
 // aside into the update's own folder, moves the new one into its place and
 // opens it. It moves nothing unless the new one has its `Info.plist` and a
 // program, and if the new one cannot be moved in, or cannot be opened, the old
-// one is put back and opened, so the person is never left with no app. A new
-// one that cannot go back where it was makes way under another name beside the
-// app, and goes where the old one waited once that is back.
+// one is put back and opened. A new one that cannot go back where it was makes
+// way under another name beside the app, and goes where the old one waited once
+// that is back. If the old one cannot be put back, the new one is put in again,
+// so the person is not left with no app.
 //
 // The helper is `/bin/sh` with a script that is fixed text, written here. It
 // is never built from anything: the process ID and the three paths reach it
@@ -53,7 +54,7 @@ export const HELPER_SCRIPT = [
   '  if /bin/mv "$new" "$app" && open_app; then exit 0; fi',
   '  /bin/mv "$app" "$new" || /bin/mv "$app" "$beside"',
   '  if [ ! -e "$app" ] && /bin/mv "$aside" "$app"; then /bin/mv "$beside" "$aside"; fi',
-  '  if [ ! -e "$app" ]; then /bin/mv "$beside" "$app"; fi',
+  '  if [ ! -e "$app" ]; then /bin/mv "$beside" "$app" || /bin/mv "$new" "$app"; fi',
   "fi",
   "open_app",
   "exit 1",
