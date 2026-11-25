@@ -4,7 +4,9 @@
 // aside into the update's own folder, moves the new one into its place and
 // opens it. It moves nothing unless the new one has its `Info.plist` and a
 // program, and if the new one cannot be moved in, or cannot be opened, the old
-// one is put back and opened, so the person is never left with no app.
+// one is put back and opened, so the person is never left with no app. A new
+// one that cannot go back where it was makes way under another name beside the
+// app, and goes where the old one waited once that is back.
 //
 // The helper is `/bin/sh` with a script that is fixed text, written here. It
 // is never built from anything: the process ID and the three paths reach it
@@ -34,7 +36,7 @@ const WAIT_TENTHS = HELPER_WAIT_MS / 100;
  * more, a second later, since macOS can still count the app that quit as open.
  */
 export const HELPER_SCRIPT = [
-  'pid="$1"; app="$2"; new="$3"; aside="$4"',
+  'pid="$1"; app="$2"; new="$3"; aside="$4"; beside="$2"."$$"',
   'open_app() { /usr/bin/open "$app" || { /bin/sleep 1; /usr/bin/open "$app"; }; }',
   "n=0",
   'while /bin/kill -0 "$pid" 2>/dev/null; do',
@@ -49,8 +51,9 @@ export const HELPER_SCRIPT = [
   'if [ ! -f "$new"/Contents/Info.plist ]; then whole=no; fi',
   'if [ "$whole" = yes ] && /bin/mv "$app" "$aside"; then',
   '  if /bin/mv "$new" "$app" && open_app; then exit 0; fi',
-  '  /bin/mv "$app" "$new"',
-  '  if [ ! -e "$app" ]; then /bin/mv "$aside" "$app"; fi',
+  '  /bin/mv "$app" "$new" || /bin/mv "$app" "$beside"',
+  '  if [ ! -e "$app" ] && /bin/mv "$aside" "$app"; then /bin/mv "$beside" "$aside"; fi',
+  '  if [ ! -e "$app" ]; then /bin/mv "$beside" "$app"; fi',
   "fi",
   "open_app",
   "exit 1",

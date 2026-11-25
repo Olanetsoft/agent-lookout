@@ -152,12 +152,38 @@ describe.skipIf(process.platform === "win32")("the helper's script", () => {
 
   // As root, a folder that cannot be written can be.
   test.skipIf(process.getuid?.() === 0)(
-    "puts the old version inside nothing when the new one cannot be opened or moved out",
+    "puts the old version back, and opens it, when the new one cannot be opened or moved back",
     async () => {
-      const { app, replacement, aside, run } = await setUp();
+      const { app, replacement, aside, OPEN, run, opened } = await setUp();
+      await writeFile(
+        path.join(replacement, "Contents", "MacOS", "Agent Lookout"),
+        "#!/bin/sh\nexit 1\n",
+      );
       const folder = path.dirname(replacement);
-      expect(await run(`/bin/chmod 555 '${folder}'; exit 1`)).toBe(1);
+      expect(await run(`/bin/chmod 555 '${folder}'\n${OPEN}`)).toBe(1);
       await chmod(folder, 0o755);
+      expect(await versionOf(app)).toBe("old");
+      expect(await readdir(app)).toEqual(["Contents"]);
+      expect(await opened()).toEqual(["old"]);
+      // Nothing stays beside the app: the new one is where the old one waited, and goes with it.
+      expect(await readdir(path.dirname(app))).toEqual(["Agent Lookout.app"]);
+      expect(await versionOf(aside)).toBe("new");
+    },
+  );
+
+  // As root, a folder that cannot be written can be.
+  test.skipIf(process.getuid?.() === 0).each([
+    ["the old one cannot be moved back", "aside"],
+    ["it can neither be moved back nor make way", "app"],
+  ] as const)(
+    "leaves a new version that cannot be opened, with nothing put inside it, when %s",
+    async (_what, shutToo) => {
+      const { app, replacement, aside, run } = await setUp();
+      const folders = [replacement, { app, aside }[shutToo]].map((of) => path.dirname(of));
+      const shut = folders.map((folder) => `/bin/chmod 555 '${folder}'`).join("\n");
+      expect(await run(`${shut}\nexit 1`)).toBe(1);
+      for (const folder of folders) await chmod(folder, 0o755);
+      expect(await readdir(path.dirname(app))).toEqual(["Agent Lookout.app"]);
       expect(await readdir(app)).toEqual(["Contents"]);
       expect(await versionOf(app)).toBe("new");
       expect(await versionOf(aside)).toBe("old");

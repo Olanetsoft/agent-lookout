@@ -40,7 +40,9 @@ async function makeBundle(dir: string, version: string): Promise<string> {
   const bundle = path.join(dir, "Agent Lookout.app");
   await mkdir(path.join(bundle, "Contents", "MacOS"), { recursive: true });
   await writeFile(path.join(bundle, "Contents", "Info.plist"), plist(version));
-  await writeFile(path.join(bundle, "Contents", "MacOS", "Agent Lookout"), version);
+  await writeFile(path.join(bundle, "Contents", "MacOS", "Agent Lookout"), version, {
+    mode: 0o755,
+  });
   return bundle;
 }
 
