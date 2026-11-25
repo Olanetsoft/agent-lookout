@@ -40,7 +40,7 @@ function refusal(named: BigIntStats): Error {
   return Object.assign(new Error("A symbolic link, which is not followed."), { code: "ELOOP" });
 }
 
-/** What a name whose file was replaced meanwhile gives. The next open of it can do. */
+/** What opening a name whose file was replaced meanwhile gives. It can work the next time. */
 function replaced(): Error {
   return Object.assign(notOrdinary(), { code: "ESTALE" });
 }
