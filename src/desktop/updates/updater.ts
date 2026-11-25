@@ -48,7 +48,7 @@ import {
   type StartDetached,
 } from "./install/installHelper.ts";
 import { installRefusal, type CanWrite } from "./install/installLocation.ts";
-import { createUpdateFolders } from "./install/updateFolders.ts";
+import { createUpdateFolders, type Removal } from "./install/updateFolders.ts";
 import { isStillWhole } from "./release/downloadCheck.ts";
 import { GITHUB_RELEASES, type ReleaseEndpoints } from "./release/endpoints.ts";
 import {
@@ -125,6 +125,8 @@ export interface UpdaterOptions {
   dataDir: string;
   /** The system's temporary folder, where 0.2.31 and earlier made theirs. What they left is removed. */
   tempDir: string;
+  /** What removes those folders: Electron's `original-fs`, which removes an `.asar` too. */
+  removal: Removal;
   /**
    * Told when a check the app made by itself finds a version it has not told
    * of before and this Mac has an app in, with why it cannot be installed

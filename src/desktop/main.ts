@@ -48,6 +48,7 @@
 //
 // `scripts/build-desktop.mjs` bundles this file into `dist-electron/main.cjs`.
 
+import { promises as originalFiles, rmSync } from "original-fs";
 import path from "node:path";
 
 import {
@@ -392,6 +393,8 @@ function start(): void {
         settings: settingsFile(app.getPath("userData")),
         dataDir: app.getPath("userData"),
         tempDir: app.getPath("temp"),
+        // Electron's own file functions cannot remove an `.asar`.
+        removal: { rm: originalFiles.rm, rmSync },
         onFound: (version, refusal) => foundNotices.found({ version, refusal }),
         quit: () => app.quit(),
         warn: log,

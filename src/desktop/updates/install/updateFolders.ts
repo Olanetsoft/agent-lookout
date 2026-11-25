@@ -8,19 +8,31 @@
 // new one has run. What an earlier run of the app left, in either place, is
 // swept once this one runs, and only while the app in its place is this
 // version.
+//
+// In Electron, Node's own file functions read an `.asar` as a folder, and keep
+// it open, so they cannot remove one: they leave a discarded app's `app.asar`
+// behind. What removes is handed in, and `main.ts` hands in Electron's
+// `original-fs`, which takes an `.asar` for the file it is.
 
-import { mkdtempSync, rmSync } from "node:fs";
-import { readdir, rm } from "node:fs/promises";
+import { mkdtempSync } from "node:fs";
+import { readdir } from "node:fs/promises";
 import path from "node:path";
 
 /** What the name of each of them begins with, in this version and every earlier one. */
 export const UPDATE_FOLDER_PREFIX = "agent-lookout-update-";
+
+/** What removes a folder with all that is in it: `original-fs`'s in the app. */
+export interface Removal {
+  rm(folder: string, options: { recursive: true; force: true }): Promise<void>;
+  rmSync(folder: string, options: { recursive: true; force: true }): void;
+}
 
 export interface UpdateFoldersOptions {
   /** Where they are made: the app's own folder of user data. */
   dataDir: string;
   /** Where 0.2.31 and earlier made theirs: the system's temporary folder. */
   tempDir: string;
+  removal: Removal;
 }
 
 export interface UpdateFolders {
@@ -34,13 +46,17 @@ export interface UpdateFolders {
   sweep(): Promise<void>;
 }
 
-export function createUpdateFolders({ dataDir, tempDir }: UpdateFoldersOptions): UpdateFolders {
+export function createUpdateFolders({
+  dataDir,
+  tempDir,
+  removal,
+}: UpdateFoldersOptions): UpdateFolders {
   /** Those made here that are still there. */
   const made = new Set<string>();
 
   const remove = async (folder: string): Promise<void> => {
     try {
-      await rm(folder, { recursive: true, force: true });
+      await removal.rm(folder, { recursive: true, force: true });
       made.delete(folder);
     } catch {
       // Tried again as the app quits, and swept when it next runs.
@@ -59,7 +75,7 @@ export function createUpdateFolders({ dataDir, tempDir }: UpdateFoldersOptions):
       for (const folder of made) {
         if (folder === but) continue;
         try {
-          rmSync(folder, { recursive: true, force: true });
+          removal.rmSync(folder, { recursive: true, force: true });
           made.delete(folder);
         } catch {
           // Swept when the app next runs.

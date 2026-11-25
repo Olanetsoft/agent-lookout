@@ -30,6 +30,9 @@ const ENDPOINTS: ReleaseEndpoints = {
   allow: () => true,
 };
 
+/** Nothing is ever downloaded here, so there is nothing to remove. */
+const NO_REMOVAL = { rm: async () => {}, rmSync: () => {} };
+
 const manifestFor = (version: string, arch = "arm64") => `version: ${version}
 files:
   - url: Agent-Lookout-${version}-mac-${arch}.zip
@@ -80,6 +83,7 @@ function updater(
     settings: settings.store,
     dataDir: "/nonexistent/data",
     tempDir: "/nonexistent/tmp",
+    removal: NO_REMOVAL,
     endpoints: ENDPOINTS,
     requests: { fetchText, downloadFile },
     canWrite: () => true,
@@ -156,6 +160,7 @@ describe("when the updater looks by itself", () => {
       settings: again.settings.store,
       dataDir: "/nonexistent/data",
       tempDir: "/nonexistent/tmp",
+      removal: NO_REMOVAL,
       endpoints: ENDPOINTS,
       requests: { fetchText: again.fetchText, downloadFile: again.downloadFile },
       quit: vi.fn(),

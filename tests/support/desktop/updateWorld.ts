@@ -7,8 +7,8 @@
 // socket is opened, nothing is started and no real app is touched.
 
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, renameSync } from "node:fs";
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { existsSync, readFileSync, renameSync, rmSync } from "node:fs";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { DITTO, type RunProgram } from "@desktop/updates/install/bundleCheck";
@@ -168,6 +168,7 @@ export async function makeUpdateWorld(version = "0.2.0"): Promise<UpdateWorld> {
         settings: { read: () => world.settings, write: (next) => (world.settings = next) },
         dataDir: data,
         tempDir: temp,
+        removal: { rm, rmSync },
         endpoints: {
           manifest: "https://releases.invalid/latest-mac.yml",
           download: (_version, name) => `https://releases.invalid/${name}`,

@@ -8,6 +8,7 @@ Changes that a user of Agent Lookout would notice, newest first.
 
 - In the Mac app, Install and Restart on a version that had waited a few days could leave an empty app in Applications, which did not open: macOS clears files in the temporary folder the download waited in. A download now waits in the app's own folder, which macOS does not clear, and is read whole and checked again before it is installed, and at each daily check. One that has lost anything is downloaded again, and Settings says so. The app in Applications is moved only for one that has its program, and is put back and opened when the new one cannot be opened. The old app is kept until the new one has run, and then removed, with what 0.2.31 and earlier left in the temporary folder. (#487)
 - In the Mac app, a version that is ready to install stays, and can be installed, until a newer one has been downloaded and checked. Before, it was thrown away as the newer download began, so one that failed left nothing to install. A download that had no answer is tried again after six hours, as a check is, not the next day. (#489)
+- A download the Mac app throws away, as when a newer one replaces it, is removed whole. Before, the `app.asar` in it stayed behind, and the app kept it open until it quit. (#490)
 
 ## 0.2.31 - 2026-11-25
 

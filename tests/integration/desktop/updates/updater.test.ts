@@ -11,7 +11,7 @@
 
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, truncate, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
@@ -179,6 +179,7 @@ async function setUp(release: FakeRelease = {}) {
     settings: { read: () => settings, write: (next) => (settings = next) },
     dataDir: data,
     tempDir: temp,
+    removal: { rm, rmSync },
     endpoints,
     run,
     startDetached: async (file, args) => {
