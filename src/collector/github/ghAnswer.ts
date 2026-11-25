@@ -32,9 +32,11 @@ import { sessionName } from "../../core/text.ts";
  * A check run started again is listed once for each run, and only the latest is
  * counted. A workflow that runs on both `push` and `pull_request` makes two runs
  * of each check, which are two checks. gh gives no event, so they are told apart
- * by the workflow run in the check's link: an older run counts beside a newer
- * one unless it was cancelled, or had finished before the newer one started. The
- * link and the run are not kept. One that cannot be read is not counted.
+ * by the workflow run in the check's link: a check of an older run counts beside
+ * a newer run's unless it was cancelled, or had finished before the newer run
+ * began, as the first of that run's checks to start says. So two runs for one
+ * event that overlap both count. The link and the run are not kept. A check that
+ * cannot be read is not counted.
  */
 
 /** How one check stands. */
@@ -67,10 +69,10 @@ function textOf(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
-/** A time gh printed, or null for none. */
+/** A time gh printed, or null for none. gh prints one that is not set as the year 1. */
 function timeOf(value: unknown): number | null {
   const at = Date.parse(textOf(value));
-  return Number.isNaN(at) ? null : at;
+  return at > 0 ? at : null;
 }
 
 /** One check, as gh listed it. */
@@ -111,7 +113,7 @@ function checkOf(value: unknown): Check | null {
       ...common,
       key: `run\0${textOf(value.workflowName)}\0${textOf(value.name)}`,
       run: Number(RUN_PAGE.exec(textOf(value.detailsUrl))?.[1] ?? 0),
-      finishedAt: (state === "pending" ? null : timeOf(value.completedAt)) ?? Infinity,
+      finishedAt: timeOf(value.completedAt) ?? Infinity,
       cancelled: conclusion === "CANCELLED",
       state,
     };
@@ -124,15 +126,12 @@ function checkOf(value: unknown): Check | null {
   return null;
 }
 
-/** Whether `newer` is the same check run again, so that `older` no longer counts. */
-function replaces(newer: Check, older: Check): boolean {
-  return newer.run > older.run && (older.cancelled || older.finishedAt < newer.startedAt);
-}
-
 /** How many checks are in each state, counting only the latest run of each. */
 export function checksOf(rollup: unknown): PullRequestChecks {
   /** By what tells a check from another, and then by its workflow run. */
   const latest = new Map<string, Map<number, Check>>();
+  /** When each workflow run began: long ago for one that has not, so it replaces nothing. */
+  const began = new Map<number, number>();
   for (const value of Array.isArray(rollup) ? rollup : []) {
     const check = checkOf(value);
     if (check === null) continue;
@@ -140,7 +139,14 @@ export function checksOf(rollup: unknown): PullRequestChecks {
     latest.set(check.key, runs);
     const held = runs.get(check.run);
     if (held === undefined || check.startedAt >= held.startedAt) runs.set(check.run, check);
+    if (check.startedAt > -Infinity) {
+      began.set(check.run, Math.min(began.get(check.run) ?? Infinity, check.startedAt));
+    }
   }
+  /** Whether `newer` is the same check run again, so that `older` no longer counts. */
+  const replaces = (newer: Check, older: Check) =>
+    newer.run > older.run &&
+    (older.cancelled || older.finishedAt < (began.get(newer.run) ?? -Infinity));
   const counts = { passing: 0, failing: 0, pending: 0 };
   for (const runs of latest.values()) {
     const all = [...runs.values()];
