@@ -36,8 +36,9 @@ import { sessionName } from "../../core/text.ts";
  * a newer run's unless it was cancelled, or had finished before the newer run
  * began, as the first of that run's checks to start says. So two runs for one
  * event that overlap both count. So do two jobs of one run with one name, as a
- * matrix can have, that overlap. The link and the run are not kept. A check that
- * cannot be read is not counted.
+ * matrix can have, unless nothing of the run was under way at a moment between
+ * them. The link and the run are not kept. A check that cannot be read is not
+ * counted.
  */
 
 /** How one check stands. */
@@ -130,17 +131,18 @@ function checkOf(value: unknown): Check | null {
 /**
  * Whether `later` is `check` run again in its own workflow run, rather than
  * another job with its name. A job is run again only once its run has finished,
- * so one that overlaps it is another job. One with the same times that ended the
- * same is the job itself, listed again. Of checks that name no run, and after
- * one that does not say when it finished, the latest is taken.
+ * so one that began by `idleAt`, when the run first had nothing under way after
+ * the check, is another job. One with the same times that ended the same is the
+ * job itself, listed again. Of checks that name no run, and after one that does
+ * not say when it finished, the latest is taken.
  */
-function isRunAgain(check: Check, later: Check): boolean {
+function isRunAgain(check: Check, later: Check, idleAt: number): boolean {
   if (later.run !== check.run) return false;
   if (check.run === 0) return true;
   if (check.state === "pending") return false;
   return (
     check.finishedAt === Infinity ||
-    check.finishedAt < later.startedAt ||
+    idleAt < later.startedAt ||
     (check.startedAt === later.startedAt &&
       check.finishedAt === later.finishedAt &&
       check.state === later.state)
@@ -169,10 +171,20 @@ export function checksOf(rollup: unknown): PullRequestChecks {
   const replaces = (newer: Check, older: Check) =>
     newer.run > older.run &&
     (older.cancelled || older.finishedAt < (began.get(newer.run) ?? -Infinity));
+  /** When the check's run first had nothing under way after it, as the jobs that have started say. */
+  const idleAfter = (check: Check) =>
+    all.reduce(
+      (idleAt, { run, startedAt, finishedAt }) =>
+        run === check.run && startedAt > -Infinity && startedAt <= idleAt
+          ? Math.max(idleAt, finishedAt)
+          : idleAt,
+      check.finishedAt,
+    );
   const counts = { passing: 0, failing: 0, pending: 0 };
   for (const same of named.values()) {
     same.forEach((check, at) => {
-      const again = same.slice(at + 1).some((later) => isRunAgain(check, later));
+      const idleAt = idleAfter(check);
+      const again = same.slice(at + 1).some((later) => isRunAgain(check, later, idleAt));
       if (!again && !same.some((other) => replaces(other, check))) counts[check.state] += 1;
     });
   }

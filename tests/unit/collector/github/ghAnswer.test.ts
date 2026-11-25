@@ -294,6 +294,74 @@ describe("the checks", () => {
       expect(checksOf([inRun(100, "SUCCESS", 1, 5), inRun(100, "SUCCESS", 1, 5)])).toEqual(passing);
     });
 
+    test("one listed twice is one only with the same times and the same end", () => {
+      const twice = { state: "passing", passing: 2, failing: 0, pending: 0 };
+      const jobs = [inRun(100, "FAILURE", 1, 5), inRun(100, "SUCCESS", 1, 5)];
+      for (const listed of [jobs, jobs.toReversed()]) {
+        expect(checksOf(listed)).toEqual({ state: "failing", passing: 1, failing: 1, pending: 0 });
+      }
+      expect(checksOf([inRun(100, "SUCCESS", 0, 5), inRun(100, "SUCCESS", 1, 5)])).toEqual(twice);
+      expect(checksOf([inRun(100, "SUCCESS", 1, 5), inRun(100, "SUCCESS", 1, 6)])).toEqual(twice);
+    });
+
+    test("a job that began while its run was still under way is not one of it run again", () => {
+      // As a matrix on two runners has: the third began as the second went on.
+      const jobs = [
+        inRun(100, "FAILURE", 0, 2),
+        inRun(100, "SUCCESS", 0, 5),
+        inRun(100, "SUCCESS", 3, 6),
+      ];
+      const failing = { state: "failing", passing: 2, failing: 1, pending: 0 };
+      expect(checksOf(jobs)).toEqual(failing);
+      expect(checksOf(jobs.toReversed())).toEqual(failing);
+      // Also one that was skipped as the run ended.
+      expect(checksOf([inRun(100, "FAILURE", 0, 4), inRun(100, "SKIPPED", 4, 4)])).toEqual({
+        ...failing,
+        passing: 1,
+      });
+      // Whichever jobs went on, one after another, as late as it began.
+      expect(
+        checksOf([
+          inRun(100, "FAILURE", 0, 2),
+          inRun(100, "SUCCESS", 1, 4, "lint"),
+          inRun(100, "SUCCESS", 4, 7, "docs"),
+          inRun(100, "SUCCESS", 7, 9),
+        ]),
+      ).toEqual({ state: "failing", passing: 3, failing: 1, pending: 0 });
+      // One of them still under way.
+      expect(
+        checksOf([
+          inRun(100, "FAILURE", 0, 2),
+          inRun(100, "", 1, null, "lint"),
+          inRun(100, "SUCCESS", 3, 6),
+        ]),
+      ).toEqual({ state: "failing", passing: 1, failing: 1, pending: 1 });
+    });
+
+    test("a run with nothing under way between them has been started again", () => {
+      const passing = { state: "passing", passing: 2, failing: 0, pending: 0 };
+      const lint = inRun(100, "SUCCESS", 1, 4, "lint");
+      expect(checksOf([inRun(100, "FAILURE", 0, 2), lint, inRun(100, "SUCCESS", 5, 6)])).toEqual(
+        passing,
+      );
+      // Another run's job does not fill the time between, nor does a job not started yet.
+      expect(
+        checksOf([
+          inRun(100, "FAILURE", 0, 2),
+          inRun(101, "SUCCESS", 1, 9, "lint"),
+          inRun(100, "SUCCESS", 5, 6),
+        ]),
+      ).toEqual(passing);
+      const queued = { ...inRun(100, "", 0, null, "lint"), status: "QUEUED" };
+      expect(
+        checksOf([
+          inRun(100, "FAILURE", 0, 2),
+          { ...queued, startedAt: "0001-01-01T00:00:00Z" },
+          inRun(100, "SUCCESS", 5, 6),
+        ]),
+      ).toEqual({ state: "pending", passing: 1, failing: 0, pending: 1 });
+    });
+
     test("one job still under way counts beside another that has finished", () => {
       const pending = { state: "pending", passing: 1, failing: 0, pending: 1 };
       const queued = {
