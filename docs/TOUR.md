@@ -795,7 +795,7 @@ Every file is opened by `openRegularFile` in `src/collector/files/readOnlyIo.ts`
 - A file whose `pid` has gone is a leftover and is hidden, unless it says finished or failed. Those stay for 24 hours.
 - A process found gone stays gone until its file is written again, whoever gets its process ID. On a Mac, `processes.ts` also asks `ps` when the process started, every 30 seconds, and a process that started more than a minute after both the file's last write and its `since` is taken for another program. A start seen ahead of the clock, or a file seen written while the process ran, is never taken for that. A file whose write was not seen can be, when the clock was set back between its agent's start and that write, or when it has no `since` and its modified time is too old.
 - The status time is the file's `since`, or else the time the adapter first saw that status.
-- A file that parsed a poll ago and does not now was probably caught half written, so its last reading stands for one poll.
+- A file that parsed a poll ago and cannot be opened, read or parsed now was probably caught while it was written, so its last reading stands for one poll.
 - `lastWriteAt` is the file's modified time, so an agent that rewrites its file as it works gets Quiet for.
 
 ### What each agent can and cannot report

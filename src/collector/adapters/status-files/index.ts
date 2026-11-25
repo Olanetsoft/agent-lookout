@@ -99,12 +99,12 @@ type Reading =
   /** It went between the listing and the read. */
   | { kind: "gone" }
   /**
-   * Not read: a link, a pipe, a folder, a file over the limit, or one that
-   * cannot be opened. Why, in the words that follow the file's name.
+   * Not read: a link, a pipe, a folder or a file over the limit. Why, in the
+   * words that follow the file's name.
    */
   | { kind: "refused"; why: string }
-  /** Read, and not a status file. */
-  | { kind: "invalid" }
+  /** Could not be opened or read, or is not a status file, and why. */
+  | { kind: "failed"; why: string }
   | { kind: "read"; file: StatusFile; mtimeMs: number };
 
 /** A file as last read. */
@@ -163,8 +163,9 @@ function counted(count: number, one: string, many: string): string {
  *   status time or, without one, from when its file was last written. The file
  *   says the session is over, so this holds even while its process runs, as an
  *   agent that serves many sessions from one process does.
- * - A file that was a status file a poll ago and cannot be parsed now was most
- *   likely caught half written. What it said a poll ago stands, for one poll.
+ * - A file that was a status file a poll ago and cannot be opened, read or
+ *   parsed now was most likely caught while it was written. What it said a poll
+ *   ago stands, for one poll.
  *
  * The status time is the file's `since` when it could be right. Without one, it
  * is when Agent Lookout first saw the session in that status, and it does not
@@ -250,8 +251,9 @@ export function createStatusFileAdapter(options: StatusFileAdapterOptions = {}):
       if (isMissing(error)) return { kind: "gone" };
       // A link is refused by the open itself, and a pipe or a folder once it is open.
       const code = (error as NodeJS.ErrnoException | undefined)?.code;
-      const notAFile = code === undefined || code === "ELOOP" || code === "EISDIR";
-      return { kind: "refused", why: notAFile ? "is not an ordinary file" : "could not be opened" };
+      return code === undefined || code === "ELOOP" || code === "EISDIR"
+        ? { kind: "refused", why: "is not an ordinary file" }
+        : { kind: "failed", why: "could not be opened" };
     }
     const tooLarge: Reading = { kind: "refused", why: "is over 16 KB" };
     try {
@@ -263,9 +265,9 @@ export function createStatusFileAdapter(options: StatusFileAdapterOptions = {}):
       const parsed = parseStatusFile(decoder.decode(bytes));
       return parsed
         ? { kind: "read", file: parsed, mtimeMs: open.info.mtimeMs }
-        : { kind: "invalid" };
+        : { kind: "failed", why: "is not JSON with an agent and a status" };
     } catch {
-      return { kind: "refused", why: "could not be read" };
+      return { kind: "failed", why: "could not be read" };
     } finally {
       await open.close().catch(() => {});
     }
@@ -349,23 +351,20 @@ export function createStatusFileAdapter(options: StatusFileAdapterOptions = {}):
 
     for (const fileName of await toRead(listed)) {
       const reading = await readOne(path.join(dir, fileName));
+      if (reading.kind === "gone") continue;
       let kept: Read | undefined;
       if (reading.kind === "read") {
         kept = reading;
         nextRead.set(fileName, kept);
-      } else if (reading.kind === "invalid") {
+      } else {
         // Kept only from the poll before, so it stands for one poll and no more.
-        kept = lastRead.get(fileName);
-      }
-      if (kept === undefined) {
-        if (reading.kind === "gone") continue;
-        skipped += 1;
-        firstSkipped ??= {
+        if (reading.kind === "failed") kept = lastRead.get(fileName);
+        if (kept === undefined) {
+          skipped += 1;
           // A file's name is as untrusted as what it holds.
-          name: sessionName(fileName) ?? "a file",
-          why: reading.kind === "refused" ? reading.why : "is not JSON with an agent and a status",
-        };
-        continue;
+          firstSkipped ??= { name: sessionName(fileName) ?? "a file", why: reading.why };
+          continue;
+        }
       }
       read += 1;
       files.push({ fileName, kept });

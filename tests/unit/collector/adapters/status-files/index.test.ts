@@ -781,6 +781,59 @@ describe("a file caught half written", () => {
     expect((await poll()).sessions[0]?.status).toBe("idle");
   });
 
+  test("or that cannot be opened or read for a poll, as while another program holds it, keeps it too", async () => {
+    const { files, poll, clock } = setUp();
+    const file = `${STATUS_DIR}/a.json`;
+    files.mkdir(STATUS_DIR);
+    await poll();
+    put(files, "a.json", statusFile({ status: "waiting" }));
+    const before = (await poll()).sessions;
+    const since = clock.now;
+    expect(before).toMatchObject([{ status: "needs-you", statusSince: since }]);
+
+    const { openRegular } = files.io;
+    for (const fail of [
+      () => files.failOpen(file, "EBUSY"),
+      () => {
+        files.io.openRegular = async (target) => ({
+          ...(await openRegular(target)),
+          read: () => Promise.reject(new Error("The disk is busy.")),
+        });
+      },
+    ]) {
+      fail();
+      const caught = await poll();
+      expect(caught.sessions).toEqual(before);
+      expect(caught.health.watching).toEqual(facts(1, 0));
+      files.heal(file);
+      files.io.openRegular = openRegular;
+      expect((await poll()).sessions).toEqual(before);
+    }
+
+    files.failOpen(file, "EBUSY");
+    await poll();
+    const still = await poll();
+    expect(still.sessions).toEqual([]);
+    expect(still.health.watching).toEqual(facts(0, 1));
+    expect(files.openHandles()).toBe(0);
+  });
+
+  test("is not one that has become a link, a folder or too large: what it said goes at once", async () => {
+    const { files, poll } = setUp();
+    const become = [
+      () => files.special(`${STATUS_DIR}/a.json`),
+      () => files.failOpen(`${STATUS_DIR}/a.json`, "EISDIR"),
+      () => put(files, "a.json", `${statusFile()}${" ".repeat(MAX_FILE_BYTES)}`),
+    ];
+    for (const change of become) {
+      put(files, "a.json", statusFile());
+      expect((await poll()).sessions).toHaveLength(1);
+      change();
+      expect((await poll()).sessions).toEqual([]);
+      files.heal(`${STATUS_DIR}/a.json`);
+    }
+  });
+
   test("that was never read whole is skipped", async () => {
     const { files, first } = setUp();
     put(files, "a.json", statusFile().slice(0, 10));
