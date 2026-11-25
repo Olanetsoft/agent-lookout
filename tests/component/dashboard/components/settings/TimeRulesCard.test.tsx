@@ -341,6 +341,25 @@ test("rules changed elsewhere, as in another tab, are taken from a later snapsho
   );
 });
 
+test("after the clock is set back, rules changed elsewhere are followed again", async () => {
+  const screen = await render(<TimeRulesCard snapshot={null} />);
+  const reminder = card().getByRole("radiogroup", { name: "Remind me of a long wait" });
+  await expect.element(reminder.getByRole("radio", { name: "Off" })).toBeChecked();
+
+  const elsewhere: TimeRules = { ...DEFAULT_TIME_RULES, longWait: { on: true, minutes: 25 } };
+  const back = Date.now() - 60 * 60_000;
+  const clock = vi.spyOn(Date, "now").mockImplementation(() => back);
+  try {
+    await screen.rerender(<TimeRulesCard snapshot={{ generatedAt: back, timeRules: elsewhere }} />);
+    await screen.rerender(
+      <TimeRulesCard snapshot={{ generatedAt: back + 2_000, timeRules: elsewhere }} />,
+    );
+    await expect.element(field("Minutes of waiting before the reminder")).toHaveValue("25");
+  } finally {
+    clock.mockRestore();
+  }
+});
+
 test("a change asked for while one the app refuses is on its way is made of what the app holds", async () => {
   let release = () => {};
   const first = new Promise<void>((resolve) => {

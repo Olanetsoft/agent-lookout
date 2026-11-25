@@ -302,6 +302,15 @@ describe("what gh says", () => {
     expect(pullRequestsOf(await poll(sessions))).toEqual([pullRequest(51), undefined]);
   });
 
+  test("signed out, a branch a session moves to in those two minutes is not asked about either", async () => {
+    const { clock, asked, read, poll } = setUp({ "checkout-flow": { kind: "signed-out" } });
+    await poll([on(1, "storefront-checkout", "checkout-flow")]);
+    clock.advance(POLL_MS);
+    await poll([on(1, "storefront-checkout", "fix/rate-limits")]);
+    expect(read).toHaveLength(2);
+    expect(asked).toEqual(["checkout-flow"]);
+  });
+
   test("after the clock is set back, the remote is read and gh asked again at the next poll", async () => {
     const { clock, asked, read, answer, poll } = setUp({
       "checkout-flow": { kind: "found", pullRequest: pullRequest(51) },

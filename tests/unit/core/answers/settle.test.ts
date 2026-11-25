@@ -11,7 +11,11 @@ test("a press is taken once the request has been shown a full second, and not be
   expect(settled(SHOWN, SHOWN + ANSWER_SETTLE_MS)).toBe(true);
 });
 
-test("a request not known to have been shown takes no press, nor one shown later than the press", () => {
+test("a request not known to have been shown takes no press", () => {
   expect(settled(null, SHOWN)).toBe(false);
-  expect(settled(SHOWN + 5_000, SHOWN)).toBe(false);
+});
+
+test("one shown before the clock was set back takes a press, not none until the clock catches up", () => {
+  expect(settled(SHOWN, SHOWN - 60 * 60_000)).toBe(true);
+  expect(settled(SHOWN, SHOWN - ANSWER_SETTLE_MS + 1)).toBe(false);
 });

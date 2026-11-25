@@ -145,7 +145,8 @@ export function createMainWindow(options: MainWindowOptions): BrowserWindow {
   let reloadedAt = -Infinity;
   contents.on("render-process-gone", (_event, details) => {
     if (window.isDestroyed() || details.reason === "clean-exit") return;
-    if (Date.now() - reloadedAt < RELOAD_GAP_MS) return;
+    // One dated later than now is as old, by a clock that has been set back.
+    if (Math.abs(Date.now() - reloadedAt) < RELOAD_GAP_MS) return;
     reloadedAt = Date.now();
     contents.reload();
   });

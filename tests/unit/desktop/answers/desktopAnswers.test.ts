@@ -116,6 +116,14 @@ describe("a press from a notification", () => {
     ]);
   });
 
+  test("after the clock is set back, one shown before that is answered", async () => {
+    const { answers, answer, told, tick } = setUp();
+    tick(-60 * 60_000);
+    expect(await answers.press(press())).toBe("answered");
+    expect(answer).toHaveBeenCalledWith(ID, REQUEST_ID, "allow");
+    expect(told).toEqual([]);
+  });
+
   test("while this Mac is locked sends nothing, and one that cannot tell is taken as locked", async () => {
     for (const locked of [
       () => true,
