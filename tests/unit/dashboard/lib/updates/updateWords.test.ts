@@ -87,6 +87,17 @@ describe("updateWords", () => {
     expect(words.install).toBe(true);
   });
 
+  test("a version that is ready says that a newer one is being downloaded", () => {
+    const words = updateWords(
+      status({ phase: "ready", version: "0.2.1", notesUrl: NOTES, newer: "0.2.2" }),
+    );
+    expect(words.state).toBe("Version 0.2.1 is available.");
+    expect(words.detail).toBe(
+      "Downloaded and checked. Version 0.2.2 is out too, and is being downloaded.",
+    );
+    expect(words.install).toBe(true);
+  });
+
   test("a version that cannot be installed here says why and links its release page", () => {
     const words = updateWords(
       status({

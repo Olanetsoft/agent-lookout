@@ -70,9 +70,17 @@ function readPhase(value: unknown): UpdatePhase | null {
           }
         : null;
     case "ready":
+      return isText(value.version) && isLink(value.notesUrl)
+        ? {
+            phase: "ready",
+            version: value.version,
+            notesUrl: value.notesUrl,
+            ...(isText(value.newer) && { newer: value.newer }),
+          }
+        : null;
     case "installing":
       return isText(value.version) && isLink(value.notesUrl)
-        ? { phase: value.phase, version: value.version, notesUrl: value.notesUrl }
+        ? { phase: "installing", version: value.version, notesUrl: value.notesUrl }
         : null;
     case "cannot-install": {
       const refusal = REFUSALS.find((known) => known === value.refusal);

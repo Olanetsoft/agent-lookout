@@ -55,6 +55,7 @@ describe("readUpdateStatus", () => {
         again: true,
       },
       { phase: "ready", version: "0.2.1", notesUrl: NOTES },
+      { phase: "ready", version: "0.2.1", notesUrl: NOTES, newer: "0.2.2" },
       { phase: "installing", version: "0.2.1", notesUrl: NOTES },
       { phase: "cannot-install", version: "0.2.1", notesUrl: NOTES, refusal: "translocated" },
       {

@@ -24,6 +24,8 @@ import { HELPER_SCRIPT } from "@desktop/updates/install/installHelper";
 import type { ReleaseEndpoints } from "@desktop/updates/release/endpoints";
 import { DEFAULT_UPDATE_SETTINGS, type UpdateSettings } from "@desktop/updates/updateSettings";
 import { createUpdater, FIRST_CHECK_DELAY_MS, INSTALL_GIVE_UP_MS } from "@desktop/updates/updater";
+import { playHistory } from "@tests/support/desktop/updateHistory";
+import { makeUpdateWorld } from "@tests/support/desktop/updateWorld";
 import { listen } from "@tests/support/node/http";
 import { tempDir } from "@tests/support/node/tempFiles";
 
@@ -79,6 +81,10 @@ const standInDitto: RunProgram = async (file, args) => {
   await makeBundle(into!, identifier!, version!);
   return { ok: true, stdout: "" };
 };
+
+/** Waits, also while the timers are fake ones. */
+const realTimeout = globalThis.setTimeout;
+const moment = (ms: number) => new Promise<void>((resolve) => realTimeout(resolve, ms));
 
 /** A release of the test's own, laid out and redirected as GitHub's are. */
 async function fakeRelease(zip: Buffer, size = zip.byteLength, hashOf = zip) {
@@ -484,7 +490,7 @@ describe("the updater, against a release of the test's own", () => {
 
     await startAndWait(updater);
     // Long enough for a removal to have begun.
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await moment(200);
     expect(await readdir(data)).toEqual(["agent-lookout-update-a1B2c3"]);
     expect(await readdir(temp)).toEqual(["agent-lookout-update-d4E5f6"]);
   });
@@ -506,3 +512,235 @@ describe("the updater, against a release of the test's own", () => {
     await isReady(updater);
   });
 });
+
+const HOUR = 60 * 60 * 1000;
+
+describe("a version that is ready, and a newer one", () => {
+  type World = Awaited<ReturnType<typeof makeUpdateWorld>>;
+  const updateIn = (world: World) => world.updater.status().update;
+  const isAt = (world: World, update: object) =>
+    vi.waitFor(() => expect(updateIn(world)).toMatchObject(update), { timeout: 5_000 });
+
+  /** A Mac on 0.2.0 with 0.2.1 ready, and 0.2.2 out since. */
+  async function withOneReady(): Promise<World> {
+    const world = await makeUpdateWorld();
+    onTestFinished(() => world.updater.stop());
+    world.latest = "0.2.1";
+    await world.updater.check();
+    await isAt(world, { phase: "ready", version: "0.2.1" });
+    world.latest = "0.2.2";
+    return world;
+  }
+
+  test.each(["network", "wrong-hash"] as const)(
+    "the one that is ready stays when the newer one's download fails: %s",
+    async (failure) => {
+      const world = await withOneReady();
+      world.downloads = failure;
+      await world.updater.check();
+      await vi.waitFor(() => expect(world.log).toHaveLength(1));
+      expect(world.log[0]).toContain("Version 0.2.2 of Agent Lookout could not be downloaded");
+      expect(updateIn(world)).toEqual({
+        phase: "ready",
+        version: "0.2.1",
+        notesUrl: "https://releases.invalid/notes/0.2.1",
+      });
+      // Nothing is left of the one that failed, and the other is whole.
+      expect(await world.folders()).toHaveLength(1);
+      expect(path.basename((await world.zip())!)).toContain("0.2.1");
+
+      world.downloads = "whole";
+      await world.updater.check();
+      await isAt(world, { phase: "ready", version: "0.2.2" });
+      await vi.waitFor(async () => expect(await world.folders()).toHaveLength(1));
+    },
+  );
+
+  test("it stays ready while the newer one is downloaded, which then takes its place", async () => {
+    const world = await withOneReady();
+    world.downloads = "hold";
+    await world.updater.check();
+    expect(updateIn(world)).toMatchObject({ phase: "ready", version: "0.2.1", newer: "0.2.2" });
+    // A check meanwhile leaves both.
+    await world.updater.check();
+    expect(world.asked).toBe(2);
+
+    world.heldDownloads[0]!.answer("whole");
+    await isAt(world, { phase: "ready", version: "0.2.2" });
+    expect(updateIn(world)).not.toHaveProperty("newer");
+    await vi.waitFor(async () => expect(await world.folders()).toHaveLength(1));
+    expect(path.basename((await world.zip())!)).toContain("0.2.2");
+  });
+
+  // Installing is checked on macOS and Linux only, as above.
+  test.skipIf(process.platform === "win32")(
+    "installing it while the newer one is downloaded installs it, and stops the download",
+    async () => {
+      const world = await withOneReady();
+      world.downloads = "hold";
+      await world.updater.check();
+      const answer = await world.updater.install();
+      expect(answer.status.update).toMatchObject({ phase: "installing", version: "0.2.1" });
+      expect(world.heldDownloads).toEqual([]);
+      await vi.waitFor(async () => expect(await world.folders()).toHaveLength(1));
+      world.quit();
+      expect(world.updater.status().version).toBe("0.2.1");
+    },
+  );
+
+  // Installing is checked on macOS and Linux only, as above.
+  test.skipIf(process.platform === "win32")(
+    "an answer that comes while it is being installed changes nothing",
+    async () => {
+      const world = await withOneReady();
+      world.checks = "hold";
+      const checked = world.updater.check();
+      await vi.waitFor(() => expect(world.heldChecks).toHaveLength(1));
+      expect((await world.updater.install()).ok).toBe(true);
+      // It was withdrawn meanwhile.
+      world.latest = "0.2.0";
+      world.heldChecks[0]!.answer("answer");
+      expect((await checked).update).toMatchObject({ phase: "installing", version: "0.2.1" });
+      expect(await world.folders()).toHaveLength(1);
+      world.quit();
+      expect(world.updater.status().version).toBe("0.2.1");
+    },
+  );
+
+  test("an answer that comes once the app has quit downloads nothing", async () => {
+    const world = await withOneReady();
+    world.checks = "hold";
+    const checked = world.updater.check();
+    await vi.waitFor(() => expect(world.heldChecks).toHaveLength(1));
+    world.updater.stop();
+    world.heldChecks[0]!.answer("answer");
+    await checked;
+    expect(world.asked).toBe(1);
+    expect(await world.folders()).toEqual([]);
+  });
+
+  test("installing it once it is no longer whole downloads the newer one instead", async () => {
+    const world = await withOneReady();
+    world.downloads = "hold";
+    await world.updater.check();
+    await rm((await world.zip())!);
+    expect((await world.updater.install()).ok).toBe(false);
+    expect(updateIn(world)).toMatchObject({ phase: "downloading", version: "0.2.2" });
+    expect(updateIn(world)).not.toHaveProperty("again");
+    await vi.waitFor(() => expect(world.heldDownloads).toHaveLength(1));
+    world.heldDownloads[0]!.answer("whole");
+    await isAt(world, { phase: "ready", version: "0.2.2" });
+  });
+
+  test("it goes when it is no longer whole, and the newer one is still downloaded", async () => {
+    const world = await withOneReady();
+    world.downloads = "hold";
+    await world.updater.check();
+    await rm((await world.zip())!);
+    expect((await world.updater.check()).update).toMatchObject({
+      phase: "downloading",
+      version: "0.2.2",
+    });
+    expect(world.asked).toBe(2);
+  });
+
+  test("one that was withdrawn is not kept for an older one", async () => {
+    const world = await withOneReady();
+    await world.updater.check();
+    await isAt(world, { phase: "ready", version: "0.2.2" });
+    world.latest = "0.2.1";
+    world.downloads = "hold";
+    expect((await world.updater.check()).update).toMatchObject({
+      phase: "downloading",
+      version: "0.2.1",
+    });
+    // Withdrawn too, its download stops, and nothing is left of either.
+    world.latest = "0.2.0";
+    expect((await world.updater.check()).update).toEqual({ phase: "up-to-date" });
+    expect(world.heldDownloads).toEqual([]);
+    await vi.waitFor(async () => expect(await world.folders()).toEqual([]));
+  });
+
+  /** Starts the app's own checks, and moves its clock on by hours. */
+  async function hoursOf(world: World) {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    world.updater.start();
+    return async (hours: number) => {
+      for (let hour = 0; hour < hours; hour += 1) {
+        world.now += HOUR;
+        vi.advanceTimersByTime(HOUR);
+        await moment(5);
+      }
+    };
+  }
+
+  test.each(["network", "timed-out", "too-slow", "status"] as const)(
+    "a download that had no answer, as %s, is tried again after six hours, as a check is",
+    async (failure) => {
+      const world = await makeUpdateWorld();
+      onTestFinished(() => world.updater.stop());
+      world.latest = "0.2.1";
+      world.downloads = failure;
+      await world.updater.check();
+      await isAt(world, { phase: "failed", step: "download", version: "0.2.1" });
+      const pass = await hoursOf(world);
+      await pass(5);
+      expect(world.asked).toBe(1);
+      await pass(1);
+      await vi.waitFor(() => expect(world.asked).toBe(2));
+      // It goes on every six hours, also when the check in between has no answer.
+      world.checks = "fail";
+      await pass(6);
+      expect(world.asked).toBe(2);
+      world.checks = "answer";
+      world.downloads = "whole";
+      await pass(6);
+      await isAt(world, { phase: "ready", version: "0.2.1" });
+      // Downloaded, the next look is a day later.
+      const looked = world.looked;
+      await pass(23);
+      expect(world.looked).toBe(looked);
+    },
+  );
+
+  test.each(["wrong-hash", "wrong-size", "too-large", "not-found", "not-saved"] as const)(
+    "a download that failed as %s is tried again a day later, not sooner",
+    async (failure) => {
+      const world = await makeUpdateWorld();
+      onTestFinished(() => world.updater.stop());
+      world.latest = "0.2.1";
+      world.downloads = failure;
+      await world.updater.check();
+      await isAt(world, { phase: "failed", step: "download", version: "0.2.1" });
+      const pass = await hoursOf(world);
+      await pass(23);
+      expect(world.asked).toBe(1);
+      await pass(1);
+      await vi.waitFor(() => expect(world.asked).toBe(2));
+    },
+  );
+});
+
+// What is installed is a Mac app's bundle, by a Mac's paths, as above.
+test.skipIf(process.platform === "win32")(
+  "whatever comes when, the app can be opened, and the state shown is the one things are in",
+  async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const met = new Set<string>();
+    for (let seed = 1; seed <= 40; seed += 1) await playHistory(seed, met);
+    // The histories are ones that try it.
+    for (const state of [
+      ...["ready", "downloading", "installing", "failed", "up-to-date", "cannot-install"],
+      ...["a newer one coming", "a newer one ready", "installed", "put back"],
+    ]) {
+      expect([...met]).toContain(state);
+    }
+  },
+  60_000,
+);

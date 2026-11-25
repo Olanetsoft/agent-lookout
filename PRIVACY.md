@@ -1330,7 +1330,7 @@ Each request holds the address above and a `User-Agent` header, `Agent-Lookout/`
 
 ### How often
 
-A short while after the app starts, if a day has passed since the last check that had an answer, and then once a day while it runs. A check that had no answer, because the Mac was offline for instance, is tried again after six hours. Check for Updates…, in the Agent Lookout menu and in Settings, checks at once, whether or not the automatic check is on.
+A short while after the app starts, if a day has passed since the last check that had an answer, and then once a day while it runs. A check or a download that had no answer, or broke off, because the Mac was offline for instance, is tried again after six hours. Check for Updates…, in the Agent Lookout menu and in Settings, checks at once, whether or not the automatic check is on.
 
 ### Turning it off
 
@@ -1342,7 +1342,7 @@ Nothing is installed until you press Install and Restart, in Settings, or in the
 
 ### What is kept
 
-`update-state.json`, in `~/Library/Application Support/Agent Lookout/`, holds whether the automatic check is on, when a check last had an answer, the last version a notification was shown for, so each version is told of once, and, from Install and Restart until the app opens again, the version being installed, so the copy that opens knows whether that worked. The download is a zip in a folder of the app's own beside it, named `agent-lookout-update-` and six letters or digits, where macOS clears nothing. It is deleted when the app quits without installing it, or when it does not match. After an install, the old app stays in that folder until the new one has run for a few seconds, which then deletes it, and what an earlier run left there or, up to 0.2.31, in the system's temporary folder.
+`update-state.json`, in `~/Library/Application Support/Agent Lookout/`, holds whether the automatic check is on, when a check last had an answer, the last version a notification was shown for, so each version is told of once, and, from Install and Restart until the app opens again, the version being installed, so the copy that opens knows whether that worked. The download is a zip in a folder of the app's own beside it, named `agent-lookout-update-` and six letters or digits, where macOS clears nothing. It is deleted when the app quits without installing it, when it does not match, or once a newer one has been downloaded and checked. After an install, the old app stays in that folder until the new one has run for a few seconds, which then deletes it, and what an earlier run left there or, up to 0.2.31, in the system's temporary folder.
 
 ## The MCP server
 

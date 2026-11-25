@@ -16,7 +16,9 @@
 //    that version (`install/bundleCheck.ts`). Only the zip is kept.
 // 3. The zip can wait there for days, so its size and SHA-512 are checked again
 //    at each check, and when the person presses Install and Restart. One that
-//    is no longer whole is never installed: it is downloaded again.
+//    is no longer whole is never installed: it is downloaded again. One that
+//    is ready stays, and can be installed, until a newer one has been
+//    downloaded and checked.
 // 4. Only when the person presses Install and Restart does it unpack the zip
 //    and start the helper that puts the new bundle in the running one's place
 //    once the app has quit, and opens it (`install/installHelper.ts`), and then
@@ -78,7 +80,7 @@ export const CHECK_EVERY_MS = 24 * 60 * 60 * 1000;
  */
 export const TICK_MS = 60 * 60 * 1000;
 
-/** How long after a check that had no answer the app tries again by itself. */
+/** How long after a check or a download that had no answer the app tries again by itself. */
 export const RETRY_AFTER_MS = 6 * 60 * 60 * 1000;
 
 /** How long the app waits to quit after Install and Restart, so the page hears the answer first. */
@@ -152,6 +154,8 @@ export interface UpdaterOptions {
   requestTimeoutMs?: number;
 }
 
+const NOT_SAVED: Fault = { reason: "the download could not be saved" };
+
 const canWriteHere: CanWrite = (target) => {
   try {
     accessSync(target, constants.W_OK);
@@ -189,6 +193,15 @@ export function failureWords(failure: RequestFailure, status?: number): string {
     case "not-saved":
       return "the download could not be saved";
   }
+}
+
+/** The failures of a download that had no answer, which is tried again as a check that had none is. */
+const NO_ANSWER: readonly RequestFailure[] = ["network", "timed-out", "too-slow", "status"];
+
+/** Why a version could not be downloaded, and whether there was no answer. */
+interface Fault {
+  reason: string;
+  noAnswer?: boolean;
 }
 
 function reasonOf(answer: Extract<Fetched<unknown>, { ok: false }>): string {
@@ -234,6 +247,8 @@ export function createUpdater(options: UpdaterOptions): Updater {
   let phase: UpdatePhase = { phase: "idle" };
   let checking: Promise<AppUpdateStatus> | null = null;
   let lastAttemptAt: number | null = null;
+  /** Whether the last download had no answer, and no check has had one since. */
+  let unanswered = false;
   const folders = createUpdateFolders(options);
   /** The version being downloaded. */
   let coming: Download | null = null;
@@ -283,10 +298,11 @@ export function createUpdater(options: UpdaterOptions): Updater {
     };
   };
 
-  /** Says what is downloaded or being downloaded. */
+  /** Says which version is ready, or else how far the one being downloaded has come. */
   const say = (): void => {
     if (waiting !== null) {
       phase = { phase: "ready", version: waiting.version, notesUrl: waiting.notesUrl };
+      if (coming !== null) phase.newer = coming.version;
     } else if (coming !== null) {
       const { version, notesUrl, received, zip, again } = coming;
       phase = { phase: "downloading", version, notesUrl, received, total: zip.size };
@@ -294,14 +310,22 @@ export function createUpdater(options: UpdaterOptions): Updater {
     }
   };
 
-  /** Stops a download and throws away what is downloaded, if anything is. */
-  const discard = async (): Promise<void> => {
+  /** Throws away the version that is ready, if there is one. */
+  const dropReady = async (): Promise<void> => {
     const old = waiting;
     waiting = null;
-    // Its own folder goes as it ends.
+    if (old !== null) await folders.remove(old.folder);
+  };
+
+  /** Stops a download under way, if there is one. Its own folder goes as it ends. */
+  const cancel = (): void => {
     coming?.stop.abort();
     coming = null;
-    if (old !== null) await folders.remove(old.folder);
+  };
+
+  const discard = (): Promise<void> => {
+    cancel();
+    return dropReady();
   };
 
   /**
@@ -331,11 +355,7 @@ export function createUpdater(options: UpdaterOptions): Updater {
   }
 
   /** Unpacks a download into its own folder, and checks that what is in it is this app at its version. */
-  async function unpack({
-    version,
-    folder,
-    file,
-  }: Download): Promise<{ app: string } | { reason: string }> {
+  async function unpack({ version, folder, file }: Download): Promise<{ app: string } | Fault> {
     const app = await mkdtemp(path.join(folder, "app-"))
       .then((into) => unpackApp(file, into, run))
       .catch(() => null);
@@ -351,11 +371,11 @@ export function createUpdater(options: UpdaterOptions): Updater {
   }
 
   /** Downloads a version into a folder of its own and checks it. Gives why it could not be, or null. */
-  async function fetchAndCheck(next: Download): Promise<string | null> {
+  async function fetchAndCheck(next: Download): Promise<Fault | null> {
     try {
       next.folder = folders.make();
     } catch {
-      return "the download could not be saved";
+      return NOT_SAVED;
     }
     next.file = path.join(next.folder, next.zip.name);
     const address = endpoints.download(next.version, next.zip.name);
@@ -367,10 +387,12 @@ export function createUpdater(options: UpdaterOptions): Updater {
         if (coming === next) say();
       },
     });
-    if (!fetched.ok) return reasonOf(fetched);
+    if (!fetched.ok) {
+      return { reason: reasonOf(fetched), noAnswer: NO_ANSWER.includes(fetched.failure) };
+    }
     if (stopped || coming !== next) return null;
     const unpacked = await unpack(next);
-    if ("reason" in unpacked) return unpacked.reason;
+    if ("reason" in unpacked) return unpacked;
     // It is unpacked again to be installed. Only the zip waits.
     await folders.remove(path.dirname(unpacked.app));
     return null;
@@ -382,8 +404,7 @@ export function createUpdater(options: UpdaterOptions): Updater {
     zip: ReleaseFile,
     again: boolean,
   ): Promise<void> {
-    const older = waiting;
-    waiting = null;
+    if (stopped) return;
     const next: Download = {
       version,
       notesUrl,
@@ -397,33 +418,44 @@ export function createUpdater(options: UpdaterOptions): Updater {
     coming = next;
     // Said at once, so the answer to the check that found it says so.
     say();
-    if (older !== null) await folders.remove(older.folder);
-    const reason =
-      stopped || coming !== next
-        ? null
-        : await fetchAndCheck(next).catch(() => "the download could not be saved");
-    if (stopped || coming !== next || reason !== null) {
+    const fault = await fetchAndCheck(next).catch(() => NOT_SAVED);
+    if (fault !== null || stopped || coming !== next) {
       if (next.folder !== "") await folders.remove(next.folder);
-      if (stopped || coming !== next) return;
+      if (fault === null || stopped || coming !== next) return;
       coming = null;
-      if (reason !== null) phase = failed("download", reason, version);
+      if (fault.noAnswer === true) {
+        unanswered = true;
+        lastAttemptAt = now();
+      }
+      phase = failed("download", fault.reason, version);
+      // The one that was ready before still is.
+      say();
       return;
     }
     coming = null;
+    const older = waiting;
     waiting = next;
     say();
+    if (older !== null) await folders.remove(older.folder);
   }
 
   /** The version that was ready, forgotten because its zip is gone or no longer whole, or null. */
   async function lost(): Promise<string | null> {
     const ready = waiting;
     if (ready === null || (await isStillWhole(ready.file, ready.zip))) return null;
-    // Install and Restart was pressed meanwhile, and looks for itself.
+    // Install and Restart was pressed meanwhile, and looks for itself, or a newer one is ready.
     if (stopped || waiting !== ready || current().phase === "installing") return null;
-    void discard();
+    void dropReady();
     phase = { phase: "idle" };
+    say();
     return ready.version;
   }
+
+  /** A check had an answer. */
+  const answered = (): void => {
+    unanswered = false;
+    save({ lastCheckedAt: now() });
+  };
 
   async function look(automatic: boolean): Promise<AppUpdateStatus> {
     if (phase.phase === "installing") return status();
@@ -444,7 +476,7 @@ export function createUpdater(options: UpdaterOptions): Updater {
     if (!answer.ok) {
       if (answer.failure === "not-found") {
         // The latest release has no Mac app. That is an answer, not a failure.
-        save({ lastCheckedAt: now() });
+        answered();
         if (!leave) phase = { phase: "no-release" };
       } else if (!leave) {
         phase = failed(
@@ -462,7 +494,7 @@ export function createUpdater(options: UpdaterOptions): Updater {
       if (!leave) phase = failed("check", "the release's update file could not be read");
       return status();
     }
-    save({ lastCheckedAt: now() });
+    answered();
 
     const offered = manifest.version;
     if (!isOffered(offered, options.version)) {
@@ -474,8 +506,7 @@ export function createUpdater(options: UpdaterOptions): Updater {
     }
 
     // A download is left to finish, of another version too. The next check finds this one.
-    const going = current().phase;
-    if (going === "downloading" || going === "installing") return status();
+    if (coming !== null || current().phase === "installing") return status();
     if (waiting?.version === offered) return status();
     if (held !== null && held.version === offered) return status();
 
@@ -497,6 +528,8 @@ export function createUpdater(options: UpdaterOptions): Updater {
       phase = { phase: "cannot-install", version: offered, notesUrl, refusal };
       return status();
     }
+    // A version that is ready stays until a newer one is. One that was withdrawn since does not.
+    if (waiting !== null && !isOffered(offered, waiting.version)) void dropReady();
     void download(offered, notesUrl, zip, lostVersion === offered);
     return status();
   }
@@ -508,11 +541,14 @@ export function createUpdater(options: UpdaterOptions): Updater {
     return checking;
   };
 
-  /** Whether a day has passed since the last check, and a while since the last that failed. */
+  /**
+   * Whether a day has passed since the last check, or the download it found had
+   * no answer, and a while since the last check or download that failed.
+   */
   const due = (): boolean => {
     const at = now();
     const last = settings.lastCheckedAt;
-    if (last !== null && at >= last && at - last < CHECK_EVERY_MS) return false;
+    if (!unanswered && last !== null && at >= last && at - last < CHECK_EVERY_MS) return false;
     if (lastAttemptAt !== null && at >= lastAttemptAt && at - lastAttemptAt < RETRY_AFTER_MS) {
       return false;
     }
@@ -555,6 +591,8 @@ export function createUpdater(options: UpdaterOptions): Updater {
         return refused();
       }
       phase = { phase: "installing", version, notesUrl };
+      const newer = coming;
+      cancel();
       // It may have waited for days, so it is looked at again, whole.
       const whole = await isStillWhole(ready.file, ready.zip);
       if (stopped) return refused();
@@ -562,7 +600,10 @@ export function createUpdater(options: UpdaterOptions): Updater {
         options.warn?.(
           `Version ${version} of Agent Lookout could not be installed: its download was no longer whole, and is downloaded again.`,
         );
-        void download(version, notesUrl, ready.zip, true);
+        void dropReady();
+        // The newer one takes its place, when there is one.
+        const next = newer ?? ready;
+        void download(next.version, next.notesUrl, next.zip, next === ready);
         return refused();
       }
       const fail = async (reason: string): Promise<InstallAnswer> => {

@@ -74,7 +74,10 @@ export function updateWords(status: AppUpdateStatus): UpdateWords {
       return {
         ...quiet,
         state: `Version ${update.version} is available.`,
-        detail: "Downloaded and checked.",
+        detail:
+          update.newer === undefined
+            ? "Downloaded and checked."
+            : `Downloaded and checked. Version ${update.newer} is out too, and is being downloaded.`,
         install: true,
         notesUrl: update.notesUrl,
       };
