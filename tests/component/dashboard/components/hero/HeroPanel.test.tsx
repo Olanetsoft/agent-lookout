@@ -1643,7 +1643,8 @@ describe("what a waiting session is asking", () => {
       expect(document.elementFromPoint(x, y)).toBe(allow(13));
       expect(allow(13).getAttribute("aria-disabled")).toBe("true");
       await pressAt(x, y);
-      await new Promise((resolve) => setTimeout(resolve, 400));
+      // Well within the second, so a browser that stalls is still within it.
+      await new Promise((resolve) => setTimeout(resolve, 100));
       await pressAt(x, y);
       expect(posted).toHaveLength(before);
 
