@@ -390,6 +390,7 @@ function start(): void {
         packaged: app.isPackaged,
         bundle: bundleOf(app.getPath("exe")),
         settings: settingsFile(app.getPath("userData")),
+        dataDir: app.getPath("userData"),
         tempDir: app.getPath("temp"),
         onFound: (version, refusal) => foundNotices.found({ version, refusal }),
         quit: () => app.quit(),

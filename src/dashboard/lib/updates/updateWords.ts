@@ -57,16 +57,19 @@ export function updateWords(status: AppUpdateStatus): UpdateWords {
       return { ...quiet, state: "The latest release has no Mac app yet." };
     case "not-for-this-mac":
       return { ...quiet, state: "The latest release has no app for this kind of Mac." };
-    case "downloading":
+    case "downloading": {
+      const lost = update.again === true ? "What was downloaded is no longer whole. " : "";
+      const downloading = update.again === true ? "Downloading it again" : "Downloading it";
       return {
         ...quiet,
         state: `Version ${update.version} is available.`,
         detail:
           update.total > 0
-            ? `Downloading it: ${megabytes(update.received)} of ${megabytes(update.total)}.`
-            : "Downloading it.",
+            ? `${lost}${downloading}: ${megabytes(update.received)} of ${megabytes(update.total)}.`
+            : `${lost}${downloading}.`,
         notesUrl: update.notesUrl,
       };
+    }
     case "ready":
       return {
         ...quiet,

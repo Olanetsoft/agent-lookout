@@ -1,6 +1,6 @@
 // The updater end to end against a release of the test's own: a server on
 // 127.0.0.1 that answers as GitHub does, with two redirects, a latest-mac.yml
-// and a zip. It checks, downloads and verifies into a temporary folder, and
+// and a zip. It checks, downloads and verifies into a folder of its own, and
 // installs only when asked. The app it would replace is a made-up bundle in
 // the test's folder, and the helper is a stand-in that starts nothing, so no
 // real app is ever touched and GitHub is never asked.
@@ -12,18 +12,18 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, truncate, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
 
-import { DITTO, type RunProgram } from "@desktop/updates/install/bundleCheck";
+import { DITTO, runProgram, type RunProgram } from "@desktop/updates/install/bundleCheck";
 import { HELPER_SCRIPT } from "@desktop/updates/install/installHelper";
 import type { ReleaseEndpoints } from "@desktop/updates/release/endpoints";
 import { DEFAULT_UPDATE_SETTINGS, type UpdateSettings } from "@desktop/updates/updateSettings";
-import { createUpdater, INSTALL_GIVE_UP_MS } from "@desktop/updates/updater";
+import { createUpdater, FIRST_CHECK_DELAY_MS, INSTALL_GIVE_UP_MS } from "@desktop/updates/updater";
 import { listen } from "@tests/support/node/http";
 import { tempDir } from "@tests/support/node/tempFiles";
 
@@ -136,6 +136,8 @@ interface FakeRelease {
   /** How many bytes the manifest's size of the zip is off by. */
   sizeOff?: number;
   hashOf?: Buffer;
+  /** Called as each zip is unpacked, with how many have been. */
+  unpacking?: (times: number) => void;
 }
 
 async function setUp(release: FakeRelease = {}) {
@@ -148,21 +150,31 @@ async function setUp(release: FakeRelease = {}) {
   );
   // The running app: a made-up bundle in the test's own folder.
   const installed = await makeBundle(path.join(work, "Applications"), APP_ID, "0.2.0");
+  const data = path.join(work, "data");
   const temp = path.join(work, "tmp");
+  await mkdir(data);
   await mkdir(temp);
   let settings: UpdateSettings = DEFAULT_UPDATE_SETTINGS;
   const started: [string, readonly string[]][] = [];
   const quit = vi.fn();
   const warn = vi.fn();
+  const unpack = onMac ? runProgram : standInDitto;
+  let unpacked = 0;
+  const run: RunProgram = async (file, args) => {
+    const answer = await unpack(file, args);
+    if (file === DITTO) release.unpacking?.((unpacked += 1));
+    return answer;
+  };
   const updater = createUpdater({
     version: "0.2.0",
     arch: "arm64",
     packaged: true,
     bundle: installed,
     settings: { read: () => settings, write: (next) => (settings = next) },
+    dataDir: data,
     tempDir: temp,
     endpoints,
-    run: onMac ? undefined : standInDitto,
+    run,
     startDetached: async (file, args) => {
       started.push([file, args]);
       return true;
@@ -171,7 +183,21 @@ async function setUp(release: FakeRelease = {}) {
     warn,
     pid: 4242,
   });
-  return { updater, installed, temp, started, quit, warn, asked, settings: () => settings };
+  onTestFinished(() => updater.stop());
+  return { updater, installed, data, temp, started, quit, warn, asked, settings: () => settings };
+}
+
+type SetUp = Awaited<ReturnType<typeof setUp>>;
+
+const isReady = (updater: SetUp["updater"]) =>
+  vi.waitFor(() => expect(updater.status().update.phase).toBe("ready"), { timeout: 15_000 });
+
+/** The one folder of the updater's, in the app's own folder of user data. */
+async function folderIn(data: string): Promise<string> {
+  const [only, ...others] = await readdir(data);
+  expect(only).toMatch(/^agent-lookout-update-/);
+  expect(others).toEqual([]);
+  return path.join(data, only!);
 }
 
 describe("the updater, against a release of the test's own", () => {
@@ -181,14 +207,12 @@ describe("the updater, against a release of the test's own", () => {
   test.skipIf(process.platform === "win32")(
     "checks, downloads and verifies a newer version, and installs it only when asked",
     async () => {
-      const { updater, installed, temp, started, quit, asked, settings } = await setUp();
+      const { updater, installed, data, temp, started, quit, asked, settings } = await setUp();
 
       const checked = await updater.check();
       expect(checked.lastCheckedAt).not.toBeNull();
       expect(checked.update).toMatchObject({ phase: "downloading", version: "0.2.1" });
-      await vi.waitFor(() => expect(updater.status().update.phase).toBe("ready"), {
-        timeout: 15_000,
-      });
+      await isReady(updater);
       expect(updater.status().update).toEqual({
         phase: "ready",
         version: "0.2.1",
@@ -203,15 +227,10 @@ describe("the updater, against a release of the test's own", () => {
         "assets /asset/zip",
       ]);
 
-      // It is unpacked in the updater's own folder, and the zip is gone.
-      const [staging] = await readdir(temp);
-      expect(staging).toMatch(/^agent-lookout-update-/);
-      const folder = path.join(temp, staging!);
-      expect(await readdir(folder)).toEqual(["app"]);
-      const replacement = path.join(folder, "app", "Agent Lookout.app");
-      expect(await readFile(path.join(replacement, "Contents", "Info.plist"), "utf8")).toContain(
-        "<string>0.2.1</string>",
-      );
+      // The zip alone waits, in a folder of the updater's own that macOS never clears.
+      const folder = await folderIn(data);
+      expect(await readdir(folder)).toEqual([ZIP_NAME]);
+      expect(await readdir(temp)).toEqual([]);
 
       // Nothing is installed until Install and Restart.
       expect(started).toEqual([]);
@@ -222,6 +241,12 @@ describe("the updater, against a release of the test's own", () => {
       expect(answer.status.update).toMatchObject({ phase: "installing", version: "0.2.1" });
       // Noted, so the copy that opens next knows whether it worked.
       expect(settings().installingVersion).toBe("0.2.1");
+      // It is unpacked, and checked, only now.
+      const unpacked = (await readdir(folder)).find((name) => name.startsWith("app-"));
+      const replacement = path.join(folder, unpacked ?? "", "Agent Lookout.app");
+      expect(await readFile(path.join(replacement, "Contents", "Info.plist"), "utf8")).toContain(
+        "<string>0.2.1</string>",
+      );
       expect(started).toEqual([
         [
           "/bin/sh",
@@ -268,7 +293,7 @@ describe("the updater, against a release of the test's own", () => {
   ] as const)(
     "a download that %s is thrown away, and nothing is offered to install",
     async (_what, release, reason) => {
-      const { updater, temp, started, warn } = await setUp(release);
+      const { updater, data, started, warn } = await setUp(release);
       await updater.check();
       await vi.waitFor(() => expect(updater.status().update.phase).toBe("failed"), {
         timeout: 15_000,
@@ -283,7 +308,7 @@ describe("the updater, against a release of the test's own", () => {
       expect(warn).toHaveBeenCalledWith(
         `Version 0.2.1 of Agent Lookout could not be downloaded: ${reason}.`,
       );
-      expect(await readdir(temp)).toEqual([]);
+      expect(await readdir(data)).toEqual([]);
       expect((await updater.install()).ok).toBe(false);
       expect(started).toEqual([]);
     },
@@ -293,11 +318,9 @@ describe("the updater, against a release of the test's own", () => {
   test.skipIf(process.platform === "win32")(
     "an app that has not quit once the helper stops waiting says the install did not work",
     async () => {
-      const { updater, temp, settings } = await setUp();
+      const { updater, data, settings } = await setUp();
       await updater.check();
-      await vi.waitFor(() => expect(updater.status().update.phase).toBe("ready"), {
-        timeout: 15_000,
-      });
+      await isReady(updater);
 
       vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
       try {
@@ -317,10 +340,154 @@ describe("the updater, against a release of the test's own", () => {
         notesUrl: expect.stringMatching(/\/releases\/tag\/v0\.2\.1$/),
       });
       expect(settings().installingVersion).toBeNull();
-      await vi.waitFor(async () => expect(await readdir(temp)).toEqual([]));
-      updater.stop();
+      await vi.waitFor(async () => expect(await readdir(data)).toEqual([]));
     },
   );
+
+  /** What can come of the zip while it waits. */
+  const CLEARED: Record<string, (zip: string) => Promise<void>> = {
+    gone: (zip) => rm(zip),
+    "gone with its folder": (zip) => rm(path.dirname(zip), { recursive: true }),
+    "cut short": (zip) => truncate(zip, 40),
+    "the same size, with other bytes": async (zip) =>
+      writeFile(zip, Buffer.alloc((await readFile(zip)).byteLength)),
+  };
+
+  test.each(Object.keys(CLEARED))(
+    "a version whose download is %s by the time it is installed is downloaded again, not installed",
+    async (what) => {
+      const { updater, installed, data, started, quit, warn, settings } = await setUp();
+      await updater.check();
+      await isReady(updater);
+      await CLEARED[what]!(path.join(await folderIn(data), ZIP_NAME));
+
+      const answer = await updater.install();
+      expect(answer.ok).toBe(false);
+      expect(answer.status.update).toMatchObject({
+        phase: "downloading",
+        version: "0.2.1",
+        again: true,
+      });
+      expect(warn).toHaveBeenCalledWith(
+        "Version 0.2.1 of Agent Lookout could not be installed: its download was no longer whole, and is downloaded again.",
+      );
+      expect(started).toEqual([]);
+      expect(quit).not.toHaveBeenCalled();
+      expect(settings().installingVersion).toBeNull();
+      expect(await readFile(path.join(installed, "Contents", "Info.plist"), "utf8")).toContain(
+        "<string>0.2.0</string>",
+      );
+
+      // Downloaded again, it is whole.
+      await isReady(updater);
+      expect(await readdir(await folderIn(data))).toEqual([ZIP_NAME]);
+    },
+  );
+
+  test.each(Object.keys(CLEARED))(
+    "the next check notices a ready version whose download is %s, and downloads it again",
+    async (what) => {
+      const { updater, data, asked } = await setUp();
+      await updater.check();
+      await isReady(updater);
+      // One that is whole is left as it is.
+      await updater.check();
+      expect(updater.status().update.phase).toBe("ready");
+      const zips = () => asked.filter((line) => line === "assets /asset/zip").length;
+      expect(zips()).toBe(1);
+
+      await CLEARED[what]!(path.join(await folderIn(data), ZIP_NAME));
+      expect((await updater.check()).update).toMatchObject({ phase: "downloading", again: true });
+      await isReady(updater);
+      expect(zips()).toBe(2);
+      expect(await readdir(await folderIn(data))).toEqual([ZIP_NAME]);
+    },
+  );
+
+  test.each(["checked again", "unpacked"])(
+    "quitting while the version is %s to be installed installs nothing, and leaves nothing",
+    async (when) => {
+      const made = await setUp({ unpacking: (times) => times === 2 && made.updater.stop() });
+      const { updater, data, started, warn, settings } = made;
+      await updater.check();
+      await isReady(updater);
+
+      const answer = updater.install();
+      expect(updater.status().update.phase).toBe("installing");
+      if (when === "checked again") updater.stop();
+      expect((await answer).ok).toBe(false);
+      expect(started).toEqual([]);
+      expect(settings().installingVersion).toBeNull();
+      expect(warn).not.toHaveBeenCalled();
+      expect(await readdir(data)).toEqual([]);
+    },
+  );
+
+  test("quitting without installing removes what was downloaded", async () => {
+    const { updater, data } = await setUp();
+    await updater.check();
+    await isReady(updater);
+    updater.stop();
+    expect(await readdir(data)).toEqual([]);
+  });
+
+  /** Lays out a folder an earlier run left: with a file, or a bundle macOS has cleared. */
+  async function leave(dir: string, name: string, file?: string) {
+    const contents = path.join(dir, name, "previous", "Agent Lookout.app", "Contents");
+    await mkdir(contents, { recursive: true });
+    if (file !== undefined) await writeFile(path.join(contents, file), "x");
+  }
+
+  /** Starts the updater, with no check of its own due, and lets its first timer run. */
+  async function startAndWait(updater: SetUp["updater"]) {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+    try {
+      updater.start();
+      await vi.advanceTimersByTimeAsync(FIRST_CHECK_DELAY_MS);
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  test("a while after it starts, removes what earlier runs left, and nothing else", async () => {
+    const { updater, data, temp } = await setUp();
+    updater.setAutomatic(false);
+    // This version's, and those of 0.2.31 and earlier in the system's temporary folder.
+    await leave(data, "agent-lookout-update-a1B2c3", "Info.plist");
+    await leave(temp, "agent-lookout-update-d4E5f6", "Info.plist");
+    await leave(temp, "agent-lookout-update-g7H8i9");
+    await leave(temp, "another-app");
+    await writeFile(path.join(data, "update-state.json"), "{}");
+    await writeFile(path.join(temp, "agent-lookout-update-notes.txt"), "not a folder");
+    // A download under way is this run's own.
+    await updater.check();
+    await isReady(updater);
+
+    await startAndWait(updater);
+    await vi.waitFor(async () => {
+      expect((await readdir(temp)).sort()).toEqual([
+        "agent-lookout-update-notes.txt",
+        "another-app",
+      ]);
+      expect(await readdir(data)).toHaveLength(2);
+    });
+    expect(await readdir(data)).toContain("update-state.json");
+    expect(updater.status().update.phase).toBe("ready");
+  });
+
+  test("leaves the old app where it is while the app in its place is one that has not run", async () => {
+    const { updater, installed, data, temp } = await setUp();
+    updater.setAutomatic(false);
+    await leave(data, "agent-lookout-update-a1B2c3", "Info.plist");
+    await leave(temp, "agent-lookout-update-d4E5f6", "Info.plist");
+    await writeFile(path.join(installed, "Contents", "Info.plist"), plist(APP_ID, "0.2.1"));
+
+    await startAndWait(updater);
+    // Long enough for a removal to have begun.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(await readdir(data)).toEqual(["agent-lookout-update-a1B2c3"]);
+    expect(await readdir(temp)).toEqual(["agent-lookout-update-d4E5f6"]);
+  });
 
   test("reads the app's own identifier again when it could not be read before", async () => {
     const { updater, installed } = await setUp();
@@ -336,9 +503,6 @@ describe("the updater, against a release of the test's own", () => {
 
     await writeFile(plist, text);
     await updater.check();
-    await vi.waitFor(() => expect(updater.status().update.phase).toBe("ready"), {
-      timeout: 15_000,
-    });
-    updater.stop();
+    await isReady(updater);
   });
 });

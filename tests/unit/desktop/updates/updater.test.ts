@@ -78,7 +78,8 @@ function updater(
     packaged: true,
     bundle: "/Volumes/Agent Lookout 0.2.0/Agent Lookout.app",
     settings: settings.store,
-    tempDir: "/nonexistent",
+    dataDir: "/nonexistent/data",
+    tempDir: "/nonexistent/tmp",
     endpoints: ENDPOINTS,
     requests: { fetchText, downloadFile },
     canWrite: () => true,
@@ -153,7 +154,8 @@ describe("when the updater looks by itself", () => {
       packaged: true,
       bundle: null,
       settings: again.settings.store,
-      tempDir: "/nonexistent",
+      dataDir: "/nonexistent/data",
+      tempDir: "/nonexistent/tmp",
       endpoints: ENDPOINTS,
       requests: { fetchText: again.fetchText, downloadFile: again.downloadFile },
       quit: vi.fn(),
@@ -356,14 +358,14 @@ describe("the copy that opens after Install and Restart", () => {
     const failed = {
       phase: "failed",
       step: "install",
-      reason: "the new version could not be moved into this copy's place",
+      reason: "the new version could not be put in this copy's place and opened",
       version: "0.2.1",
       notesUrl: "https://releases.invalid/tag/v0.2.1",
     };
     expect(updates.status().update).toEqual(failed);
     expect(settings.kept().installingVersion).toBeNull();
     expect(warn).toHaveBeenCalledWith(
-      "Version 0.2.1 of Agent Lookout could not be installed: the new version could not be moved into this copy's place.",
+      "Version 0.2.1 of Agent Lookout could not be installed: the new version could not be put in this copy's place and opened.",
     );
 
     // The check it makes by itself leaves that said, and does not download it again.

@@ -2,6 +2,12 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
+## Unreleased
+
+### Fixed
+
+- In the Mac app, Install and Restart on a version that had waited a few days could leave an empty app in Applications, which did not open: macOS clears files in the temporary folder the download waited in. A download now waits in the app's own folder, which macOS does not clear, and is read whole and checked again before it is installed, and at each daily check. One that has lost anything is downloaded again, and Settings says so. The app in Applications is moved only for one that has its program, and is put back and opened when the new one cannot be opened. The old app is kept until the new one has run, and then removed, with what 0.2.31 and earlier left in the temporary folder. (#487)
+
 ## 0.2.31 - 2026-11-25
 
 A double click on Allow or Deny answers one request, an allow rule no longer reaches Agent Lookout's own settings by way of a folder above them, and a Claude Code session open in two terminals follows the one that needs you. Waits and notifications hold through restarts, sleep, quiet hours and a clock set back. Other computers are read over SSH with no port opened on this one, and an Oh My Pi tool's approval shows in Needs you.

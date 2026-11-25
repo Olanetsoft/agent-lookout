@@ -23,6 +23,8 @@ let asked: { path: string; method: string; action: string | null; body: string |
 let answering: boolean;
 /** When set, the answer to a check waits for it, as GitHub can. */
 let checkHeld: Promise<void> | null;
+/** When set, the answer to an install waits for it, as the app's does while it unpacks the version. */
+let installHeld: Promise<void> | null;
 /** When set, the answer to a turn of the switch waits for it, as a slow app's does. */
 let settingHeld: Promise<void> | null;
 
@@ -42,6 +44,7 @@ beforeEach(() => {
   asked = [];
   answering = true;
   checkHeld = null;
+  installHeld = null;
   settingHeld = null;
   setApiHost(async (path, init) => {
     const headers = new Headers(init?.headers);
@@ -52,7 +55,10 @@ beforeEach(() => {
       if (checkHeld !== null) await checkHeld;
       current = { ...current, update: afterCheck, lastCheckedAt: Date.now() };
     }
-    if (path === "/api/app/update/install") current = { ...current, update: afterInstall };
+    if (path === "/api/app/update/install") {
+      if (installHeld !== null) await installHeld;
+      current = { ...current, update: afterInstall };
+    }
     if (path === SETTING) {
       if (settingHeld !== null) await settingHeld;
       current = {
@@ -189,6 +195,35 @@ test("a version found and ready offers Install and Restart and its release notes
   expect(card(screen).getByRole("button", { name: "Check for Updates…" }).element()).toHaveProperty(
     "disabled",
     true,
+  );
+});
+
+test("says it is installing as soon as Install and Restart is pressed, and that a version no longer whole is downloaded again", async () => {
+  current = status({ phase: "ready", version: "0.2.1", notesUrl: NOTES });
+  afterInstall = {
+    phase: "downloading",
+    version: "0.2.1",
+    notesUrl: NOTES,
+    received: 0,
+    total: 100 * 1024 * 1024,
+    again: true,
+  };
+  let answer = () => {};
+  installHeld = new Promise((resolve) => {
+    answer = resolve;
+  });
+  const screen = await render(<UpdatesCard />);
+  await card(screen).getByRole("button", { name: "Install and Restart" }).click();
+  await vi.waitFor(() => expect(stateOf(screen).textContent).toBe("Installing version 0.2.1…"));
+
+  answer();
+  await vi.waitFor(() =>
+    expect(card(screen).element().querySelector('[data-part="found"]')?.textContent).toBe(
+      "What was downloaded is no longer whole. Downloading it again: 0 MB of 100 MB. Release notes",
+    ),
+  );
+  expect(card(screen).getByRole("button", { name: "Install and Restart" }).elements()).toHaveLength(
+    0,
   );
 });
 

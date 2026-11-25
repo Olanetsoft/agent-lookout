@@ -9,16 +9,19 @@
 //    (`release/endpoints.ts`), at start and then about once a day while the
 //    switch in Settings is on, or when the person asks. A release that is not
 //    newer, or is a prerelease, is never offered (`release/version.ts`).
-// 2. For a newer one, it downloads the zip for this kind of Mac into a
-//    temporary folder of its own, checking its size and SHA-512 against the
-//    manifest as it is written (`release/releaseRequest.ts`), unpacks it with
-//    ditto and checks that the bundle in it is this app at that version
-//    (`install/bundleCheck.ts`).
-// 3. Only when the person presses Install and Restart does it start the helper
-//    that puts the new bundle in the running one's place once the app has
-//    quit, and opens it (`install/installHelper.ts`), and then it quits. It
-//    notes the version first, so the copy that opens next, the new one or the
-//    old one put back, can say whether the install worked.
+// 2. For a newer one, it downloads the zip for this kind of Mac into a folder
+//    of its own (`install/updateFolders.ts`), checking its size and SHA-512
+//    against the manifest as it is written (`release/releaseRequest.ts`),
+//    unpacks it with ditto and checks that the bundle in it is this app at
+//    that version (`install/bundleCheck.ts`). Only the zip is kept.
+// 3. The zip can wait there for days, so its size and SHA-512 are checked again
+//    at each check, and when the person presses Install and Restart. One that
+//    is no longer whole is never installed: it is downloaded again.
+// 4. Only when the person presses Install and Restart does it unpack the zip
+//    and start the helper that puts the new bundle in the running one's place
+//    once the app has quit, and opens it (`install/installHelper.ts`), and then
+//    it quits. It notes the version first, so the copy that opens next, the
+//    new one or the old one put back, can say whether the install worked.
 //
 // Where the app cannot change its own bundle, it says so and offers the
 // release page instead (`install/installLocation.ts`). A development run
@@ -30,8 +33,8 @@
 // Nothing here imports Electron, so it is tested in plain Node, with a fake
 // release on a server of the test's own and fake timers for the schedule.
 
-import { accessSync, constants, rmSync } from "node:fs";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { accessSync, constants } from "node:fs";
+import { mkdir, mkdtemp } from "node:fs/promises";
 import path from "node:path";
 
 import type { AppUpdateStatus, InstallRefusal, UpdatePhase } from "../../core/appUpdate.ts";
@@ -43,6 +46,8 @@ import {
   type StartDetached,
 } from "./install/installHelper.ts";
 import { installRefusal, type CanWrite } from "./install/installLocation.ts";
+import { createUpdateFolders } from "./install/updateFolders.ts";
+import { isStillWhole } from "./release/downloadCheck.ts";
 import { GITHUB_RELEASES, type ReleaseEndpoints } from "./release/endpoints.ts";
 import {
   MAX_MANIFEST_BYTES,
@@ -114,7 +119,9 @@ export interface UpdaterOptions {
   bundle: string | null;
   /** Where the switch, the time of the last check and the last version told of are kept. */
   settings: UpdateSettingsStore;
-  /** The folder the updater makes its own temporary folder in: the system's. */
+  /** The app's own folder of user data, in which a download waits in a folder of its own. */
+  dataDir: string;
+  /** The system's temporary folder, where 0.2.31 and earlier made theirs. What they left is removed. */
   tempDir: string;
   /**
    * Told when a check the app made by itself finds a version it has not told
@@ -188,6 +195,23 @@ function reasonOf(answer: Extract<Fetched<unknown>, { ok: false }>): string {
   return failureWords(answer.failure, answer.status);
 }
 
+/** A version that is downloaded or being downloaded, and where. */
+interface Download {
+  version: string;
+  notesUrl: string;
+  /** What the release says of its zip. */
+  zip: ReleaseFile;
+  /** Whether the same version was downloaded before, and was no longer whole. */
+  again: boolean;
+  /** Bytes so far. */
+  received: number;
+  /** Stops it. */
+  stop: AbortController;
+  /** The updater's folder for it, and the zip in that folder, once it is made. */
+  folder: string;
+  file: string;
+}
+
 /** A download, one ready, or an install under way, which a check leaves as it is. */
 function underWay(phase: UpdatePhase): boolean {
   return phase.phase === "downloading" || phase.phase === "ready" || phase.phase === "installing";
@@ -210,11 +234,13 @@ export function createUpdater(options: UpdaterOptions): Updater {
   let phase: UpdatePhase = { phase: "idle" };
   let checking: Promise<AppUpdateStatus> | null = null;
   let lastAttemptAt: number | null = null;
-  /** The version being downloaded, or downloaded and ready. */
-  let downloading: string | null = null;
-  /** The updater's temporary folder for that version, and the bundle unpacked in it. */
-  let staging: string | null = null;
-  let readyApp: string | null = null;
+  const folders = createUpdateFolders(options);
+  /** The version being downloaded. */
+  let coming: Download | null = null;
+  /** The version downloaded and checked, which waits for Install and Restart. */
+  let waiting: Download | null = null;
+  /** The folder of the version the helper was started for, which it needs once the app has quit. */
+  let handedOver: string | null = null;
   let ownIdentifier: string | null = null;
   let stopped = false;
   const timers: ReturnType<typeof setTimeout>[] = [];
@@ -257,13 +283,25 @@ export function createUpdater(options: UpdaterOptions): Updater {
     };
   };
 
-  /** Removes the temporary folder of a download, if there is one. */
+  /** Says what is downloaded or being downloaded. */
+  const say = (): void => {
+    if (waiting !== null) {
+      phase = { phase: "ready", version: waiting.version, notesUrl: waiting.notesUrl };
+    } else if (coming !== null) {
+      const { version, notesUrl, received, zip, again } = coming;
+      phase = { phase: "downloading", version, notesUrl, received, total: zip.size };
+      if (again) phase.again = true;
+    }
+  };
+
+  /** Stops a download and throws away what is downloaded, if anything is. */
   const discard = async (): Promise<void> => {
-    const dir = staging;
-    staging = null;
-    readyApp = null;
-    downloading = null;
-    if (dir !== null) await rm(dir, { recursive: true, force: true }).catch(() => {});
+    const old = waiting;
+    waiting = null;
+    // Its own folder goes as it ends.
+    coming?.stop.abort();
+    coming = null;
+    if (old !== null) await folders.remove(old.folder);
   };
 
   /**
@@ -286,81 +324,111 @@ export function createUpdater(options: UpdaterOptions): Updater {
     if (installed !== options.version) {
       phase = failed(
         "install",
-        "the new version could not be moved into this copy's place",
+        "the new version could not be put in this copy's place and opened",
         installed,
       );
     }
   }
 
-  async function download(version: string, zip: ReleaseFile): Promise<void> {
-    // Said at once, so the answer to the check that found it says so.
-    const previous = staging;
-    staging = null;
-    readyApp = null;
-    downloading = version;
-    const notesUrl = endpoints.notes(version);
-    phase = { phase: "downloading", version, notesUrl, received: 0, total: zip.size };
-    if (previous !== null) await rm(previous, { recursive: true, force: true }).catch(() => {});
-    const fail = async (reason: string) => {
-      if (downloading !== version) return;
-      await discard();
-      phase = failed("download", reason, version);
-    };
-
-    let dir: string;
-    try {
-      dir = await mkdtemp(path.join(options.tempDir, "agent-lookout-update-"));
-    } catch {
-      await fail("the download could not be saved");
-      return;
-    }
-    if (stopped || downloading !== version) {
-      await rm(dir, { recursive: true, force: true }).catch(() => {});
-      return;
-    }
-    staging = dir;
-
-    const file = path.join(dir, zip.name);
-    const fetched = await requests.downloadFile(endpoints.download(version, zip.name), file, zip, {
-      ...request,
-      onProgress: (received, total) => {
-        if (downloading === version && phase.phase === "downloading") {
-          phase = { ...phase, received, total };
-        }
-      },
-    });
-    if (stopped || downloading !== version) return;
-    if (!fetched.ok) {
-      await fail(reasonOf(fetched));
-      return;
-    }
-
-    const into = path.join(dir, "app");
-    const app = await mkdir(into)
-      .then(() => unpackApp(file, into, run))
+  /** Unpacks a download into its own folder, and checks that what is in it is this app at its version. */
+  async function unpack({
+    version,
+    folder,
+    file,
+  }: Download): Promise<{ app: string } | { reason: string }> {
+    const app = await mkdtemp(path.join(folder, "app-"))
+      .then((into) => unpackApp(file, into, run))
       .catch(() => null);
-    if (app === null) {
-      await fail("the download could not be unpacked");
-      return;
-    }
+    if (app === null) return { reason: "the download could not be unpacked" };
     const [facts, own] = await Promise.all([bundleFacts(app, run), identifier()]);
     if (facts === null || own === null || facts.identifier !== own) {
-      await fail("the download is not this app");
-      return;
+      return { reason: "the download is not this app" };
     }
     if (facts.version !== version) {
-      await fail(`the download is version ${facts.version}, not ${version}`);
+      return { reason: `the download is version ${facts.version}, not ${version}` };
+    }
+    return { app };
+  }
+
+  /** Downloads a version into a folder of its own and checks it. Gives why it could not be, or null. */
+  async function fetchAndCheck(next: Download): Promise<string | null> {
+    try {
+      next.folder = folders.make();
+    } catch {
+      return "the download could not be saved";
+    }
+    next.file = path.join(next.folder, next.zip.name);
+    const address = endpoints.download(next.version, next.zip.name);
+    const fetched = await requests.downloadFile(address, next.file, next.zip, {
+      ...request,
+      signal: next.stop.signal,
+      onProgress: (received) => {
+        next.received = received;
+        if (coming === next) say();
+      },
+    });
+    if (!fetched.ok) return reasonOf(fetched);
+    if (stopped || coming !== next) return null;
+    const unpacked = await unpack(next);
+    if ("reason" in unpacked) return unpacked.reason;
+    // It is unpacked again to be installed. Only the zip waits.
+    await folders.remove(path.dirname(unpacked.app));
+    return null;
+  }
+
+  async function download(
+    version: string,
+    notesUrl: string,
+    zip: ReleaseFile,
+    again: boolean,
+  ): Promise<void> {
+    const older = waiting;
+    waiting = null;
+    const next: Download = {
+      version,
+      notesUrl,
+      zip,
+      again,
+      received: 0,
+      stop: new AbortController(),
+      folder: "",
+      file: "",
+    };
+    coming = next;
+    // Said at once, so the answer to the check that found it says so.
+    say();
+    if (older !== null) await folders.remove(older.folder);
+    const reason =
+      stopped || coming !== next
+        ? null
+        : await fetchAndCheck(next).catch(() => "the download could not be saved");
+    if (stopped || coming !== next || reason !== null) {
+      if (next.folder !== "") await folders.remove(next.folder);
+      if (stopped || coming !== next) return;
+      coming = null;
+      if (reason !== null) phase = failed("download", reason, version);
       return;
     }
-    // The zip has been unpacked, and only the bundle is needed now.
-    await rm(file, { force: true }).catch(() => {});
-    if (stopped || downloading !== version) return;
-    readyApp = app;
-    phase = { phase: "ready", version, notesUrl };
+    coming = null;
+    waiting = next;
+    say();
+  }
+
+  /** The version that was ready, forgotten because its zip is gone or no longer whole, or null. */
+  async function lost(): Promise<string | null> {
+    const ready = waiting;
+    if (ready === null || (await isStillWhole(ready.file, ready.zip))) return null;
+    // Install and Restart was pressed meanwhile, and looks for itself.
+    if (stopped || waiting !== ready || current().phase === "installing") return null;
+    void discard();
+    phase = { phase: "idle" };
+    return ready.version;
   }
 
   async function look(automatic: boolean): Promise<AppUpdateStatus> {
     if (phase.phase === "installing") return status();
+    const lostVersion = waiting === null ? null : await lost();
+    if (current().phase === "installing") return status();
     const before = phase;
     // An install that did not work stays said through the checks the app makes
     // by itself, until the person checks or a newer version is out.
@@ -405,10 +473,10 @@ export function createUpdater(options: UpdaterOptions): Updater {
       return status();
     }
 
-    if (downloading === offered && underWay(current())) return status();
-    // A download of another version is left to finish. The next check finds this one.
+    // A download is left to finish, of another version too. The next check finds this one.
     const going = current().phase;
     if (going === "downloading" || going === "installing") return status();
+    if (waiting?.version === offered) return status();
     if (held !== null && held.version === offered) return status();
 
     const notesUrl = endpoints.notes(offered);
@@ -429,10 +497,7 @@ export function createUpdater(options: UpdaterOptions): Updater {
       phase = { phase: "cannot-install", version: offered, notesUrl, refusal };
       return status();
     }
-    void download(offered, zip).catch(() => {
-      void discard();
-      phase = failed("download", "the download could not be saved", offered);
-    });
+    void download(offered, notesUrl, zip, lostVersion === offered);
     return status();
   }
 
@@ -454,6 +519,17 @@ export function createUpdater(options: UpdaterOptions): Updater {
     return true;
   };
 
+  /**
+   * Removes what an earlier run left. While the app in this one's place is
+   * another version, the helper has put it there under this copy, and the old
+   * app it moved aside stays until that version has run.
+   */
+  const sweep = async (): Promise<void> => {
+    if (options.bundle === null) return;
+    const inPlace = await bundleFacts(options.bundle, run);
+    if (!stopped && inPlace?.version === options.version) await folders.sweep();
+  };
+
   const tick = (): void => {
     if (stopped || !settings.automatic || checking !== null || !due()) return;
     void check(true);
@@ -467,47 +543,69 @@ export function createUpdater(options: UpdaterOptions): Updater {
       return status();
     },
     async install() {
-      if (phase.phase !== "ready" || readyApp === null || staging === null) {
-        return { ok: false, status: status() };
-      }
-      const { version, notesUrl } = phase;
+      const refused = (): InstallAnswer => ({ ok: false, status: status() });
+      const ready = waiting;
+      if (phase.phase !== "ready" || ready === null) return refused();
+      const { version, notesUrl } = ready;
       const refusal = refusalHere();
-      if (refusal !== null || options.bundle === null) {
-        phase = { phase: "cannot-install", version, notesUrl, refusal: refusal ?? "read-only" };
-        return { ok: false, status: status() };
-      }
-      const aside = path.join(staging, "previous", path.basename(options.bundle));
-      const replacement = readyApp;
       const bundle = options.bundle;
-      // Noted before the helper starts, so the copy that opens next knows.
-      save({ installingVersion: version });
-      const started = await mkdir(path.dirname(aside), { recursive: true })
-        .then(() =>
-          startHelper({ pid, bundle, replacement, aside }, options.startDetached ?? startDetached),
-        )
-        .catch(() => false);
-      if (!started) {
-        save({ installingVersion: null });
-        phase = failed("install", "the helper that replaces the app could not be started", version);
+      if (refusal !== null || bundle === null) {
+        phase = { phase: "cannot-install", version, notesUrl, refusal: refusal ?? "read-only" };
         await discard();
-        return { ok: false, status: status() };
+        return refused();
       }
       phase = { phase: "installing", version, notesUrl };
+      // It may have waited for days, so it is looked at again, whole.
+      const whole = await isStillWhole(ready.file, ready.zip);
+      if (stopped) return refused();
+      if (!whole) {
+        options.warn?.(
+          `Version ${version} of Agent Lookout could not be installed: its download was no longer whole, and is downloaded again.`,
+        );
+        void download(version, notesUrl, ready.zip, true);
+        return refused();
+      }
+      const fail = async (reason: string): Promise<InstallAnswer> => {
+        phase = failed("install", reason, version);
+        await discard();
+        return refused();
+      };
+      const unpacked = await unpack(ready);
+      if (stopped) return refused();
+      if ("reason" in unpacked) return fail(unpacked.reason);
+      const aside = path.join(ready.folder, "previous", path.basename(bundle));
+      const plan = { pid, bundle, replacement: unpacked.app, aside };
+      // Noted before the helper starts, so the copy that opens next knows.
+      save({ installingVersion: version });
+      handedOver = ready.folder;
+      const started = await mkdir(path.dirname(aside), { recursive: true })
+        .then(() => startHelper(plan, options.startDetached ?? startDetached))
+        .catch(() => false);
+      if (!started) {
+        handedOver = null;
+        save({ installingVersion: null });
+        return fail("the helper that replaces the app could not be started");
+      }
       timers.push(setTimeout(() => options.quit(), QUIT_DELAY_MS));
       // Quitting clears this. An app still running by then has outlasted the helper.
       timers.push(
         setTimeout(() => {
           if (phase.phase !== "installing") return;
+          handedOver = null;
           save({ installingVersion: null });
-          phase = failed("install", "Agent Lookout did not quit in time to be replaced", version);
-          void discard();
+          void fail("Agent Lookout did not quit in time to be replaced");
         }, INSTALL_GIVE_UP_MS),
       );
       return { ok: true, status: status() };
     },
     start() {
       if (!options.packaged || stopped) return;
-      timers.push(setTimeout(tick, FIRST_CHECK_DELAY_MS));
+      timers.push(
+        setTimeout(() => {
+          void sweep();
+          tick();
+        }, FIRST_CHECK_DELAY_MS),
+      );
       timers.push(setInterval(tick, TICK_MS));
     },
     stop() {
@@ -516,15 +614,9 @@ export function createUpdater(options: UpdaterOptions): Updater {
         clearTimeout(timer);
         clearInterval(timer);
       }
+      coming?.stop.abort();
       // What is being installed stays for the helper. Anything else goes.
-      if (phase.phase !== "installing" && staging !== null) {
-        try {
-          rmSync(staging, { recursive: true, force: true });
-        } catch {
-          // Left in the system's temporary folder, which macOS clears.
-        }
-        staging = null;
-      }
+      folders.removeAll(handedOver);
     },
   };
 }

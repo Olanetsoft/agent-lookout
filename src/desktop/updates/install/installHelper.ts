@@ -1,16 +1,17 @@
 // What puts a new version in the running app's place. The app cannot replace
 // its own bundle while it runs from it, so it starts a small helper, then
 // quits. The helper waits for the app's process to end, moves the old bundle
-// aside into the updater's temporary folder, moves the new one into its place
-// and opens it. If the new one cannot be moved in, the old one is put back and
-// opened, so the person is never left with no app.
+// aside into the update's own folder, moves the new one into its place and
+// opens it. It moves nothing unless the new one has its `Info.plist` and a
+// program, and if the new one cannot be moved in, or cannot be opened, the old
+// one is put back and opened, so the person is never left with no app.
 //
 // The helper is `/bin/sh` with a script that is fixed text, written here. It
 // is never built from anything: the process ID and the three paths reach it
 // as arguments, `$1` to `$4`, which the shell never reads as script. The paths
-// are the running bundle's own, and two the updater made itself in its
-// temporary folder, and each is checked before the helper starts. Every
-// program the script runs is named by its full path.
+// are the running bundle's own, and two in a folder the updater made itself,
+// and each is checked before the helper starts. Every program the script runs
+// is named by its full path.
 
 import { spawn as spawnProcess } from "node:child_process";
 // The paths are a Mac's, so they are checked by the rules of macOS paths.
@@ -24,23 +25,34 @@ export const HELPER_WAIT_MS = 120_000;
 /** That wait in tenths of a second, which is how often the helper looks. */
 const WAIT_TENTHS = HELPER_WAIT_MS / 100;
 
-/** The helper's script. `$1` is the app's process ID, `$2` the bundle, `$3` the new bundle, `$4` where the old one goes. */
+/**
+ * The helper's script. `$1` is the app's process ID, `$2` the bundle, `$3` the
+ * new bundle, `$4` where the old one goes.
+ *
+ * `mv` puts a bundle inside a folder that is there already, so the old one is
+ * put back only once nothing is in its place. An open that fails is tried once
+ * more, a second later, since macOS can still count the app that quit as open.
+ */
 export const HELPER_SCRIPT = [
   'pid="$1"; app="$2"; new="$3"; aside="$4"',
+  'open_app() { /usr/bin/open "$app" || { /bin/sleep 1; /usr/bin/open "$app"; }; }',
   "n=0",
   'while /bin/kill -0 "$pid" 2>/dev/null; do',
   "  n=$((n + 1))",
   `  if [ "$n" -gt ${WAIT_TENTHS} ]; then exit 1; fi`,
   "  /bin/sleep 0.1",
   "done",
-  'if /bin/mv "$app" "$aside"; then',
-  '  if /bin/mv "$new" "$app"; then',
-  '    /usr/bin/open "$app"',
-  "    exit 0",
-  "  fi",
-  '  /bin/mv "$aside" "$app"',
+  "whole=no",
+  'for program in "$new"/Contents/MacOS/*; do',
+  '  if [ -f "$program" ] && [ -x "$program" ]; then whole=yes; fi',
+  "done",
+  'if [ ! -f "$new"/Contents/Info.plist ]; then whole=no; fi',
+  'if [ "$whole" = yes ] && /bin/mv "$app" "$aside"; then',
+  '  if /bin/mv "$new" "$app" && open_app; then exit 0; fi',
+  '  /bin/mv "$app" "$new"',
+  '  if [ ! -e "$app" ]; then /bin/mv "$aside" "$app"; fi',
   "fi",
-  '/usr/bin/open "$app"',
+  "open_app",
   "exit 1",
 ].join("\n");
 
@@ -50,9 +62,9 @@ export interface InstallPlan {
   pid: number;
   /** The running app's bundle, which is replaced. */
   bundle: string;
-  /** The new bundle, checked and unpacked in the updater's temporary folder. */
+  /** The new bundle, unpacked and checked in the update's own folder. */
   replacement: string;
-  /** Where the old bundle is moved, in the same temporary folder. */
+  /** Where the old bundle is moved, in the same folder. */
   aside: string;
 }
 

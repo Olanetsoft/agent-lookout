@@ -90,6 +90,12 @@ export function useAppUpdate(): AppUpdate {
 
   const install = useCallback(() => {
     setPressed("install");
+    // Said at once: the app checks and unpacks the version before it answers.
+    setReading((before) => {
+      if (before === null || before === "unknown" || before.update.phase !== "ready") return before;
+      const { version, notesUrl } = before.update;
+      return { ...before, update: { phase: "installing", version, notesUrl } };
+    });
     void requestUpdateInstall().then((answer) => {
       if (!mounted.current) return;
       setPressed(null);

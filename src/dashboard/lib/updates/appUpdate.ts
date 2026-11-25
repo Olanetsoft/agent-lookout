@@ -66,6 +66,7 @@ function readPhase(value: unknown): UpdatePhase | null {
             notesUrl: value.notesUrl,
             received: value.received,
             total: value.total,
+            ...(value.again === true && { again: true }),
           }
         : null;
     case "ready":

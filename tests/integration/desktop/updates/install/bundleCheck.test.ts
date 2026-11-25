@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, symlink, writeFile } from "node:fs/promises";
+import { mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
@@ -104,6 +104,16 @@ describe("unpackApp, with a link in the bundle", () => {
       expect(await unpackApp(path.join(work, "linked.zip"), into, unpack)).toBeNull();
     },
   );
+});
+
+test("unpackApp refuses a bundle with no program", async () => {
+  const work = await tempDir();
+  const unpack: RunProgram = async () => {
+    const bundle = await makeBundle(work, "Demo.app", "dev.example.demo", "0.2.1");
+    await rm(path.join(bundle, "Contents", "MacOS", "demo"));
+    return { ok: true, stdout: "" };
+  };
+  expect(await unpackApp(path.join(work, "no-program.zip"), work, unpack)).toBeNull();
 });
 
 describe.runIf(process.platform === "darwin")("unpackApp, with the real ditto", () => {

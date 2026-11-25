@@ -271,6 +271,8 @@ export interface DownloadOptions extends ReleaseRequestOptions {
   onProgress?: (received: number, total: number) => void;
   /** How long the whole download may take. */
   timeLimitMs?: number;
+  /** Stops it. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -311,7 +313,8 @@ export async function downloadFile(
       done(null, chunk);
     },
   });
-  const signal = AbortSignal.timeout(options.timeLimitMs ?? DOWNLOAD_TIME_LIMIT_MS);
+  const limit = AbortSignal.timeout(options.timeLimitMs ?? DOWNLOAD_TIME_LIMIT_MS);
+  const signal = options.signal === undefined ? limit : AbortSignal.any([limit, options.signal]);
   try {
     // Made here, never opened over a file that is there already, and readable by this user alone.
     await pipeline(res, meter, createWriteStream(file, { flags: "wx", mode: 0o600 }), { signal });

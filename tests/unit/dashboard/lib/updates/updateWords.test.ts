@@ -63,6 +63,23 @@ describe("updateWords", () => {
     expect(words.install).toBe(false);
   });
 
+  test("a version downloaded again says why, with its progress", () => {
+    const update = {
+      phase: "downloading",
+      version: "0.2.1",
+      notesUrl: NOTES,
+      received: 0,
+      total: 101 * 1024 * 1024,
+      again: true,
+    } as const;
+    expect(updateWords(status(update)).detail).toBe(
+      "What was downloaded is no longer whole. Downloading it again: 0 MB of 101 MB.",
+    );
+    expect(updateWords(status({ ...update, total: 0 })).detail).toBe(
+      "What was downloaded is no longer whole. Downloading it again.",
+    );
+  });
+
   test("once downloaded and checked, offers Install and Restart", () => {
     const words = updateWords(status({ phase: "ready", version: "0.2.1", notesUrl: NOTES }));
     expect(words.state).toBe("Version 0.2.1 is available.");
@@ -132,14 +149,14 @@ describe("updateWords", () => {
       status({
         phase: "failed",
         step: "install",
-        reason: "the new version could not be moved into this copy's place",
+        reason: "the new version could not be put in this copy's place and opened",
         version: "0.2.1",
         notesUrl: NOTES,
       }),
     );
     expect(words.note?.title).toBe("Version 0.2.1 could not be installed");
     expect(words.note?.detail).toBe(
-      "The new version could not be moved into this copy's place. Check again to try once more.",
+      "The new version could not be put in this copy's place and opened. Check again to try once more.",
     );
   });
 });
