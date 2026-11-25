@@ -1,13 +1,14 @@
 import { execFile } from "node:child_process";
-import { mkdir, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import { describe, expect, test } from "vitest";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
 
 import {
   bundleFacts,
   DITTO,
+  runProgram,
   unpackApp,
   type RunProgram,
 } from "@desktop/updates/install/bundleCheck";
@@ -67,8 +68,8 @@ describe("bundleFacts", () => {
 
 /**
  * Lays out what a zip of each kind would unpack to, with a link where the
- * bundle, its Contents or its Info.plist should be, each pointing at a real
- * bundle elsewhere in the test's folder.
+ * bundle, its Contents, its Info.plist or its program should be, each pointing
+ * at a real bundle elsewhere in the test's folder.
  */
 const LINKED = {
   "the bundle itself": async (into: string, other: string) => {
@@ -84,6 +85,12 @@ const LINKED = {
       path.join(other, "Contents", "Info.plist"),
       path.join(into, "Demo.app", "Contents", "Info.plist"),
     );
+  },
+  "its program": async (into: string, other: string) => {
+    const bundle = await makeBundle(into, "Demo.app", "dev.example.demo", "0.2.1");
+    const program = path.join(bundle, "Contents", "MacOS", "demo");
+    await rm(program);
+    await symlink(path.join(other, "Contents", "MacOS", "demo"), program);
   },
 } as const;
 
@@ -104,6 +111,46 @@ describe("unpackApp, with a link in the bundle", () => {
       expect(await unpackApp(path.join(work, "linked.zip"), into, unpack)).toBeNull();
     },
   );
+});
+
+// A process is asked whether it runs the way POSIX has it.
+test.skipIf(process.platform === "win32")("a program that is stopped ends at once", async () => {
+  const noted = path.join(await tempDir(), "pid.txt");
+  const stop = new AbortController();
+  // Also when the test fails before it stops it.
+  onTestFinished(() => stop.abort());
+  const answer = runProgram(
+    "/bin/sh",
+    ["-c", 'echo $$ > "$1"; exec /bin/sleep 60', "sh", noted],
+    stop.signal,
+  );
+  const pid = await vi.waitFor(async () => {
+    const text = await readFile(noted, "utf8");
+    expect(text).toMatch(/^\d+\n$/);
+    return Number(text);
+  });
+  expect(process.kill(pid, 0)).toBe(true);
+  stop.abort();
+  expect(await answer).toEqual({ ok: false });
+  await vi.waitFor(() => expect(() => process.kill(pid, 0)).toThrow("ESRCH"));
+});
+
+/** What can be wrong with a bundle's only program. */
+const NO_PROGRAM: Record<string, (program: string) => Promise<void>> = {
+  "no program": (program) => rm(program),
+  "a program that cannot be run": (program) => chmod(program, 0o644),
+};
+
+test.each(Object.keys(NO_PROGRAM))("unpackApp refuses a bundle with %s", async (what) => {
+  // Windows runs a program whatever its mode.
+  if (what !== "no program" && process.platform === "win32") return;
+  const work = await tempDir();
+  const unpack: RunProgram = async () => {
+    const bundle = await makeBundle(work, "Demo.app", "dev.example.demo", "0.2.1");
+    await NO_PROGRAM[what]!(path.join(bundle, "Contents", "MacOS", "demo"));
+    return { ok: true, stdout: "" };
+  };
+  expect(await unpackApp(path.join(work, "no-program.zip"), work, unpack)).toBeNull();
 });
 
 describe.runIf(process.platform === "darwin")("unpackApp, with the real ditto", () => {

@@ -54,6 +54,7 @@ function readPhase(value: unknown): UpdatePhase | null {
     case "checking":
     case "up-to-date":
     case "no-release":
+    case "not-for-this-mac":
       return { phase: value.phase };
     case "downloading":
       return isText(value.version) &&
@@ -66,12 +67,22 @@ function readPhase(value: unknown): UpdatePhase | null {
             notesUrl: value.notesUrl,
             received: value.received,
             total: value.total,
+            ...(isText(value.lost) && { lost: value.lost }),
           }
         : null;
     case "ready":
+      return isText(value.version) && isLink(value.notesUrl)
+        ? {
+            phase: "ready",
+            version: value.version,
+            notesUrl: value.notesUrl,
+            ...(isText(value.newer) && { newer: value.newer }),
+            ...(isText(value.failed) && { failed: value.failed }),
+          }
+        : null;
     case "installing":
       return isText(value.version) && isLink(value.notesUrl)
-        ? { phase: value.phase, version: value.version, notesUrl: value.notesUrl }
+        ? { phase: "installing", version: value.version, notesUrl: value.notesUrl }
         : null;
     case "cannot-install": {
       const refusal = REFUSALS.find((known) => known === value.refusal);

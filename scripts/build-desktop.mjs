@@ -11,8 +11,8 @@
 //
 // Every library the main process uses is bundled into main.cjs, nodemailer
 // included, so the app ships no node_modules folder at all. Only Electron
-// itself and Node's own modules stay outside, and this script stops if the
-// bundle imports anything else. The command's bundle in `dist/cli/` is not
+// itself, with its `original-fs`, and Node's own modules stay outside, and this
+// script stops if the bundle imports anything else. The command's bundle in `dist/cli/` is not
 // copied: the app does not run it. No source map is written, and no path on
 // this machine goes into the files.
 
@@ -29,6 +29,9 @@ const outdir = path.join(root, "dist-electron");
 const dashboard = path.join(root, "dist");
 /** The menu bar's template images, which `scripts/render-menu-bar-icon.mjs` draws. */
 const menuBarIcons = path.join(root, "build", "menu-bar");
+
+/** The modules Electron itself gives the main process. */
+const ELECTRON_MODULES = ["electron", "original-fs"];
 
 /** The Node version inside the Electron the app is built with. */
 const ELECTRON_NODE = "node24";
@@ -49,7 +52,7 @@ async function main() {
     format: "cjs",
     platform: "node",
     target: ELECTRON_NODE,
-    external: ["electron"],
+    external: ELECTRON_MODULES,
     sourcemap: false,
     legalComments: "eof",
     metafile: true,
@@ -59,7 +62,9 @@ async function main() {
   const imported = new Set();
   for (const output of Object.values(result.metafile.outputs)) {
     for (const { path: specifier, external } of output.imports) {
-      if (external && !isBuiltin(specifier) && specifier !== "electron") imported.add(specifier);
+      if (external && !isBuiltin(specifier) && !ELECTRON_MODULES.includes(specifier)) {
+        imported.add(specifier);
+      }
     }
   }
   if (imported.size > 0) {

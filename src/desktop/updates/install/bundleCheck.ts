@@ -9,13 +9,15 @@
 //
 // ditto unpacks a link as a link, so a zip whose app is a link to another app
 // would unpack as that link. What is unpacked must be a real folder, with a
-// real `Contents` folder and a real `Info.plist` in it, none of them a link.
+// real `Contents` folder and a real `Info.plist` in it, none of them a link,
+// and a program in its `Contents/MacOS` that can be run, as the helper asks.
 //
 // Both programs are started by their full path, with no shell, with a time
-// limit, and with no argument but paths the updater made itself in its own
-// temporary folder.
+// limit, and with no argument but paths the updater made itself, in a folder of
+// its own. ditto is stopped when the app quits, so it writes nothing after.
 
 import { execFile } from "node:child_process";
+import { accessSync, constants } from "node:fs";
 import { lstat, readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -27,10 +29,11 @@ export interface BundleFacts {
   version: string;
 }
 
-/** What a program printed, or that it failed. It never rejects. */
+/** What a program printed, or that it failed or was stopped. It never rejects. */
 export type RunProgram = (
   file: string,
   args: readonly string[],
+  stop?: AbortSignal,
 ) => Promise<{ ok: true; stdout: string } | { ok: false }>;
 
 export const DITTO = "/usr/bin/ditto";
@@ -43,7 +46,7 @@ const PROGRAM_TIMEOUT_MS = 120_000;
 const MAX_OUTPUT_BYTES = 1024 * 1024;
 
 /** Runs a program by its full path, with no shell, stdin closed and a time limit. */
-export const runProgram: RunProgram = (file, args) =>
+export const runProgram: RunProgram = (file, args, stop) =>
   new Promise((resolve) => {
     try {
       execFile(
@@ -54,6 +57,7 @@ export const runProgram: RunProgram = (file, args) =>
           timeout: PROGRAM_TIMEOUT_MS,
           maxBuffer: MAX_OUTPUT_BYTES,
           encoding: "utf8",
+          signal: stop,
         },
         (error, stdout) => resolve(error ? { ok: false } : { ok: true, stdout: String(stdout) }),
       ).stdin?.end();
@@ -108,15 +112,35 @@ export async function bundleFacts(
   return converted.ok ? readInfoPlist(converted.stdout) : null;
 }
 
-/** Whether a bundle is a folder, with a `Contents` folder and an `Info.plist` file, none of them a link. */
-async function isRealBundle(bundle: string): Promise<boolean> {
+function canRun(program: string): boolean {
   try {
-    const [app, contents, plist] = await Promise.all([
+    accessSync(program, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether a bundle is a folder, with a `Contents` folder and an `Info.plist`
+ * file, none of them a link, and a program that can be run in its
+ * `Contents/MacOS`.
+ */
+async function isRealBundle(bundle: string): Promise<boolean> {
+  const programsIn = path.join(bundle, "Contents", "MacOS");
+  try {
+    const [app, contents, plist, programs] = await Promise.all([
       lstat(bundle),
       lstat(path.join(bundle, "Contents")),
       lstat(path.join(bundle, "Contents", "Info.plist")),
+      readdir(programsIn, { withFileTypes: true }),
     ]);
-    return app.isDirectory() && contents.isDirectory() && plist.isFile();
+    return (
+      app.isDirectory() &&
+      contents.isDirectory() &&
+      plist.isFile() &&
+      programs.some((one) => one.isFile() && canRun(path.join(programsIn, one.name)))
+    );
   } catch {
     return false;
   }
@@ -125,15 +149,16 @@ async function isRealBundle(bundle: string): Promise<boolean> {
 /**
  * Unpacks `zip` into the empty folder `into` with ditto, and gives the path of
  * the one app bundle at its top, or null when it could not be unpacked, does
- * not hold exactly one, or holds a link where the bundle, its `Contents` or
- * its `Info.plist` should be.
+ * not hold exactly one, holds a link where the bundle, its `Contents` or its
+ * `Info.plist` should be, or has no program to run. `stop` stops ditto.
  */
 export async function unpackApp(
   zip: string,
   into: string,
   run: RunProgram = runProgram,
+  stop?: AbortSignal,
 ): Promise<string | null> {
-  const unpacked = await run(DITTO, ["-x", "-k", zip, into]);
+  const unpacked = await run(DITTO, ["-x", "-k", zip, into], stop);
   if (!unpacked.ok) return null;
   let names: string[];
   try {

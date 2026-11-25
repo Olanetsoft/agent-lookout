@@ -1283,9 +1283,10 @@ The code is in `updates/`. The routes, the menu and `main.ts` know the updates o
 - `release/endpoints.ts` names the one file to read: the latest release's `latest-mac.yml`.
 - `release/releaseRequest.ts` makes the update check's requests. It uses Node's own HTTPS client, goes only to GitHub's addresses, and sets time and size limits. With email, the webhook, ntfy, Pushover, pull requests and other machines off, which is the default, these are the only requests the app's own code sends off the computer. The page cannot make such a request, because the window's session cancels every web request.
 - `release/manifest.ts`, `release/version.ts` and `release/downloadCheck.ts` offer only a newer release that is not a prerelease, and check the zip's size and SHA-512.
-- `install/bundleCheck.ts` unpacks the zip with `ditto` and checks the bundle's ID and version.
+- `install/updateFolders.ts` makes the folder the zip waits in, in the app's own folder of user data, and sweeps what earlier runs left. The zip is checked again before it is installed.
+- `install/bundleCheck.ts` unpacks the zip with `ditto` and checks the bundle's ID, version and program.
 - `install/installLocation.ts` refuses to install where the app cannot change its own bundle, such as from a disk image.
-- Nothing is installed until the person presses Install and Restart. Then `install/installHelper.ts` starts a small, fixed `/bin/sh` script. The script waits for the app to quit, moves the new bundle in place of the old one and opens it. If the new bundle cannot be moved in, it puts the old one back.
+- Nothing is installed until the person presses Install and Restart. Then `install/installHelper.ts` starts a small, fixed `/bin/sh` script. The script waits for the app to quit, moves the new bundle in place of the old one and opens it. It moves nothing unless the new bundle has its program, and if the new one cannot be moved in or opened, it puts the old one back.
 - The switch and the update state are kept in `update-state.json` (`updateSettings.ts`).
 
 #### The question about notifications

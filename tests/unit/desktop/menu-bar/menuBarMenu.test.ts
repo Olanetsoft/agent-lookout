@@ -3,6 +3,7 @@ import { describe, expect, test, vi } from "vitest";
 
 import { shownAsk } from "@collector/answers/shownAsk";
 import type { Session, SourceState } from "@core/sessions/session";
+import { fixUpWindowsStyleLabel } from "@desktop/answers/answerOffer";
 import {
   MAX_MENU_DETAIL_LENGTH,
   MAX_MENU_NAME_LENGTH,
@@ -370,6 +371,116 @@ describe("the menu", () => {
     expect(alike.slice(1, 3)).toEqual(["same · 2m 00s", "same · 1m 00s"]);
   });
 
+  /** A session on another computer, as it is listed. */
+  const remote = (machine: string, name: string, waitedMs: number, agent = "Claude Code") =>
+    waiting(name, waitedMs, {
+      id: `remote:${machine}:${agent}:${name}`,
+      source: `remote:${machine}`,
+      agent,
+      machine,
+    });
+
+  test("names the other computer a session is on, as a notification does", () => {
+    const template = menuBarTemplate(
+      snapshot([remote("devbox", "storefront", MINUTE), waiting("storefront", 2 * MINUTE)]),
+      NOW,
+      actions(),
+    );
+    expect(labels(template).slice(1, 3)).toEqual([
+      "storefront · 2m 00s",
+      "storefront on devbox · 1m 00s",
+    ]);
+    const alone = menuBarTemplate(
+      snapshot([remote("devbox", "storefront", MINUTE)]),
+      NOW,
+      actions(),
+    );
+    expect(labels(alone)[1]).toBe("storefront on devbox · 1m 00s");
+  });
+
+  test("keeps the other computer's name when the session's is cut", () => {
+    const name = "a-session-with-a-name-far-longer-than-the-menu-has-room-for";
+    const template = menuBarTemplate(
+      snapshot([remote("computer-in-the-attic-02", name, 2 * MINUTE), waiting(name, MINUTE)]),
+      NOW,
+      actions(),
+    );
+    const cut = labels(template)[2]?.split(" · ")[0] ?? "";
+    expect(Array.from(cut)).toHaveLength(MAX_MENU_NAME_LENGTH);
+    expect(labels(template)[1]).toBe(`${cut} on computer-in-the-attic-02 · 2m 00s`);
+  });
+
+  test("puts what tells two apart in brackets only for two on the same computer", () => {
+    const template = menuBarTemplate(
+      snapshot(
+        [
+          remote("devbox", "storefront", 4 * MINUTE),
+          remote("devbox", "storefront", 3 * MINUTE, "Codex"),
+          remote("laptop", "storefront", 2 * MINUTE),
+          waiting("storefront", MINUTE),
+        ],
+        BOTH,
+      ),
+      NOW,
+      actions(),
+    );
+    expect(labels(template).slice(1, 5)).toEqual([
+      "storefront on devbox (Claude Code) · 4m 00s",
+      "storefront on devbox (Codex) · 3m 00s",
+      "storefront on laptop · 2m 00s",
+      "storefront · 1m 00s",
+    ]);
+  });
+
+  test.each([
+    "R&D dashboard",
+    "AT&T",
+    "a && b",
+    "sleep 5 & wait",
+    "checkout (&v) flow",
+    "one (&) only",
+    "(&&) and (&&&)",
+    "&",
+    "ends with &",
+  ])("draws %s as it is written, as a name, in brackets and as what a session asks", (text) => {
+    const pair = [
+      waiting(text, 2 * MINUTE, { project: text, waitingText: text }),
+      waiting(text, MINUTE, { id: "claude-code:2", project: "storefront" }),
+    ];
+    const did = actions();
+    const [, item, other] = menuBarTemplate(snapshot(pair), NOW, did);
+    const drawn = (label: string | undefined) => fixUpWindowsStyleLabel(label ?? "");
+    expect(drawn(item?.label)).toBe(`${text} (${text}) · 2m 00s`);
+    expect(drawn(other?.label)).toBe(`${text} (storefront) · 1m 00s`);
+    expect(drawn(item?.sublabel)).toBe(`Waiting for permission: ${text}`);
+    // The tooltip is drawn as it is given.
+    expect(item?.toolTip).toBe(`Waiting for permission: ${text}`);
+  });
+
+  test("cuts a name and what a session asks by what is drawn, whatever the & in them takes", () => {
+    const [, item] = menuBarTemplate(
+      snapshot([waiting("&".repeat(60), MINUTE, { waitingText: "&".repeat(80) })]),
+      NOW,
+      actions(),
+    );
+    const [name] = fixUpWindowsStyleLabel(item?.label ?? "").split(" · ");
+    expect(name).toBe(`${"&".repeat(MAX_MENU_NAME_LENGTH - 1)}…`);
+    const under = fixUpWindowsStyleLabel(item?.sublabel ?? "");
+    expect(Array.from(under)).toHaveLength(MAX_MENU_DETAIL_LENGTH);
+  });
+
+  test("two names that differ by an & alone are told apart by it", () => {
+    const template = menuBarTemplate(
+      snapshot([waiting("AT&T", 2 * MINUTE), waiting("ATT", MINUTE)]),
+      NOW,
+      actions(),
+    );
+    expect(template.slice(1, 3).map((item) => fixUpWindowsStyleLabel(item.label ?? ""))).toEqual([
+      "AT&T · 2m 00s",
+      "ATT · 1m 00s",
+    ]);
+  });
+
   test("a wait whose start is a moment ahead of the clock reads as no time at all", () => {
     const [, item] = menuBarTemplate(snapshot([waiting("ahead", -5 * SECOND)]), NOW, actions());
     expect(item?.label).toBe("ahead · 0s");
@@ -585,6 +696,18 @@ describe("a session whose permission request is held", () => {
       menuBarTemplate(snapshot([asking(ask("Bash", { command: "a && b" }))]), NOW, actions()),
     );
     expect(submenu[3]?.label).toBe("a &&&& b");
+  });
+
+  test("a press goes with the session's name as it is written", () => {
+    const chosen = actions();
+    const held = ask("Bash", { command: "npm test" });
+    const template = menuBarTemplate(
+      snapshot([waiting("R&D", MINUTE, { ask: held })]),
+      NOW,
+      chosen,
+    );
+    click(submenuOf(template).find((item) => item.label === "Deny"));
+    expect(chosen.answer.mock.calls[0]?.[0].name).toBe("R&D");
   });
 
   test("the menu is made again for a newer request, and with what the last press came to", () => {

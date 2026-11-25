@@ -30,6 +30,9 @@ const ENDPOINTS: ReleaseEndpoints = {
   allow: () => true,
 };
 
+/** Nothing is ever downloaded here, so there is nothing to remove. */
+const NO_REMOVAL = { rm: async () => {}, rmSync: () => {} };
+
 const manifestFor = (version: string, arch = "arm64") => `version: ${version}
 files:
   - url: Agent-Lookout-${version}-mac-${arch}.zip
@@ -78,7 +81,9 @@ function updater(
     packaged: true,
     bundle: "/Volumes/Agent Lookout 0.2.0/Agent Lookout.app",
     settings: settings.store,
-    tempDir: "/nonexistent",
+    dataDir: "/nonexistent/data",
+    tempDir: "/nonexistent/tmp",
+    removal: NO_REMOVAL,
     endpoints: ENDPOINTS,
     requests: { fetchText, downloadFile },
     canWrite: () => true,
@@ -153,7 +158,9 @@ describe("when the updater looks by itself", () => {
       packaged: true,
       bundle: null,
       settings: again.settings.store,
-      tempDir: "/nonexistent",
+      dataDir: "/nonexistent/data",
+      tempDir: "/nonexistent/tmp",
+      removal: NO_REMOVAL,
       endpoints: ENDPOINTS,
       requests: { fetchText: again.fetchText, downloadFile: again.downloadFile },
       quit: vi.fn(),
@@ -201,6 +208,26 @@ describe("when the updater looks by itself", () => {
     await advanceTo(START + RETRY_AFTER_MS + TICK_MS);
     expect(fetchText).toHaveBeenCalledTimes(2);
     expect(updates.status().update).toEqual({ phase: "up-to-date" });
+    updates.stop();
+  });
+
+  test("tries again some hours after a check the person asked for that had no answer", async () => {
+    const { updater: updates, fetchText } = updater(() => "0.2.0");
+    updates.start();
+    await vi.advanceTimersByTimeAsync(FIRST_CHECK_DELAY_MS);
+    expect(updates.status().update).toEqual({ phase: "up-to-date" });
+    await advanceTo(START + 2 * HOUR + 1);
+    fetchText.mockResolvedValueOnce({ ok: false, failure: "network" });
+    expect((await updates.check()).update).toMatchObject({ phase: "failed", step: "check" });
+
+    await advanceTo(START + 2 * HOUR + RETRY_AFTER_MS);
+    expect(fetchText).toHaveBeenCalledTimes(2);
+    await advanceTo(START + 3 * HOUR + RETRY_AFTER_MS);
+    expect(fetchText).toHaveBeenCalledTimes(3);
+    expect(updates.status().update).toEqual({ phase: "up-to-date" });
+    // It had an answer, so the next is a day later.
+    await advanceTo(START + 3 * HOUR + RETRY_AFTER_MS + CHECK_EVERY_MS - 1);
+    expect(fetchText).toHaveBeenCalledTimes(3);
     updates.stop();
   });
 
@@ -300,7 +327,7 @@ describe("what a check finds", () => {
 
   test("tells of a version the daily check found once, and never of one the person asked for", async () => {
     let latest = "0.2.1";
-    const { updater: updates, onFound, settings } = updater(() => latest);
+    const { updater: updates, fetchText, onFound, settings } = updater(() => latest);
     updates.start();
     await vi.advanceTimersByTimeAsync(FIRST_CHECK_DELAY_MS);
     // From a disk image, the notice says it cannot be installed there.
@@ -314,8 +341,14 @@ describe("what a check finds", () => {
     await updates.check();
     expect(onFound).toHaveBeenCalledOnce();
     // Found by the person, so the daily check does not tell of it again.
-    await vi.advanceTimersByTimeAsync(CHECK_EVERY_MS);
+    const looked = fetchText.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(CHECK_EVERY_MS + TICK_MS);
+    expect(fetchText).toHaveBeenCalledTimes(looked + 1);
     expect(onFound).toHaveBeenCalledOnce();
+
+    latest = "0.2.3";
+    await vi.advanceTimersByTimeAsync(CHECK_EVERY_MS);
+    expect(onFound).toHaveBeenLastCalledWith("0.2.3", "disk-image");
     updates.stop();
   });
 });
@@ -356,20 +389,73 @@ describe("the copy that opens after Install and Restart", () => {
     const failed = {
       phase: "failed",
       step: "install",
-      reason: "the new version could not be moved into this copy's place",
+      reason: "the new version could not be put in this copy's place and opened",
       version: "0.2.1",
       notesUrl: "https://releases.invalid/tag/v0.2.1",
     };
     expect(updates.status().update).toEqual(failed);
     expect(settings.kept().installingVersion).toBeNull();
     expect(warn).toHaveBeenCalledWith(
-      "Version 0.2.1 of Agent Lookout could not be installed: the new version could not be moved into this copy's place.",
+      "Version 0.2.1 of Agent Lookout could not be installed: the new version could not be put in this copy's place and opened.",
     );
 
     // The check it makes by itself leaves that said, and does not download it again.
     updates.start();
     await vi.advanceTimersByTimeAsync(FIRST_CHECK_DELAY_MS);
     expect(updates.status().update).toEqual(failed);
+    updates.stop();
+  });
+
+  test("as a newer one, put in by hand, says nothing of it and forgets it", () => {
+    const { updater: updates, settings } = updater(
+      () => "0.2.1",
+      { version: "0.2.2", bundle: "/Applications/Agent Lookout.app" },
+      { installingVersion: "0.2.1" },
+    );
+    expect(updates.status().update).toEqual({ phase: "idle" });
+    expect(settings.kept().installingVersion).toBeNull();
+  });
+
+  /** Starts the app's own check, with a failed install said, and leaves it waiting for GitHub. */
+  async function ownCheck() {
+    const made = updater(() => "0.2.1", {}, { installingVersion: "0.2.1" });
+    let answer: (fetched: Fetched<string>) => void = () => {};
+    made.fetchText.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)));
+    made.updater.start();
+    await vi.advanceTimersByTimeAsync(FIRST_CHECK_DELAY_MS);
+    expect(made.updater.status().update).toMatchObject({ phase: "failed", step: "install" });
+    return { ...made, answer: (fetched: Fetched<string>) => answer(fetched) };
+  }
+
+  test("moves on when the person checks while the app's own check is under way", async () => {
+    const { updater: updates, fetchText, onFound, answer } = await ownCheck();
+    const pressed = updates.check();
+    expect(updates.status().update).toEqual({ phase: "checking" });
+    answer({ ok: true, value: manifestFor("0.2.1") });
+    expect((await pressed).update).toMatchObject({ phase: "cannot-install", version: "0.2.1" });
+    expect(fetchText).toHaveBeenCalledOnce();
+    // Told by the card, so not by the notification of the daily check.
+    expect(onFound).not.toHaveBeenCalled();
+    updates.stop();
+  });
+
+  test("says so when that check, which the person asked for too, has no answer", async () => {
+    const { updater: updates, answer } = await ownCheck();
+    const pressed = updates.check();
+    answer({ ok: false, failure: "network" });
+    expect((await pressed).update).toMatchObject({ phase: "failed", step: "check" });
+    updates.stop();
+  });
+
+  test.each<[string, Fetched<string>]>([
+    ["has no answer", { ok: false, failure: "network" }],
+    ["finds a release with no Mac app", { ok: false, failure: "not-found", status: 404 }],
+    ["cannot be read", { ok: true, value: "<html>Not a manifest</html>" }],
+  ])("says the install did not work through a check of its own that %s", async (_what, fetched) => {
+    const { updater: updates, answer } = await ownCheck();
+    answer(fetched);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(updates.status().update).toMatchObject({ phase: "failed", step: "install" });
     updates.stop();
   });
 

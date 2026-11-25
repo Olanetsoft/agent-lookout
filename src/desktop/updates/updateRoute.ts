@@ -122,7 +122,7 @@ export function createUpdateRoute(
         return {
           status: 409,
           body: {
-            error: "No version is ready to install here.",
+            error: "Nothing was installed.",
             status: installed.status,
           } satisfies AppUpdateInstallRefused,
         };

@@ -33,6 +33,14 @@ function megabytes(bytes: number): string {
   return `${Math.round(bytes / MEGABYTE)} MB`;
 }
 
+/** That a version is being downloaded, and what became of the one that was ready before. */
+function downloadingWords(version: string, lost: string | undefined): string {
+  if (lost === undefined) return "Downloading it";
+  return lost === version
+    ? "What was downloaded is no longer whole. Downloading it again"
+    : `Version ${lost}, downloaded before, is no longer whole. Downloading this one instead`;
+}
+
 /** When the app last had an answer: "14:02", "14:02 on Oct 4", or "Not yet". */
 export function lastCheckedWords(status: AppUpdateStatus, now: number): string {
   return status.lastCheckedAt === null ? "Not yet" : clockAt(status.lastCheckedAt, now);
@@ -57,23 +65,34 @@ export function updateWords(status: AppUpdateStatus): UpdateWords {
       return { ...quiet, state: "The latest release has no Mac app yet." };
     case "not-for-this-mac":
       return { ...quiet, state: "The latest release has no app for this kind of Mac." };
-    case "downloading":
+    case "downloading": {
+      const progress =
+        update.total > 0 ? `: ${megabytes(update.received)} of ${megabytes(update.total)}.` : ".";
       return {
         ...quiet,
         state: `Version ${update.version} is available.`,
-        detail:
-          update.total > 0
-            ? `Downloading it: ${megabytes(update.received)} of ${megabytes(update.total)}.`
-            : "Downloading it.",
+        detail: `${downloadingWords(update.version, update.lost)}${progress}`,
         notesUrl: update.notesUrl,
       };
+    }
     case "ready":
       return {
         ...quiet,
         state: `Version ${update.version} is available.`,
-        detail: "Downloaded and checked.",
+        detail:
+          update.newer === undefined
+            ? "Downloaded and checked."
+            : `Downloaded and checked. Version ${update.newer} is out too, and is being downloaded.`,
         install: true,
-        notesUrl: update.notesUrl,
+        notesUrl: update.failed === undefined ? update.notesUrl : null,
+        note:
+          update.failed === undefined
+            ? null
+            : {
+                title: `Version ${update.version} could not be installed`,
+                detail: `${sentenceStart(update.failed)}. Press Install and Restart to try once more.`,
+                link: update.notesUrl,
+              },
       };
     case "installing":
       return {

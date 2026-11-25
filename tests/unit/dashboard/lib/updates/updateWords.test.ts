@@ -63,11 +63,77 @@ describe("updateWords", () => {
     expect(words.install).toBe(false);
   });
 
+  test("a version downloaded again says why, with its progress", () => {
+    const update = {
+      phase: "downloading",
+      version: "0.2.1",
+      notesUrl: NOTES,
+      received: 0,
+      total: 101 * 1024 * 1024,
+      lost: "0.2.1",
+    } as const;
+    expect(updateWords(status(update)).detail).toBe(
+      "What was downloaded is no longer whole. Downloading it again: 0 MB of 101 MB.",
+    );
+    expect(updateWords(status({ ...update, total: 0 })).detail).toBe(
+      "What was downloaded is no longer whole. Downloading it again.",
+    );
+  });
+
+  test("a newer version downloaded in place of one that was lost says so", () => {
+    expect(
+      updateWords(
+        status({
+          phase: "downloading",
+          version: "0.2.2",
+          notesUrl: NOTES,
+          received: 0,
+          total: 101 * 1024 * 1024,
+          lost: "0.2.1",
+        }),
+      ).detail,
+    ).toBe(
+      "Version 0.2.1, downloaded before, is no longer whole. Downloading this one instead: 0 MB of 101 MB.",
+    );
+  });
+
   test("once downloaded and checked, offers Install and Restart", () => {
     const words = updateWords(status({ phase: "ready", version: "0.2.1", notesUrl: NOTES }));
     expect(words.state).toBe("Version 0.2.1 is available.");
     expect(words.detail).toBe("Downloaded and checked.");
     expect(words.install).toBe(true);
+  });
+
+  test("a version that is ready says that a newer one is being downloaded", () => {
+    const words = updateWords(
+      status({ phase: "ready", version: "0.2.1", notesUrl: NOTES, newer: "0.2.2" }),
+    );
+    expect(words.state).toBe("Version 0.2.1 is available.");
+    expect(words.detail).toBe(
+      "Downloaded and checked. Version 0.2.2 is out too, and is being downloaded.",
+    );
+    expect(words.install).toBe(true);
+  });
+
+  test("a version that is ready and was not installed says why, and can be installed still", () => {
+    const words = updateWords(
+      status({
+        phase: "ready",
+        version: "0.2.1",
+        notesUrl: NOTES,
+        failed: "the download could not be unpacked",
+      }),
+    );
+    expect(words.state).toBe("Version 0.2.1 is available.");
+    expect(words.detail).toBe("Downloaded and checked.");
+    expect(words.install).toBe(true);
+    expect(words.note).toEqual({
+      title: "Version 0.2.1 could not be installed",
+      detail: "The download could not be unpacked. Press Install and Restart to try once more.",
+      link: NOTES,
+    });
+    // The note links the release page, so nothing else links it again.
+    expect(words.notesUrl).toBeNull();
   });
 
   test("a version that cannot be installed here says why and links its release page", () => {
@@ -132,14 +198,14 @@ describe("updateWords", () => {
       status({
         phase: "failed",
         step: "install",
-        reason: "the new version could not be moved into this copy's place",
+        reason: "the new version could not be put in this copy's place and opened",
         version: "0.2.1",
         notesUrl: NOTES,
       }),
     );
     expect(words.note?.title).toBe("Version 0.2.1 could not be installed");
     expect(words.note?.detail).toBe(
-      "The new version could not be moved into this copy's place. Check again to try once more.",
+      "The new version could not be put in this copy's place and opened. Check again to try once more.",
     );
   });
 });

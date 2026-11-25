@@ -8,11 +8,14 @@ import {
   type InstallPlan,
 } from "@desktop/updates/install/installHelper";
 
+const FOLDER =
+  "/Users/example/Library/Application Support/Agent Lookout/agent-lookout-update-a1B2c3";
+
 const PLAN: InstallPlan = {
   pid: 4242,
   bundle: "/Applications/Agent Lookout.app",
-  replacement: "/private/var/folders/xy/T/agent-lookout-update-abc/app/Agent Lookout.app",
-  aside: "/private/var/folders/xy/T/agent-lookout-update-abc/previous/Agent Lookout.app",
+  replacement: `${FOLDER}/app-d4E5f6/Agent Lookout.app`,
+  aside: `${FOLDER}/previous/Agent Lookout.app`,
 };
 
 describe("the helper that replaces the app", () => {
@@ -42,17 +45,15 @@ describe("the helper that replaces the app", () => {
     expect(HELPER_SCRIPT).not.toContain("eval");
   });
 
-  test("waits for the app to quit, moves the old bundle aside, moves the new one in and opens it", () => {
-    const lines = HELPER_SCRIPT.split("\n").map((line) => line.trim());
-    const at = (line: string) => lines.indexOf(line);
-    expect(at('while /bin/kill -0 "$pid" 2>/dev/null; do')).toBeGreaterThan(-1);
-    expect(at('if /bin/mv "$app" "$aside"; then')).toBeGreaterThan(at("done"));
-    expect(at('if /bin/mv "$new" "$app"; then')).toBeGreaterThan(
-      at('if /bin/mv "$app" "$aside"; then'),
-    );
-    // A new bundle that cannot be moved in puts the old one back, and opens that.
-    expect(at('/bin/mv "$aside" "$app"')).toBeGreaterThan(at('if /bin/mv "$new" "$app"; then'));
-    expect(lines.filter((line) => line === '/usr/bin/open "$app"')).toHaveLength(2);
+  // What the script does is in the integration test, which runs it.
+  test("runs no program but kill, sleep, mv and open", () => {
+    const programs = HELPER_SCRIPT.match(/\/(usr\/)?bin\/[a-z]+/g) ?? [];
+    expect([...new Set(programs)].sort()).toEqual([
+      "/bin/kill",
+      "/bin/mv",
+      "/bin/sleep",
+      "/usr/bin/open",
+    ]);
   });
 
   test.each([
@@ -60,8 +61,8 @@ describe("the helper that replaces the app", () => {
     ["launchd's process ID", { pid: 1 }],
     ["a relative path", { bundle: "Agent Lookout.app" }],
     ["a path that is not a bundle", { bundle: "/Applications" }],
-    ["a path with .. in it", { replacement: "/private/var/folders/xy/T/../../Agent Lookout.app" }],
-    ["a path with a line break", { aside: "/private/var/x\n/Agent Lookout.app" }],
+    ["a path with .. in it", { replacement: `${FOLDER}/../../Agent Lookout.app` }],
+    ["a path with a line break", { aside: `${FOLDER}/x\n/Agent Lookout.app` }],
     ["the same path twice", { aside: PLAN.replacement }],
   ])("refuses a plan with %s", (_what, change) => {
     expect(helperArguments({ ...PLAN, ...change })).toBeNull();

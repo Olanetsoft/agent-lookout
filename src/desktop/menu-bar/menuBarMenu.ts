@@ -8,8 +8,9 @@
 // The count is the Dock badge's, by the same rule that lights the lamp in the
 // page, `needsYou`: a prompt already answered, by Allow, Deny or a permission
 // rule, is neither counted nor listed. A session's name and what it is asking are shown on this computer
-// only, as a notification shows them. Two sessions listed under one name are
-// told apart by their agent, project, branch or app, in brackets after it.
+// only, as a notification shows them, with the name of the other computer a
+// session is on. Two sessions listed under one name are told apart by their
+// agent, project, branch or app, in brackets after it.
 //
 // A session whose permission request Agent Lookout holds opens a submenu
 // instead: Open Details, what it asks, a line each, with its other inputs
@@ -28,6 +29,7 @@ import { formatDuration } from "../../core/duration.ts";
 import { sessionTitle, waitNotice } from "../../core/notices/waiting.ts";
 import {
   agentName,
+  nameOnMachine,
   surfaceLabel,
   withoutWaitingText,
   type AnswerDecision,
@@ -39,7 +41,10 @@ import { MAX_NOTICE_TEXT_LENGTH, oneLine } from "../../core/text.ts";
 import { needsYou } from "../../core/waits/answeredWaits.ts";
 import { DECISION_LABEL, menuOffer, menuText, type MenuOffer } from "../answers/answerOffer.ts";
 
-/** The longest a session's name runs in the menu, in characters. A longer one is cut. */
+/**
+ * The longest a session's name runs in the menu, in characters. A longer one is
+ * cut, before the name of the other computer it is on, which is never cut.
+ */
 export const MAX_MENU_NAME_LENGTH = 40;
 
 /** The longest the line under a name runs: the reason, and what the session is asking. */
@@ -60,6 +65,7 @@ export type MenuBarSession = Pick<
   | "surface"
   | "name"
   | "project"
+  | "machine"
   | "git"
   | "status"
   | "statusSince"
@@ -183,12 +189,15 @@ function tellingFor(group: readonly MenuBarSession[], sources: Sources): Telling
 }
 
 /**
- * The name each listed session goes by in the menu, cut short, and with what
- * tells it apart in brackets when another listed session goes by the same:
- * "checkout-flow (Codex)".
+ * The name each listed session goes by in the menu, cut short, with the other
+ * computer it is on, "checkout-flow on devbox", and with what tells it apart in
+ * brackets when another listed session goes by the same: "checkout-flow
+ * (Codex)".
  */
 function menuNames(listed: readonly MenuBarSession[], sources: Sources): string[] {
-  const names = listed.map((session) => oneLine(sessionTitle(session), MAX_MENU_NAME_LENGTH));
+  const names = listed.map((session) =>
+    nameOnMachine(oneLine(sessionTitle(session), MAX_MENU_NAME_LENGTH), session.machine),
+  );
   return names.map((name, index) => {
     const group = listed.filter((_, other) => names[other] === name);
     const session = listed[index];
@@ -303,6 +312,15 @@ function askItems(
 }
 
 /**
+ * A name, or the line under it, as a label the menu draws as it is written,
+ * but for `...`, drawn as `…`. `menuText` doubles each `&`, and `(&)`, which
+ * that would leave to be dropped whole, takes a third, dropped in its place.
+ */
+function asWritten(text: string): string {
+  return menuText(text).replaceAll("(&&)", "(&&&)");
+}
+
+/**
  * A session's item: its name and how long it has waited, "checkout-flow ·
  * 4m 12s", with the reason and what it is asking under it, cut short, and the
  * whole of that when the pointer rests on it, for a Mac that does not show the
@@ -318,8 +336,8 @@ function sessionItem(
 ): MenuItemConstructorOptions {
   const waited = listing.statusSince === null ? null : formatDuration(now - listing.statusSince);
   const item = {
-    label: waited === null ? listing.name : `${listing.name} · ${waited}`,
-    sublabel: listing.sublabel,
+    label: asWritten(waited === null ? listing.name : `${listing.name} · ${waited}`),
+    sublabel: asWritten(listing.sublabel),
     toolTip: listing.toolTip,
   };
   return listing.ask === undefined

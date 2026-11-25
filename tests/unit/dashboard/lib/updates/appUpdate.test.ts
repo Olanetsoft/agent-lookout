@@ -45,8 +45,19 @@ describe("readUpdateStatus", () => {
       { phase: "checking" },
       { phase: "up-to-date" },
       { phase: "no-release" },
+      { phase: "not-for-this-mac" },
       { phase: "downloading", version: "0.2.1", notesUrl: NOTES, received: 10, total: 100 },
+      {
+        phase: "downloading",
+        version: "0.2.1",
+        notesUrl: NOTES,
+        received: 10,
+        total: 100,
+        lost: "0.2.1",
+      },
       { phase: "ready", version: "0.2.1", notesUrl: NOTES },
+      { phase: "ready", version: "0.2.1", notesUrl: NOTES, newer: "0.2.2" },
+      { phase: "ready", version: "0.2.1", notesUrl: NOTES, failed: "it could not be unpacked" },
       { phase: "installing", version: "0.2.1", notesUrl: NOTES },
       { phase: "cannot-install", version: "0.2.1", notesUrl: NOTES, refusal: "translocated" },
       {
@@ -131,7 +142,7 @@ describe("the requests", () => {
   );
 
   test("an install refused with 409 still says where updates stand", async () => {
-    answering(409, { error: "No version is ready to install here.", status: STATUS });
+    answering(409, { error: "Nothing was installed.", status: STATUS });
     expect(await requestUpdateInstall()).toEqual(STATUS);
   });
 

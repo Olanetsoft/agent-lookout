@@ -2,6 +2,17 @@
 
 Changes that a user of Agent Lookout would notice, newest first.
 
+## Unreleased
+
+### Fixed
+
+- In the Mac app, Install and Restart on a version that had waited a few days could leave an empty app in Applications, which did not open: macOS clears files in the temporary folder the download waited in. A download now waits in the app's own folder, which macOS does not clear, and is read whole and checked again before it is installed, and at each daily check. One that has lost anything is not installed: the version out by then is downloaded, and Settings says so. The app in Applications is moved only for one that has its program, and is put back and opened when the new one cannot be opened. The old app is kept until the new one has run, and then removed, with what 0.2.31 and earlier left in the temporary folder. The update to this version is still put in place by the version before it, so install it soon after it is offered. If it has waited more than a day, first quit Agent Lookout, open it again and choose Check for Updates…, which downloads it again. (#487)
+- In the Mac app, a version that is ready to install stays, and can be installed, until the app quits, a newer one has been downloaded and checked, it is withdrawn, or the app can no longer be changed where it is. Before, it was thrown away as the newer download began, so one that failed left nothing to install. It stays too when it could not be unpacked or the app did not quit to be replaced, and Settings says why. A Mac that sleeps just after Install and Restart still installs it. A newer one that is withdrawn while it is downloaded does not replace it. While the app stays open, a check you asked for that had no answer is tried again after six hours, as the daily one was, and so, once, is a download that had none, broke off or took more than an hour, not the next day. (#489)
+- A download the Mac app throws away, as when a newer one replaces it, is removed whole. Before, the `app.asar` in it stayed behind, and the app kept it open until it quit. (#490)
+- Check for Updates… with the Mac app's window closed opens the window on the Updates card, which shows the answer. Before, it answered in a message, and until that was closed the app did nothing else: it read no session, sent no notification and answered no permission request. The card also says when the latest release has no app for this kind of Mac, which it could not read before. (#488)
+- The menu bar names a session on another computer with that computer, as notifications do: `docs-site on devbox`. Before, it and a session of the same name on this computer looked the same. (#491)
+- An `&` in a session's name, or in what it asks, is drawn in the menu bar as it is written. Before, `R&D` showed as `RD`, and `cd api && npm test` as `cd api & npm test`. (#492)
+
 ## 0.2.31 - 2026-11-25
 
 A double click on Allow or Deny answers one request, an allow rule no longer reaches Agent Lookout's own settings by way of a folder above them, and a Claude Code session open in two terminals follows the one that needs you. Waits and notifications hold through restarts, sleep, quiet hours and a clock set back. Other computers are read over SSH with no port opened on this one, and an Oh My Pi tool's approval shows in Needs you.

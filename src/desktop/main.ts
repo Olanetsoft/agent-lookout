@@ -48,6 +48,7 @@
 //
 // `scripts/build-desktop.mjs` bundles this file into `dist-electron/main.cjs`.
 
+import { promises as originalFiles, rmSync } from "original-fs";
 import path from "node:path";
 
 import {
@@ -90,7 +91,7 @@ import { refusedSwitch } from "./process/launchSwitches.ts";
 import { createAppProtocolHandler } from "./protocol/appProtocol.ts";
 import { createAppRoutes } from "./protocol/appRoutes.ts";
 import { bundleOf } from "./updates/install/installLocation.ts";
-import { foundNotice, updateDialog } from "./updates/updateDialog.ts";
+import { foundNotice } from "./updates/foundNotice.ts";
 import { createQuietNotice } from "./updates/quietNotice.ts";
 import { createUpdateRoute } from "./updates/updateRoute.ts";
 import { settingsFile } from "./updates/updateSettings.ts";
@@ -134,9 +135,6 @@ let pluginInstaller: PluginInstaller | null = null;
 
 /** Notifications the app has shown of its own, held so a click on one is still heard. */
 const shownNotices: Notification[] = [];
-
-/** Whether Check for Updates…, with the window closed, waits for an answer or shows one. */
-let answering = false;
 
 /** The app's one window, made again when it was closed. */
 const windows = createWindowShower({
@@ -199,50 +197,15 @@ const foundNotices = createQuietNotice<{ version: string; refusal: InstallRefusa
 });
 
 /**
- * Check for Updates… in the app menu. With the window open, it shows the
- * Updates card in Settings, which shows the answer. With it closed, the answer
- * comes in a dialog, which can install a version that is ready. Chosen again
- * while that answer is on its way or shown, it does nothing, so two dialogs
- * never stack.
+ * Check for Updates… in the app's menus: it shows the Updates card in Settings,
+ * opening the window if it was closed, and the card shows the answer. A message
+ * with no window would hold this whole process, the collector in it, until it
+ * was closed.
  */
 function checkForUpdates(): void {
-  const updates = updater;
-  if (updates === null) return;
-  if (windows.current() !== null) {
-    showWindow(UPDATES_URL);
-    void updates.check();
-    return;
-  }
-  if (answering) return;
-  answering = true;
-  void updates
-    .check()
-    .then(async (status) => {
-      const words = updateDialog(status);
-      const { response } = await dialog.showMessageBox({
-        type: "info",
-        message: words.message,
-        detail: words.detail,
-        buttons: words.buttons.map((button) => button.label),
-        defaultId: 0,
-        cancelId: words.buttons.length - 1,
-      });
-      const choice = words.buttons[response]?.choice;
-      if (choice === "install") {
-        const installed = await updates.install();
-        if (!installed.ok) showWindow(UPDATES_URL);
-      } else if (choice === "settings") {
-        showWindow(UPDATES_URL);
-      } else if (choice === "release") {
-        openOutside(words.releaseUrl);
-      }
-    })
-    .catch((error: unknown) => {
-      log(`Check for Updates… did not work: ${describeError(error)}`);
-    })
-    .finally(() => {
-      answering = false;
-    });
+  if (updater === null) return;
+  showWindow(UPDATES_URL);
+  void updater.check();
 }
 
 function start(): void {
@@ -390,7 +353,10 @@ function start(): void {
         packaged: app.isPackaged,
         bundle: bundleOf(app.getPath("exe")),
         settings: settingsFile(app.getPath("userData")),
+        dataDir: app.getPath("userData"),
         tempDir: app.getPath("temp"),
+        // Electron's own file functions cannot remove an `.asar`.
+        removal: { rm: originalFiles.rm, rmSync },
         onFound: (version, refusal) => foundNotices.found({ version, refusal }),
         quit: () => app.quit(),
         warn: log,
