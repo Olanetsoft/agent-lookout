@@ -361,13 +361,13 @@ describe.skipIf(sqlite === null)("reading a Crush database with the real sqlite3
     test("prints an id and two times, and nothing of a prompt, a setting or a count", async () => {
       const { file } = await makeDatabase([
         sessionSql(),
-        "UPDATE sessions SET prompt_tokens = 1234, completion_tokens = 1234, cost = 12.34;",
+        "UPDATE sessions SET prompt_tokens = 98765432, completion_tokens = 98765432, cost = 12.34;",
       ]);
       const answer = await printed(file, SESSIONS_QUERY);
       expect(answer).not.toContain(PRIVATE_TITLE);
       expect(answer).not.toContain(PRIVATE_WORDS);
       expect(answer).not.toContain("demo-provider");
-      expect(answer).not.toContain("1234");
+      expect(answer).not.toContain("98765432");
       for (const row of JSON.parse(answer) as Record<string, unknown>[]) {
         expect(Object.keys(row).sort()).toEqual(["created_at", "id", "updated_at"]);
       }

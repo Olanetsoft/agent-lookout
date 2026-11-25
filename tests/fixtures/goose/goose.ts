@@ -180,7 +180,7 @@ INSERT INTO sessions (id, name, description, user_set_name, session_type, workin
   updated_at, extension_data, total_tokens, recipe_json, user_recipe_values_json, provider_name,
   model_config_json, system_prompt_override, system_prompt_extras_json, archived_at)
 VALUES (${quoted(id)}, ${quoted(name)}, ${secret}, ${userSetName ? 1 : 0}, ${quoted(sessionType)},
-  ${quoted(workingDir)}, ${createdAt}, ${updatedAt}, ${quoted(`{"secret":"${PRIVATE_WORDS}"}`)}, 1234,
+  ${quoted(workingDir)}, ${createdAt}, ${updatedAt}, ${quoted(`{"secret":"${PRIVATE_WORDS}"}`)}, 98765432,
   ${secret}, ${secret}, 'demo-provider', ${secret}, ${secret}, ${secret}, ${archivedAt});
 INSERT INTO messages (message_id, session_id, role, content_json, created_timestamp, metadata_json)
 VALUES ('msg_1', ${quoted(id)}, 'user', ${quoted(`[{"type":"text","text":"${PRIVATE_WORDS}"}]`)},
