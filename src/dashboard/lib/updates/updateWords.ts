@@ -84,7 +84,15 @@ export function updateWords(status: AppUpdateStatus): UpdateWords {
             ? "Downloaded and checked."
             : `Downloaded and checked. Version ${update.newer} is out too, and is being downloaded.`,
         install: true,
-        notesUrl: update.notesUrl,
+        notesUrl: update.failed === undefined ? update.notesUrl : null,
+        note:
+          update.failed === undefined
+            ? null
+            : {
+                title: `Version ${update.version} could not be installed`,
+                detail: `${sentenceStart(update.failed)}. Press Install and Restart to try once more.`,
+                link: update.notesUrl,
+              },
       };
     case "installing":
       return {

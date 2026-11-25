@@ -326,9 +326,9 @@ describe("the updater, against a release of the test's own", () => {
 
   // Installing is checked on macOS and Linux only, as above.
   test.skipIf(process.platform === "win32")(
-    "an app that has not quit once the helper stops waiting says the install did not work",
+    "an app that has not quit once the helper stops waiting says why, and the version can still be installed",
     async () => {
-      const { updater, data, settings } = await setUp();
+      const { updater, data, started, settings } = await setUp();
       await updater.check();
       await isReady(updater);
 
@@ -342,15 +342,18 @@ describe("the updater, against a release of the test's own", () => {
       } finally {
         vi.useRealTimers();
       }
+      await isReady(updater);
       expect(updater.status().update).toEqual({
-        phase: "failed",
-        step: "install",
-        reason: "Agent Lookout did not quit in time to be replaced",
+        phase: "ready",
         version: "0.2.1",
         notesUrl: expect.stringMatching(/\/releases\/tag\/v0\.2\.1$/),
+        failed: "Agent Lookout did not quit in time to be replaced",
       });
       expect(settings().installingVersion).toBeNull();
-      await vi.waitFor(async () => expect(await readdir(data)).toEqual([]));
+      // What was unpacked is gone, so a helper that still waits has nothing to move in.
+      expect(await readdir(await folderIn(data))).toEqual([ZIP_NAME]);
+      expect((await updater.install()).ok).toBe(true);
+      expect(started).toHaveLength(2);
     },
   );
 
@@ -619,23 +622,213 @@ describe("a version that is ready, and a newer one", () => {
   );
 
   // Installing is checked on macOS and Linux only, as above.
-  test.skipIf(process.platform === "win32")(
-    "an answer that comes while it is being installed changes nothing",
-    async () => {
+  test.skipIf(process.platform === "win32").each([
+    ["it was withdrawn", "0.2.0"],
+    ["a newer one is out", "0.2.2"],
+  ])(
+    "an answer that comes while it is being installed, that %s, changes nothing",
+    async (_what, latest) => {
       const world = await withOneReady();
       world.checks = "hold";
       const checked = world.updater.check();
       await vi.waitFor(() => expect(world.heldChecks).toHaveLength(1));
       expect((await world.updater.install()).ok).toBe(true);
-      // It was withdrawn meanwhile.
-      world.latest = "0.2.0";
+      world.latest = latest;
       world.heldChecks[0]!.answer("answer");
       expect((await checked).update).toMatchObject({ phase: "installing", version: "0.2.1" });
+      expect(world.asked).toBe(1);
       expect(await world.folders()).toHaveLength(1);
       world.quit();
       expect(world.updater.status().version).toBe("0.2.1");
     },
   );
+
+  // Installing is checked on macOS and Linux only, as above.
+  test.skipIf(process.platform === "win32")(
+    "installing it while the newer one is unpacked to be checked installs it, and drops the newer one",
+    async () => {
+      const world = await withOneReady();
+      let answer: ReturnType<typeof world.updater.install> | undefined;
+      world.unpacking = () => {
+        answer ??= world.updater.install();
+      };
+      await world.updater.check();
+      await vi.waitFor(() => expect(answer).toBeDefined());
+      expect((await answer!).status.update).toMatchObject({
+        phase: "installing",
+        version: "0.2.1",
+      });
+      // The newer one's folder goes once it has been unpacked.
+      await vi.waitFor(async () => expect(await world.folders()).toHaveLength(1));
+      await moment(20);
+      expect(updateIn(world)).toMatchObject({ phase: "installing", version: "0.2.1" });
+      world.quit();
+      expect(world.updater.status().version).toBe("0.2.1");
+    },
+  );
+
+  // Installing is checked on macOS and Linux only, as above.
+  test.skipIf(process.platform === "win32")(
+    "a newer one that has come as the ready one is installed is not unpacked",
+    async () => {
+      const world = await withOneReady();
+      world.downloads = "hold";
+      await world.updater.check();
+      let unpacked = 0;
+      world.unpacking = () => {
+        unpacked += 1;
+      };
+      await vi.waitFor(() => expect(world.heldDownloads).toHaveLength(1));
+      world.heldDownloads[0]!.answer("whole");
+      expect((await world.updater.install()).ok).toBe(true);
+      await vi.waitFor(async () => expect(await world.folders()).toHaveLength(1));
+      await moment(20);
+      // The one that is installed was.
+      expect(unpacked).toBe(1);
+    },
+  );
+
+  /** What can keep an install from beginning, once. */
+  const IN_THE_WAY: Record<string, (world: World) => Promise<() => void>> = {
+    "the download could not be unpacked": async (world) => {
+      world.unpacking = () => {
+        throw new Error("no space is left");
+      };
+      return () => {
+        world.unpacking = () => {};
+      };
+    },
+    "the helper that replaces the app could not be started": async (world) => {
+      world.helperStarts = false;
+      return () => {
+        world.helperStarts = true;
+      };
+    },
+    // Nowhere to put the old app.
+    "the helper that replaces the app could not be started: no folder": async (world) => {
+      await writeFile(path.join(path.dirname((await world.zip())!), "previous"), "in the way");
+      return () => {};
+    },
+  };
+
+  // Installing is checked on macOS and Linux only, as above.
+  test.skipIf(process.platform === "win32").each(Object.keys(IN_THE_WAY))(
+    "an install that does not begin leaves it ready, with why, and the newer one is downloaded all the same: %s",
+    async (what) => {
+      const world = await withOneReady();
+      world.downloads = "hold";
+      await world.updater.check();
+      await vi.waitFor(() => expect(world.heldDownloads).toHaveLength(1));
+      const goes = await IN_THE_WAY[what]!(world);
+      const [reason] = what.split(":");
+
+      const answer = await world.updater.install();
+      expect(answer.ok).toBe(false);
+      expect(answer.status.update).toEqual({
+        phase: "ready",
+        version: "0.2.1",
+        notesUrl: "https://releases.invalid/notes/0.2.1",
+        newer: "0.2.2",
+        failed: reason,
+      });
+      expect(world.log).toEqual([
+        `Version 0.2.1 of Agent Lookout could not be installed: ${reason}.`,
+      ]);
+      expect(world.helper).toBeNull();
+      expect(world.settings.installingVersion).toBeNull();
+      // Its zip alone waits, beside what there is of the newer one.
+      const folder = path.dirname((await world.zip())!);
+      await vi.waitFor(async () => expect(await world.folders()).toHaveLength(2));
+      const waits = (await world.folders()).map((name) => path.join(world.data, name));
+      const zips = await Promise.all(waits.map((name) => readdir(name)));
+      expect(zips.flat()).toEqual([path.basename((await world.zip())!)]);
+      expect(waits).toContain(folder);
+
+      // What was in the way goes, and the person presses it again.
+      goes();
+      expect((await world.updater.install()).status.update).toEqual({
+        phase: "installing",
+        version: "0.2.1",
+        notesUrl: "https://releases.invalid/notes/0.2.1",
+      });
+      world.quit();
+      expect(world.updater.status().version).toBe("0.2.1");
+    },
+  );
+
+  // Installing is checked on macOS and Linux only, as above.
+  test.skipIf(process.platform === "win32").each([
+    ["the helper did not start", "the helper that replaces the app could not be started"],
+    ["the app did not quit in time", "Agent Lookout did not quit in time to be replaced"],
+  ])("quitting once %s leaves nothing for the helper", async (_what, reason) => {
+    const world = await withOneReady();
+    world.helperStarts = reason.startsWith("Agent Lookout");
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      await world.updater.install();
+      vi.advanceTimersByTime(INSTALL_GIVE_UP_MS);
+    } finally {
+      vi.useRealTimers();
+    }
+    await isAt(world, { phase: "ready", version: "0.2.1", failed: reason });
+    expect(world.settings.installingVersion).toBeNull();
+    world.updater.stop();
+    expect(await world.folders()).toEqual([]);
+  });
+
+  test("an install that does not begin stays said through checks, until a newer one is ready", async () => {
+    const world = await withOneReady();
+    world.latest = "0.2.1";
+    world.unpacking = () => {
+      throw new Error("no space is left");
+    };
+    await world.updater.install();
+    world.unpacking = () => {};
+    const pass = await hoursOf(world);
+    await pass(48);
+    await world.updater.check();
+    expect(updateIn(world)).toMatchObject({
+      phase: "ready",
+      version: "0.2.1",
+      failed: "the download could not be unpacked",
+    });
+    expect(world.asked).toBe(1);
+    world.latest = "0.2.2";
+    await world.updater.check();
+    await isAt(world, { phase: "ready", version: "0.2.2" });
+    expect(updateIn(world)).not.toHaveProperty("failed");
+  });
+
+  test("quitting as a version that came is checked leaves nothing, also of what is written after", async () => {
+    const world = await makeUpdateWorld();
+    world.latest = "0.2.1";
+    const unpacking = new Promise<void>((resolve) => {
+      world.unpacking = () => {
+        world.updater.stop();
+        resolve();
+      };
+    });
+    await world.updater.check();
+    await unpacking;
+    await moment(20);
+    await vi.waitFor(async () => expect(await world.folders()).toEqual([]));
+    expect(updateIn(world).phase).toBe("downloading");
+    expect(world.log).toEqual([]);
+  });
+
+  test("a check that finds it can no longer be installed where the app is removes it", async () => {
+    const world = await withOneReady();
+    world.writable = false;
+    expect((await world.updater.check()).update).toMatchObject({
+      phase: "cannot-install",
+      version: "0.2.2",
+      refusal: "read-only",
+    });
+    expect(await world.folders()).toEqual([]);
+    world.writable = true;
+    expect((await world.updater.install()).ok).toBe(false);
+    expect(world.helper).toBeNull();
+  });
 
   test("quitting while it is unpacked leaves nothing, also of what is written after", async () => {
     const world = await withOneReady();
@@ -679,6 +872,14 @@ describe("a version that is ready, and a newer one", () => {
       expect(await world.folders()).toEqual([]);
     },
   );
+
+  test("quitting as a check reads the one that is ready asks nothing", async () => {
+    const world = await withOneReady();
+    const checked = world.updater.check();
+    world.updater.stop();
+    await checked;
+    expect(world.looked).toBe(1);
+  });
 
   test("an answer that comes once the app has quit downloads nothing", async () => {
     const world = await withOneReady();
@@ -789,6 +990,55 @@ describe("a version that is ready, and a newer one", () => {
     await vi.waitFor(async () => expect(await world.folders()).toEqual([]));
   });
 
+  test("a newer one withdrawn while it is downloaded does not take its place", async () => {
+    const world = await withOneReady();
+    world.downloads = "hold";
+    await world.updater.check();
+    await vi.waitFor(() => expect(world.heldDownloads).toHaveLength(1));
+    world.latest = "0.2.1";
+    const answer = await world.updater.check();
+    expect(answer.update).toEqual({
+      phase: "ready",
+      version: "0.2.1",
+      notesUrl: "https://releases.invalid/notes/0.2.1",
+    });
+    expect(world.heldDownloads).toEqual([]);
+    await vi.waitFor(async () => expect(await world.folders()).toHaveLength(1));
+    expect(path.basename((await world.zip())!)).toContain("0.2.1");
+    expect(world.asked).toBe(2);
+    expect(world.log).toEqual([]);
+  });
+
+  test("one withdrawn while it is downloaded stops, and the latest is downloaded at once", async () => {
+    const world = await makeUpdateWorld();
+    onTestFinished(() => world.updater.stop());
+    world.latest = "0.2.3";
+    world.downloads = "hold";
+    await world.updater.check();
+    await vi.waitFor(() => expect(world.heldDownloads).toHaveLength(1));
+    world.downloads = "whole";
+    world.latest = "0.2.2";
+    expect((await world.updater.check()).update).toMatchObject({
+      phase: "downloading",
+      version: "0.2.2",
+    });
+    expect(world.heldDownloads).toEqual([]);
+    await isAt(world, { phase: "ready", version: "0.2.2" });
+    await vi.waitFor(async () => expect(await world.folders()).toHaveLength(1));
+
+    // A newer one that comes out while another is downloaded leaves that to finish.
+    world.downloads = "hold";
+    world.latest = "0.2.4";
+    await world.updater.check();
+    world.latest = "0.2.5";
+    expect((await world.updater.check()).update).toMatchObject({
+      phase: "ready",
+      version: "0.2.2",
+      newer: "0.2.4",
+    });
+    expect(world.heldDownloads).toHaveLength(1);
+  });
+
   /** Starts the app's own checks, and moves its clock on by hours. */
   async function hoursOf(world: World) {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
@@ -871,22 +1121,22 @@ describe("a version that is ready, and a newer one", () => {
     },
   );
 
-  test.each(["wrong-hash", "wrong-size", "too-large", "not-found", "not-saved"] as const)(
-    "a download that failed as %s is tried again a day later, not sooner",
-    async (failure) => {
-      const world = await makeUpdateWorld();
-      onTestFinished(() => world.updater.stop());
-      world.latest = "0.2.1";
-      world.downloads = failure;
-      await world.updater.check();
-      await isAt(world, { phase: "failed", step: "download", version: "0.2.1" });
-      const pass = await hoursOf(world);
-      await pass(23);
-      expect(world.asked).toBe(1);
-      await pass(1);
-      await vi.waitFor(() => expect(world.asked).toBe(2));
-    },
-  );
+  test.each([
+    ...(["wrong-hash", "wrong-size", "too-large", "not-found", "not-saved"] as const),
+    ...(["refused", "too-many-redirects"] as const),
+  ])("a download that failed as %s is tried again a day later, not sooner", async (failure) => {
+    const world = await makeUpdateWorld();
+    onTestFinished(() => world.updater.stop());
+    world.latest = "0.2.1";
+    world.downloads = failure;
+    await world.updater.check();
+    await isAt(world, { phase: "failed", step: "download", version: "0.2.1" });
+    const pass = await hoursOf(world);
+    await pass(23);
+    expect(world.asked).toBe(1);
+    await pass(1);
+    await vi.waitFor(() => expect(world.asked).toBe(2));
+  });
 });
 
 // What is installed is a Mac app's bundle, by a Mac's paths, as above.
@@ -903,6 +1153,7 @@ test.skipIf(process.platform === "win32")(
     for (const state of [
       ...["ready", "downloading", "installing", "failed", "up-to-date", "cannot-install"],
       ...["a newer one coming", "a newer one ready", "installed", "put back"],
+      "ready after a failure",
     ]) {
       expect([...met]).toContain(state);
     }

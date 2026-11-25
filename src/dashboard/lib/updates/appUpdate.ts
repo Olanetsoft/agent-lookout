@@ -77,6 +77,7 @@ function readPhase(value: unknown): UpdatePhase | null {
             version: value.version,
             notesUrl: value.notesUrl,
             ...(isText(value.newer) && { newer: value.newer }),
+            ...(isText(value.failed) && { failed: value.failed }),
           }
         : null;
     case "installing":

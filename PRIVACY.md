@@ -1330,7 +1330,7 @@ Each request holds the address above and a `User-Agent` header, `Agent-Lookout/`
 
 ### How often
 
-A short while after the app starts, if a day has passed since the last check that had an answer, and then once a day while it runs. A check or a download that had no answer, or broke off, because the Mac was offline for instance, is tried again after six hours. Check for Updates…, in the Agent Lookout menu and in Settings, checks at once, whether or not the automatic check is on.
+A short while after the app starts, if a day has passed since the last check that had an answer, and then once a day while it runs. A check or a download that had no answer, or broke off, because the Mac was offline for instance, is tried again after six hours while the app stays open. When the app is opened again before then, such a download is tried with the next daily check. Check for Updates…, in the Agent Lookout menu and in Settings, checks at once, whether or not the automatic check is on.
 
 ### Turning it off
 

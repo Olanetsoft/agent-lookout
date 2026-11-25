@@ -62,11 +62,12 @@ export type InstallRefusal = "translocated" | "disk-image" | "read-only" | "deve
  *                 of Mac, so there is nothing to offer here either
  * downloading     a newer version was found and is being downloaded and checked
  * ready           it is downloaded, checked and waits for Install and Restart,
- *                 also while a newer one is downloaded
+ *                 also while a newer one is downloaded, and after an install
+ *                 that did not begin
  * installing      Install and Restart was pressed, and the app is quitting
  * cannot-install  a newer version was found, and cannot be installed from here
- * failed          the check, the download or the start of the install did not
- *                 work, with why in words
+ * failed          the check, the download or the install did not work, with
+ *                 why in words
  */
 export type UpdatePhase =
   | { phase: "idle" }
@@ -90,6 +91,8 @@ export type UpdatePhase =
       notesUrl: string;
       /** The newer version that is being downloaded, and takes its place once it is ready. */
       newer?: string;
+      /** Why Install and Restart did not install it when it was last pressed, as the end of a sentence. */
+      failed?: string;
     }
   | { phase: "installing"; version: string; notesUrl: string }
   | { phase: "cannot-install"; version: string; notesUrl: string; refusal: InstallRefusal }

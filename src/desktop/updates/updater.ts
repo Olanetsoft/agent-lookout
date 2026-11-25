@@ -18,12 +18,13 @@
 //    at each check, and when the person presses Install and Restart. One that
 //    is no longer whole is never installed: it is downloaded again, or the
 //    newer one that is out is. One that is ready stays, and can be installed,
-//    until a newer one has been downloaded and checked.
+//    until a newer one has been downloaded and checked, or it is withdrawn.
 // 4. Only when the person presses Install and Restart does it unpack the zip
 //    and start the helper that puts the new bundle in the running one's place
 //    once the app has quit, and opens it (`install/installHelper.ts`), and then
 //    it quits. It notes the version first, so the copy that opens next, the
-//    new one or the old one put back, can say whether the install worked.
+//    new one or the old one put back, can say whether the install worked. When
+//    it comes to none of that, the version is still ready, and it says why.
 //
 // Where the app cannot change its own bundle, it says so and offers the
 // release page instead (`install/installLocation.ts`). A development run
@@ -36,7 +37,7 @@
 // release on a server of the test's own and fake timers for the schedule.
 
 import { accessSync, constants } from "node:fs";
-import { mkdir, mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir } from "node:fs/promises";
 import path from "node:path";
 
 import type { AppUpdateStatus, InstallRefusal, UpdatePhase } from "../../core/appUpdate.ts";
@@ -223,6 +224,8 @@ interface Download {
   /** The updater's folder for it, and the zip in that folder, once it is made. */
   folder: string;
   file: string;
+  /** Why it was not installed when that was last asked. */
+  failed?: string;
 }
 
 /** A download, one ready, or an install under way, which a check leaves as it is. */
@@ -305,6 +308,7 @@ export function createUpdater(options: UpdaterOptions): Updater {
     if (waiting !== null) {
       phase = { phase: "ready", version: waiting.version, notesUrl: waiting.notesUrl };
       if (coming !== null) phase.newer = coming.version;
+      if (waiting.failed !== undefined) phase.failed = waiting.failed;
     } else if (coming !== null) {
       const { version, notesUrl, received, zip } = coming;
       phase = { phase: "downloading", version, notesUrl, received, total: zip.size };
@@ -387,6 +391,14 @@ export function createUpdater(options: UpdaterOptions): Updater {
     return { app };
   }
 
+  /** Removes all of a download but its zip, which can be unpacked again. */
+  async function keepZip({ folder, zip }: Download): Promise<void> {
+    const names = await readdir(folder).catch(() => []);
+    for (const name of names) {
+      if (name !== zip.name) await folders.remove(path.join(folder, name));
+    }
+  }
+
   /** Downloads a version into a folder of its own and checks it. Gives why it could not be, or null. */
   async function fetchAndCheck(next: Download): Promise<Fault | null> {
     try {
@@ -411,7 +423,7 @@ export function createUpdater(options: UpdaterOptions): Updater {
     const unpacked = await unpack(next);
     if ("reason" in unpacked) return unpacked;
     // It is unpacked again to be installed. Only the zip waits.
-    await folders.remove(path.dirname(unpacked.app));
+    await keepZip(next);
     return null;
   }
 
@@ -472,7 +484,7 @@ export function createUpdater(options: UpdaterOptions): Updater {
   async function look(automatic: boolean): Promise<AppUpdateStatus> {
     if (phase.phase === "installing") return status();
     await checkReady();
-    if (current().phase === "installing") return status();
+    if (stopped || current().phase === "installing") return status();
     const before = phase;
     // An install that did not work stays said through the checks the app makes
     // by itself, until the person checks or a newer version is out.
@@ -517,8 +529,15 @@ export function createUpdater(options: UpdaterOptions): Updater {
       return status();
     }
 
-    // A download is left to finish, of another version too. The next check finds this one.
-    if (coming !== null || current().phase === "installing") return status();
+    if (current().phase === "installing") return status();
+    // A version withdrawn while it is downloaded is not downloaded to its end.
+    if (coming !== null && isOffered(coming.version, offered)) {
+      cancel();
+      phase = { phase: "idle" };
+      say();
+    }
+    // Another download is left to finish. The next check finds this version.
+    if (coming !== null) return status();
     if (waiting?.version === offered) return status();
     if (held !== null && held.version === offered) return status();
 
@@ -617,8 +636,12 @@ export function createUpdater(options: UpdaterOptions): Updater {
         return refused();
       }
       const fail = async (reason: string): Promise<InstallAnswer> => {
+        // Its zip is whole, so it is still ready. What was unpacked of it goes.
+        await keepZip(ready);
+        ready.failed = reason;
         phase = failed("install", reason, version);
-        await discard();
+        say();
+        if (newer !== null) void download(newer.version, newer.notesUrl, newer.zip);
         return refused();
       };
       const unpacked = await unpack(ready);

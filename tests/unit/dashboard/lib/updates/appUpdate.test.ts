@@ -57,6 +57,7 @@ describe("readUpdateStatus", () => {
       },
       { phase: "ready", version: "0.2.1", notesUrl: NOTES },
       { phase: "ready", version: "0.2.1", notesUrl: NOTES, newer: "0.2.2" },
+      { phase: "ready", version: "0.2.1", notesUrl: NOTES, failed: "it could not be unpacked" },
       { phase: "installing", version: "0.2.1", notesUrl: NOTES },
       { phase: "cannot-install", version: "0.2.1", notesUrl: NOTES, refusal: "translocated" },
       {

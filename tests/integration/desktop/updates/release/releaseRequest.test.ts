@@ -4,7 +4,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import path from "node:path";
 
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import {
   downloadFile,
@@ -247,6 +247,31 @@ describe("downloadFile", () => {
       }),
     ).toEqual({ ok: false, failure: "timed-out" });
     expect(existsSync(file)).toBe(true);
+  });
+
+  test("a download that is stopped ends at once, and so does its connection", async () => {
+    let closed = false;
+    const releases = await server((_req, res) => {
+      res.on("close", () => {
+        closed = true;
+      });
+      res.writeHead(200);
+      res.write(BYTES.subarray(0, 100));
+      // And no more, for now.
+    });
+    const file = path.join(await tempDir(), FILE.name);
+    const stop = new AbortController();
+    const answer = downloadFile(`${releases.origin}/zip`, file, FILE, {
+      userAgent: USER_AGENT,
+      allow: allowOnly(releases.host),
+      // Not for want of bytes.
+      timeoutMs: 600_000,
+      signal: stop.signal,
+      // As soon as any of it has come.
+      onProgress: () => stop.abort(),
+    });
+    expect((await answer).ok).toBe(false);
+    await vi.waitFor(() => expect(closed).toBe(true));
   });
 
   test("a download that keeps coming, too slowly to end in time, is given up as too slow", async () => {

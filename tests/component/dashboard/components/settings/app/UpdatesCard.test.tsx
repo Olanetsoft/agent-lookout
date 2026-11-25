@@ -227,6 +227,26 @@ test("says it is installing as soon as Install and Restart is pressed, and that 
   );
 });
 
+test("a version that could not be installed says why, and can be installed still", async () => {
+  current = status({ phase: "ready", version: "0.2.1", notesUrl: NOTES });
+  afterInstall = {
+    phase: "ready",
+    version: "0.2.1",
+    notesUrl: NOTES,
+    failed: "the download could not be unpacked",
+  };
+  const screen = await render(<UpdatesCard />);
+  const press = card(screen).getByRole("button", { name: "Install and Restart" });
+  await press.click();
+  await expect
+    .element(card(screen).getByText("Version 0.2.1 could not be installed"))
+    .toBeVisible();
+  expect(card(screen).element().textContent).toContain(
+    "The download could not be unpacked. Press Install and Restart to try once more.",
+  );
+  await expect.element(press).toBeEnabled();
+});
+
 test("a double click on Check for Updates… does not install the version it finds ready", async () => {
   current = status({
     phase: "downloading",

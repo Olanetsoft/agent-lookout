@@ -115,6 +115,27 @@ describe("updateWords", () => {
     expect(words.install).toBe(true);
   });
 
+  test("a version that is ready and was not installed says why, and can be installed still", () => {
+    const words = updateWords(
+      status({
+        phase: "ready",
+        version: "0.2.1",
+        notesUrl: NOTES,
+        failed: "the download could not be unpacked",
+      }),
+    );
+    expect(words.state).toBe("Version 0.2.1 is available.");
+    expect(words.detail).toBe("Downloaded and checked.");
+    expect(words.install).toBe(true);
+    expect(words.note).toEqual({
+      title: "Version 0.2.1 could not be installed",
+      detail: "The download could not be unpacked. Press Install and Restart to try once more.",
+      link: NOTES,
+    });
+    // The note links the release page, so nothing else links it again.
+    expect(words.notesUrl).toBeNull();
+  });
+
   test("a version that cannot be installed here says why and links its release page", () => {
     const words = updateWords(
       status({

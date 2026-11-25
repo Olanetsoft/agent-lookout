@@ -8,7 +8,7 @@ import path from "node:path";
 import { expect, vi } from "vitest";
 
 import { HELPER_WAIT_MS } from "@desktop/updates/install/installHelper";
-import { FIRST_CHECK_DELAY_MS } from "@desktop/updates/updater";
+import { FIRST_CHECK_DELAY_MS, INSTALL_GIVE_UP_MS } from "@desktop/updates/updater";
 
 import { makeUpdateWorld, versionIn } from "./updateWorld";
 
@@ -50,6 +50,8 @@ export async function playHistory(seed: number, met: Set<string>): Promise<void>
   let openFor = 0;
   /** Those it was sweeping when it quit. */
   const swept = new Set<string>();
+  /** The helper that waits for the app to quit, and how long it has. */
+  let waiter = world.helper;
   let waited = 0;
   /** The version that was ready once things settled, and whether something since may take it away. */
   let kept: string | null = null;
@@ -78,8 +80,10 @@ export async function playHistory(seed: number, met: Set<string>): Promise<void>
   const pass = (ms: number) => {
     world.now += ms;
     openFor += ms;
-    // The helper waits for the app to quit for two minutes, and then ends.
-    waited = world.helper === null ? 0 : waited + ms;
+    // A helper waits for the app to quit for two minutes, and then ends.
+    if (world.helper !== waiter) waited = 0;
+    waiter = world.helper;
+    if (waiter !== null) waited += ms;
     if (waited >= HELPER_WAIT_MS) world.helper = null;
     vi.advanceTimersByTime(ms);
   };
@@ -138,7 +142,8 @@ export async function playHistory(seed: number, met: Set<string>): Promise<void>
       swept.clear();
     }
     const update = phase();
-    const ready = update.phase === "ready" ? update.version : null;
+    // One that is being installed is ready again if that does not begin.
+    const ready = update.phase === "ready" || update.phase === "installing" ? update.version : null;
     const stays = !mayGo && world.writable && patch(newestOut) >= patch(kept ?? "0.2.0");
     if (kept !== null && stays) {
       expect(ready, where()).not.toBeNull();
@@ -146,6 +151,7 @@ export async function playHistory(seed: number, met: Set<string>): Promise<void>
     }
     met.add(update.phase);
     if (update.phase === "ready" && update.newer !== undefined) met.add("a newer one coming");
+    if (update.phase === "ready" && update.failed !== undefined) met.add("ready after a failure");
     if (update.phase === "downloading" && update.lost !== undefined) met.add("downloaded again");
     if (kept !== null && ready !== null && ready !== kept) met.add("a newer one ready");
     kept = ready;
@@ -199,13 +205,16 @@ export async function playHistory(seed: number, met: Set<string>): Promise<void>
       left.delete(path.basename(path.dirname(zip)));
       await rm(path.dirname(zip), { recursive: true, force: true }).catch(() => {});
     },
-    install: () => {
-      mayGo = true;
+    install: () => void world.updater.install(),
+    "install twice": () => {
+      void world.updater.install();
       void world.updater.install();
     },
-    "install twice": () => {
-      mayGo = true;
-      void world.updater.install();
+    "install, which cannot be unpacked": () => {
+      world.unpacking = () => {
+        world.unpacking = () => {};
+        throw new Error("no space is left");
+      };
       void world.updater.install();
     },
     quit: async () => {
@@ -214,8 +223,9 @@ export async function playHistory(seed: number, met: Set<string>): Promise<void>
       const plan = world.helper;
       const update = phase();
       const whole = plan !== null && versionIn(plan.replacement) !== null;
-      // The folder is the helper's, also when it has given up by now.
-      const helped = update.phase === "installing" && (plan !== null || waited >= HELPER_WAIT_MS);
+      // The folder is the helper's, also when it has given up by now, until the updater has too.
+      const gaveUp = waited >= HELPER_WAIT_MS && waited < INSTALL_GIVE_UP_MS;
+      const helped = update.phase === "installing" && (plan !== null || gaveUp);
       const there = helped
         ? (await world.folders()).find((name) => name === handedOver)
         : undefined;
@@ -240,7 +250,7 @@ export async function playHistory(seed: number, met: Set<string>): Promise<void>
       world.writable = !world.writable;
     },
     "the helper changes": () => {
-      world.helperStarts = random() < 0.8;
+      world.helperStarts = random() < 0.7;
       world.newOpens = random() < 0.7;
     },
   };
@@ -248,6 +258,7 @@ export async function playHistory(seed: number, met: Set<string>): Promise<void>
   // What moves things on comes up more than the rest.
   names.push("release", "release", "check", "check", "check", "a check is answered");
   names.push("a download is answered", "a download is answered", "install", "install");
+  names.push("install, which cannot be unpacked");
 
   world.latest = "0.2.1";
   world.downloads = pick(["whole", "hold"]);
@@ -288,7 +299,7 @@ export async function playHistory(seed: number, met: Set<string>): Promise<void>
     opened();
   }
   Object.assign(world, { checks: "answer", downloads: "whole", writable: true });
-  Object.assign(world, { helperStarts: true, newOpens: true });
+  Object.assign(world, { helperStarts: true, newOpens: true, unpacking: () => {} });
   for (const held of [...world.heldChecks]) held.answer("answer");
   for (const held of [...world.heldDownloads]) held.answer("whole");
   mayGo = true;
