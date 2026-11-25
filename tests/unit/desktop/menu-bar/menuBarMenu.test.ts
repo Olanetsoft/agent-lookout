@@ -3,6 +3,7 @@ import { describe, expect, test, vi } from "vitest";
 
 import { shownAsk } from "@collector/answers/shownAsk";
 import type { Session, SourceState } from "@core/sessions/session";
+import { fixUpWindowsStyleLabel } from "@desktop/answers/answerOffer";
 import {
   MAX_MENU_DETAIL_LENGTH,
   MAX_MENU_NAME_LENGTH,
@@ -431,6 +432,55 @@ describe("the menu", () => {
     ]);
   });
 
+  test.each([
+    "R&D dashboard",
+    "AT&T",
+    "a && b",
+    "sleep 5 & wait",
+    "checkout (&v) flow",
+    "one (&) only",
+    "(&&) and (&&&)",
+    "&",
+    "ends with &",
+  ])("draws %s as it is written, as a name, in brackets and as what a session asks", (text) => {
+    const pair = [
+      waiting(text, 2 * MINUTE, { project: text, waitingText: text }),
+      waiting(text, MINUTE, { id: "claude-code:2", project: "storefront" }),
+    ];
+    const did = actions();
+    const [, item, other] = menuBarTemplate(snapshot(pair), NOW, did);
+    const drawn = (label: string | undefined) => fixUpWindowsStyleLabel(label ?? "");
+    expect(drawn(item?.label)).toBe(`${text} (${text}) · 2m 00s`);
+    expect(drawn(other?.label)).toBe(`${text} (storefront) · 1m 00s`);
+    expect(drawn(item?.sublabel)).toBe(`Waiting for permission: ${text}`);
+    // The tooltip is drawn as it is given.
+    expect(item?.toolTip).toBe(`Waiting for permission: ${text}`);
+  });
+
+  test("cuts a name and what a session asks by what is drawn, whatever the & in them takes", () => {
+    const [, item] = menuBarTemplate(
+      snapshot([waiting("&".repeat(60), MINUTE, { waitingText: "&".repeat(80) })]),
+      NOW,
+      actions(),
+    );
+    const [name] = fixUpWindowsStyleLabel(item?.label ?? "").split(" · ");
+    expect(name).toBe(`${"&".repeat(MAX_MENU_NAME_LENGTH - 1)}…`);
+    const under = fixUpWindowsStyleLabel(item?.sublabel ?? "");
+    expect(Array.from(under)).toHaveLength(MAX_MENU_DETAIL_LENGTH);
+  });
+
+  test("two names that differ by an & alone are told apart by it", () => {
+    const template = menuBarTemplate(
+      snapshot([waiting("AT&T", 2 * MINUTE), waiting("ATT", MINUTE)]),
+      NOW,
+      actions(),
+    );
+    expect(template.slice(1, 3).map((item) => fixUpWindowsStyleLabel(item.label ?? ""))).toEqual([
+      "AT&T · 2m 00s",
+      "ATT · 1m 00s",
+    ]);
+  });
+
   test("a wait whose start is a moment ahead of the clock reads as no time at all", () => {
     const [, item] = menuBarTemplate(snapshot([waiting("ahead", -5 * SECOND)]), NOW, actions());
     expect(item?.label).toBe("ahead · 0s");
@@ -646,6 +696,18 @@ describe("a session whose permission request is held", () => {
       menuBarTemplate(snapshot([asking(ask("Bash", { command: "a && b" }))]), NOW, actions()),
     );
     expect(submenu[3]?.label).toBe("a &&&& b");
+  });
+
+  test("a press goes with the session's name as it is written", () => {
+    const chosen = actions();
+    const held = ask("Bash", { command: "npm test" });
+    const template = menuBarTemplate(
+      snapshot([waiting("R&D", MINUTE, { ask: held })]),
+      NOW,
+      chosen,
+    );
+    click(submenuOf(template).find((item) => item.label === "Deny"));
+    expect(chosen.answer.mock.calls[0]?.[0].name).toBe("R&D");
   });
 
   test("the menu is made again for a newer request, and with what the last press came to", () => {

@@ -312,6 +312,15 @@ function askItems(
 }
 
 /**
+ * A name, or the line under it, as a label the menu draws as it is written,
+ * but for `...`, drawn as `…`. `menuText` doubles each `&`, and `(&)`, which
+ * that would leave to be dropped whole, takes a third, dropped in its place.
+ */
+function asWritten(text: string): string {
+  return menuText(text).replaceAll("(&&)", "(&&&)");
+}
+
+/**
  * A session's item: its name and how long it has waited, "checkout-flow ·
  * 4m 12s", with the reason and what it is asking under it, cut short, and the
  * whole of that when the pointer rests on it, for a Mac that does not show the
@@ -327,8 +336,8 @@ function sessionItem(
 ): MenuItemConstructorOptions {
   const waited = listing.statusSince === null ? null : formatDuration(now - listing.statusSince);
   const item = {
-    label: waited === null ? listing.name : `${listing.name} · ${waited}`,
-    sublabel: listing.sublabel,
+    label: asWritten(waited === null ? listing.name : `${listing.name} · ${waited}`),
+    sublabel: asWritten(listing.sublabel),
     toolTip: listing.toolTip,
   };
   return listing.ask === undefined
