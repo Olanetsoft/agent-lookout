@@ -84,7 +84,7 @@ export const TICK_MS = 60 * 60 * 1000;
 
 /**
  * How long after a check that had no answer the app tries again by itself, and,
- * once for a version, after a download that had none.
+ * once for a version until the person checks, after a download that had none.
  */
 export const RETRY_AFTER_MS = 6 * 60 * 60 * 1000;
 
@@ -109,7 +109,7 @@ export interface Updater {
   check(): Promise<AppUpdateStatus>;
   /** The switch in Settings: whether the app looks by itself, about once a day. */
   setAutomatic(on: boolean): AppUpdateStatus;
-  /** Installs the version that is ready, and restarts. Refused when none is ready or the app cannot be changed where it is. */
+  /** Installs the version that is ready, and restarts. Refused, with a status that says why, when it is not installed. */
   install(): Promise<InstallAnswer>;
   /** Begins looking by itself, at start and then about once a day, while the switch is on. */
   start(): void;
@@ -239,6 +239,15 @@ function underWay(phase: UpdatePhase): boolean {
   return phase.phase === "downloading" || phase.phase === "ready" || phase.phase === "installing";
 }
 
+/** Whether a check had no answer, or one that says nothing of a version for this Mac. */
+function foundNothing(phase: UpdatePhase): boolean {
+  return (
+    phase.phase === "no-release" ||
+    phase.phase === "not-for-this-mac" ||
+    (phase.phase === "failed" && phase.step === "check")
+  );
+}
+
 export function createUpdater(options: UpdaterOptions): Updater {
   const endpoints = options.endpoints ?? GITHUB_RELEASES;
   const now = options.now ?? Date.now;
@@ -261,7 +270,7 @@ export function createUpdater(options: UpdaterOptions): Updater {
   let looking = false;
   /** Whether the last check had no answer, or the download it began had none, which is tried again sooner. */
   let unanswered = false;
-  /** The version whose last download had no answer. Its next goes back to the daily check. */
+  /** The version whose download had no answer, which has had its sooner try, until the person checks. */
   let unansweredVersion: string | null = null;
   const folders = createUpdateFolders(options);
   /** The version being downloaded. */
@@ -588,6 +597,8 @@ export function createUpdater(options: UpdaterOptions): Updater {
   const check = (automatic: boolean): Promise<AppUpdateStatus> => {
     if (!automatic) {
       asked = true;
+      // A download it finds has a sooner try of its own.
+      unansweredVersion = null;
       // What the check under way left said makes way for the person's.
       if (looking && phase.phase === "failed") phase = { phase: "checking" };
     }
@@ -658,6 +669,10 @@ export function createUpdater(options: UpdaterOptions): Updater {
         // Another version may be out by now, and this one gone from its address.
         phase = { phase: "checking" };
         await check(false);
+        // The download this stopped begins again, unless the check found another.
+        if (newer !== null && foundNothing(current())) {
+          void download(newer.version, newer.notesUrl, newer.zip);
+        }
         return refused();
       }
       const fail = async (reason: string): Promise<InstallAnswer> => {

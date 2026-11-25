@@ -1334,7 +1334,7 @@ A short while after the app starts, if a day has passed since the last check tha
 
 ### Turning it off
 
-Settings has an Updates card, in the Mac app only, with the switch Check for updates automatically. Turned off, the app asks GitHub nothing until you press Check for Updates…, or Install and Restart: that asks when the download is no longer whole, and begins a newer version's download again when it stopped one and nothing is installed. It is on until you turn it off.
+Settings has an Updates card, in the Mac app only, with the switch Check for updates automatically. Turned off, the app asks GitHub nothing until you press Check for Updates…, or Install and Restart: that asks when the download is no longer whole, and begins a newer version's download again when it stopped one and nothing is installed, unless it finds that one withdrawn or a newer one for this Mac. It is on until you turn it off.
 
 ### Installing
 

@@ -19,14 +19,14 @@ import { tempDir } from "@tests/support/node/tempFiles";
 
 const APP_ID = "dev.agentlookout.app";
 
-const zipName = (version: string) => `Agent-Lookout-${version}-mac-arm64.zip`;
+const zipName = (version: string, arch = "arm64") => `Agent-Lookout-${version}-mac-${arch}.zip`;
 
 /** The few bytes a release's zip is here, which the stand-in ditto turns into a bundle. */
 const zipBytes = (version: string) => Buffer.from(JSON.stringify({ version }).padEnd(200));
 
-const manifestOf = (version: string) => `version: ${version}
+const manifestOf = (version: string, arch: string) => `version: ${version}
 files:
-  - url: ${zipName(version)}
+  - url: ${zipName(version, arch)}
     sha512: ${createHash("sha512").update(zipBytes(version)).digest("base64")}
     size: ${zipBytes(version).byteLength}
 `;
@@ -74,6 +74,8 @@ export interface UpdateWorld {
   readonly bundle: string;
   /** The latest release, or null when it has no Mac app. */
   latest: string | null;
+  /** The kind of Mac that app is for. This one is `arm64`. */
+  latestFor: "arm64" | "x64";
   /** What a check is answered with: the latest release, no answer, or whatever the test says later. */
   checks: "answer" | "fail" | "hold";
   /** What a download is answered with. */
@@ -94,6 +96,8 @@ export interface UpdateWorld {
   /** What the helper was started with, until the app quits. */
   helper: { bundle: string; replacement: string; aside: string } | null;
   readonly log: string[];
+  /** The versions its own checks told of. */
+  readonly told: string[];
   now: number;
   settings: UpdateSettings;
   /** The updater's folders, in the folder of user data. */
@@ -125,6 +129,7 @@ export async function makeUpdateWorld(version = "0.2.0"): Promise<UpdateWorld> {
     temp,
     bundle,
     latest: version,
+    latestFor: "arm64",
     checks: "answer",
     downloads: "whole",
     heldChecks: [],
@@ -137,6 +142,7 @@ export async function makeUpdateWorld(version = "0.2.0"): Promise<UpdateWorld> {
     newOpens: true,
     helper: null,
     log: [],
+    told: [],
     now: Date.UTC(2026, 9, 6, 9),
     settings: DEFAULT_UPDATE_SETTINGS,
     folders: async () =>
@@ -171,6 +177,7 @@ export async function makeUpdateWorld(version = "0.2.0"): Promise<UpdateWorld> {
         },
         requests: { fetchText, downloadFile },
         canWrite: () => world.writable,
+        onFound: (found) => world.told.push(found),
         run: unpack,
         startDetached: async (_file, args) => {
           if (!world.helperStarts) return false;
@@ -222,7 +229,7 @@ export async function makeUpdateWorld(version = "0.2.0"): Promise<UpdateWorld> {
     if (how === "fail") return { ok: false, failure: "network" };
     return world.latest === null
       ? { ok: false, failure: "not-found", status: 404 }
-      : { ok: true, value: manifestOf(world.latest) };
+      : { ok: true, value: manifestOf(world.latest, world.latestFor) };
   };
   const fetchText = (): Promise<Fetched<string>> => {
     world.looked += 1;

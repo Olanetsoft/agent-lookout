@@ -1003,6 +1003,63 @@ describe("a version that is ready, and a newer one", () => {
     },
   );
 
+  test("installing it once it is no longer whole is the person's check, and no notification is shown", async () => {
+    const world = await withOneReady();
+    await rm((await world.zip())!);
+    world.downloads = "hold";
+    expect((await world.updater.install()).status.update).toMatchObject({ version: "0.2.2" });
+    expect(world.settings.notifiedVersion).toBe("0.2.2");
+    expect(world.told).toEqual([]);
+  });
+
+  /** What the check has for an answer when the one that was ready is lost as a newer one is downloaded. */
+  const NOTHING_FOUND: Record<string, (world: World) => void> = {
+    "has no answer": (world) => {
+      world.checks = "fail";
+    },
+    "finds a release with no Mac app": (world) => {
+      world.latest = null;
+    },
+    "finds a newer one that is not for this Mac": (world) => {
+      Object.assign(world, { latest: "0.2.3", latestFor: "x64" });
+    },
+  };
+
+  test.each(Object.keys(NOTHING_FOUND))(
+    "installing it once it is no longer whole begins the newer one's download again when the check %s",
+    async (what) => {
+      const world = await withOneReady();
+      world.downloads = "hold";
+      await world.updater.check();
+      await vi.waitFor(() => expect(world.heldDownloads).toHaveLength(1));
+      await rm((await world.zip())!);
+      NOTHING_FOUND[what]!(world);
+      expect((await world.updater.install()).status.update).toMatchObject({
+        phase: "downloading",
+        version: "0.2.2",
+        lost: "0.2.1",
+      });
+      expect(world.looked).toBe(3);
+      expect(world.asked).toBe(3);
+      await vi.waitFor(() => expect(world.heldDownloads).toHaveLength(1));
+      world.heldDownloads[0]!.answer("whole");
+      await isAt(world, { phase: "ready", version: "0.2.2" });
+      await vi.waitFor(async () => expect(await world.folders()).toHaveLength(1));
+    },
+  );
+
+  test("installing it once it is no longer whole leaves a newer one that was withdrawn", async () => {
+    const world = await withOneReady();
+    world.downloads = "hold";
+    await world.updater.check();
+    await rm((await world.zip())!);
+    world.latest = "0.2.0";
+    expect((await world.updater.install()).status.update).toEqual({ phase: "up-to-date" });
+    expect(world.heldDownloads).toEqual([]);
+    expect(world.asked).toBe(2);
+    await vi.waitFor(async () => expect(await world.folders()).toEqual([]));
+  });
+
   test("installing it once it is no longer whole downloads the newer one instead", async () => {
     const world = await withOneReady();
     world.downloads = "hold";
@@ -1109,6 +1166,16 @@ describe("a version that is ready, and a newer one", () => {
     expect((await world.updater.check()).update).toEqual({ phase: "up-to-date" });
     expect(world.heldDownloads).toEqual([]);
     await vi.waitFor(async () => expect(await world.folders()).toEqual([]));
+  });
+
+  test("a release with no Mac app leaves it ready", async () => {
+    const world = await withOneReady();
+    world.latest = null;
+    expect((await world.updater.check()).update).toMatchObject({
+      phase: "ready",
+      version: "0.2.1",
+    });
+    expect(await world.folders()).toHaveLength(1);
   });
 
   test("a newer one withdrawn while it is downloaded does not take its place", async () => {
@@ -1245,6 +1312,29 @@ describe("a version that is ready, and a newer one", () => {
       await vi.waitFor(() => expect(world.asked).toBe(8));
     },
   );
+
+  test("a download the person asked for leaves the app its own try after six hours", async () => {
+    const world = await makeUpdateWorld();
+    onTestFinished(() => world.updater.stop());
+    world.latest = "0.2.1";
+    world.downloads = "network";
+    const pass = await hoursOf(world);
+    // Its own, and then one that was asked for.
+    await pass(1);
+    expect(world.asked).toBe(1);
+    await world.updater.check();
+    await isAt(world, { phase: "failed", step: "download", version: "0.2.1" });
+    expect(world.asked).toBe(2);
+    await pass(5);
+    expect(world.asked).toBe(2);
+    await pass(1);
+    await vi.waitFor(() => expect(world.asked).toBe(3));
+    // By itself, it still makes one.
+    await pass(23);
+    expect(world.asked).toBe(3);
+    await pass(1);
+    await vi.waitFor(() => expect(world.asked).toBe(4));
+  });
 
   test("a download that had no answer is tried again after a check that had none, and once more when it has come since", async () => {
     const world = await makeUpdateWorld();

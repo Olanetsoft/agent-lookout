@@ -304,6 +304,28 @@ describe("downloadFile", () => {
     await vi.waitFor(() => expect(closed).toBe(true));
   });
 
+  test("a download that is not answered ends with its time, also when it can be stopped", async () => {
+    let closed = false;
+    const releases = await server((_req, res) => {
+      res.on("close", () => {
+        closed = true;
+      });
+      // Never answers.
+    });
+    const file = path.join(await tempDir(), FILE.name);
+    expect(
+      await downloadFile(`${releases.origin}/zip`, file, FILE, {
+        userAgent: USER_AGENT,
+        allow: allowOnly(releases.host),
+        // Not for want of an answer.
+        timeoutMs: 600_000,
+        timeLimitMs: 200,
+        signal: new AbortController().signal,
+      }),
+    ).toEqual({ ok: false, failure: "timed-out" });
+    await vi.waitFor(() => expect(closed).toBe(true));
+  });
+
   test("a download stopped before it is asked for asks for nothing, also where a redirect leads", async () => {
     const stop = new AbortController();
     const releases = await server((_req, res) => {

@@ -327,7 +327,7 @@ describe("what a check finds", () => {
 
   test("tells of a version the daily check found once, and never of one the person asked for", async () => {
     let latest = "0.2.1";
-    const { updater: updates, onFound, settings } = updater(() => latest);
+    const { updater: updates, fetchText, onFound, settings } = updater(() => latest);
     updates.start();
     await vi.advanceTimersByTimeAsync(FIRST_CHECK_DELAY_MS);
     // From a disk image, the notice says it cannot be installed there.
@@ -341,7 +341,9 @@ describe("what a check finds", () => {
     await updates.check();
     expect(onFound).toHaveBeenCalledOnce();
     // Found by the person, so the daily check does not tell of it again.
-    await vi.advanceTimersByTimeAsync(CHECK_EVERY_MS);
+    const looked = fetchText.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(CHECK_EVERY_MS + TICK_MS);
+    expect(fetchText).toHaveBeenCalledTimes(looked + 1);
     expect(onFound).toHaveBeenCalledOnce();
 
     latest = "0.2.3";
@@ -445,9 +447,13 @@ describe("the copy that opens after Install and Restart", () => {
     updates.stop();
   });
 
-  test("says the install did not work through a check of its own that has no answer", async () => {
+  test.each<[string, Fetched<string>]>([
+    ["has no answer", { ok: false, failure: "network" }],
+    ["finds a release with no Mac app", { ok: false, failure: "not-found", status: 404 }],
+    ["cannot be read", { ok: true, value: "<html>Not a manifest</html>" }],
+  ])("says the install did not work through a check of its own that %s", async (_what, fetched) => {
     const { updater: updates, answer } = await ownCheck();
-    answer({ ok: false, failure: "network" });
+    answer(fetched);
     await vi.advanceTimersByTimeAsync(0);
     expect(updates.status().update).toMatchObject({ phase: "failed", step: "install" });
     updates.stop();
