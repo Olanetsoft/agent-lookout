@@ -191,6 +191,8 @@ async function open(
     if (!options.allow(url)) return { ok: false, failure: "refused" };
     let res: IncomingMessage;
     try {
+      // A request that is stopped already could still open a connection.
+      signal?.throwIfAborted();
       res = await ask(url, options, signal);
     } catch (error) {
       return { ok: false, failure: failureOf(error) };
