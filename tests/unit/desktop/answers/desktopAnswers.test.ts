@@ -172,6 +172,14 @@ describe("a press from the menu", () => {
     expect(answers.forMenu(snapshot).note).toBeNull();
   });
 
+  test("is not the menu's line for as long as the clock is set back", async () => {
+    const { answers, snapshot, tick } = setUp();
+    await answers.press(press({ from: "menu" }));
+    expect(answers.forMenu(snapshot).note).not.toBeNull();
+    tick(-60 * 60_000);
+    expect(answers.forMenu(snapshot).note).toBeNull();
+  });
+
   test("in the first second the menu was shown, the line says to press again", async () => {
     const { answers, answer, snapshot } = setUp();
     expect(await answers.press(press({ from: "menu", shownAt: NOW - 999 }))).toBe("too-soon-shown");

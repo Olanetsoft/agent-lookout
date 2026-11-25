@@ -101,12 +101,14 @@ export function createPullRequestFinder(options: PullRequestFinderOptions): Pull
   const answers = new Map<string, Asked>();
   /** The round under way, if there is one. */
   let running: Promise<void> | null = null;
-  /** While there is no gh, or it is not signed in: when the next round may ask. */
-  let pausedUntil = -Infinity;
+  /** When there was last no gh, or it was not signed in: the next round may ask once that is old. */
+  let pausedAt: number | undefined;
   let gh: GhState = "unknown";
   let last: CheckResult | null = null;
 
-  const due = (at: number, since: number | undefined) => at - (since ?? -Infinity) >= intervalMs;
+  // One dated later than now is as old, by a clock that has been set back.
+  const due = (at: number, since: number | undefined) =>
+    since === undefined || at < since || at - since >= intervalMs;
 
   /** What one answer of gh comes to. False when no more should be asked this round. */
   function take(question: string, answer: GhAnswer, at: number): boolean {
@@ -131,7 +133,7 @@ export function createPullRequestFinder(options: PullRequestFinderOptions): Pull
       case "signed-out":
         gh = answer.kind;
         answers.clear();
-        pausedUntil = at + intervalMs;
+        pausedAt = at;
         return false;
     }
   }
@@ -148,7 +150,7 @@ export function createPullRequestFinder(options: PullRequestFinderOptions): Pull
       if (asked.has(question)) continue;
       asked.add(question);
       const at = now();
-      if (at < pausedUntil) return;
+      if (!due(at, pausedAt)) return;
       if (!due(at, answers.get(question)?.askedAt)) continue;
       const answer = await ask(target).catch((): GhAnswer => ({
         kind: "failed",
@@ -182,7 +184,7 @@ export function createPullRequestFinder(options: PullRequestFinderOptions): Pull
           due(at, reads.get(place.key)?.readAt),
         );
         const toAsk =
-          at >= pausedUntil &&
+          due(at, pausedAt) &&
           [...wanted].some((question) => due(at, answers.get(question)?.askedAt));
         if (toRead.length > 0 || toAsk) {
           running = round(toRead)

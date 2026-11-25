@@ -666,6 +666,25 @@ describe("the finder", () => {
     expect(files.opened()).toHaveLength(2);
   });
 
+  test("after the clock is set back, a folder is read again at the next poll", async () => {
+    const files = memoryFiles();
+    repository(files, `${CODE}/storefront`, "ref: refs/heads/main\n");
+    const { finder, clock } = finderFor(files);
+    const sessions = [at(1, `${CODE}/storefront`)];
+    await finder.annotate(sessions);
+
+    files.rewrite(`${CODE}/storefront/.git/HEAD`, "ref: refs/heads/checkout-flow\n");
+    clock.advance(-60 * 60_000);
+    expect((await finder.annotate(sessions))[0]?.git?.branch).toBe("checkout-flow");
+    // And then every 10 seconds, as before.
+    clock.advance(BRANCH_READ_MS - 1);
+    await finder.annotate(sessions);
+    expect(files.opened()).toHaveLength(2);
+    clock.advance(1);
+    await finder.annotate(sessions);
+    expect(files.opened()).toHaveLength(3);
+  });
+
   test("a repository made after a session began is found at the next read", async () => {
     const files = memoryFiles();
     files.mkdir(`${CODE}/storefront`);

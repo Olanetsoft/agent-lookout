@@ -166,6 +166,23 @@ describe("a machine's card", () => {
     expect(still.sessions).toEqual([]);
   });
 
+  test("the ten seconds are counted afresh after the clock is set back", async () => {
+    let clock = NOW;
+    const adapter = createRemoteAdapter({
+      remote: REMOTE,
+      version: "0.2.3",
+      tunnel: { state: () => RUNNING, connected: () => {} },
+      read: () => new Promise(() => {}),
+      now: () => clock,
+      answerWaitMs: 10,
+    });
+    expect((await adapter.poll()).health.state).toBe("searching");
+    clock = NOW - 60 * 60_000;
+    expect((await adapter.poll()).health.state).toBe("searching");
+    clock += STILL_CONNECTING_MS;
+    expect((await adapter.poll()).health.state).toBe("unavailable");
+  });
+
   test("before the tunnel has started, it is connecting", async () => {
     const { adapter, set, reads } = setUp();
     set({ kind: "off" });

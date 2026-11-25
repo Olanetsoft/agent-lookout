@@ -166,7 +166,7 @@ export function createMenuBar<Image, Menu extends MenuBarMenuLike>(
 
   /** Whether the menu may be on the screen. */
   function isOpen(): boolean {
-    if (openings > 0 && closedAt !== null && now() - closedAt >= MENU_UNSAID_CLOSE_MS) {
+    if (openings > 0 && closedAt !== null && Math.abs(now() - closedAt) >= MENU_UNSAID_CLOSE_MS) {
       openings = 0;
       closedAt = null;
     }
@@ -233,7 +233,7 @@ export function createMenuBar<Image, Menu extends MenuBarMenuLike>(
     const stale =
       built === null ||
       built.key !== menuBarKey(latest) ||
-      (menuBarHasTimes(latest) && now() - built.at >= MENU_TIMES_MAX_AGE_MS);
+      (menuBarHasTimes(latest) && Math.abs(now() - built.at) >= MENU_TIMES_MAX_AGE_MS);
     if (!stale) return;
     if (isOpen()) behind = true;
     else setMenu();

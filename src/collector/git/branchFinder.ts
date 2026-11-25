@@ -267,9 +267,11 @@ export function createBranchFinder(options: BranchFinderOptions = {}): BranchFin
       // not waited for again, so a stuck one slows no poll after the first.
       if (!running) {
         const at = now();
-        const due = [...folders].filter(
-          (folder) => at - (known.get(folder)?.readAt ?? -Infinity) >= BRANCH_READ_MS,
-        );
+        const due = [...folders].filter((folder) => {
+          const readAt = known.get(folder)?.readAt;
+          // One dated later than now is as old, by a clock that has been set back.
+          return readAt === undefined || at < readAt || at - readAt >= BRANCH_READ_MS;
+        });
         if (due.length > 0) {
           const reads = readAll(due).finally(() => {
             running = null;

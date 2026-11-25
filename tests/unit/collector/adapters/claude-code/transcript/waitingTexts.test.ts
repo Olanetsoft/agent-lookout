@@ -199,6 +199,17 @@ describe("what a waiting session is asking", () => {
     expect(session?.waitingText).toBe("Run: npm test");
   });
 
+  test("a transcript that is not found is looked for again once the clock is set back", async () => {
+    const { files, clock, reader } = setUp();
+    files.mkdir(`${HOME}/projects/-Users-example-code-other`);
+    await reader.annotate([waiting()]);
+
+    files.write(FILE, waitingToRun("npm test"));
+    clock.advance(-60 * 60_000);
+    const [session] = await reader.annotate([waiting()]);
+    expect(session?.waitingText).toBe("Run: npm test");
+  });
+
   test("a transcript that goes away is looked for again, and one that cannot be read gives no text", async () => {
     const { files, clock, reader } = setUp();
     files.write(FILE, waitingToRun("npm test"));

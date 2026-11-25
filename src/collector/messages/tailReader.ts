@@ -221,9 +221,10 @@ export function createEndReader<Target, Stamp, End = string>(
   /** Whether a drop of what has been kept too long is set to run. */
   let dropSet = false;
 
+  /** Drops what was last asked for 15 seconds ago, or later than now, as after the clock is set back. */
   function dropOld(at: number): void {
     for (const [id, entry] of kept) {
-      if (at - entry.askedAt >= KEEP_MS) kept.delete(id);
+      if (at < entry.askedAt || at - entry.askedAt >= KEEP_MS) kept.delete(id);
     }
   }
 

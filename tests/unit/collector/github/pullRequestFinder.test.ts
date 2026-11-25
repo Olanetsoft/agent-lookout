@@ -302,6 +302,44 @@ describe("what gh says", () => {
     expect(pullRequestsOf(await poll(sessions))).toEqual([pullRequest(51), undefined]);
   });
 
+  test("after the clock is set back, the remote is read and gh asked again at the next poll", async () => {
+    const { clock, asked, read, answer, poll } = setUp({
+      "checkout-flow": { kind: "found", pullRequest: pullRequest(51) },
+    });
+    const sessions = [on(1, "storefront-checkout", "checkout-flow")];
+    await poll(sessions);
+
+    const merged = pullRequest(51, { state: "merged" });
+    answer["checkout-flow"] = { kind: "found", pullRequest: merged };
+    clock.advance(-60 * 60_000);
+    await poll(sessions);
+    expect(pullRequestsOf(await poll(sessions))).toEqual([merged]);
+    expect(read).toHaveLength(2);
+    expect(asked).toHaveLength(2);
+    // And then every two minutes, as before.
+    clock.advance(PULL_REQUEST_CHECK_MS - 1);
+    await poll(sessions);
+    expect(asked).toHaveLength(2);
+    clock.advance(1);
+    await poll(sessions);
+    expect(asked).toHaveLength(3);
+  });
+
+  test("after the clock is set back, a gh that was signed out is asked again at the next poll", async () => {
+    const { finder, clock, asked, answer, poll } = setUp({
+      "checkout-flow": { kind: "signed-out" },
+    });
+    const sessions = [on(1, "storefront-checkout", "checkout-flow")];
+    await poll(sessions);
+    expect(finder.status().gh).toBe("signed-out");
+
+    answer["checkout-flow"] = { kind: "found", pullRequest: pullRequest(51) };
+    clock.advance(-60 * 60_000);
+    await poll(sessions);
+    expect(asked).toHaveLength(2);
+    expect(pullRequestsOf(await poll(sessions))).toEqual([pullRequest(51)]);
+  });
+
   test("signed out, what was shown goes, since it can no longer be vouched for", async () => {
     const { finder, clock, poll, answer } = setUp({
       "checkout-flow": { kind: "found", pullRequest: pullRequest(51) },
