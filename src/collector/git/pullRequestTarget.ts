@@ -26,8 +26,8 @@ export interface PullRequestTarget {
   /** The repository on github.com it is looked for in. */
   repository: GitHubRepository;
   /**
-   * The branch, or `owner:branch` for a branch pushed to someone else's copy, a
-   * fork, or the number of the pull request whose own ref is checked out.
+   * The branch, or `owner:branch` for a branch pushed to a fork, or the number
+   * of the pull request whose own ref is checked out.
    */
   head: string;
 }
@@ -131,13 +131,13 @@ const PULL_REQUEST_REF = /^refs\/pull\/(\d+)\/head$/;
  * to look for: no remote on github.com, or the default branch, which is the
  * one `defaultBranch` names, or with that not known, `main` or `master`.
  *
- * A branch pushed to a remote on github.com whose owner is not the base's, as
- * from a fork, is asked for as `owner:branch`, as gh asks for it. The remote
- * it is pushed to is its `pushRemote`, else `remote.pushDefault`, else its
- * `remote`. Each is a remote's name, or the address of a repository, as
- * `gh pr checkout` and `git push -u <address>` write it. A branch checked out
- * as a pull request's own ref is asked for by its number, in the repository
- * the ref is in, and never by its name.
+ * A branch pushed to a repository on github.com that is not the base, as a
+ * fork is, also one with the base's owner, is asked for as `owner:branch`, as
+ * gh asks for it. The remote it is pushed to is its `pushRemote`, else
+ * `remote.pushDefault`, else its `remote`. Each is a remote's name, or the
+ * address of a repository, as `gh pr checkout` and `git push -u <address>`
+ * write it. A branch checked out as a pull request's own ref is asked for by
+ * its number, in the repository the ref is in, and never by its name.
  */
 export function targetOf(
   config: GitConfig,
@@ -161,8 +161,8 @@ export function targetOf(
       : { repository, head: String(number) };
   }
   const fork = repositoryAt(own?.pushRemote ?? config.pushDefault ?? own?.remote);
-  const elsewhere =
-    fork !== null && fork.owner.toLowerCase() !== base.repository.owner.toLowerCase();
+  const named = ({ owner, name }: GitHubRepository) => `${owner}/${name}`.toLowerCase();
+  const elsewhere = fork !== null && named(fork) !== named(base.repository);
   return { repository: base.repository, head: elsewhere ? `${fork.owner}:${branch}` : branch };
 }
 

@@ -151,6 +151,19 @@ describe("where the branch's pull request is looked for", () => {
       });
     });
 
+    test("a fork with the base's own owner is asked for as owner:branch too", () => {
+      const address = "https://github.com/Example-Org/storefront-fork.git";
+      for (const lines of [
+        `	remote = ${address}\n	pushRemote = ${address}\n	merge = refs/heads/patch-1\n`,
+        `	remote = fork\n[remote "fork"]\n	url = ${address}\n`,
+      ]) {
+        expect(targetOf(branchOf(lines), "patch-1", base, "main"), lines).toEqual({
+          repository: STOREFRONT,
+          head: "Example-Org:patch-1",
+        });
+      }
+    });
+
     test("a user name and a token in the address are not kept", () => {
       const target = targetOf(
         branchOf("	remote = https://demo-user:example-token@github.com/demo-user/storefront.git\n"),
@@ -163,7 +176,7 @@ describe("where the branch's pull request is looked for", () => {
 
     test("the base repository's own address, another host's and a folder are the branch itself", () => {
       for (const remote of [
-        "https://github.com/Example-Org/storefront.git",
+        "https://github.com/Example-Org/Storefront.git",
         "https://gitlab.com/demo-user/storefront.git",
         "/Users/example/code/storefront.git",
         ".",
