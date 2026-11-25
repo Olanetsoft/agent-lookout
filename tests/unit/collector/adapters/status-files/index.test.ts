@@ -794,6 +794,8 @@ describe("a file caught half written", () => {
     const { openRegular } = files.io;
     for (const fail of [
       () => files.failOpen(file, "EBUSY"),
+      // Replaced as it was opened, on Windows.
+      () => files.failOpen(file, "ESTALE"),
       () => {
         files.io.openRegular = async (target) => ({
           ...(await openRegular(target)),
@@ -818,19 +820,33 @@ describe("a file caught half written", () => {
     expect(files.openHandles()).toBe(0);
   });
 
-  test("is not one that has become a link, a folder or too large: what it said goes at once", async () => {
+  test("is not one that has become a link, a folder or too large, or has gone: what it said goes at once", async () => {
     const { files, poll } = setUp();
-    const become = [
-      () => files.special(`${STATUS_DIR}/a.json`),
-      () => files.failOpen(`${STATUS_DIR}/a.json`, "EISDIR"),
-      () => put(files, "a.json", `${statusFile()}${" ".repeat(MAX_FILE_BYTES)}`),
+    const file = `${STATUS_DIR}/a.json`;
+    const { openRegular } = files.io;
+    const become: [skipped: number, () => void][] = [
+      [1, () => files.special(file)],
+      [1, () => files.failOpen(file, "EISDIR")],
+      // As a folder or a pipe gives on a Mac and on Linux, once it is open.
+      [
+        1,
+        () => {
+          files.io.openRegular = () => Promise.reject(new Error("Not an ordinary file."));
+        },
+      ],
+      [1, () => put(files, "a.json", `${statusFile()}${" ".repeat(MAX_FILE_BYTES)}`)],
+      // It went between the listing and the read.
+      [0, () => files.failOpen(file, "ENOENT")],
     ];
-    for (const change of become) {
+    for (const [skipped, change] of become) {
       put(files, "a.json", statusFile());
       expect((await poll()).sessions).toHaveLength(1);
       change();
-      expect((await poll()).sessions).toEqual([]);
-      files.heal(`${STATUS_DIR}/a.json`);
+      const changed = await poll();
+      expect(changed.sessions).toEqual([]);
+      expect(changed.health.watching).toEqual(facts(0, skipped));
+      files.heal(file);
+      files.io.openRegular = openRegular;
     }
   });
 

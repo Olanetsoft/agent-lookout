@@ -1,8 +1,16 @@
-import { closeSync, constants, readSync, writeSync } from "node:fs";
+import {
+  closeSync,
+  constants,
+  readSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+  writeSync,
+} from "node:fs";
 import { readFile, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import {
   OPEN_FOLLOWS_LINKS,
@@ -10,6 +18,27 @@ import {
   openWithoutFollowingNow,
 } from "@collector/files/noFollow";
 import { tempDir } from "@tests/support/node/tempFiles";
+
+/** What another program does between the look at a name and the open of it, once. */
+const meanwhile = vi.hoisted((): { act: (() => void) | null } => ({ act: null }));
+
+vi.mock("node:fs", async (original) => {
+  const real = await original<typeof import("node:fs")>();
+  const openSync: typeof real.openSync = (...args) => {
+    meanwhile.act?.();
+    return real.openSync(...args);
+  };
+  return { ...real, openSync, default: { ...real, openSync } };
+});
+
+vi.mock("node:fs/promises", async (original) => {
+  const real = await original<typeof import("node:fs/promises")>();
+  const open: typeof real.open = (...args) => {
+    meanwhile.act?.();
+    return real.open(...args);
+  };
+  return { ...real, open, default: { ...real, open } };
+});
 
 const APPEND = constants.O_WRONLY | constants.O_APPEND | constants.O_CREAT;
 
@@ -75,5 +104,33 @@ describe("opening without following a link", () => {
       }
       expect(await readFile(fresh, "utf8")).toBe("line\n");
     });
+  });
+
+  // A name is looked at first only where an open follows links.
+  test.each([
+    ["a new file", (other: string, file: string) => renameSync(other, file)],
+    [
+      "a link",
+      (other: string, file: string) => {
+        rmSync(file);
+        symlinkSync(other, file);
+      },
+    ],
+  ])("%s put in place of a file between the look and the open gives ESTALE", async (_, put) => {
+    const opens = [
+      (file: string) => openWithoutFollowing(file, constants.O_RDONLY, undefined, true),
+      async (file: string) => openWithoutFollowingNow(file, constants.O_RDONLY, undefined, true),
+    ];
+    for (const open of opens) {
+      const { dir, file } = await fileAndLink();
+      const other = path.join(dir, "other.jsonl");
+      await writeFile(other, "other");
+      meanwhile.act = () => {
+        meanwhile.act = null;
+        put(other, file);
+      };
+      await expect(open(file)).rejects.toMatchObject({ code: "ESTALE" });
+      expect(meanwhile.act).toBeNull();
+    }
   });
 });
