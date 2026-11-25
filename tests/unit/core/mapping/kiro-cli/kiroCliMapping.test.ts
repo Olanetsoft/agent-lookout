@@ -87,6 +87,7 @@ describe("a V3 row log", () => {
     // A turn row ends it.
     expect(v3([start(), first, end()]).waitingSince).toBeNull();
     expect(v3([start(), first, start(T + 9)]).waitingSince).toBeNull();
+    expect(v3([start(), first, { kind: "turn-other" }]).waitingSince).toBeNull();
   });
 
   test("forgets every wait at the turn's end and at a new turn's start", () => {

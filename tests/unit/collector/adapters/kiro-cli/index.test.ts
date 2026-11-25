@@ -19,6 +19,7 @@ import {
   BUCKET,
   CREATED_AT,
   DAY,
+  HOUR,
   HOME,
   KIRO_HOME,
   LOCKED_AT,
@@ -324,7 +325,33 @@ describe("the Kiro CLI adapter", () => {
     expect((await poll(v3Resolved("call-B"))).status).toBe("working");
   });
 
-  test("agrees with the model of open waits, through answers, calls asked again, turns, files that cannot be read and restarts", async () => {
+  test("a poll that cannot read the log ends the wait it shows, which is announced again with the same time", async () => {
+    const files = memoryFiles(() => NOW);
+    const clock = handClock(NOW);
+    const asked = NOW - MINUTE;
+    const rows = v3TurnStart(NOW - 5 * MINUTE) + v3Pending("call-A", asked);
+    const paths = writeV3(files, V3, { log: rows, lock: LOCK });
+    const watch = watchWaits(kiroCliAdapterFor(files, { now: clock.now }), clock.now);
+    const waits = { status: "needs-you", since: asked };
+    expect(await watch()).toMatchObject(waits);
+    files.append(paths.log, v3Pending("call-B", NOW), { mtimeMs: NOW });
+    files.fail(paths.log);
+    expect(await watch()).toMatchObject({ status: "unknown", stopped: 1 });
+    files.heal(paths.log);
+    expect(await watch()).toEqual({ ...waits, started: 1, stopped: 0 });
+  });
+
+  test("gives a wait no time when its own is before the session began or ahead of the clock", async () => {
+    for (const at of [CREATED_AT - HOUR, NOW + DAY, 0]) {
+      const files = memoryFiles(() => NOW);
+      const rows = v3TurnStart(NOW - 5 * MINUTE) + v3Pending("call-A", at);
+      writeV3(files, V3, { log: rows, lock: LOCK });
+      const { sessions } = await kiroCliAdapterFor(files).poll();
+      expect(sessions).toMatchObject([{ status: "needs-you", statusSince: null }]);
+    }
+  });
+
+  test("agrees with the model of open waits, through answers, calls asked again, turns and restarts, where a file that cannot be read ends the wait", async () => {
     for (let seed = 1; seed <= 150; seed += 1) {
       const random = seeded(seed);
       const pick = <T>(of: readonly T[]) => of[Math.floor(random() * of.length)] as T;
@@ -359,6 +386,7 @@ describe("the Kiro CLI adapter", () => {
         }
         const unread = random() < 0.1 ? pick([paths.log, paths.header]) : null;
         if (unread !== null) files.fail(unread);
+        // Such a poll shows no wait, and the next one tells of it again.
         const since = unread === null ? model.since() : null;
         const { status, ...shown } = await watch();
         expect(shown, `seed ${seed}, poll ${polled}`).toEqual({
