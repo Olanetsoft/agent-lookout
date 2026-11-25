@@ -18,6 +18,7 @@ Changes that a user of Agent Lookout would notice, newest first.
 - A session in a repository that uses git's reftable format no longer shows the branch `.invalid`, and `gh` is not asked for one. It shows its repository and no branch, since what is checked out there is not in the files Agent Lookout reads. (#495)
 - After the computer's clock is set back, a session's branch, its pull request and its checks are read again at the next poll, and Last message at the next ask. Before, they stayed as they were until the clock caught up, and with the details closed, the message stayed in memory past its 15 seconds. Nor do the times and the line in the menu bar's menu, or `Connecting` on another computer, stay for as long, a waiting Claude Code session's transcript that was not found is looked for again, and a page that gets no answer says so. (#496)
 - A settings change that the disk takes only part of, as on a nearly full disk on Linux or at a quota, is answered as not saved, and the settings file stays as it was. Before, it was answered as saved, and the cut file turned every time rule and permission rule off. (#497)
+- Pull requests show with `CLICOLOR_FORCE` set where Agent Lookout starts. `gh` is run without it. Before, `gh` coloured its answer, which then could not be read. (#498)
 
 ## 0.2.31 - 2026-11-25
 

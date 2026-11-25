@@ -48,6 +48,8 @@ describe("what gh is asked", () => {
       HOME: "/Users/example",
       GH_CONFIG_DIR: "/Users/example/.config/gh",
       GH_FORCE_TTY: "1",
+      // gh takes this one over NO_COLOR.
+      CLICOLOR_FORCE: "1",
       GH_DEBUG: "api",
       DEBUG: "1",
       GH_PAGER: "less",
