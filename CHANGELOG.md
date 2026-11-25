@@ -10,6 +10,7 @@ Changes that a user of Agent Lookout would notice, newest first.
 - In the Mac app, a version that is ready to install stays, and can be installed, until a newer one has been downloaded and checked. Before, it was thrown away as the newer download began, so one that failed left nothing to install. A download that had no answer is tried again after six hours, as a check is, not the next day. (#489)
 - A download the Mac app throws away, as when a newer one replaces it, is removed whole. Before, the `app.asar` in it stayed behind, and the app kept it open until it quit. (#490)
 - Check for Updates… with the Mac app's window closed opens the window on the Updates card, which shows the answer. Before, it answered in a message, and until that was closed the app did nothing else: it read no session, sent no notification and answered no permission request. The card also says when the latest release has no app for this kind of Mac, which it could not read before. (#488)
+- The menu bar names a session on another computer with that computer, as notifications do: `docs-site on devbox`. Before, it and a session of the same name on this computer looked the same. (#491)
 
 ## 0.2.31 - 2026-11-25
 

@@ -370,6 +370,67 @@ describe("the menu", () => {
     expect(alike.slice(1, 3)).toEqual(["same · 2m 00s", "same · 1m 00s"]);
   });
 
+  /** A session on another computer, as it is listed. */
+  const remote = (machine: string, name: string, waitedMs: number, agent = "Claude Code") =>
+    waiting(name, waitedMs, {
+      id: `remote:${machine}:${agent}:${name}`,
+      source: `remote:${machine}`,
+      agent,
+      machine,
+    });
+
+  test("names the other computer a session is on, as a notification does", () => {
+    const template = menuBarTemplate(
+      snapshot([remote("devbox", "storefront", MINUTE), waiting("storefront", 2 * MINUTE)]),
+      NOW,
+      actions(),
+    );
+    expect(labels(template).slice(1, 3)).toEqual([
+      "storefront · 2m 00s",
+      "storefront on devbox · 1m 00s",
+    ]);
+    const alone = menuBarTemplate(
+      snapshot([remote("devbox", "storefront", MINUTE)]),
+      NOW,
+      actions(),
+    );
+    expect(labels(alone)[1]).toBe("storefront on devbox · 1m 00s");
+  });
+
+  test("keeps the other computer's name when the session's is cut", () => {
+    const name = "a-session-with-a-name-far-longer-than-the-menu-has-room-for";
+    const template = menuBarTemplate(
+      snapshot([remote("computer-in-the-attic-02", name, 2 * MINUTE), waiting(name, MINUTE)]),
+      NOW,
+      actions(),
+    );
+    const cut = labels(template)[2]?.split(" · ")[0] ?? "";
+    expect(Array.from(cut)).toHaveLength(MAX_MENU_NAME_LENGTH);
+    expect(labels(template)[1]).toBe(`${cut} on computer-in-the-attic-02 · 2m 00s`);
+  });
+
+  test("puts what tells two apart in brackets only for two on the same computer", () => {
+    const template = menuBarTemplate(
+      snapshot(
+        [
+          remote("devbox", "storefront", 4 * MINUTE),
+          remote("devbox", "storefront", 3 * MINUTE, "Codex"),
+          remote("laptop", "storefront", 2 * MINUTE),
+          waiting("storefront", MINUTE),
+        ],
+        BOTH,
+      ),
+      NOW,
+      actions(),
+    );
+    expect(labels(template).slice(1, 5)).toEqual([
+      "storefront on devbox (Claude Code) · 4m 00s",
+      "storefront on devbox (Codex) · 3m 00s",
+      "storefront on laptop · 2m 00s",
+      "storefront · 1m 00s",
+    ]);
+  });
+
   test("a wait whose start is a moment ahead of the clock reads as no time at all", () => {
     const [, item] = menuBarTemplate(snapshot([waiting("ahead", -5 * SECOND)]), NOW, actions());
     expect(item?.label).toBe("ahead · 0s");
