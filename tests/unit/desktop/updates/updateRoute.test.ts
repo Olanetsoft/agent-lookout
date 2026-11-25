@@ -185,12 +185,12 @@ describe("what each POST does with its body", () => {
     expect(updater.setAutomatic).toHaveBeenCalledOnce();
   });
 
-  test("an install with nothing ready is refused with 409, and says where updates stand", async () => {
+  test("an install that does not begin is refused with 409, and says where updates stand", async () => {
     const updater = fakeUpdater();
     updater.install.mockResolvedValueOnce({ ok: false, status: STATUS } as never);
     const answer = await ask(updater, "/api/app/update/install");
     expect(answer.status).toBe(409);
-    expect(answer.json).toEqual({ error: "No version is ready to install here.", status: STATUS });
+    expect(answer.json).toEqual({ error: "Nothing was installed.", status: STATUS });
   });
 });
 

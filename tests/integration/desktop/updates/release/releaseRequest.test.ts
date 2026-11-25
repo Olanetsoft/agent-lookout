@@ -17,13 +17,17 @@ import { tempDir } from "@tests/support/node/tempFiles";
 /** A server of the test's own on 127.0.0.1, which writes down each request it is sent. */
 async function server(handle: (req: IncomingMessage, res: ServerResponse) => void) {
   const requests: { url: string; headers: IncomingMessage["headers"] }[] = [];
-  const port = await listen(
-    createServer((req, res) => {
-      requests.push({ url: req.url ?? "", headers: req.headers });
-      handle(req, res);
-    }),
-  );
-  return { origin: `http://127.0.0.1:${port}`, host: `127.0.0.1:${port}`, requests };
+  const made = createServer((req, res) => {
+    requests.push({ url: req.url ?? "", headers: req.headers });
+    handle(req, res);
+  });
+  let connections = 0;
+  made.on("connection", () => {
+    connections += 1;
+  });
+  const port = await listen(made);
+  const host = `127.0.0.1:${port}`;
+  return { origin: `http://${host}`, host, requests, connections: () => connections };
 }
 
 /** Allows plain HTTP to these servers alone, standing in for GitHub's hosts. */
@@ -272,6 +276,56 @@ describe("downloadFile", () => {
     });
     expect((await answer).ok).toBe(false);
     await vi.waitFor(() => expect(closed).toBe(true));
+  });
+
+  test("a download stopped before it is answered ends at once, and so does its connection", async () => {
+    let closed = false;
+    const stop = new AbortController();
+    const releases = await server((_req, res) => {
+      res.on("close", () => {
+        closed = true;
+      });
+      // Never answers.
+      stop.abort();
+    });
+    const answer = downloadFile(
+      `${releases.origin}/zip`,
+      path.join(await tempDir(), FILE.name),
+      FILE,
+      {
+        userAgent: USER_AGENT,
+        allow: allowOnly(releases.host),
+        // Not for want of an answer.
+        timeoutMs: 600_000,
+        signal: stop.signal,
+      },
+    );
+    expect((await answer).ok).toBe(false);
+    await vi.waitFor(() => expect(closed).toBe(true));
+  });
+
+  test("a download stopped before it is asked for asks for nothing, also where a redirect leads", async () => {
+    const stop = new AbortController();
+    const releases = await server((_req, res) => {
+      res.writeHead(302, { Location: "/elsewhere" });
+      res.end();
+    });
+    const options = {
+      userAgent: USER_AGENT,
+      // Stopped as the redirect's address is looked at.
+      allow: (url: URL) => {
+        if (url.pathname === "/elsewhere") stop.abort();
+        return url.host === releases.host;
+      },
+      signal: stop.signal,
+    };
+    const file = path.join(await tempDir(), FILE.name);
+    expect((await downloadFile(`${releases.origin}/zip`, file, FILE, options)).ok).toBe(false);
+    expect((await downloadFile(`${releases.origin}/zip`, file, FILE, options)).ok).toBe(false);
+    // Long enough for a connection to have come.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(releases.requests.map((request) => request.url)).toEqual(["/zip"]);
+    expect(releases.connections()).toBe(1);
   });
 
   test("a download that keeps coming, too slowly to end in time, is given up as too slow", async () => {

@@ -211,6 +211,26 @@ describe("when the updater looks by itself", () => {
     updates.stop();
   });
 
+  test("tries again some hours after a check the person asked for that had no answer", async () => {
+    const { updater: updates, fetchText } = updater(() => "0.2.0");
+    updates.start();
+    await vi.advanceTimersByTimeAsync(FIRST_CHECK_DELAY_MS);
+    expect(updates.status().update).toEqual({ phase: "up-to-date" });
+    await advanceTo(START + 2 * HOUR + 1);
+    fetchText.mockResolvedValueOnce({ ok: false, failure: "network" });
+    expect((await updates.check()).update).toMatchObject({ phase: "failed", step: "check" });
+
+    await advanceTo(START + 2 * HOUR + RETRY_AFTER_MS);
+    expect(fetchText).toHaveBeenCalledTimes(2);
+    await advanceTo(START + 3 * HOUR + RETRY_AFTER_MS);
+    expect(fetchText).toHaveBeenCalledTimes(3);
+    expect(updates.status().update).toEqual({ phase: "up-to-date" });
+    // It had an answer, so the next is a day later.
+    await advanceTo(START + 3 * HOUR + RETRY_AFTER_MS + CHECK_EVERY_MS - 1);
+    expect(fetchText).toHaveBeenCalledTimes(3);
+    updates.stop();
+  });
+
   test("a development run never looks by itself", async () => {
     const { updater: updates, fetchText } = updater(() => "0.2.0", { packaged: false });
     updates.start();
@@ -323,6 +343,10 @@ describe("what a check finds", () => {
     // Found by the person, so the daily check does not tell of it again.
     await vi.advanceTimersByTimeAsync(CHECK_EVERY_MS);
     expect(onFound).toHaveBeenCalledOnce();
+
+    latest = "0.2.3";
+    await vi.advanceTimersByTimeAsync(CHECK_EVERY_MS);
+    expect(onFound).toHaveBeenLastCalledWith("0.2.3", "disk-image");
     updates.stop();
   });
 });
@@ -377,6 +401,55 @@ describe("the copy that opens after Install and Restart", () => {
     updates.start();
     await vi.advanceTimersByTimeAsync(FIRST_CHECK_DELAY_MS);
     expect(updates.status().update).toEqual(failed);
+    updates.stop();
+  });
+
+  test("as a newer one, put in by hand, says nothing of it and forgets it", () => {
+    const { updater: updates, settings } = updater(
+      () => "0.2.1",
+      { version: "0.2.2", bundle: "/Applications/Agent Lookout.app" },
+      { installingVersion: "0.2.1" },
+    );
+    expect(updates.status().update).toEqual({ phase: "idle" });
+    expect(settings.kept().installingVersion).toBeNull();
+  });
+
+  /** Starts the app's own check, with a failed install said, and leaves it waiting for GitHub. */
+  async function ownCheck() {
+    const made = updater(() => "0.2.1", {}, { installingVersion: "0.2.1" });
+    let answer: (fetched: Fetched<string>) => void = () => {};
+    made.fetchText.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)));
+    made.updater.start();
+    await vi.advanceTimersByTimeAsync(FIRST_CHECK_DELAY_MS);
+    expect(made.updater.status().update).toMatchObject({ phase: "failed", step: "install" });
+    return { ...made, answer: (fetched: Fetched<string>) => answer(fetched) };
+  }
+
+  test("moves on when the person checks while the app's own check is under way", async () => {
+    const { updater: updates, fetchText, onFound, answer } = await ownCheck();
+    const pressed = updates.check();
+    expect(updates.status().update).toEqual({ phase: "checking" });
+    answer({ ok: true, value: manifestFor("0.2.1") });
+    expect((await pressed).update).toMatchObject({ phase: "cannot-install", version: "0.2.1" });
+    expect(fetchText).toHaveBeenCalledOnce();
+    // Told by the card, so not by the notification of the daily check.
+    expect(onFound).not.toHaveBeenCalled();
+    updates.stop();
+  });
+
+  test("says so when that check, which the person asked for too, has no answer", async () => {
+    const { updater: updates, answer } = await ownCheck();
+    const pressed = updates.check();
+    answer({ ok: false, failure: "network" });
+    expect((await pressed).update).toMatchObject({ phase: "failed", step: "check" });
+    updates.stop();
+  });
+
+  test("says the install did not work through a check of its own that has no answer", async () => {
+    const { updater: updates, answer } = await ownCheck();
+    answer({ ok: false, failure: "network" });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(updates.status().update).toMatchObject({ phase: "failed", step: "install" });
     updates.stop();
   });
 

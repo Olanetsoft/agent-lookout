@@ -126,8 +126,12 @@ export function redirectTarget(
   return allow(target) ? target : "refused";
 }
 
-/** One request, resolved with its answer once the status and headers are in. */
-function ask(url: URL, options: Required<ReleaseRequestOptions>): Promise<IncomingMessage> {
+/** One request, resolved with its answer once the status and headers are in. `signal` stops it. */
+function ask(
+  url: URL,
+  options: Required<ReleaseRequestOptions>,
+  signal?: AbortSignal,
+): Promise<IncomingMessage> {
   return new Promise((resolve, reject) => {
     const send = url.protocol === "https:" ? httpsRequest : httpRequest;
     let req: ClientRequest;
@@ -139,6 +143,7 @@ function ask(url: URL, options: Required<ReleaseRequestOptions>): Promise<Incomi
         // always checked, whatever the environment says.
         agent: false,
         rejectUnauthorized: true,
+        signal,
       });
     } catch {
       reject(new Stopped("network"));
@@ -173,18 +178,20 @@ function failureOf(error: unknown): RequestFailure {
 
 /**
  * Asks for an address, following redirects that lead where the app may go,
- * and resolves with the final answer, a 200, or why there is none.
+ * and resolves with the final answer, a 200, or why there is none. `signal`
+ * stops it, and once it has, no more is asked for.
  */
 async function open(
   start: URL,
   options: Required<ReleaseRequestOptions>,
+  signal?: AbortSignal,
 ): Promise<Fetched<IncomingMessage>> {
   let url = start;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     if (!options.allow(url)) return { ok: false, failure: "refused" };
     let res: IncomingMessage;
     try {
-      res = await ask(url, options);
+      res = await ask(url, options, signal);
     } catch (error) {
       return { ok: false, failure: failureOf(error) };
     }
@@ -293,7 +300,9 @@ export async function downloadFile(
   } catch {
     return { ok: false, failure: "refused" };
   }
-  const opened = await open(start, withDefaults(options));
+  const limit = AbortSignal.timeout(options.timeLimitMs ?? DOWNLOAD_TIME_LIMIT_MS);
+  const signal = options.signal === undefined ? limit : AbortSignal.any([limit, options.signal]);
+  const opened = await open(start, withDefaults(options), signal);
   if (!opened.ok) return opened;
   const res = opened.value;
   const length = lengthOf(res);
@@ -313,8 +322,6 @@ export async function downloadFile(
       done(null, chunk);
     },
   });
-  const limit = AbortSignal.timeout(options.timeLimitMs ?? DOWNLOAD_TIME_LIMIT_MS);
-  const signal = options.signal === undefined ? limit : AbortSignal.any([limit, options.signal]);
   try {
     // Made here, never opened over a file that is there already, and readable by this user alone.
     await pipeline(res, meter, createWriteStream(file, { flags: "wx", mode: 0o600 }), { signal });

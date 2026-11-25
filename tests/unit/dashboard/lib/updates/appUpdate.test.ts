@@ -142,7 +142,7 @@ describe("the requests", () => {
   );
 
   test("an install refused with 409 still says where updates stand", async () => {
-    answering(409, { error: "No version is ready to install here.", status: STATUS });
+    answering(409, { error: "Nothing was installed.", status: STATUS });
     expect(await requestUpdateInstall()).toEqual(STATUS);
   });
 

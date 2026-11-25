@@ -893,6 +893,112 @@ describe("a version that is ready, and a newer one", () => {
     expect(await world.folders()).toEqual([]);
   });
 
+  /** The zip of a version that is downloaded, as it is unpacked to be checked. */
+  async function zipOfVersion(world: World, version: string): Promise<string> {
+    for (const folder of await world.folders()) {
+      const names = await readdir(path.join(world.data, folder));
+      const zip = names.find((name) => name.includes(`-${version}-`));
+      if (zip !== undefined) return path.join(world.data, folder, zip);
+    }
+    throw new Error(`${version} is not being downloaded.`);
+  }
+
+  test.each(["gone", "cut short"])(
+    "it stays when the newer one's download is %s by the time it has been checked",
+    async (what) => {
+      const world = await withOneReady();
+      world.unpacking = async () => {
+        const zip = await zipOfVersion(world, "0.2.2");
+        await (what === "gone" ? rm(zip) : truncate(zip, 20));
+      };
+      await world.updater.check();
+      await vi.waitFor(() =>
+        expect(world.log).toEqual([
+          "Version 0.2.2 of Agent Lookout could not be downloaded: the download could not be saved.",
+        ]),
+      );
+      expect(updateIn(world)).toMatchObject({ phase: "ready", version: "0.2.1" });
+      expect(await world.folders()).toHaveLength(1);
+      expect(path.basename((await world.zip())!)).toContain("0.2.1");
+    },
+  );
+
+  // Both timers of an install are due as a Mac that slept just then wakes, and
+  // a window closes only after they have run. Installing is checked on macOS and Linux only.
+  test.skipIf(process.platform === "win32")(
+    "a Mac that sleeps just after Install and Restart installs it as it wakes",
+    async () => {
+      const world = await withOneReady();
+      let timers: (() => void)[] = [];
+      vi.stubGlobal("setTimeout", (then: () => void) => timers.push(then));
+      onTestFinished(() => void vi.unstubAllGlobals());
+      expect((await world.updater.install()).ok).toBe(true);
+      const due = timers;
+      timers = [];
+      for (const then of due) then();
+      vi.unstubAllGlobals();
+      expect(updateIn(world)).toMatchObject({ phase: "installing", version: "0.2.1" });
+      expect(world.settings.installingVersion).toBe("0.2.1");
+      // It gives up all the same once the app has not quit.
+      expect(timers).toHaveLength(1);
+      world.quit();
+      expect(world.updater.status().version).toBe("0.2.1");
+    },
+  );
+
+  test("installing it once it is no longer whole, and withdrawn, downloads the version out by then", async () => {
+    const world = await withOneReady();
+    await rm((await world.zip())!);
+    world.downloads = "hold";
+    const answer = await world.updater.install();
+    expect(answer.ok).toBe(false);
+    expect(answer.status.update).toMatchObject({
+      phase: "downloading",
+      version: "0.2.2",
+      lost: "0.2.1",
+    });
+    expect(world.looked).toBe(2);
+  });
+
+  test("installing it once it is no longer whole, with no answer, says so, and looks again after six hours", async () => {
+    const world = await withOneReady();
+    const pass = await hoursOf(world);
+    await rm((await world.zip())!);
+    world.checks = "fail";
+    expect((await world.updater.install()).status.update).toMatchObject({
+      phase: "failed",
+      step: "check",
+    });
+    expect(world.asked).toBe(1);
+    world.checks = "answer";
+    await pass(5);
+    expect(world.asked).toBe(1);
+    await pass(1);
+    await isAt(world, { phase: "ready", version: "0.2.2" });
+  });
+
+  test.each(["fail", "answer"] as const)(
+    "installing it once it is no longer whole, as a check waits for GitHub, goes by that check: %s",
+    async (how) => {
+      const world = await withOneReady();
+      world.checks = "hold";
+      world.downloads = "hold";
+      const checked = world.updater.check();
+      await vi.waitFor(() => expect(world.heldChecks).toHaveLength(1));
+      await rm((await world.zip())!);
+      const answer = world.updater.install();
+      await vi.waitFor(() => expect(updateIn(world)).toEqual({ phase: "checking" }));
+      world.heldChecks[0]!.answer(how);
+      await checked;
+      expect((await answer).status.update).toMatchObject(
+        how === "fail"
+          ? { phase: "failed", step: "check" }
+          : { phase: "downloading", version: "0.2.2", lost: "0.2.1" },
+      );
+      expect(world.looked).toBe(2);
+    },
+  );
+
   test("installing it once it is no longer whole downloads the newer one instead", async () => {
     const world = await withOneReady();
     world.downloads = "hold";
@@ -1093,7 +1199,7 @@ describe("a version that is ready, and a newer one", () => {
   });
 
   test.each(["network", "timed-out", "too-slow", "status"] as const)(
-    "a download that had no answer, as %s, is tried again after six hours, as a check is",
+    "a download that had no answer, as %s, is tried again after six hours, once",
     async (failure) => {
       const world = await makeUpdateWorld();
       onTestFinished(() => world.updater.stop());
@@ -1106,20 +1212,53 @@ describe("a version that is ready, and a newer one", () => {
       expect(world.asked).toBe(1);
       await pass(1);
       await vi.waitFor(() => expect(world.asked).toBe(2));
-      // It goes on every six hours, also when the check in between has no answer.
-      world.checks = "fail";
-      await pass(6);
-      expect(world.asked).toBe(2);
-      world.checks = "answer";
-      world.downloads = "whole";
-      await pass(6);
-      await isAt(world, { phase: "ready", version: "0.2.1" });
-      // Downloaded, the next look is a day later.
-      const looked = world.looked;
+      // After that, once a day.
       await pass(23);
-      expect(world.looked).toBe(looked);
+      expect(world.asked).toBe(2);
+      await pass(1);
+      await vi.waitFor(() => expect(world.asked).toBe(3));
+      await pass(48);
+      expect(world.asked).toBe(5);
+      // The person, and a newer version, are not kept waiting.
+      await world.updater.check();
+      expect(world.asked).toBe(6);
+      await isAt(world, { phase: "failed", version: "0.2.1" });
+      world.latest = "0.2.2";
+      await world.updater.check();
+      await isAt(world, { phase: "failed", version: "0.2.2" });
+      await pass(6);
+      await vi.waitFor(() => expect(world.asked).toBe(8));
     },
   );
+
+  test("a download that had no answer is tried again after a check that had none, and once more when it has come since", async () => {
+    const world = await makeUpdateWorld();
+    onTestFinished(() => world.updater.stop());
+    world.latest = "0.2.1";
+    world.downloads = "network";
+    await world.updater.check();
+    await isAt(world, { phase: "failed", step: "download" });
+    const pass = await hoursOf(world);
+    world.checks = "fail";
+    await pass(6);
+    expect(world.asked).toBe(1);
+    world.checks = "answer";
+    world.downloads = "whole";
+    await pass(6);
+    await isAt(world, { phase: "ready", version: "0.2.1" });
+    // Downloaded, the next look is a day later.
+    const looked = world.looked;
+    await pass(23);
+    expect(world.looked).toBe(looked);
+    // Lost, it is downloaded again, and what it says of no answer is said afresh.
+    await rm((await world.zip())!);
+    world.downloads = "network";
+    await world.updater.check();
+    await isAt(world, { phase: "failed", step: "download" });
+    expect(world.asked).toBe(3);
+    await pass(6);
+    await vi.waitFor(() => expect(world.asked).toBe(4));
+  });
 
   test.each([
     ...(["wrong-hash", "wrong-size", "too-large", "not-found", "not-saved"] as const),

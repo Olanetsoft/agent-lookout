@@ -82,7 +82,7 @@ export type UpdatePhase =
       /** Bytes so far, and the size the release gives. */
       received: number;
       total: number;
-      /** The version that was ready before, this one or an older one, and was no longer whole on the disk. */
+      /** The version that was ready before, this one or another, and was no longer whole on the disk. */
       lost?: string;
     }
   | {
@@ -119,7 +119,7 @@ export interface AppUpdateStatus {
   update: UpdatePhase;
 }
 
-/** The 409 of `POST /api/app/update/install`, when no version is ready to install here. */
+/** The 409 of `POST /api/app/update/install`, when nothing was installed: the status says why. */
 export interface AppUpdateInstallRefused {
   error: string;
   status: AppUpdateStatus;

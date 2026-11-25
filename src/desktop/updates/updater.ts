@@ -16,9 +16,10 @@
 //    that version (`install/bundleCheck.ts`). Only the zip is kept.
 // 3. The zip can wait there for days, so its size and SHA-512 are checked again
 //    at each check, and when the person presses Install and Restart. One that
-//    is no longer whole is never installed: it is downloaded again, or the
-//    newer one that is out is. One that is ready stays, and can be installed,
-//    until a newer one has been downloaded and checked, or it is withdrawn.
+//    is no longer whole is never installed: the latest release is looked at
+//    again, and what it offers is downloaded. One that is ready stays, and can
+//    be installed, until a newer one has been downloaded and checked, it is
+//    withdrawn, or the app is found to be where it cannot change itself.
 // 4. Only when the person presses Install and Restart does it unpack the zip
 //    and start the helper that puts the new bundle in the running one's place
 //    once the app has quit, and opens it (`install/installHelper.ts`), and then
@@ -81,7 +82,10 @@ export const CHECK_EVERY_MS = 24 * 60 * 60 * 1000;
  */
 export const TICK_MS = 60 * 60 * 1000;
 
-/** How long after a check or a download that had no answer the app tries again by itself. */
+/**
+ * How long after a check that had no answer the app tries again by itself, and,
+ * once for a version, after a download that had none.
+ */
 export const RETRY_AFTER_MS = 6 * 60 * 60 * 1000;
 
 /** How long the app waits to quit after Install and Restart, so the page hears the answer first. */
@@ -89,7 +93,9 @@ export const QUIT_DELAY_MS = 500;
 
 /**
  * How long after Install and Restart an app that has not quit says the install
- * did not work: by then the helper has stopped waiting for it.
+ * did not work: by then the helper has stopped waiting for it, unless the Mac
+ * slept, which counts here and not there. A helper that waits still then finds
+ * nothing to move, and opens the old app once that quits.
  */
 export const INSTALL_GIVE_UP_MS = HELPER_WAIT_MS + 60_000;
 
@@ -198,7 +204,7 @@ export function failureWords(failure: RequestFailure, status?: number): string {
   }
 }
 
-/** The failures of a download that had no answer, which is tried again as a check that had none is. */
+/** The failures of a download that had no answer, which is tried again sooner, once. */
 const NO_ANSWER: readonly RequestFailure[] = ["network", "timed-out", "too-slow", "status"];
 
 /** Why a version could not be downloaded, and whether there was no answer. */
@@ -250,8 +256,13 @@ export function createUpdater(options: UpdaterOptions): Updater {
   let phase: UpdatePhase = { phase: "idle" };
   let checking: Promise<AppUpdateStatus> | null = null;
   let lastAttemptAt: number | null = null;
-  /** Whether the last download had no answer, or a check found the version that was ready lost, and none has had an answer since. */
+  /** Whether the person asked for the check under way, and whether it waits for GitHub. */
+  let asked = false;
+  let looking = false;
+  /** Whether the last check had no answer, or the download it began had none, which is tried again sooner. */
   let unanswered = false;
+  /** The version whose last download had no answer. Its next goes back to the daily check. */
+  let unansweredVersion: string | null = null;
   const folders = createUpdateFolders(options);
   /** The version being downloaded. */
   let coming: Download | null = null;
@@ -356,12 +367,12 @@ export function createUpdater(options: UpdaterOptions): Updater {
   };
 
   // The copy that opens after Install and Restart is the new version when the
-  // install worked. When it is any other, the helper put this one back, and
-  // says so until the person checks again.
+  // install worked, or a newer one put in by hand. When it is an older one, the
+  // install did not work, and it says so until the person checks again.
   const installed = settings.installingVersion;
   if (installed !== null) {
     save({ installingVersion: null });
-    if (installed !== options.version) {
+    if (isOffered(installed, options.version)) {
       phase = failed(
         "install",
         "the new version could not be put in this copy's place and opened",
@@ -422,9 +433,9 @@ export function createUpdater(options: UpdaterOptions): Updater {
     if (stopped || coming !== next) return null;
     const unpacked = await unpack(next);
     if ("reason" in unpacked) return unpacked;
-    // It is unpacked again to be installed. Only the zip waits.
+    // It is unpacked again to be installed. Only the zip waits, if it is there still.
     await keepZip(next);
-    return null;
+    return (await isStillWhole(next.file, next.zip)) ? null : NOT_SAVED;
   }
 
   async function download(version: string, notesUrl: string, zip: ReleaseFile): Promise<void> {
@@ -446,7 +457,8 @@ export function createUpdater(options: UpdaterOptions): Updater {
       if (next.folder !== "") await folders.remove(next.folder);
       if (fault === null || stopped || coming !== next) return;
       coming = null;
-      if (fault.noAnswer === true) {
+      if (fault.noAnswer === true && unansweredVersion !== version) {
+        unansweredVersion = version;
         unanswered = true;
         lastAttemptAt = now();
       }
@@ -459,6 +471,7 @@ export function createUpdater(options: UpdaterOptions): Updater {
     const older = waiting;
     waiting = next;
     lostVersion = null;
+    unansweredVersion = null;
     say();
     if (older !== null) await folders.remove(older.folder);
   }
@@ -470,7 +483,6 @@ export function createUpdater(options: UpdaterOptions): Updater {
     // Install and Restart was pressed meanwhile, and looks for itself, or a newer one is ready.
     if (stopped || waiting !== ready || current().phase === "installing") return;
     lose(ready);
-    unanswered = true;
     phase = { phase: "idle" };
     say();
   }
@@ -481,28 +493,31 @@ export function createUpdater(options: UpdaterOptions): Updater {
     save({ lastCheckedAt: now() });
   };
 
-  async function look(automatic: boolean): Promise<AppUpdateStatus> {
+  /** The version the card says could not be installed, if any. */
+  const notInstalled = (): string | null =>
+    phase.phase === "failed" && phase.step === "install" ? phase.version : null;
+
+  async function look(): Promise<AppUpdateStatus> {
     if (phase.phase === "installing") return status();
     await checkReady();
     if (stopped || current().phase === "installing") return status();
-    const before = phase;
     // An install that did not work stays said through the checks the app makes
     // by itself, until the person checks or a newer version is out.
-    const held =
-      automatic && before.phase === "failed" && before.step === "install" ? before : null;
-    const leave = underWay(before) || held !== null;
-    if (!leave) phase = { phase: "checking" };
+    if (!underWay(phase) && (asked || notInstalled() === null)) phase = { phase: "checking" };
     lastAttemptAt = now();
+    unanswered = true;
+    looking = true;
     const answer = await requests.fetchText(endpoints.manifest, {
       ...request,
       maxBytes: MAX_MANIFEST_BYTES,
     });
+    looking = false;
     if (!answer.ok) {
       if (answer.failure === "not-found") {
         // The latest release has no Mac app. That is an answer, not a failure.
         answered();
-        if (!leave) phase = { phase: "no-release" };
-      } else if (!leave) {
+        if (current().phase === "checking") phase = { phase: "no-release" };
+      } else if (current().phase === "checking") {
         phase = failed(
           "check",
           answer.failure === "too-large"
@@ -515,7 +530,9 @@ export function createUpdater(options: UpdaterOptions): Updater {
 
     const manifest = readManifest(answer.value);
     if (manifest === null) {
-      if (!leave) phase = failed("check", "the release's update file could not be read");
+      if (current().phase === "checking") {
+        phase = failed("check", "the release's update file could not be read");
+      }
       return status();
     }
     answered();
@@ -539,7 +556,7 @@ export function createUpdater(options: UpdaterOptions): Updater {
     // Another download is left to finish. The next check finds this version.
     if (coming !== null) return status();
     if (waiting?.version === offered) return status();
-    if (held !== null && held.version === offered) return status();
+    if (notInstalled() === offered) return status();
 
     const notesUrl = endpoints.notes(offered);
     const zip = zipFor(manifest, options.arch);
@@ -552,7 +569,7 @@ export function createUpdater(options: UpdaterOptions): Updater {
     // Told of once for each version, and only when the app looked by itself.
     if (settings.notifiedVersion !== offered) {
       save({ notifiedVersion: offered });
-      if (automatic) options.onFound?.(offered, refusal);
+      if (!asked) options.onFound?.(offered, refusal);
     }
     if (refusal !== null) {
       await discard();
@@ -566,16 +583,21 @@ export function createUpdater(options: UpdaterOptions): Updater {
   }
 
   const check = (automatic: boolean): Promise<AppUpdateStatus> => {
-    checking ??= look(automatic).finally(() => {
+    if (!automatic) {
+      asked = true;
+      // What the check under way left said makes way for the person's.
+      if (looking && phase.phase === "failed") phase = { phase: "checking" };
+    }
+    checking ??= look().finally(() => {
       checking = null;
+      asked = false;
     });
     return checking;
   };
 
   /**
-   * Whether a day has passed since the last check, or the download it found had
-   * no answer or is no longer whole, and a while since the last check or
-   * download that failed.
+   * Whether a day has passed since the last check, or it or the download it
+   * began had no answer, and a while since the last check or such a download.
    */
   const due = (): boolean => {
     const at = now();
@@ -630,9 +652,9 @@ export function createUpdater(options: UpdaterOptions): Updater {
       if (stopped) return refused();
       if (!whole) {
         lose(ready);
-        // The newer one takes its place, when there is one.
-        const next = newer ?? ready;
-        void download(next.version, next.notesUrl, next.zip);
+        // Another version may be out by now, and this one gone from its address.
+        phase = { phase: "checking" };
+        await check(false);
         return refused();
       }
       const fail = async (reason: string): Promise<InstallAnswer> => {
@@ -665,15 +687,18 @@ export function createUpdater(options: UpdaterOptions): Updater {
         save({ installingVersion: null });
         return fail("the helper that replaces the app could not be started");
       }
-      timers.push(setTimeout(() => options.quit(), QUIT_DELAY_MS));
-      // Quitting clears this. An app still running by then has outlasted the helper.
+      const giveUp = (): void => {
+        handedOver = null;
+        save({ installingVersion: null });
+        void fail("Agent Lookout did not quit in time to be replaced");
+      };
       timers.push(
         setTimeout(() => {
-          if (phase.phase !== "installing") return;
-          handedOver = null;
-          save({ installingVersion: null });
-          void fail("Agent Lookout did not quit in time to be replaced");
-        }, INSTALL_GIVE_UP_MS),
+          options.quit();
+          // Quitting clears this one. It is set only now, so a Mac that slept
+          // does not wake with both due, and give up while the app quits.
+          if (!stopped) timers.push(setTimeout(giveUp, INSTALL_GIVE_UP_MS - QUIT_DELAY_MS));
+        }, QUIT_DELAY_MS),
       );
       return { ok: true, status: status() };
     },
