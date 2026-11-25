@@ -90,6 +90,8 @@ export interface UpdateWorld {
   unpacking: (stop: AbortSignal | undefined) => void | Promise<void>;
   /** Whether the app can change its own bundle. */
   writable: boolean;
+  /** Whether the app's own folder of user data is on another disk than the app. */
+  apart: boolean;
   /** Whether the helper starts, and whether what it opens can be opened. */
   helperStarts: boolean;
   newOpens: boolean;
@@ -138,6 +140,7 @@ export async function makeUpdateWorld(version = "0.2.0"): Promise<UpdateWorld> {
     asked: 0,
     unpacking: () => {},
     writable: true,
+    apart: false,
     helperStarts: true,
     newOpens: true,
     helper: null,
@@ -177,6 +180,7 @@ export async function makeUpdateWorld(version = "0.2.0"): Promise<UpdateWorld> {
         },
         requests: { fetchText, downloadFile },
         canWrite: () => world.writable,
+        diskOf: async (folder) => (world.apart && folder.startsWith(data) ? 2 : 1),
         onFound: (found) => world.told.push(found),
         run: unpack,
         startDetached: async (_file, args) => {

@@ -38,7 +38,7 @@
 // release on a server of the test's own and fake timers for the schedule.
 
 import { accessSync, constants } from "node:fs";
-import { mkdir, mkdtemp, readdir } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 
 import type { AppUpdateStatus, InstallRefusal, UpdatePhase } from "../../core/appUpdate.ts";
@@ -153,6 +153,8 @@ export interface UpdaterOptions {
   requests?: { fetchText: typeof fetchText; downloadFile: typeof downloadFile };
   /** Defaults to Node's `access` with `W_OK`. */
   canWrite?: CanWrite;
+  /** The disk a folder is on. Defaults to Node's `stat`. */
+  diskOf?: (folder: string) => Promise<number>;
   /** Runs ditto and plutil. */
   run?: RunProgram;
   /** Starts the helper. Tests pass one that starts nothing. */
@@ -252,6 +254,7 @@ export function createUpdater(options: UpdaterOptions): Updater {
   const endpoints = options.endpoints ?? GITHUB_RELEASES;
   const now = options.now ?? Date.now;
   const canWrite = options.canWrite ?? canWriteHere;
+  const diskOf = options.diskOf ?? (async (folder) => (await stat(folder)).dev);
   const run = options.run ?? runProgram;
   const pid = options.pid ?? process.pid;
   const requests = options.requests ?? { fetchText, downloadFile };
@@ -684,7 +687,14 @@ export function createUpdater(options: UpdaterOptions): Updater {
         if (newer !== null) void download(newer.version, newer.notesUrl, newer.zip);
         return refused();
       };
-      const unpacked = await unpack(ready);
+      // From one disk to another a move is a copy, which can end half way.
+      const oneDisk = await Promise.all([path.dirname(bundle), ready.folder].map(diskOf)).then(
+        ([app, data]) => app === data,
+        () => false,
+      );
+      const unpacked: { app: string } | Fault = oneDisk
+        ? await unpack(ready)
+        : { reason: "the app and its own folder of data are on different disks" };
       const aside = path.join(ready.folder, "previous", path.basename(bundle));
       const made = await mkdir(path.dirname(aside)).then(
         () => true,
