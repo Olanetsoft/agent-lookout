@@ -41,8 +41,8 @@ const COMMIT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 /** Where `HEAD` names the branch checked out. */
 const BRANCH_REF = "refs/heads/";
 
-/** What the `HEAD` file of a repository in git's reftable format names. */
-const REFTABLE_REF = "refs/heads/.invalid";
+/** The branch the `HEAD` file of a repository in git's reftable format names, which none can be called. */
+export const REFTABLE_BRANCH = ".invalid";
 
 /** The file's one line, without the line break git ends it with, or null when it has more. */
 function oneLine(content: string): string | null {
@@ -61,7 +61,7 @@ export function parseHead(content: string): GitHead | null {
   if (line === null) return null;
   if (line.startsWith("ref:")) {
     const ref = line.slice("ref:".length).trim();
-    if (ref === REFTABLE_REF) return {};
+    if (ref === `${BRANCH_REF}${REFTABLE_BRANCH}`) return {};
     if (!ref.startsWith(BRANCH_REF)) return null;
     const branch = sessionName(ref.slice(BRANCH_REF.length));
     return branch === undefined ? null : { branch };

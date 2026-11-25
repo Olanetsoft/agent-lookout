@@ -145,6 +145,9 @@ describe("readRemoteSnapshot", () => {
     expect(gitOf({ repository })).toEqual({
       repository: { id: repositoryId(`devbox\n${repository.id}`), name: "demo-api" },
     });
+    // As an earlier Agent Lookout there sends a repository in git's reftable format.
+    expect(gitOf({ branch: ".invalid", repository })).toEqual(gitOf({ repository }));
+    expect(gitOf({ branch: ".invalid" })).toBeUndefined();
     expect(gitOf({})).toBeUndefined();
     expect(gitOf({ repository: { id: "x", name: "demo-api" } })).toBeUndefined();
     expect(gitOf({ branch: 7, repository })).toBeUndefined();

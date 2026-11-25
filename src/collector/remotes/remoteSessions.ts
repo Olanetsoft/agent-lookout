@@ -29,6 +29,7 @@ import {
 import { cut, MAX_NAME_LENGTH, sessionName, waitingText } from "../../core/text.ts";
 import { plausibleTime } from "../../core/time.ts";
 import { tokenCountsOf } from "../../core/tokens/tokenCounts.ts";
+import { REFTABLE_BRANCH } from "../git/gitHead.ts";
 import { repositoryId } from "../git/repository.ts";
 
 /** The most sessions taken from one machine. Far more than one person runs. */
@@ -222,7 +223,8 @@ function readGit(value: unknown, machine: string): GitHead | undefined {
   } else if (value.branch !== undefined) {
     const branch = cut(value.branch, MAX_NAME_LENGTH);
     if (branch === undefined) return undefined;
-    head = { branch };
+    // What an Agent Lookout of 0.2.31 or before sends of a repository in git's reftable format.
+    head = branch === REFTABLE_BRANCH ? {} : { branch };
   } else {
     head = {};
   }

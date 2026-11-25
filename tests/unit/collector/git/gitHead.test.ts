@@ -49,8 +49,9 @@ describe("HEAD", () => {
   test("a repository in git's reftable format says neither, not the branch its HEAD names", () => {
     expect(parseHead("ref: refs/heads/.invalid\n")).toEqual({});
     expect(parseHead("ref: refs/heads/.invalid")).toEqual({});
-    // A branch that only begins that way is a branch.
+    // A branch that is only like it is a branch.
     expect(parseHead("ref: refs/heads/x.invalid\n")).toEqual({ branch: "x.invalid" });
+    expect(parseHead("ref: refs/heads/.other\n")).toEqual({ branch: ".other" });
   });
 
   test("a branch is cleaned of control characters and of those that turn text around", () => {
