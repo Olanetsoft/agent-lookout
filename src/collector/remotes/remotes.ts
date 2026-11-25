@@ -51,8 +51,8 @@ export interface RemotesOptions {
   pollIntervalMs?: number;
   /** How ssh is run and started again. Tests shorten the waits. */
   tunnels?: Omit<TunnelOptions, "remote" | "env" | "now">;
-  /** Reads the other machine through its tunnel. Tests pass their own. */
-  read?: (port: number) => Promise<RemoteReading>;
+  /** Reads the other machine. Defaults to reading it through its tunnel. Tests pass their own. */
+  read?: () => Promise<RemoteReading>;
 }
 
 export interface Remotes {

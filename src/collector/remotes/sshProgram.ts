@@ -3,6 +3,7 @@
 import path from "node:path";
 
 import { isExecutableFile, pathCandidates, pathsOf } from "../files/paths.ts";
+import type { Remote } from "./remoteSettings.ts";
 
 /** The variable that names the ssh program outright. */
 export const SSH_BIN_ENV = "AGENT_LOOKOUT_SSH_BIN";
@@ -67,51 +68,51 @@ export async function findSsh(
   };
 }
 
-export interface SshForward {
-  /** The port on this machine's 127.0.0.1 that leads to the other machine. */
-  localPort: number;
-  /** The port Agent Lookout listens on there, on that machine's own 127.0.0.1. */
-  remotePort: number;
-  /** What ssh connects to, already checked by `isSshTarget`. */
-  target: string;
-}
-
 /**
  * Everything Agent Lookout gives ssh, in order:
  *
- * - `-N`: run no command there, only forward the port.
+ * - `-W`: join ssh's input and output to the port Agent Lookout listens on
+ *   there, on that machine's own 127.0.0.1, and run no command there. No port is
+ *   opened on this computer. OpenSSH has it from 5.4, of 2010.
  * - `-o BatchMode=yes`: never ask for a password, a passphrase or whether to
  *   trust a host key. The person's ssh config and agent sign in, or the
  *   connection fails and says why.
- * - `-o ExitOnForwardFailure=yes`: end, rather than stay connected, when the
- *   port cannot be forwarded.
+ * - `-o ClearAllForwardings=yes`: none of the forwards the person's ssh config
+ *   names for the host, so it never needs a port that an ssh of theirs holds,
+ *   nor holds one that theirs needs. `-W` implies it, but the config can say no.
+ * - `-o PermitLocalCommand=no`: no `LocalCommand` from the config, since it
+ *   writes into ssh's output.
+ * - `-o LogLevel=INFO`: ssh's own default, so the reason it ends is there to
+ *   read, whatever the config asks for.
  * - `-o ServerAliveInterval=15`: notice within a minute that the other machine
  *   has gone, and end.
  * - `-o ControlMaster=no -o ControlPath=none`: a connection of its own, never
  *   one shared with another ssh through the person's `ControlMaster` and
  *   `ControlPath`, and never one left in the background by `ControlPersist`.
- *   So the forward belongs to this process, and ends when it ends. Options
- *   given here come before the person's ssh config.
- * - `-L`: a port on this machine's 127.0.0.1 to the one on that machine's
- *   127.0.0.1, so neither side listens anywhere but its own loopback.
- * - `--`, then the target, so nothing in it is ever read as an option.
+ *   So it ends when this process ends it. Options given here come before the
+ *   person's ssh config.
+ * - `--`, then the target, already checked by `isSshTarget`, so nothing in it is
+ *   ever read as an option.
  */
-export function sshArguments(forward: SshForward): string[] {
+export function sshArguments({ port, target }: Pick<Remote, "port" | "target">): string[] {
   return [
-    "-N",
+    "-W",
+    `127.0.0.1:${port}`,
     "-o",
     "BatchMode=yes",
     "-o",
-    "ExitOnForwardFailure=yes",
+    "ClearAllForwardings=yes",
+    "-o",
+    "PermitLocalCommand=no",
+    "-o",
+    "LogLevel=INFO",
     "-o",
     `ServerAliveInterval=${SERVER_ALIVE_SECONDS}`,
     "-o",
     "ControlMaster=no",
     "-o",
     "ControlPath=none",
-    "-L",
-    `127.0.0.1:${forward.localPort}:127.0.0.1:${forward.remotePort}`,
     "--",
-    forward.target,
+    target,
   ];
 }

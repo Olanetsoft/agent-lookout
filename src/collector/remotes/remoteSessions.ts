@@ -57,7 +57,8 @@ const MAX_WORD_LENGTH = 200;
  * ones taken from the other machine. A source there read a way not listed
  * here, as a newer Agent Lookout's can be, is compared with the rest of that
  * machine's under `api` alone. So a machine that sends a new way, or a new
- * source, each poll cannot make this one keep an answer for each.
+ * source, each poll cannot make this one keep an answer for each. While such a
+ * source does not answer there, `notRead` keeps its sessions as they were.
  */
 export const KNOWN_WAYS: ReadonlyMap<string, readonly string[]> = new Map([
   ["claude-code", ["registry+feed", "registry", "feed"]],
@@ -141,7 +142,8 @@ export interface RemoteSnapshot {
    * `remote:<name>:<source id>:`, and each part a source there names as not
    * read, such as `remote:<name>:hermes-agent:coder/`. So the first good poll
    * here after a restart leaves them out of its compare with the history, as
-   * that machine itself would. When those parts would come to more than
+   * that machine itself would, and a later one ends none of them, whatever
+   * their agent. When those parts would come to more than
    * `MAX_REMOTE_PARTS`, each source with any is named whole instead.
    */
   notRead: string[];

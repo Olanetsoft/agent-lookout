@@ -376,7 +376,13 @@ describe("every channel follows the time rules", () => {
         remote: { name: "devbox", target: "dev@devbox.local", port: 4777 },
         version: "9.9.9-test",
         tunnel: {
-          state: () => ({ kind: "running", run: 1, port: 53211, since: 0, command: ["ssh"] }),
+          state: () => ({
+            kind: "running",
+            run: 1,
+            read: async () => ({ kind: "closed" }),
+            since: 0,
+            command: ["ssh"],
+          }),
           connected: () => {},
         },
         read: async () => ({

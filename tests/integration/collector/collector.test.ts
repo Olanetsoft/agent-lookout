@@ -3203,11 +3203,16 @@ describe.skipIf(process.platform === "win32")("another machine over SSH", () => 
 
     await lookout.close();
     const snapshot = await until("unavailable");
-    const card = snapshot.sources.find((source) => source.id === "remote:devbox");
-    expect(card?.detail).toBe(
-      `ssh is connected to devbox, but no Agent Lookout answers on its port ${lookout.port}.`,
-    );
     expect(snapshot.sessions).toEqual([]);
+    await vi.waitFor(
+      async () => {
+        const { sources } = await collector.poller.pollOnce();
+        expect(sources.find((source) => source.id === "remote:devbox")?.detail).toContain(
+          `ssh is connected to devbox, but no Agent Lookout answers on its port ${lookout.port}.`,
+        );
+      },
+      { timeout: TUNNEL_WAIT_MS, interval: 100 },
+    );
     const events = readEvents((await request(port, "/api/events?since=0")).json()) ?? [];
     expect(events).toEqual([]);
 

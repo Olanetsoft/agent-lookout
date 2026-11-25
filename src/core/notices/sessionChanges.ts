@@ -1,5 +1,6 @@
 import {
   isPartKey,
+  keptUnread,
   readWays,
   withoutWaitingText,
   type ReadWays,
@@ -107,7 +108,8 @@ function laterOf(a: number | null, b: number | null): number | null {
  *   it: a Hermes Agent profile that could not be read on one poll, or a source
  *   on another machine that did not answer there, ends none of its waits. Its
  *   source's own way, its `basis`, is not a part, so a session read that way
- *   that is gone has stopped, as before.
+ *   that is gone has stopped, as before, unless the answer names its part as
+ *   not read (`keptUnread`).
  * - A remembered session that still needs the person, with a status time later
  *   than any its wait has been seen with, has stopped and started. Sources are
  *   read every couple of seconds. A session that is answered, works for a
@@ -183,6 +185,13 @@ export function waitChanges(memory: WaitMemory, snapshot: SessionsSnapshot): Wai
       started.push(session);
     }
     answer.waiting.set(session.id, { since: laterOf(seen, since), way });
+  }
+
+  for (const source of snapshot.sources) {
+    const waiting = answers.get(source.id)?.waiting;
+    for (const [id, wait] of keptUnread(source, memory.get(source.id)?.waits ?? [], listed)) {
+      waiting?.set(id, wait);
+    }
   }
 
   const next = new Map(memory);
@@ -369,8 +378,9 @@ function toldAlready(event: OverEvent, known: OverEvent | undefined): boolean {
  *   the jobs of the last day all at once, as Claude Code's command does when
  *   it starts answering late, would otherwise announce every one.
  * - A remembered session that is gone from the list has ended, unless it was
- *   finished or failed. A session that is over and later leaves the list has
- *   said what happened already.
+ *   finished or failed, or the answer names its part as not read
+ *   (`keptUnread`). A session that is over and later leaves the list has said
+ *   what happened already.
  * - But a session in a wait has ended only when the way that last listed it no
  *   longer lists it, as in the poller's event log (`endsWaitUnseen`). Another
  *   way's answer can be older than the wait, and can leave out a session that
@@ -421,6 +431,14 @@ export function sessionChanges(memory: ChangeMemory, snapshot: SessionsSnapshot)
     const before = memory.seen.get(session.source)?.get(way)?.get(session.id);
     if (before && before.status !== session.status && isOverStatus(session.status)) {
       found.push({ event: session.status, session });
+    }
+  }
+
+  const listed = new Set(snapshot.sessions.map((session) => session.id));
+  for (const source of snapshot.sources) {
+    for (const [way, sessions] of answers.get(source.id)?.read ?? []) {
+      const seen = memory.seen.get(source.id)?.get(way) ?? [];
+      for (const [id, before] of keptUnread(source, seen, listed)) sessions.set(id, before);
     }
   }
 

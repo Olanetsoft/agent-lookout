@@ -30,7 +30,7 @@ export interface Printer {
 /** What the host needs from the process it runs in. `npm start` passes `process`. */
 export interface HostProcess {
   /** Listens once for a signal that asks the server to stop. */
-  once(signal: "SIGINT" | "SIGTERM", listener: () => void): unknown;
+  once(signal: "SIGINT" | "SIGTERM" | "SIGHUP", listener: () => void): unknown;
   /** Ends the process with this exit code. */
   exit(code: number): void;
 }
@@ -53,8 +53,8 @@ export interface StandaloneOptions {
 }
 
 /**
- * Starts the standalone server and stops it on SIGINT or SIGTERM, ending the
- * process with 0 once it has closed.
+ * Starts the standalone server and stops it on SIGINT or SIGTERM, or on SIGHUP
+ * when its terminal closes, ending the process with 0 once it has closed.
  *
  * A problem the person can act on, such as a refused address, a taken port or a
  * missing build, is printed as a sentence and ends the process with 1.
@@ -126,6 +126,7 @@ export async function runStandalone(options: StandaloneOptions): Promise<Address
   };
   host.once("SIGINT", shutDown);
   host.once("SIGTERM", shutDown);
+  host.once("SIGHUP", shutDown);
 
   return address;
 }

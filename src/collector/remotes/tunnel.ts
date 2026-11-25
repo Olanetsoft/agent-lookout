@@ -1,13 +1,14 @@
-// The SSH tunnel to one other machine: the person's own ssh, forwarding a
-// port on this machine's loopback to the one Agent Lookout listens on there.
-// It is started again, after a wait that grows, whenever it ends, and stopped
-// with the collector.
+// The SSH tunnel to one other machine: the person's own ssh, with its input and
+// output joined to the port Agent Lookout listens on there. It is started
+// again, after a wait that grows, whenever it ends, and stopped with the
+// collector.
 
 import { spawn, type ChildProcess } from "node:child_process";
-import { createServer, type AddressInfo } from "node:net";
+import { Duplex, type Readable, type Writable } from "node:stream";
 
 import { clean, oneLine } from "../../core/text.ts";
 import { childEnvironment } from "../processes/childEnvironment.ts";
+import { createRemoteReader, type RemoteReading } from "./remoteReader.ts";
 import type { Remote } from "./remoteSettings.ts";
 import { findSsh, sshArguments, type SshSearch } from "./sshProgram.ts";
 
@@ -17,6 +18,15 @@ import { findSsh, sshArguments, type SshSearch } from "./sshProgram.ts";
  * the wait is the first again.
  */
 export const RESTART_DELAYS_MS = [1_000, 2_000, 5_000, 10_000, 30_000, 60_000] as const;
+
+/**
+ * How long a run of ssh has to bring back its first reading. One that hangs
+ * while it signs in, itself or in a `ProxyJump` or `ProxyCommand`, never ends on
+ * its own: ssh checks the other computer only once it has signed in. It is more
+ * than Linux takes to give up on an address that does not answer, 127 seconds,
+ * and leaves time for a `ProxyCommand` that starts the other computer.
+ */
+export const FIRST_READING_MS = 180_000;
 
 /** The most of what ssh says that is kept: its last lines, which say why it ended. */
 const MAX_SAID_BYTES = 4_096;
@@ -37,7 +47,10 @@ export interface TunnelEnd {
   connected: boolean;
   /** The exit code, or null when it was ended by a signal or could not be started. */
   code: number | null;
-  /** The last line ssh wrote to its error output, on one line, or null when it wrote none. */
+  /**
+   * The last line ssh wrote to its error output, on one line, or null when it
+   * wrote none. For a run ended here, why it was.
+   */
   said: string | null;
 }
 
@@ -49,12 +62,12 @@ export type TunnelState =
    * `AGENT_LOOKOUT_SSH_BIN` named a program that cannot be run.
    */
   | { kind: "no-ssh"; looked: string; named?: true; retryAt: number }
-  /** ssh is running, with the local end of its forward at `port`. */
   | {
       kind: "running";
       /** Counts the runs, so a reading is known to belong to this one. */
       run: number;
-      port: number;
+      /** Reads the other machine through ssh, once it has signed in. */
+      read: () => Promise<RemoteReading>;
       since: number;
       /** What was run: the program and its arguments, for the Sources view. */
       command: readonly string[];
@@ -72,8 +85,8 @@ export interface Tunnel {
   stop(): Promise<void>;
   state(): TunnelState;
   /**
-   * Told when a reading has come back through this run: the next time it ends,
-   * it dropped, and the wait before it starts again is the shortest.
+   * Told when a reading has come back whole through this run: the next time it
+   * ends, it dropped, and the wait before it starts again is the shortest.
    */
   connected(run: number): void;
 }
@@ -90,47 +103,51 @@ export interface TunnelOptions {
   /** What ssh is looked for in and run with: `PATH`, `AGENT_LOOKOUT_SSH_BIN`, and ssh's own. */
   env: NodeJS.ProcessEnv;
   findSsh?: (env: NodeJS.ProcessEnv) => Promise<SshSearch>;
-  /** A port on 127.0.0.1 with nothing listening on it. */
-  freePort?: () => Promise<number>;
   spawnSsh?: SpawnSsh;
   /** Defaults to `RESTART_DELAYS_MS`. */
   restartDelaysMs?: readonly number[];
+  /** Defaults to `FIRST_READING_MS`. */
+  firstReadingMs?: number;
   now?: () => number;
 }
 
 /**
- * A port on 127.0.0.1 that nothing listens on, from the system. Another
- * program could take it before ssh does; ssh then ends, since it is told to
- * when it cannot forward, and the next run asks for another.
+ * Away from Windows ssh is started in a process group of its own, so that
+ * ending it also ends what it started: a `ProxyJump`'s own ssh, or a
+ * `ProxyCommand`, that hangs does not end when ssh does.
  */
-export function freeLoopbackPort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = createServer();
-    server.unref();
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const { port } = server.address() as AddressInfo;
-      server.close(() => resolve(port));
-    });
-  });
-}
+const OWN_GROUP = process.platform !== "win32";
 
 /**
- * Starts ssh directly, with no shell between, and nothing on its input: it is
- * never asked anything, and with BatchMode it asks nothing. Its output is not
- * read, and its error output is, for the reason it ends.
+ * Starts ssh directly, with no shell between. With BatchMode it asks nothing, so
+ * its input and output hold only what goes to the other machine's Agent Lookout
+ * and comes back. Its error output is read for the reason it ends. Its input
+ * ends when this process does, however it does, and then so does ssh, unless it
+ * is still signing in: that one only `stop` and `endOnExit` end.
  */
 export const spawnSsh: SpawnSsh = (binary, args, env) =>
   spawn(binary, [...args], {
     env: childEnvironment(env),
-    stdio: ["ignore", "ignore", "pipe"],
+    stdio: ["pipe", "pipe", "pipe"],
+    detached: OWN_GROUP,
     windowsHide: true,
   });
 
+/** Sends ssh a signal, or with 0 none, and says whether any of it was left to get it. */
+function signal(ssh: ChildProcess, name: "SIGTERM" | "SIGKILL" | 0): boolean {
+  if (ssh.pid === undefined) return false;
+  try {
+    // A negative pid is the whole group ssh leads.
+    return OWN_GROUP ? process.kill(-ssh.pid, name) : ssh.kill(name);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Every ssh this process has started and not seen end. When the process exits
- * without stopping the collector, each is sent SIGTERM, so none is left
- * forwarding a port after Agent Lookout has gone.
+ * without stopping the collector, each is sent SIGTERM, so none is left after
+ * Agent Lookout has gone.
  */
 const live = new Set<ChildProcess>();
 let endedOnExit = false;
@@ -141,42 +158,60 @@ function endOnExit(child: ChildProcess): void {
   if (endedOnExit) return;
   endedOnExit = true;
   process.once("exit", () => {
-    for (const running of live) running.kill("SIGTERM");
+    for (const running of live) signal(running, "SIGTERM");
   });
 }
 
-/** The last line of what ssh said, on one line, or null. A warning is passed over for the reason after it. */
+/**
+ * The last line of what ssh said, on one line, or null. A warning is passed over
+ * for the reason after it, and so is the line that says only that the channel
+ * of `-W` failed, for the reason before it.
+ */
 function lastLine(text: string): string | null {
   const lines = text
     .split(/\r?\n/)
     .map((line) => clean(line))
     .filter((line): line is string => line !== undefined);
-  const reasons = lines.filter((line) => !/^warning:/i.test(line));
+  const reasons = lines.filter((line) => !/^(warning:|stdio forwarding failed)/i.test(line));
   const line = reasons[reasons.length - 1] ?? lines[lines.length - 1];
   return line === undefined ? null : oneLine(line, MAX_SAID_LENGTH);
 }
 
 /**
+ * ssh's output and input as one stream. An end of either ends both, since
+ * nothing more can be read, and its failure is the run's end, which `close` says.
+ */
+function joined(readable: Readable, writable: Writable): Duplex {
+  const stream = Duplex.from({ readable, writable });
+  for (const each of [readable, writable, stream]) each.on("error", () => {});
+  stream.once("end", () => stream.destroy());
+  return stream;
+}
+
+/**
  * The tunnel to one other machine. Each run is
- * `ssh -N -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=15
- * -o ControlMaster=no -o ControlPath=none
- * -L 127.0.0.1:<free port>:127.0.0.1:<port there> -- <target>`, as
- * `sshArguments` makes it, with the program found as `findSsh` finds it.
+ * `ssh -W 127.0.0.1:<port there> -o BatchMode=yes -o ClearAllForwardings=yes
+ * -o PermitLocalCommand=no -o LogLevel=INFO -o ServerAliveInterval=15
+ * -o ControlMaster=no -o ControlPath=none -- <target>`, as `sshArguments` makes
+ * it, with the program found as `findSsh` finds it. No port is opened on this
+ * computer. The run ends when its connection to Agent Lookout there does, and
+ * when there is none.
  *
  * Agent Lookout never sees a key or a password. ssh signs in with the person's
  * own config and agent, or, since it is told never to ask, fails and says why.
  *
  * When a run ends it is started again: after 1 second, then 2, 5, 10 and 30,
  * and then every minute, for as long as runs end before anything came back
- * through them. Once a reading has, the next wait is a second again. Each run
- * asks the system for a free port.
+ * through them. Once a reading has, the next wait is a second again. A run
+ * through which no reading has come back within `FIRST_READING_MS` is ended, and
+ * started again the same way.
  */
 export function createTunnel(options: TunnelOptions): Tunnel {
   const { remote, env } = options;
   const find = options.findSsh ?? findSsh;
-  const freePort = options.freePort ?? freeLoopbackPort;
   const start = options.spawnSsh ?? spawnSsh;
   const delays = options.restartDelaysMs ?? RESTART_DELAYS_MS;
+  const firstReadingMs = options.firstReadingMs ?? FIRST_READING_MS;
   const now = options.now ?? Date.now;
 
   let state: TunnelState = { kind: "off" };
@@ -259,28 +294,29 @@ export function createTunnel(options: TunnelOptions): Tunnel {
       return;
     }
 
-    let port: number;
-    try {
-      port = await freePort();
-    } catch {
-      state = notStarted("No free port on 127.0.0.1.");
-      return;
-    }
-    if (stale() || child) return;
-
     run += 1;
     const thisRun = run;
-    const args = sshArguments({ localPort: port, remotePort: remote.port, target: remote.target });
+    const args = sshArguments(remote);
     let ssh: ChildProcess;
+    let stream: Duplex;
     try {
       ssh = start(search.path, args, env);
+      // With no file left to open it has no input or output, and its error is still to come.
+      ssh.on("error", () => {});
+      stream = joined(ssh.stdout as Readable, ssh.stdin as Writable);
     } catch {
       state = notStarted("ssh could not be started.");
       return;
     }
     child = ssh;
     endOnExit(ssh);
-    state = { kind: "running", run: thisRun, port, since: now(), command: [search.path, ...args] };
+    state = {
+      kind: "running",
+      run: thisRun,
+      read: createRemoteReader(stream, remote.port),
+      since: now(),
+      command: [search.path, ...args],
+    };
 
     let said = "";
     ssh.stderr?.setEncoding("utf8");
@@ -289,14 +325,29 @@ export function createTunnel(options: TunnelOptions): Tunnel {
     });
     // Neither the process nor what it writes keeps this one alive on its own.
     ssh.unref();
-    (ssh.stderr as { unref?: () => void } | null)?.unref?.();
+    for (const pipe of ssh.stdio) (pipe as { unref?: () => void } | null)?.unref?.();
 
     let gone = () => {};
-    exited = new Promise((resolve) => (gone = resolve));
-    // The process has ended, though what it wrote may not all be read yet.
-    ssh.once("exit", () => {
+    const thisExited = new Promise<void>((resolve) => (gone = resolve));
+    exited = thisExited;
+    let overdue: string | null = null;
+    const deadline = setTimeout(() => {
+      if (connectedRun === thisRun) return;
+      overdue = `Nothing came back within ${firstReadingMs / 1000} seconds.`;
+      void endSsh(ssh, thisExited);
+    }, firstReadingMs);
+    deadline.unref?.();
+    // With its connection gone ssh ends, and one that does not is ended.
+    stream.once("close", async () => {
+      if (!(await ended(thisExited))) await endSsh(ssh, thisExited);
+    });
+    // The process has ended, though what it wrote may not all be read yet. A
+    // program it started can hold its error output open long after that.
+    ssh.once("exit", (code) => {
+      clearTimeout(deadline);
       if (child === ssh) child = null;
       gone();
+      setTimeout(() => finish(code, null), STOP_WAIT_MS).unref?.();
       // Stopped, and started again while it was ending: the new start, which
       // found it still running, runs ssh now.
       if (current !== generation && on && child === null) {
@@ -309,6 +360,9 @@ export function createTunnel(options: TunnelOptions): Tunnel {
     const finish = (code: number | null, failure: string | null) => {
       if (over) return;
       over = true;
+      clearTimeout(deadline);
+      ssh.stderr?.destroy();
+      stream.destroy();
       if (child === ssh) child = null;
       gone();
       const connected = connectedRun === thisRun;
@@ -317,7 +371,7 @@ export function createTunnel(options: TunnelOptions): Tunnel {
       // start after it, say that.
       if (current !== generation) return;
       const at = now();
-      const end: TunnelEnd = { at, connected, code, said: lastLine(said) ?? failure };
+      const end: TunnelEnd = { at, connected, code, said: overdue ?? lastLine(said) ?? failure };
       state = { kind: "ended", run: thisRun, end, retryAt: later(nextDelay(), at) };
     };
     // `close` comes once the error output has been read to its end, so the
@@ -341,6 +395,15 @@ export function createTunnel(options: TunnelOptions): Tunnel {
     });
   }
 
+  /** Ends a run of ssh, whose end `gone` says, and what it started, which can outlive it. */
+  async function endSsh(ssh: ChildProcess, gone: Promise<void>): Promise<void> {
+    signal(ssh, "SIGTERM");
+    const kill = setTimeout(() => signal(ssh, "SIGKILL"), STOP_WAIT_MS);
+    kill.unref?.();
+    if (!(await ended(gone))) await ended(gone);
+    if (!signal(ssh, 0)) clearTimeout(kill);
+  }
+
   return {
     start() {
       if (on) return;
@@ -354,16 +417,7 @@ export function createTunnel(options: TunnelOptions): Tunnel {
       generation += 1;
       if (timer) clearTimeout(timer);
       timer = null;
-      const running = child;
-      const gone = exited;
-      if (running) {
-        running.kill("SIGTERM");
-        // An ssh that does not end on SIGTERM is not left holding the port.
-        if (!(await ended(gone))) {
-          running.kill("SIGKILL");
-          await ended(gone);
-        }
-      }
+      if (child) await endSsh(child, exited);
       // A start made while this one waited has begun a run of its own.
       if (!on) state = { kind: "off" };
     },

@@ -3,10 +3,16 @@ import { describe, expect, test } from "vitest";
 import { OPENCODE_CAPABILITIES } from "@collector/adapters/opencode/index";
 import { createEventStore } from "@collector/eventStore";
 import { createHistoryStore } from "@collector/historyStore";
-import { createPoller } from "@collector/poller";
-import { BASIS, createRemoteAdapter, STILL_CONNECTING_MS } from "@collector/remotes/remoteAdapter";
+import { createPoller, POLL_DEADLINE_MS, POLL_INTERVAL_MS } from "@collector/poller";
+import {
+  BASIS,
+  createRemoteAdapter,
+  READING_KEPT_MS,
+  STILL_CONNECTING_MS,
+} from "@collector/remotes/remoteAdapter";
 import type { RemoteReading } from "@collector/remotes/remoteReader";
 import type { Remote } from "@collector/remotes/remoteSettings";
+import { sshArguments } from "@collector/remotes/sshProgram";
 import type { TunnelEnd, TunnelState } from "@collector/remotes/tunnel";
 import { EMPTY_CHANGE_MEMORY, sessionChanges } from "@core/notices/sessionChanges";
 import type {
@@ -31,26 +37,9 @@ const REMOTE: Remote = { name: "devbox", target: "dev@devbox.local", port: 4777 
 const RUNNING: TunnelState = {
   kind: "running",
   run: 1,
-  port: 53211,
+  read: async () => ({ kind: "closed" }),
   since: NOW,
-  command: [
-    "/usr/bin/ssh",
-    "-N",
-    "-o",
-    "BatchMode=yes",
-    "-o",
-    "ExitOnForwardFailure=yes",
-    "-o",
-    "ServerAliveInterval=15",
-    "-o",
-    "ControlMaster=no",
-    "-o",
-    "ControlPath=none",
-    "-L",
-    "127.0.0.1:53211:127.0.0.1:4777",
-    "--",
-    "dev@devbox.local",
-  ],
+  command: ["/usr/bin/ssh", ...sshArguments(REMOTE)],
 };
 
 function ended(end: Partial<TunnelEnd>, retryInMs = 5_000): TunnelState {
@@ -68,14 +57,14 @@ function setUp(
 ) {
   let state: TunnelState = RUNNING;
   const connected: number[] = [];
-  const reads: number[] = [];
+  let reads = 0;
   let next = reading;
   const adapter = createRemoteAdapter({
     remote: REMOTE,
     version: "0.2.3",
     tunnel: { state: () => state, connected: (run) => connected.push(run) },
-    read: async (port) => {
-      reads.push(port);
+    read: async () => {
+      reads += 1;
       return next;
     },
     now: () => NOW,
@@ -84,7 +73,7 @@ function setUp(
   return {
     adapter,
     connected,
-    reads,
+    reads: () => reads,
     set(to: TunnelState) {
       state = to;
     },
@@ -107,7 +96,7 @@ describe("a machine's card", () => {
   test("connected: its sessions, the version there, each source there and what each agent can report", async () => {
     const { adapter, connected, reads } = setUp();
     const result = await adapter.poll();
-    expect(reads).toEqual([53211]);
+    expect(reads()).toBe(1);
     expect(connected).toEqual([1]);
     expect(result.basis).toBe(BASIS);
     expect(result.health.state).toBe("ok");
@@ -120,7 +109,7 @@ describe("a machine's card", () => {
       {
         label: "Command",
         value:
-          "/usr/bin/ssh -N -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ControlMaster=no -o ControlPath=none -L 127.0.0.1:53211:127.0.0.1:4777 -- dev@devbox.local",
+          "/usr/bin/ssh -W 127.0.0.1:4777 -o BatchMode=yes -o ClearAllForwardings=yes -o PermitLocalCommand=no -o LogLevel=INFO -o ServerAliveInterval=15 -o ControlMaster=no -o ControlPath=none -- dev@devbox.local",
       },
       { label: "Asks for", value: "/api/health and /api/sessions" },
       { label: "Read", value: "every 2 seconds" },
@@ -143,7 +132,7 @@ describe("a machine's card", () => {
   });
 
   test("connecting: searching while ssh signs in the first time", async () => {
-    const { adapter, connected } = setUp({ kind: "refused" });
+    const { adapter, connected } = setUp({ kind: "closed" });
     const result = await adapter.poll();
     expect(result.health).toMatchObject({
       state: "searching",
@@ -159,7 +148,7 @@ describe("a machine's card", () => {
       remote: REMOTE,
       version: "0.2.3",
       tunnel: { state: () => RUNNING, connected: () => {} },
-      read: async () => ({ kind: "refused" }),
+      read: () => new Promise(() => {}),
       now: () => clock,
       answerWaitMs: 10,
     });
@@ -172,7 +161,7 @@ describe("a machine's card", () => {
       state: "unavailable",
       detail: "Still connecting to devbox over SSH, as dev@devbox.local.",
       advice:
-        "ssh has not connected yet. If this goes on, check that ssh dev@devbox.local connects from a terminal on this computer, and that devbox is switched on and reachable.",
+        "Nothing has come back through ssh yet. If this goes on, check that ssh dev@devbox.local connects from a terminal on this computer, and that devbox is switched on and reachable.",
     });
     expect(still.sessions).toEqual([]);
   });
@@ -181,7 +170,7 @@ describe("a machine's card", () => {
     const { adapter, set, reads } = setUp();
     set({ kind: "off" });
     expect((await adapter.poll()).health.state).toBe("searching");
-    expect(reads).toEqual([]);
+    expect(reads()).toBe(0);
   });
 
   test("ssh not found: says where it looked, and how to give one", async () => {
@@ -257,6 +246,10 @@ describe("a machine's card", () => {
     expect((await adapter.poll()).health.detail).toBe(
       "ssh could not connect to dev@devbox.local: ssh: Could not resolve hostname devbox.local: nodename nor servname provided, or not known. Trying again in 1 second.",
     );
+    set(ended({ said: "Nothing came back within 180 seconds.", code: null }, 1_000));
+    expect((await adapter.poll()).health.detail).toBe(
+      "ssh could not connect to dev@devbox.local: Nothing came back within 180 seconds. Trying again in 1 second.",
+    );
     set(ended({ said: null, code: 1 }));
     expect((await adapter.poll()).health.detail).toBe(
       "ssh could not connect to dev@devbox.local, and ended with code 1. Trying again in 5 seconds.",
@@ -280,8 +273,8 @@ describe("a machine's card", () => {
     // What each agent there can report is still what was last read.
     expect(dropped.health.agents).toHaveLength(2);
 
-    set({ ...RUNNING, run: 2, port: 53300 } as TunnelState);
-    answer({ kind: "refused" });
+    set({ ...RUNNING, run: 2 } as TunnelState);
+    answer({ kind: "closed" });
     expect((await adapter.poll()).health).toMatchObject({
       state: "unavailable",
       detail:
@@ -292,25 +285,91 @@ describe("a machine's card", () => {
     expect((await adapter.poll()).health.state).toBe("ok");
   });
 
-  test("no Agent Lookout answering there: says to start it there", async () => {
-    const { adapter, connected } = setUp({ kind: "closed" });
-    expect((await adapter.poll()).health).toMatchObject({
-      state: "unavailable",
-      detail: "ssh is connected to devbox, but no Agent Lookout answers on its port 4777.",
-      advice:
-        "Start it there with npx agent-lookout, and leave it running. If it listens on another port, give it as devbox=dev@devbox.local:<port>.",
-    });
-    // ssh had signed in, so the run counts as connected.
-    expect(connected).toEqual([1]);
-  });
-
-  test("something else answers there: it is not read as Agent Lookout", async () => {
-    const { adapter } = setUp({ kind: "unreadable", why: "answered /api/health with status 404" });
+  test.each([
+    [
+      "nothing listens there",
+      { said: "channel 0: open failed: connect failed: Connection refused" },
+    ],
+    ["nothing listens there, and ssh says little", { said: "stdio forwarding failed" }],
+    ["what listens there closed the connection", { code: 0 }],
+    [
+      "what listens there never answered",
+      { code: 0, said: "Nothing came back within 180 seconds." },
+    ],
+  ])("no Agent Lookout answering there, as %s: says to start it there", async (_, end) => {
+    const { adapter, set } = setUp();
+    set(ended(end));
     expect((await adapter.poll()).health).toMatchObject({
       state: "unavailable",
       detail:
-        "What listens on port 4777 of devbox answered /api/health with status 404, so it is not read as Agent Lookout.",
+        "ssh is connected to devbox, but no Agent Lookout answers on its port 4777. Trying again in 5 seconds.",
+      advice:
+        "Start it there with npx agent-lookout, and leave it running. If it listens on another port, give it as devbox=dev@devbox.local:<port>.",
     });
+  });
+
+  test("its connection closed, as when this computer slept: says so, and that none answers there only once a new run finds none", async () => {
+    const { adapter, set, answer } = setUp();
+    await adapter.poll();
+    set(ended({ code: 0, connected: true }, 1_000));
+    expect((await adapter.poll()).health).toMatchObject({
+      state: "unavailable",
+      detail: "The connection to Agent Lookout on devbox closed. Trying again in 1 second.",
+      advice:
+        "It is made again on its own. It can close when Agent Lookout there stops or this computer sleeps.",
+    });
+    set({ ...RUNNING, run: 2 } as TunnelState);
+    answer({ kind: "closed" });
+    expect((await adapter.poll()).health.detail).toBe(
+      "The connection to Agent Lookout on devbox closed. Connecting again.",
+    );
+    const said = "channel 0: open failed: connect failed: Connection refused";
+    set({ ...ended({ said }), run: 2 } as TunnelState);
+    expect((await adapter.poll()).health.detail).toContain("no Agent Lookout answers on its port");
+  });
+
+  test("an ssh server that lets ssh reach no port there: says so, and what to check", async () => {
+    const { adapter, set } = setUp();
+    set(ended({ said: "channel 0: open failed: administratively prohibited: open failed" }));
+    expect((await adapter.poll()).health).toMatchObject({
+      state: "unavailable",
+      detail:
+        "The ssh server on devbox did not let ssh reach its port 4777: channel 0: open failed: administratively prohibited: open failed. Trying again in 5 seconds.",
+      advice:
+        "Check that it allows TCP forwarding: AllowTcpForwarding and PermitOpen in its sshd_config.",
+    });
+  });
+
+  test("something else answers there: it is not read as Agent Lookout, nor once that has ended ssh", async () => {
+    const { adapter, set, connected } = setUp({
+      kind: "unreadable",
+      why: "answered /api/health with status 404",
+    });
+    const detail =
+      "What listens on port 4777 of devbox answered /api/health with status 404, so it is not read as Agent Lookout.";
+    expect((await adapter.poll()).health).toMatchObject({ state: "unavailable", detail });
+    // Its wait before ssh is started again goes on growing.
+    expect(connected).toEqual([]);
+    set(ended({ code: 0 }));
+    for (const _ of [1, 2]) {
+      const { health } = await adapter.poll();
+      expect(health.detail).toBe(`${detail} Trying again in 5 seconds.`);
+    }
+    set(RUNNING);
+    set({ ...ended({ said: "Connection closed by devbox.local." }), run: 2 } as TunnelState);
+    expect((await adapter.poll()).health.detail).toContain("turned the SSH connection away");
+  });
+
+  test("a connection that has gone leaves the last reading until the tunnel says why", async () => {
+    const { adapter, set, answer, connected } = setUp();
+    await adapter.poll();
+    answer({ kind: "closed" });
+    expect((await adapter.poll()).health).toMatchObject({ state: "ok", checkedAt: NOW });
+    expect(connected).toEqual([1]);
+    set(ended({ connected: true, said: "Timeout, server devbox.local not responding." }));
+    expect((await adapter.poll()).health.detail).toContain(
+      "The SSH connection to devbox dropped: Timeout, server devbox.local not responding.",
+    );
   });
 
   test("its version: a list of sessions this version cannot read says which versions", async () => {
@@ -326,22 +385,24 @@ describe("a machine's card", () => {
   });
 
   test("no answer in time: says how long it waited", async () => {
-    const { adapter } = setUp({ kind: "timeout" });
+    const { adapter, connected } = setUp({ kind: "timeout" });
     expect((await adapter.poll()).health).toMatchObject({
       state: "unavailable",
       detail: "devbox did not answer within 6 seconds.",
+      advice: "It keeps trying, and after a minute with no answer it connects again.",
     });
+    expect(connected).toEqual([]);
   });
 
   test("a reading slower than the wait is used by the next poll, and no second one is started meanwhile", async () => {
     let release: (reading: RemoteReading) => void = () => {};
-    const reads: number[] = [];
+    let reads = 0;
     const adapter = createRemoteAdapter({
       remote: REMOTE,
       version: "0.2.3",
       tunnel: { state: () => RUNNING, connected: () => {} },
-      read: (port) => {
-        reads.push(port);
+      read: () => {
+        reads += 1;
         return new Promise((resolve) => (release = resolve));
       },
       now: () => NOW,
@@ -349,10 +410,122 @@ describe("a machine's card", () => {
     });
     expect((await adapter.poll()).health.state).toBe("searching");
     expect((await adapter.poll()).health.state).toBe("searching");
-    expect(reads).toHaveLength(1);
+    expect(reads).toBe(1);
     release({ kind: "read", version: REMOTE_VERSION, snapshot: snapshotThere() });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect((await adapter.poll()).health.state).toBe("ok");
+  });
+});
+
+describe("the last reading, while the next one is under way", () => {
+  /** A machine read once, at NOW, whose next answer does not come until it is released. */
+  async function readOnce() {
+    let clock = NOW;
+    let release: (reading: RemoteReading) => void = () => {};
+    let held = false;
+    const reading: RemoteReading = {
+      kind: "read",
+      version: REMOTE_VERSION,
+      snapshot: snapshotThere(),
+    };
+    const adapter = createRemoteAdapter({
+      remote: REMOTE,
+      version: "0.2.3",
+      tunnel: { state: () => RUNNING, connected: () => {} },
+      read: () => (held ? new Promise((resolve) => (release = resolve)) : Promise.resolve(reading)),
+      now: () => clock,
+      answerWaitMs: 10,
+    });
+    expect((await adapter.poll()).health.state).toBe("ok");
+    held = true;
+    return {
+      /** Polls with the clock this long after that reading. */
+      pollAt(ms: number) {
+        clock = NOW + ms;
+        return adapter.poll();
+      },
+      async answer() {
+        release(reading);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      },
+    };
+  }
+
+  test("is used for as long as one can take, and at the poll after one held up to its deadline", async () => {
+    const machine = await readOnce();
+    const slowPoll = POLL_DEADLINE_MS + POLL_INTERVAL_MS + 2_000;
+    for (const ms of [2_000, 14_000, slowPoll, READING_KEPT_MS]) {
+      const { health, sessions } = await machine.pollAt(ms);
+      expect(health).toMatchObject({ state: "ok", checkedAt: NOW });
+      expect(sessions).toHaveLength(2);
+    }
+  });
+
+  test.each([
+    ["older, as after this computer slept", 11 * 60 * 60_000],
+    ["just older", READING_KEPT_MS + 1],
+    ["half a minute old", 30_000],
+    ["dated later than now, by a clock set back", -1],
+  ])("is not used once it is %s: the machine is not connected until the next", async (_, ms) => {
+    const machine = await readOnce();
+    const woken = await machine.pollAt(ms);
+    expect(woken.health).toMatchObject({
+      state: "unavailable",
+      detail:
+        "The last answer from devbox is not recent enough to show, as after this computer slept. Connecting again.",
+      checkedAt: NOW + ms,
+    });
+    expect(woken.sessions).toEqual([]);
+    expect((await machine.pollAt(ms + 2_000)).health).toEqual({
+      ...woken.health,
+      checkedAt: NOW + ms + 2_000,
+    });
+    await machine.answer();
+    expect((await machine.pollAt(ms + 2_500)).health).toMatchObject({
+      state: "ok",
+      checkedAt: NOW + ms + 2_000,
+    });
+  });
+
+  test("so a wait answered while this computer slept is not told on waking, and one still open is", async () => {
+    for (const answered of [true, false]) {
+      let clock = NOW;
+      let snapshot = snapshotThere([]);
+      let held = false;
+      let release: () => void = () => {};
+      const adapter = createRemoteAdapter({
+        remote: REMOTE,
+        version: "0.2.3",
+        tunnel: { state: () => RUNNING, connected: () => {} },
+        read: async () => {
+          if (held) await new Promise<void>((resolve) => (release = resolve));
+          return { kind: "read", version: REMOTE_VERSION, snapshot };
+        },
+        now: () => clock,
+        answerWaitMs: 10,
+      });
+      const poller = createPoller({
+        adapters: [adapter],
+        events: createEventStore(),
+        history: createHistoryStore(),
+        now: () => clock,
+      });
+      const told = async () => (await poller.pollOnce()).sessions.map((session) => session.status);
+      await told();
+      snapshot = snapshotThere();
+      clock += 2_000;
+      expect(await told()).toEqual(["needs-you", "working"]);
+
+      held = true;
+      clock += 8 * 60 * 60_000;
+      if (answered) snapshot = snapshotThere([]);
+      expect(await told()).toEqual([]);
+      release();
+      held = false;
+      clock += 2_000;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(await told()).toEqual(answered ? [] : ["needs-you", "working"]);
+    }
   });
 });
 
@@ -520,6 +693,88 @@ describe("the way a machine is read", () => {
     await machine.poll(everySourceThere(CRUSH_PROJECTS_THERE, sessions));
     expect(machine.notices).toEqual([]);
     expect(machine.changes()).toEqual([]);
+  });
+
+  describe("an agent this version does not know there", () => {
+    /** An agent there of a newer version, in the state given, with these sessions once it is read. */
+    function newerThere(
+      source: Partial<SourceHealth>,
+      statuses: [string, SessionStatus][],
+    ): SessionsSnapshot {
+      return {
+        generatedAt: NOW,
+        sources: [{ ...sourceThere("next-agent", "Next Agent", "files"), ...source }],
+        sessions: statuses.map(([id, status]) => sessionThere("next-agent", id, status)),
+      };
+    }
+    const both: [string, SessionStatus][] = [
+      ["waiting", "needs-you"],
+      ["busy", "working"],
+    ];
+    const ok = newerThere({}, both);
+
+    test.each(["error", "searching", "unavailable"] as const)(
+      "that is %s there for a while sends nothing for its sessions, nor again for a wait",
+      async (state) => {
+        const machine = watched(ok);
+        await machine.poll();
+        await machine.poll();
+        await machine.poll(newerThere({ state }, []));
+        await machine.poll();
+        await machine.poll(ok);
+        await machine.poll(newerThere({ state }, []));
+        await machine.poll(ok);
+        expect(machine.notices).toEqual([]);
+        expect(machine.changes()).toEqual([]);
+      },
+    );
+
+    test("tells once it is read what changed meanwhile: a finish, an end, a wait", async () => {
+      const machine = watched(ok);
+      await machine.poll();
+      await machine.poll();
+      await machine.poll(newerThere({ state: "error" }, []));
+      await machine.poll();
+      await machine.poll(
+        newerThere({}, [
+          ["busy", "finished"],
+          ["new", "needs-you"],
+        ]),
+      );
+      expect(machine.notices).toEqual([
+        "needs-you remote:devbox:next-agent:new",
+        "finished remote:devbox:next-agent:busy",
+        "ended remote:devbox:next-agent:waiting",
+      ]);
+      expect(machine.changes().toSorted()).toEqual([
+        "appeared",
+        "ended",
+        "remote:devbox:next-agent:busy working->finished",
+      ]);
+    });
+
+    test("that is read in parts ends none of a part it names as not read", async () => {
+      const parted = (read: string[]) =>
+        newerThere(
+          {
+            notRead: ["a/", "b/"]
+              .filter((part) => !read.includes(part))
+              .map((p) => `next-agent:${p}`),
+          },
+          read.map((part) => [`${part}waiting`, "needs-you"]),
+        );
+      const machine = watched(parted(["a/", "b/"]));
+      await machine.poll();
+      await machine.poll();
+      await machine.poll(parted(["a/"]));
+      await machine.poll(parted(["b/"]));
+      await machine.poll(parted(["a/", "b/"]));
+      expect(machine.notices).toEqual([]);
+      expect(machine.changes()).toEqual([]);
+      // Read, and gone.
+      await machine.poll(newerThere({}, [["a/waiting", "needs-you"]]));
+      expect(machine.notices).toEqual(["ended remote:devbox:next-agent:b/waiting"]);
+    });
   });
 
   test("a way this version does not name for a source there is left out, and that source is compared under api", async () => {
