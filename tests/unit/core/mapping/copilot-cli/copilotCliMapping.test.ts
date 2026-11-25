@@ -88,7 +88,7 @@ describe("each row of the table", () => {
     expect(statusOf(fold(user, { sort: "unreadable" })).status).toBe("unknown");
   });
 
-  test("5: a permission request open a second or more needs you, since the oldest", () => {
+  test("5: a permission request open a second or more needs you, since the oldest of them and of the open questions", () => {
     const made = fold(
       user,
       turnStart("0"),
@@ -98,10 +98,45 @@ describe("each row of the table", () => {
     );
     expect(statusOf(made)).toEqual({
       status: "needs-you",
-      since: NOW - 30_000,
+      since: NOW - 40_000,
       waitingReason: "permission",
-      wait: { since: NOW - 30_000, ids: ["permission:r-1", "permission:r-2"] },
+      wait: { since: NOW - 40_000, ids: ["permission:r-1", "permission:r-2", "question:c-1"] },
       showsLastWrite: false,
+    });
+  });
+
+  test("5: a question newer than a request, or with a time that cannot be right, leaves the request's time", () => {
+    for (const at of [NOW - 10_000, NOW + 3_600_000, 0, null]) {
+      const made = fold(
+        user,
+        turnStart("0"),
+        { sort: "permission", request: "r-1", byHook: false, at: NOW - 20_000 },
+        { sort: "tool-start", call: "c-1", ask: true, at },
+      );
+      expect(statusOf(made)).toMatchObject({
+        since: NOW - 20_000,
+        waitingReason: "permission",
+        wait: { since: NOW - 20_000, ids: ["permission:r-1", "question:c-1"] },
+      });
+    }
+  });
+
+  test("6: a request younger than a second leaves the wait the question's, until it is a second old", () => {
+    const made = fold(
+      user,
+      turnStart("0"),
+      { sort: "tool-start", call: "c-1", ask: true, at: NOW - 15_000 },
+      { sort: "permission", request: "r-1", byHook: false, at: NOW - 500 },
+    );
+    expect(statusOf(made)).toMatchObject({
+      since: NOW - 15_000,
+      waitingReason: "question",
+      wait: { ids: ["question:c-1"] },
+    });
+    expect(statusOf(made, { now: NOW + 500 })).toMatchObject({
+      since: NOW - 15_000,
+      waitingReason: "permission",
+      wait: { ids: ["permission:r-1", "question:c-1"] },
     });
   });
 

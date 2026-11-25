@@ -94,8 +94,8 @@ function waitingPermissions(facts: CopilotCliFacts): { ids: string[]; starts: (n
  * | 2   | the newest main lifecycle line is any other `session.shutdown`                         | finished  | that line's time              |
  * | 3   | no lock counts                                                                         | finished  | the log's or folder's last change |
  * | 4   | its locks could not be listed, or a line that would decide could not be read           | unknown   | none                          |
- * | 5   | a permission request has been open at least 1 second                                  | needs-you | the oldest such request's time |
- * | 6   | an `ask_user` call is open                                                             | needs-you | its start                     |
+ * | 5   | a permission request has been open at least 1 second                                  | needs-you | the oldest such request's or open `ask_user` call's time |
+ * | 6   | an `ask_user` call is open                                                             | needs-you | the oldest such call's start  |
  * | 7   | the newest main lifecycle line is `session.error`                                      | unknown   | none                          |
  * | 8   | a main turn is open, the newest main lifecycle line is `user.message`, a `turn_end` of a turn that asked for tools or a `session.task_complete` whose `outcome` is `continue`, or a sub-agent's turn or another tool call is open | working | the newest request's time |
  * | 9   | lines went unread and no main turn line came since, or the last turn's tool requests could not be read, or a `session.task_complete` did not say whether the run goes on, or no lifecycle line was read | unknown | none |
@@ -104,6 +104,9 @@ function waitingPermissions(facts: CopilotCliFacts): { ids: string[]; starts: (n
  * A turn that holds a `session.task_complete` whose `outcome` is `completed`
  * asked for nothing more, and one whose `outcome` does not say is not known
  * to (`copilotCliFold.ts`).
+ *
+ * Rows 5 and 6 are one wait, on every request and call open in it, so it goes
+ * on while any of them stays open. Its reason is a permission while one waits.
  *
  * Every time is judged against `now` on every poll, and one that cannot be
  * right is none.
@@ -126,23 +129,13 @@ export function copilotCliStatusOf(facts: CopilotCliFacts): CopilotCliStatus {
   if (live === null || fold.unsure) return UNKNOWN;
 
   const permissions = waitingPermissions(facts);
-  if (permissions.ids.length > 0) {
-    const since = earliest(permissions.starts);
+  const ids = [...permissions.ids, ...[...fold.questions.keys()].map((call) => `question:${call}`)];
+  if (ids.length > 0) {
+    const since = earliest([...permissions.starts, ...[...fold.questions.values()].map(believed)]);
     return {
       status: "needs-you",
       since,
-      waitingReason: "permission",
-      wait: { since, ids: permissions.ids },
-      showsLastWrite: false,
-    };
-  }
-  if (fold.questions.size > 0) {
-    const ids = [...fold.questions.keys()].map((call) => `question:${call}`);
-    const since = earliest([...fold.questions.values()].map(believed));
-    return {
-      status: "needs-you",
-      since,
-      waitingReason: "question",
+      waitingReason: permissions.ids.length > 0 ? "permission" : "question",
       wait: { since, ids },
       showsLastWrite: false,
     };
