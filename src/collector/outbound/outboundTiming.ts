@@ -20,9 +20,16 @@ export const HOUR_MS = 3_600_000;
  */
 export type SendTiming = "send" | "wait" | "limited";
 
-/** The sends tried in the hour before `now`, oldest first. Only these count against the limit. */
+/**
+ * The sends tried in the hour before `now`, oldest first. Only these count
+ * against the limit. One later than now, as when the clock has been set back,
+ * counts as tried now.
+ */
 export function sendsInLastHour(sentAt: readonly number[], now: number): number[] {
-  return sentAt.filter((at) => now - at < HOUR_MS).sort((a, b) => a - b);
+  return sentAt
+    .map((at) => Math.min(at, now))
+    .filter((at) => now - at < HOUR_MS)
+    .sort((a, b) => a - b);
 }
 
 /**

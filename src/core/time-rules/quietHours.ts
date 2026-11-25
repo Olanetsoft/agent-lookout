@@ -1,7 +1,8 @@
 import type { SessionsSnapshot } from "../sessions/session.ts";
+import { localDate } from "./localTime.ts";
 import { clockMinutes, rulesOf, type QuietHoursRule, type Weekday } from "./timeRules.ts";
 
-/** Each day as `Date.getDay` numbers it, from Sunday. */
+/** Each day as `Date.getUTCDay` numbers it, from Sunday. */
 const DAY_OF_WEEK: readonly Weekday[] = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 
 /**
@@ -22,13 +23,13 @@ export function isQuietAt(rule: QuietHoursRule, at: number): boolean {
   const to = clockMinutes(rule.to);
   if (from === null || to === null || from === to) return false;
 
-  const date = new Date(at);
-  const minute = date.getHours() * 60 + date.getMinutes();
-  const today = DAY_OF_WEEK[date.getDay()] as Weekday;
+  const date = localDate(at);
+  const minute = date.getUTCHours() * 60 + date.getUTCMinutes();
+  const today = DAY_OF_WEEK[date.getUTCDay()] as Weekday;
   if (from < to) return minute >= from && minute < to && rule.days.includes(today);
   if (minute >= from) return rule.days.includes(today);
   if (minute < to) {
-    const yesterday = DAY_OF_WEEK[(date.getDay() + 6) % 7] as Weekday;
+    const yesterday = DAY_OF_WEEK[(date.getUTCDay() + 6) % 7] as Weekday;
     return rule.days.includes(yesterday);
   }
   return false;

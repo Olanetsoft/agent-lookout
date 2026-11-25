@@ -1,4 +1,4 @@
-import { NOTIFICATIONS_HEADER, notificationsHeaderValue } from "@core/api";
+import { NOTIFICATIONS_HEADER, notificationsHeaderValue, OPENED_HEADER } from "@core/api";
 import { notificationEventsInForce } from "@dashboard/lib/notifications/notificationSetting";
 
 /**
@@ -48,6 +48,9 @@ function staysOnThisServer(path: string): boolean {
   }
 }
 
+/** When this page was opened, as every request says. */
+const OPENED_AT = String(Date.now());
+
 /**
  * What this page says of its notifications: the events they are on for, which
  * is none unless the person has turned them on and the browser allows them. In
@@ -66,7 +69,7 @@ function notificationsSaid(): string {
  * resolve to another host, is rejected before any request is made, because
  * nothing in the app may call another machine.
  *
- * The request is passed on as it was given, with one header added to its own.
+ * The request is passed on as it was given, with two headers added to its own.
  */
 export function apiRequest(path: string, init?: RequestInit): Promise<Response> {
   if (!staysOnThisServer(path)) {
@@ -78,5 +81,6 @@ export function apiRequest(path: string, init?: RequestInit): Promise<Response> 
   }
   const headers = new Headers(init?.headers);
   headers.set(NOTIFICATIONS_HEADER, notificationsSaid());
+  headers.set(OPENED_HEADER, OPENED_AT);
   return currentHost(path, { ...init, headers });
 }

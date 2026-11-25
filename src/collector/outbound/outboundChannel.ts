@@ -56,8 +56,8 @@ import { limitLiftsAt, sendsInLastHour, sendTiming, waitBegan } from "./outbound
  * comes due, a reminder, which is held as its wait, and a session that
  * finishes, fails or ends are held, by `quietHold.ts`, and when they end, a
  * wait still open is sent as usual, or reminded of when it was sent before
- * them, and the rest goes in one summary. Each counts against the hourly
- * limit as one.
+ * them, and the rest goes in one summary. A wait that cannot be read as they
+ * end is held until it can. Each counts against the hourly limit as one.
  *
  * A wait whose permission request Agent Lookout answered is over from the
  * moment of the answer, as the snapshot marks it, though its source can say
@@ -189,7 +189,8 @@ export function createOutboundChannel<Content>(
   const open = new Map<string, number>();
   /**
    * The status time of the wait last seen for each session that is not to be
-   * sent: one already sent, or one that was open when the collector started.
+   * sent: one already sent, or one that was open when the collector started,
+   * and not one quiet hours hold.
    * A session that misses a poll, or reads as another status for one, comes
    * back as a wait that started. With the same status time it is the same
    * wait, and is not sent again. Entries are kept when a wait stops, for that
@@ -259,7 +260,7 @@ export function createOutboundChannel<Content>(
 
         if (hold.holding() && !quiet) {
           // The quiet hours are over. What they held goes first, as one.
-          const end = hold.end(snapshot, at, rules.quietHours.leaveOutAnswered);
+          const end = hold.end(snapshot, at, rules.quietHours.leaveOutAnswered, memory);
           const { summary } = end;
           if (summary) {
             const items = summary.items.map((item) => ({
@@ -271,7 +272,7 @@ export function createOutboundChannel<Content>(
           // A wait still open is sent as any other wait is, below.
           for (const { session, begunAt } of end.open) open.set(session.id, begunAt);
         }
-        if (quiet) hold.begin(at);
+        if (quiet) hold.begin(at, snapshot.sessions);
 
         for (const { event, session } of result.changes) {
           if (!wanted.has(event)) continue;
@@ -306,7 +307,10 @@ export function createOutboundChannel<Content>(
           send(write(at));
         }
         const schedule = reminderSchedule(rules.longWait);
-        for (const [id, begunAt] of open) {
+        for (const [id, began] of open) {
+          // From now at the latest, when the clock has been set back.
+          const begunAt = Math.min(began, at);
+          open.set(id, begunAt);
           // Still open as far as this snapshot shows. A session whose source did
           // not answer this time is not in it, and is held until it is.
           const session = snapshot.sessions.find(
@@ -365,11 +369,11 @@ export function createOutboundChannel<Content>(
           }
         }
 
-        // A wait seen now and not open was sent, or was open at the start.
+        // A wait seen now, and neither open nor held, was sent, or was open at the start.
         for (const session of snapshot.sessions) {
-          if (needsYou(session) && session.statusSince !== null && !open.has(session.id)) {
-            done.set(session.id, session.statusSince);
-          }
+          const { id, statusSince } = session;
+          if (statusSince === null || open.has(id) || hold.holdsWait(id)) continue;
+          if (needsYou(session)) done.set(id, statusSince);
         }
       } catch {
         // Whatever went wrong is this module's. The poll's answer stands.

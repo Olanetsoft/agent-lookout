@@ -17,13 +17,20 @@ export interface RememberedWait {
   way: string;
 }
 
+/** What is remembered of one source that has answered. */
+export interface SourceWaits {
+  /** Its sessions that needed the person at its last answer that could be read, by id, each with its wait. */
+  waits: ReadonlyMap<string, RememberedWait>;
+  /** The start of the ids of the sessions of each part that no answer has read yet (`notRead`). */
+  unread: readonly string[];
+}
+
 /**
- * What is remembered from one snapshot to the next: for each source that has
- * answered, its sessions that needed the person at its last answer that could
- * be read, by id, each with its wait. A source that has never answered so is
- * absent, which is how its first answer is told from a later one.
+ * What is remembered from one snapshot to the next, for each source that has
+ * answered. A source that has never answered so is absent, which is how its
+ * first answer is told from a later one.
  */
-export type WaitMemory = ReadonlyMap<SourceId, ReadonlyMap<string, RememberedWait>>;
+export type WaitMemory = ReadonlyMap<SourceId, SourceWaits>;
 
 /** The memory to start from, before any snapshot has been seen. */
 export const EMPTY_WAIT_MEMORY: WaitMemory = new Map();
@@ -39,6 +46,27 @@ export interface WaitChanges {
    * is taken down first, and the new wait is announced after it.
    */
   stopped: string[];
+}
+
+/** Whether a session's id begins with any of these starts. */
+function startsWithAny(id: string, starts: readonly string[]): boolean {
+  return starts.some((start) => id.startsWith(start));
+}
+
+/**
+ * The parts not read yet, by the start of their sessions' ids, after an answer
+ * that did not read those in `notRead`. The first answer names them all, and a
+ * part first named by a later one has been read, and was empty. An answer can
+ * name a source whole that named its parts before, or the other way round.
+ */
+function stillUnread(
+  before: readonly string[] | undefined,
+  notRead: readonly string[],
+): readonly string[] {
+  if (!before) return notRead;
+  return before.flatMap((start) =>
+    startsWithAny(start, notRead) ? [start] : notRead.filter((part) => part.startsWith(start)),
+  );
 }
 
 /** The later of two status times. Null is a time nobody gave, and is never the later. */
@@ -67,6 +95,9 @@ function laterOf(a: number | null, b: number | null): number | null {
  *   waiting in it were already waiting; they did not begin at this moment, so
  *   none has started. A source that was not set up at first has a baseline of
  *   no sessions, so a wait in a folder of status files made later has started.
+ * - So is the first answer that reads a part its source's answers have named
+ *   as not read until then (`notRead`), for that part: a Hermes Agent profile,
+ *   or each source on another computer whose Agent Lookout had only just begun.
  * - After that, a session that needs the person and is not remembered has
  *   started. A remembered one that is now in any other status, or gone from
  *   the list, has stopped.
@@ -105,11 +136,15 @@ function laterOf(a: number | null, b: number | null): number | null {
  * the same snapshot, it reports nothing.
  */
 export function waitChanges(memory: WaitMemory, snapshot: SessionsSnapshot): WaitChanges {
-  /** Each source that could be read, with the ways it was read and its sessions that wait now. */
-  const answers = new Map<SourceId, { ways: ReadWays; waiting: Map<string, RememberedWait> }>();
+  /** Each source that could be read, with the ways it was read, its parts not read yet and its sessions that wait now. */
+  const answers = new Map<
+    SourceId,
+    { ways: ReadWays; unread: readonly string[]; waiting: Map<string, RememberedWait> }
+  >();
   for (const source of snapshot.sources) {
     if (source.state === "ok" || source.state === "not-set-up") {
-      answers.set(source.id, { ways: readWays(source), waiting: new Map() });
+      const unread = stillUnread(memory.get(source.id)?.unread, source.notRead ?? []);
+      answers.set(source.id, { ways: readWays(source), unread, waiting: new Map() });
     }
   }
   /** Every session listed, by id, whatever its status. */
@@ -126,11 +161,16 @@ export function waitChanges(memory: WaitMemory, snapshot: SessionsSnapshot): Wai
     const way = answer.ways.keyOf(session.id);
 
     const remembered = memory.get(session.source);
-    const before = remembered?.get(session.id);
+    const before = remembered?.waits.get(session.id);
     if (before === undefined) {
-      // Not remembered. In a source's first answer that is the baseline, and
-      // after it the session has started.
-      if (remembered) started.push(session);
+      // Not remembered. In the first answer of a source, or of its part, that
+      // is the baseline, and after it the session has started.
+      if (
+        remembered &&
+        (!startsWithAny(session.id, remembered.unread) || startsWithAny(session.id, answer.unread))
+      ) {
+        started.push(session);
+      }
       answer.waiting.set(session.id, { since: session.statusSince, way });
       continue;
     }
@@ -146,8 +186,8 @@ export function waitChanges(memory: WaitMemory, snapshot: SessionsSnapshot): Wai
   }
 
   const next = new Map(memory);
-  for (const [source, { ways, waiting }] of answers) {
-    for (const [id, wait] of memory.get(source) ?? []) {
+  for (const [source, { ways, unread, waiting }] of answers) {
+    for (const [id, wait] of memory.get(source)?.waits ?? []) {
       if (waiting.has(id)) continue;
       if (!listed.has(id) && isPartKey(wait.way) && !ways.keys.includes(wait.way)) {
         // Its part was not read this way in this answer, so nothing is known of it.
@@ -156,7 +196,7 @@ export function waitChanges(memory: WaitMemory, snapshot: SessionsSnapshot): Wai
       }
       stopped.push(id);
     }
-    next.set(source, waiting);
+    next.set(source, { waits: waiting, unread });
   }
 
   return { memory: next, started, stopped };
@@ -242,6 +282,28 @@ export const EMPTY_CHANGE_MEMORY: ChangeMemory = {
   over: new Map(),
   lost: new Map(),
 };
+
+/**
+ * Whether a wait whose session is not listed may still be open, by what is
+ * remembered: nothing that would list it has been read without it. Its source
+ * has not answered, or its part was not read, so the wait is remembered still.
+ * Or it stopped only because another way of reading, which can leave out a
+ * session that waits, was in use: the last answer read the way that listed it
+ * holds it. `stoppedSince` is when a wait that stopped began, or null for one
+ * that has not: one seen again since, with that status time, is the same wait.
+ */
+export function mayStillWait(
+  { waits, seen, lost }: ChangeMemory,
+  { id, source }: Pick<Session, "id" | "source">,
+  stoppedSince: number | null,
+): boolean {
+  const known = waits.get(source);
+  const wait = known?.waits.get(id);
+  const unread = !known || startsWithAny(id, known.unread);
+  if (stoppedSince === null ? unread || wait : wait?.since === stoppedSince) return true;
+  const way = lost.get(source)?.get(id);
+  return way !== undefined && (seen.get(source)?.get(way)?.has(id) ?? false);
+}
 
 /** One thing that happened to one session. */
 export interface SessionChange {
@@ -366,7 +428,8 @@ export function sessionChanges(memory: ChangeMemory, snapshot: SessionsSnapshot)
     for (const [way, sessions] of read) {
       for (const [id, before] of memory.seen.get(source)?.get(way) ?? []) {
         if (sessions.has(id) || isOverStatus(before.status)) continue;
-        const waitWay = memory.waits.get(source)?.get(id)?.way ?? memory.lost.get(source)?.get(id);
+        const waitWay =
+          memory.waits.get(source)?.waits.get(id)?.way ?? memory.lost.get(source)?.get(id);
         if (waitWay === undefined || waitWay === way) {
           found.push({ event: "ended", session: before });
         }
@@ -415,8 +478,8 @@ export function sessionChanges(memory: ChangeMemory, snapshot: SessionsSnapshot)
     over.set(source, known);
 
     const left = new Map(memory.lost.get(source));
-    for (const [id, wait] of memory.waits.get(source) ?? []) {
-      if (!waits.memory.get(source)?.has(id)) left.set(id, wait.way);
+    for (const [id, wait] of memory.waits.get(source)?.waits ?? []) {
+      if (!waits.memory.get(source)?.waits.has(id)) left.set(id, wait.way);
     }
     for (const sessions of read.values()) {
       for (const id of sessions.keys()) left.delete(id);

@@ -1,6 +1,14 @@
-import { expect, test } from "vitest";
+import { expect, onTestFinished, test } from "vitest";
 
-import { clockAt, durationInWords, durationParts, formatDuration } from "@core/duration";
+import {
+  clockAt,
+  durationInWords,
+  durationParts,
+  formatClockMinutes,
+  formatDay,
+  formatDuration,
+} from "@core/duration";
+import { followZone } from "@core/time-rules/localTime";
 
 const SECOND = 1_000;
 const MINUTE = 60 * SECOND;
@@ -53,4 +61,17 @@ test("a time is on this computer's 24-hour clock, with the day when it is not to
   expect(clockAt(evening, new Date(2026, 9, 5, 0, 0, 30).getTime())).toMatch(
     /^23:59 on \S+ 4$|^23:59 on 4 \S+$/,
   );
+});
+
+test("a time is on the clock of the zone the computer has moved to, with its days", () => {
+  onTestFinished(() => followZone(null));
+  followZone("America/New_York");
+  const at = Date.UTC(2026, 10, 24, 8, 30);
+  expect(formatClockMinutes(at)).toBe("03:30");
+  expect(clockAt(at, at + HOUR)).toBe("03:30");
+  // 23:30 on the 23rd there, though both are the 24th in UTC.
+  expect(clockAt(at - 4 * HOUR, at)).toMatch(/^23:30 on (\S+ 23|23 \S+)$/);
+  expect(formatDay(Date.UTC(2027, 0, 1, 4), at)).toMatch(/\b31\b/);
+  expect(formatDay(Date.UTC(2027, 0, 1, 4), at)).not.toContain("2026");
+  expect(formatDay(Date.UTC(2027, 0, 1, 5), at)).toContain("2027");
 });

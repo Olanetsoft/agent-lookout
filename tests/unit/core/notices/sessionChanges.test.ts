@@ -11,6 +11,7 @@ import type {
 import {
   EMPTY_CHANGE_MEMORY,
   EMPTY_WAIT_MEMORY,
+  mayStillWait,
   readNoticeEvents,
   sessionChanges,
   waitChanges,
@@ -53,13 +54,13 @@ function memoryAfter(...snapshots: SessionsSnapshot[]): WaitMemory {
 
 /** The sessions remembered as waiting, as plain data. */
 function remembered(memory: WaitMemory): Record<string, string[]> {
-  return Object.fromEntries([...memory].map(([id, waits]) => [id, [...waits.keys()]]));
+  return Object.fromEntries([...memory].map(([id, { waits }]) => [id, [...waits.keys()]]));
 }
 
 /** The status time each remembered wait is kept with, as plain data. */
 function rememberedTimes(memory: WaitMemory): Record<string, number | null> {
   return Object.fromEntries(
-    [...memory].flatMap(([, waits]) => [...waits].map(([id, wait]) => [id, wait.since])),
+    [...memory].flatMap(([, { waits }]) => [...waits].map(([id, wait]) => [id, wait.since])),
   );
 }
 
@@ -542,13 +543,18 @@ describe("a source read in parts", () => {
   const CODER = "hermes-agent:coder/20261001_110000_0000b1";
   const BOTH = { "hermes-agent:default/": "database", "hermes-agent:coder/": "database" };
 
-  /** One answer of Hermes Agent, with the profiles it read, as its adapter names them. */
-  function hermes(sessions: Session[], parts: Record<string, string> = BOTH): SessionsSnapshot {
+  /** One answer of Hermes Agent, with the profiles it read and those it did not, as its adapter names them. */
+  function hermes(
+    sessions: Session[],
+    parts: Record<string, string> = BOTH,
+    notRead?: string[],
+  ): SessionsSnapshot {
     const read: SourceHealth = {
       ...source("hermes-agent"),
       label: "Hermes Agent",
       basis: "database",
       parts,
+      ...(notRead && { notRead }),
     };
     return snapshot(
       sessions.map((session) => ({ ...session, source: "hermes-agent" })),
@@ -642,6 +648,75 @@ describe("a source read in parts", () => {
     );
     expect(back.started).toEqual([]);
     expect(back.stopped).toEqual([]);
+  });
+
+  describe("a part not read yet", () => {
+    const ALONE = { "hermes-agent:default/": "database" };
+    const unread = (sessions: Session[]) => hermes(sessions, ALONE, ["hermes-agent:coder/"]);
+
+    test("has its first read answer as its baseline, and after it a wait there has started", () => {
+      const memory = memoryAfter(unread([waiting(DEFAULT)]), unread([waiting(DEFAULT)]));
+      const read = waitChanges(memory, hermes([waiting(DEFAULT), waiting(CODER)]));
+      expect(read.started).toEqual([]);
+      expect(remembered(read.memory)).toEqual({ "hermes-agent": [DEFAULT, CODER] });
+
+      const next = memoryAfter(
+        unread([]),
+        hermes([working(DEFAULT), working(CODER)]),
+        unread([working(DEFAULT)]),
+      );
+      const later = waitChanges(next, hermes([waiting(DEFAULT), waiting(CODER)]));
+      expect(later.started.map((session) => session.id)).toEqual([DEFAULT, CODER]);
+    });
+
+    test("is one its source named so: a part that comes later was empty before, and a wait in it has started", () => {
+      const memory = memoryAfter(hermes([], ALONE), unread([]));
+      const read = waitChanges(memory, hermes([waiting(CODER)]));
+      expect(read.started.map((session) => session.id)).toEqual([CODER]);
+    });
+
+    test("is not read by an answer that still names it, though a session of it is listed", () => {
+      const read = waitChanges(memoryAfter(unread([])), unread([waiting(CODER)]));
+      expect(read.started.map((session) => session.id)).toEqual([CODER]);
+    });
+
+    test("through sessionChanges, says nothing of what its first read answer holds, finished or waiting", () => {
+      const { memory } = sessionChanges(EMPTY_CHANGE_MEMORY, unread([]));
+      const read = sessionChanges(memory, hermes([working(DEFAULT), waiting(CODER)]));
+      expect(read.changes).toEqual([]);
+    });
+
+    test("of a computer whose Agent Lookout has just begun is each source there, however that answer names them", () => {
+      const OPENCODE = "remote:devbox:opencode:ses_000000000000000000000000a1";
+      const THERE = "remote:devbox:hermes-agent:coder/20261001_110000_0000b1";
+      const computer = (sessions: Session[], notRead: string[]) =>
+        snapshot(
+          sessions.map((session) => ({ ...session, source: "remote:devbox" })),
+          [{ ...source("remote:devbox"), basis: "api", notRead }],
+        );
+      const memory = memoryAfter(
+        computer([], ["remote:devbox:opencode:", "remote:devbox:hermes-agent:"]),
+      );
+      // Only some profiles of the source named whole are read, and then it fails whole again.
+      const some = waitChanges(
+        memory,
+        computer([waiting(OPENCODE)], ["remote:devbox:hermes-agent:coder/"]),
+      );
+      expect(some.started).toEqual([]);
+      const none = waitChanges(
+        some.memory,
+        computer([waiting(OPENCODE)], ["remote:devbox:hermes-agent:"]),
+      );
+      const all = waitChanges(none.memory, computer([waiting(OPENCODE), waiting(THERE)], []));
+      expect(all.started).toEqual([]);
+      // Both have been read, so the next wait of each is news.
+      const asked = { statusSince: at + 1 };
+      const next = waitChanges(
+        all.memory,
+        computer([waiting(OPENCODE, asked), waiting(THERE, asked)], []),
+      );
+      expect(next.started.map((session) => session.id)).toEqual([OPENCODE, THERE]);
+    });
   });
 
   test("through sessionChanges, a profile that fails one poll says nothing at all of its waiting session", () => {
@@ -1503,6 +1578,69 @@ describe("sessionChanges: what happened to each session", () => {
         bySessions.changes.filter((change) => change.event === "needs-you").map((c) => c.session),
       ).toEqual(byWaits.started);
     }
+  });
+});
+
+describe("mayStillWait: whether a wait that is not listed may be open", () => {
+  const since = at - 60_000;
+  const wait = () => waiting(A, { statusSince: since });
+  const main = (state: SourceState = "ok"): SourceHealth => ({
+    ...source("claude-code", state),
+    ...(state === "ok" && { basis: "registry+feed" }),
+  });
+  const fallback = (): SourceHealth => ({ ...source("claude-code"), basis: "registry" });
+  const after = (...snapshots: SessionsSnapshot[]): ChangeMemory =>
+    snapshots.reduce((memory, each) => sessionChanges(memory, each).memory, EMPTY_CHANGE_MEMORY);
+
+  test("while its source has not answered, or does not answer now", () => {
+    expect(mayStillWait(EMPTY_CHANGE_MEMORY, wait(), null)).toBe(true);
+    const away = after(snapshot([wait()], [main()]), snapshot([], [main("error")]));
+    expect(mayStillWait(away, wait(), null)).toBe(true);
+  });
+
+  test("not once its source is read without it", () => {
+    const read = after(snapshot([wait()], [main()]), snapshot([], [main()]));
+    expect(mayStillWait(read, wait(), null)).toBe(false);
+    expect(mayStillWait(read, wait(), since)).toBe(false);
+    // Nor by an older answer read another way that holds it.
+    const other = after(
+      snapshot([wait()], [fallback()]),
+      snapshot([wait()], [main()]),
+      snapshot([], [main()]),
+    );
+    expect(mayStillWait(other, wait(), since)).toBe(false);
+  });
+
+  test("while its part is not read", () => {
+    const part = (read: boolean): SourceHealth => ({
+      ...source("claude-code"),
+      parts: read ? { [A]: "database" } : {},
+    });
+    const memory = after(snapshot([wait()], [part(true)]), snapshot([], [part(false)]));
+    expect(mayStillWait(memory, wait(), null)).toBe(true);
+    // Nor has been yet, as after a page found a new collector.
+    const never = after(snapshot([], [{ ...part(false), notRead: [A] }]));
+    expect(mayStillWait(never, wait(), null)).toBe(true);
+    expect(mayStillWait(after(snapshot([], [part(true)])), wait(), null)).toBe(false);
+  });
+
+  test("stopped by another way of reading that leaves it out, until the way that listed it is read without it", () => {
+    const hidden = after(snapshot([wait()], [main()]), snapshot([], [fallback()]));
+    expect(mayStillWait(hidden, wait(), since)).toBe(true);
+    const gone = sessionChanges(hidden, snapshot([], [main()])).memory;
+    expect(mayStillWait(gone, wait(), since)).toBe(false);
+  });
+
+  test("stopped, and seen again with the same status time, as a wait is after a poll that missed it", () => {
+    const again = after(
+      snapshot([wait()], [main()]),
+      snapshot([], [main()]),
+      snapshot([wait()], [main()]),
+      snapshot([], [main("unavailable")]),
+    );
+    expect(mayStillWait(again, wait(), since)).toBe(true);
+    // A wait that began later is another wait.
+    expect(mayStillWait(again, wait(), since - 1)).toBe(false);
   });
 });
 

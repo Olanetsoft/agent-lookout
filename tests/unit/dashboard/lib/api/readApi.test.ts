@@ -574,6 +574,18 @@ test("the way another machine read each of its sources is kept, so each is compa
   expect(Object.keys(kept ?? {})).toHaveLength(65);
 });
 
+test("the parts of a source that were not read are kept, as many as the parts that were", () => {
+  const read = (notRead: unknown) =>
+    readSource({ id: "remote:devbox", state: "ok", basis: "api", notRead }, T);
+  const starts = ["remote:devbox:opencode:", "remote:devbox:hermes-agent:coder/"];
+  expect(read(starts)?.notRead).toEqual(starts);
+  expect(read([2, "", " ", "remote:devbox:codex:"])?.notRead).toEqual(["remote:devbox:codex:"]);
+  expect(read([])).not.toHaveProperty("notRead");
+  expect(read("remote:devbox:codex:")).not.toHaveProperty("notRead");
+  const many = Array.from({ length: 70 }, (_, index) => `remote:devbox:s${index}:`);
+  expect(read(many)?.notRead).toHaveLength(65);
+});
+
 test("what a source can report is kept whole, or not at all, so no cell is a guess", () => {
   const capabilities = {
     "working-and-idle": { level: "yes" },

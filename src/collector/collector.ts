@@ -107,6 +107,7 @@ import {
 import { createPermissionRulesRoute } from "./settings/permissionRulesRoute.ts";
 import { readSettingsSetup } from "./settings/settingsFile.ts";
 import { createTimeRulesRoute } from "./settings/timeRulesRoute.ts";
+import { createZoneFollower } from "./settings/timeZone.ts";
 import { parentsIn, type ReadProcessTable } from "./processes/processTable.ts";
 import { createOsascriptRunner, type RunOsascript } from "./terminal/program.ts";
 import { createTabFinder } from "./terminal/tabFinder.ts";
@@ -361,6 +362,7 @@ export function createCollector(options: CollectorOptions): Collector {
     setup: settingsSetup,
     store: options.settingsStore,
   });
+  const followZone = createZoneFollower({ now });
   if (settings.problemAtStart !== null) warn(settings.problemAtStart);
   if (settings.rulesProblemAtStart !== null) warn(settings.rulesProblemAtStart);
   const memoryEvents = createEventStore();
@@ -695,7 +697,10 @@ export function createCollector(options: CollectorOptions): Collector {
     // Every snapshot carries the time rules in force, and is stale by them.
     // The settings file is looked at again here, once a poll, so a change
     // another copy of Agent Lookout saved is in force by the next one.
+    // So is the computer's time zone, which the quiet hours and the times in
+    // messages go by.
     timeRules: () => {
+      followZone();
       settings.readAgain();
       return settings.timeRules();
     },

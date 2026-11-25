@@ -54,6 +54,16 @@ export function noPageReports(on: boolean): PageReports {
 }
 
 /**
+ * The reports as they count at `now`. A time later than that is from before
+ * the clock was set back, and counts as now: a page that is open has asked in
+ * the last poll, and one that is not is soon known to be gone.
+ */
+export function pagesAt({ on, lastOnAt, lastOnSessionsAt }: PageReports, now: number): PageReports {
+  const heard = (at: number | null) => at && Math.min(at, now);
+  return { on, lastOnAt: heard(lastOnAt), lastOnSessionsAt: heard(lastOnSessionsAt) };
+}
+
+/**
  * "show": no page is going to, so the collector shows the notification.
  * "hold": a page may yet show it. Ask again later.
  * "drop": a page has it, or notifications are off. The collector shows nothing.

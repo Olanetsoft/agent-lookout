@@ -2,6 +2,8 @@
 // shows one: on the page, through `src/dashboard/lib/format.ts`, in an email,
 // and in the `agent-lookout` command.
 
+import { localDate } from "./time-rules/localTime.ts";
+
 const SECOND = 1_000;
 const MINUTE = 60 * SECOND;
 const HOUR = 60 * MINUTE;
@@ -76,8 +78,8 @@ export function durationInWords(ms: number): string {
 
 /** Local wall-clock time to the minute, 24-hour: `10:42`. */
 export function formatClockMinutes(at: number): string {
-  const date = new Date(at);
-  return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+  const date = localDate(at);
+  return `${pad2(date.getUTCHours())}:${pad2(date.getUTCMinutes())}`;
 }
 
 /** The start of a moment's day on the local clock. Two moments on one day share it. */
@@ -87,21 +89,29 @@ export function startOfDay(at: number): number {
   return date.getTime();
 }
 
-const dayFormat = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
+/** These write a day `localDate` gives, whose UTC fields hold it. */
+const dayFormat = new Intl.DateTimeFormat(undefined, {
+  month: "short",
+  day: "numeric",
+  timeZone: "UTC",
+});
 const dayAndYearFormat = new Intl.DateTimeFormat(undefined, {
   year: "numeric",
   month: "short",
   day: "numeric",
+  timeZone: "UTC",
 });
 
 /** A day: `Sep 30`, with the year only when it is not this one. */
 export function formatDay(at: number, now: number): string {
-  const sameYear = new Date(at).getFullYear() === new Date(now).getFullYear();
-  return (sameYear ? dayFormat : dayAndYearFormat).format(new Date(at));
+  const date = localDate(at);
+  const sameYear = date.getUTCFullYear() === localDate(now).getUTCFullYear();
+  return (sameYear ? dayFormat : dayAndYearFormat).format(date);
 }
 
 /** A time on the clock, with the day when it is not today: "14:02", or "14:02 on Oct 4". */
 export function clockAt(at: number, now: number): string {
   const time = formatClockMinutes(at);
-  return startOfDay(at) === startOfDay(now) ? time : `${time} on ${formatDay(at, now)}`;
+  const day = (moment: number) => Math.floor(localDate(moment).getTime() / DAY);
+  return day(at) === day(now) ? time : `${time} on ${formatDay(at, now)}`;
 }

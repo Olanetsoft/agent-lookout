@@ -20,7 +20,13 @@ import { rulesOf } from "../../core/time-rules/timeRules.ts";
 import { reminderNotice, summaryNotice } from "../../core/time-rules/timeRulesWords.ts";
 import { needsYou } from "../../core/waits/answeredWaits.ts";
 import { waitBegan } from "../outbound/outboundTiming.ts";
-import { heldWaitOutcome, noPageReports, type PageReports } from "./heldWait.ts";
+import {
+  heldWaitOutcome,
+  noPageReports,
+  PAGE_GONE_AFTER_MS,
+  pagesAt,
+  type PageReports,
+} from "./heldWait.ts";
 import type { NoticeAbout, SystemNotifier } from "./systemNotifier.ts";
 
 /**
@@ -63,7 +69,9 @@ import type { NoticeAbout, SystemNotifier } from "./systemNotifier.ts";
  * During quiet hours nothing is shown: what would have been is held, a
  * reminder as its wait, and when they end a wait still open is shown as
  * usual, or reminded of when it was told of before them, and the rest in one
- * summary, "While quiet".
+ * summary, "While quiet". A wait that cannot be read as they end is held until
+ * it can. Only a page opened before a held wait began has it, so one opened
+ * since does not take it from the collector.
  *
  * A wait whose permission request Agent Lookout answered is over from the
  * moment of the answer, as the snapshot marks it for the page too: one
@@ -74,9 +82,10 @@ export interface ServerNotifications {
   /**
    * A dashboard page said, on a request, which events its notifications are on
    * for. `fetchedSessions` is true when the request was for the sessions, which
-   * is how a page learns of a change.
+   * is how a page learns of a change. `openedAt` is when that page was opened,
+   * which is long ago for one that does not say.
    */
-  pageSaid(said: NotificationsSaid, fetchedSessions: boolean): void;
+  pageSaid(said: NotificationsSaid, fetchedSessions: boolean, openedAt?: number): void;
   /** Takes each snapshot the poller produces, and decides the notifications being held. */
   handle(snapshot: SessionsSnapshot): void;
 }
@@ -114,10 +123,11 @@ export interface ServerNotificationsOptions {
 
 /**
  * A notification being held back for a page, and when it was first due: a
- * change, a reminder of a long wait, or the summary of quiet hours.
+ * change, a reminder of a long wait, or the summary of quiet hours. A wait
+ * quiet hours held has when it began, as `begunAt`.
  */
 type Held =
-  | { kind: "change"; change: SessionChange; since: number }
+  | { kind: "change"; change: SessionChange; since: number; begunAt?: number }
   | { kind: "reminder"; reminder: DueReminder; since: number }
   | { kind: "summary"; summary: QuietSummary; since: number };
 
@@ -146,6 +156,8 @@ export function createServerNotifications(
   let pages: PageReports = noPageReports(options.onAtStart);
   /** The events the last page chose, or what the environment said before any page did. */
   let chosen: ReadonlySet<NoticeEvent> = new Set(options.onAtStart ? DEFAULT_NOTICE_EVENTS : []);
+  /** When each page that lately fetched the sessions was opened, with when it last did. */
+  const fetches = new Map<number, number>();
   /** The notifications not yet shown or dropped. */
   const held = new Map<string, Held>();
   /** The waits that could be reminded of, and those already reminded. */
@@ -182,6 +194,14 @@ export function createServerNotifications(
   /** What a page has chosen to be shown of an event, as the collector knows it. */
   const wants = (event: NoticeEvent) => pages.on && chosen.has(event);
 
+  /** What the pages that have what is held have said. */
+  function pagesWith(entry: Held): PageReports {
+    if (entry.kind !== "change" || entry.begunAt === undefined) return pages;
+    const { begunAt } = entry;
+    const times = [...fetches].map(([opened, at]) => (opened <= begunAt ? at : 0));
+    return { ...pages, lastOnSessionsAt: Math.max(0, ...times) };
+  }
+
   /** Holds a change back through quiet hours. */
   function holdQuietly(change: SessionChange, at: number): void {
     const { event, session } = change;
@@ -190,8 +210,9 @@ export function createServerNotifications(
   }
 
   return {
-    pageSaid(said, fetchedSessions) {
+    pageSaid(said, fetchedSessions, openedAt = 0) {
       const at = now();
+      if (fetchedSessions && said.length > 0) fetches.set(openedAt, at);
       const toldWaits = wants("needs-you");
       chosen = new Set(said);
       pages =
@@ -208,6 +229,8 @@ export function createServerNotifications(
 
     handle(snapshot) {
       const at = now();
+      pages = pagesAt(pages, at);
+      for (const [opened, fetched] of fetches) fetches.set(opened, Math.min(fetched, at));
       const rules = rulesOf(snapshot);
       // As the snapshot says, which the page that reads it goes by too.
       const quietNow = quietOf(snapshot);
@@ -232,7 +255,7 @@ export function createServerNotifications(
 
       if (quiet.holding() && !quietNow) {
         // The quiet hours are over: one summary, and each wait still open as usual.
-        const end = quiet.end(snapshot, at, rules.quietHours.leaveOutAnswered);
+        const end = quiet.end(snapshot, at, rules.quietHours.leaveOutAnswered, memory);
         // Only of the events still chosen, as the page sums up only those.
         const items = end.summary?.items.filter((item) => wants(item.event)) ?? [];
         if (end.summary && items.length > 0) {
@@ -242,17 +265,18 @@ export function createServerNotifications(
             since: at,
           });
         }
-        for (const { session } of end.open) {
+        for (const { session, begunAt } of end.open) {
           if (!wants("needs-you")) continue;
           held.set(heldKey("needs-you", session.id), {
             kind: "change",
             change: { event: "needs-you", session },
             since: at,
+            begunAt,
           });
           if (rules.longWait.on) reminders.told(session.id, at);
         }
       }
-      if (quietNow) quiet.begin(at);
+      if (quietNow) quiet.begin(at, snapshot.sessions);
 
       for (const change of result.changes) {
         if (!wants(change.event)) continue;
@@ -289,10 +313,12 @@ export function createServerNotifications(
       // Everything is handed over to a page the same way, so a page that is
       // open and the collector never both announce one.
       for (const [key, entry] of held) {
+        // Since now at the latest, when the clock has been set back.
+        entry.since = Math.min(entry.since, at);
         const event = entry.kind === "change" ? entry.change.event : "needs-you";
         const outcome =
           entry.kind === "summary" || chosen.has(event)
-            ? heldWaitOutcome(entry.since, pages, at, pagesNotify)
+            ? heldWaitOutcome(entry.since, pagesWith(entry), at, pagesNotify)
             : "drop";
         if (outcome === "hold") continue;
         held.delete(key);
@@ -324,6 +350,10 @@ export function createServerNotifications(
             waitedMs,
           });
         } else show(summaryNotice(entry.summary.items), { kind: "summary" });
+      }
+      // Read above, however long ago the last poll was.
+      for (const [opened, fetched] of fetches) {
+        if (at - fetched > PAGE_GONE_AFTER_MS) fetches.delete(opened);
       }
     },
   };
