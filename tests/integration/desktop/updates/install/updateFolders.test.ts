@@ -57,6 +57,21 @@ describe("the folders of an update", () => {
     folders.removeAll(handedOver);
     expect(await readdir(dataDir)).toEqual([path.basename(handedOver)]);
   });
+
+  test("one that cannot be removed as the app quits keeps none of the others, and is swept later", async () => {
+    const removal = { rm, rmSync: vi.fn(rmSync) };
+    const { dataDir, older, folders } = await setUp(removal);
+    const stuck = folders.make();
+    folders.make();
+    folders.make();
+    removal.rmSync.mockImplementationOnce(() => {
+      throw new Error("EACCES");
+    });
+    folders.removeAll(null);
+    expect(await readdir(dataDir)).toEqual([path.basename(stuck)]);
+    await createUpdateFolders({ dataDir, tempDir: older, removal }).sweep();
+    expect(await readdir(dataDir)).toEqual([]);
+  });
 });
 
 const root = fileURLToPath(new URL("../../../../../", import.meta.url));
