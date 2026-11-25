@@ -51,11 +51,11 @@ export interface KiroSessionInput {
  *   folder's name, else its ID. A V2 header's title is never read, as it is the
  *   first prompt word for word, so a V2 session takes its folder's name. A
  *   prompt is never read for a name.
- * - The status time is when the wait was asked while it needs you, when the
- *   turn started while it works, when the turn ended while it is idle, else
- *   when its log, or its header with no log, was last written. A finished
- *   session has been so since the later of that and the last poll that saw it
- *   open. An unknown status has no time.
+ * - The status time is when its wait began while it needs you, kept for as long
+ *   as anything it waits on stays open, when the turn started while it works,
+ *   when the turn ended while it is idle, else when its log, or its header with
+ *   no log, was last written. A finished session has been so since the later of
+ *   that and the last poll that saw it open. An unknown status has no time.
  * - The last write is its log's modified time.
  * - It has the lock's pid while it is open. There is no link, no Jump and no
  *   Stop, and the app is not known: the V3 store is the Kiro IDE's too.
@@ -79,7 +79,7 @@ export function kiroCliSession(input: KiroSessionInput): Session {
 
   let statusSince: number | null = null;
   if (status === "needs-you") {
-    statusSince = notBeforeStart(plausibleTime(input.v3?.waits[0]?.at ?? null, now));
+    statusSince = notBeforeStart(plausibleTime(input.v3?.waitingSince ?? null, now));
   } else if (status === "working") {
     const began = v3 ? (input.v3?.turnAt ?? null) : (input.v2?.promptAt ?? null);
     statusSince = notBeforeStart(plausibleTime(began, now));

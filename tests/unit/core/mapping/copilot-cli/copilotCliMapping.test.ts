@@ -88,7 +88,7 @@ describe("each row of the table", () => {
     expect(statusOf(fold(user, { sort: "unreadable" })).status).toBe("unknown");
   });
 
-  test("5: a permission request open a second or more needs you, since the oldest", () => {
+  test("5: a permission request open a second or more needs you, since the oldest of them and of the open questions", () => {
     const made = fold(
       user,
       turnStart("0"),
@@ -98,11 +98,95 @@ describe("each row of the table", () => {
     );
     expect(statusOf(made)).toEqual({
       status: "needs-you",
-      since: NOW - 30_000,
+      since: NOW - 40_000,
       waitingReason: "permission",
-      wait: { since: NOW - 30_000, ids: ["permission:r-1", "permission:r-2"] },
+      wait: { since: NOW - 40_000, ids: ["permission:r-1", "permission:r-2", "question:c-1"] },
       showsLastWrite: false,
     });
+  });
+
+  test("5: a question newer than a request, or with a time that cannot be right, leaves the request's time", () => {
+    for (const at of [NOW - 10_000, NOW + 3_600_000, 0, null]) {
+      const made = fold(
+        user,
+        turnStart("0"),
+        { sort: "permission", request: "r-1", byHook: false, at: NOW - 20_000 },
+        { sort: "tool-start", call: "c-1", ask: true, at },
+      );
+      expect(statusOf(made)).toMatchObject({
+        since: NOW - 20_000,
+        waitingReason: "permission",
+        wait: { since: NOW - 20_000, ids: ["permission:r-1", "question:c-1"] },
+      });
+    }
+  });
+
+  test("6: a request younger than a second leaves the wait the question's, until it is a second old", () => {
+    const made = fold(
+      user,
+      turnStart("0"),
+      { sort: "tool-start", call: "c-1", ask: true, at: NOW - 15_000 },
+      { sort: "permission", request: "r-1", byHook: false, at: NOW - 500 },
+    );
+    expect(statusOf(made)).toMatchObject({
+      since: NOW - 15_000,
+      waitingReason: "question",
+      wait: { ids: ["question:c-1"] },
+    });
+    expect(statusOf(made, { now: NOW + 500 })).toMatchObject({
+      since: NOW - 15_000,
+      waitingReason: "permission",
+      wait: { ids: ["permission:r-1", "question:c-1"] },
+    });
+  });
+
+  test("5: a request asked while a question was open goes on with its wait once that is answered", () => {
+    const made = fold(
+      user,
+      turnStart("0"),
+      { sort: "tool-start", call: "c-1", ask: true, at: NOW - 15_000 },
+      { sort: "permission", request: "r-1", byHook: false, at: NOW - 5_000 },
+      { sort: "tool-end", call: "c-1" },
+    );
+    expect(statusOf(made)).toMatchObject({
+      since: NOW - 15_000,
+      waitingReason: "permission",
+      wait: { since: NOW - 15_000, ids: ["permission:r-1"] },
+    });
+    // A wait that began at a time that cannot be right is as old as what is open.
+    for (const at of [0, NOW + 3_600_000]) {
+      made.waitingSince = at;
+      expect(statusOf(made).since).toBe(NOW - 5_000);
+    }
+  });
+
+  test("5 and 6: a question the main agent passed by is a wait only while nothing else is", () => {
+    const passed: CopilotRecord[] = [
+      user,
+      turnStart("0"),
+      { sort: "tool-start", call: "c-1", ask: true, at: NOW - 15_000 },
+      turnStart("1", NOW - 10_000),
+    ];
+    const alone = { since: NOW - 15_000, waitingReason: "question" };
+    const ids = (...of: string[]) => ({ wait: { ids: of } });
+    expect(statusOf(fold(...passed))).toMatchObject({ ...alone, ...ids("question:c-1") });
+
+    const request = (at: number) =>
+      fold(...passed, { sort: "permission", request: "r-1", byHook: false, at });
+    expect(statusOf(request(NOW - 5_000))).toMatchObject({
+      since: NOW - 5_000,
+      waitingReason: "permission",
+      ...ids("permission:r-1"),
+    });
+    expect(statusOf(request(NOW - 500))).toMatchObject({ ...alone, ...ids("question:c-1") });
+
+    const question = fold(...passed, {
+      sort: "tool-start",
+      call: "c-2",
+      ask: true,
+      at: NOW - 5_000,
+    });
+    expect(statusOf(question)).toMatchObject({ since: NOW - 5_000, ...ids("question:c-2") });
   });
 
   test("5: a request younger than a second is not yet a wait, by its time or by when it was first seen", () => {

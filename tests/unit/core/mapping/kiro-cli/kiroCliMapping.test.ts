@@ -22,7 +22,7 @@ const v2 = (records: KiroV2Record[], whole = false) =>
 
 const start = (at = T): KiroV3Row => ({ kind: "turn-start", at });
 const end = (at = T + 5): KiroV3Row => ({ kind: "turn-end", at });
-const pending = (toolCallId: string, approval = true, at = T + 1): KiroV3Row => ({
+const pending = (toolCallId: string, approval = true, at: number | null = T + 1): KiroV3Row => ({
   kind: "pending",
   toolCallId,
   approval,
@@ -45,7 +45,8 @@ describe("a V3 row log", () => {
       status: "needs-you",
       waitingReason: "permission",
     });
-    expect(asked.waits).toEqual([{ toolCallId: "call-1", reason: "permission", at: T + 1 }]);
+    expect(asked.waits).toEqual([{ toolCallId: "call-1", reason: "permission" }]);
+    expect(asked.waitingSince).toBe(T + 1);
     expect(mapKiroV3Status("open", v3([start(), pending("call-1", false)]))).toEqual({
       status: "needs-you",
       waitingReason: "other",
@@ -59,9 +60,34 @@ describe("a V3 row log", () => {
     const scan = v3([start(), pending("call-1"), pending("call-2", false), resolved("call-1")]);
     expect(scan.waits.map((wait) => wait.toolCallId)).toEqual(["call-2"]);
     expect(mapKiroV3Status("open", scan).waitingReason).toBe("other");
-    // The same call asked again while it waits keeps the time it was first asked.
-    const again = v3([start(), pending("call-1", true, T + 1), pending("call-1", true, T + 3)]);
-    expect(again.waits).toEqual([{ toolCallId: "call-1", reason: "permission", at: T + 1 }]);
+  });
+
+  test("has waited since the first thing it waits on was asked, for as long as anything stays open", () => {
+    const since = (...rows: KiroV3Row[]) => v3([start(), ...rows]).waitingSince;
+    const first = pending("call-1", true, T + 1);
+    const second = pending("call-2", false, T + 3);
+    expect(since()).toBeNull();
+    expect(since(first, second)).toBe(T + 1);
+    // The older is answered, and something has waited all along.
+    expect(since(first, second, resolved("call-1"))).toBe(T + 1);
+    const third = pending("call-3", true, T + 5);
+    expect(since(first, second, resolved("call-1"), third, resolved("call-2"))).toBe(T + 1);
+    expect(since(first, second, resolved("call-1"), resolved("call-2"))).toBeNull();
+    // Asked again while it waits, it is the same wait. Asked again once answered, it is a new one.
+    const again = pending("call-1", true, T + 7);
+    expect(since(first, again)).toBe(T + 1);
+    expect(since(first, resolved("call-1"), again)).toBe(T + 7);
+    expect(since(first, second, resolved("call-1"), again)).toBe(T + 1);
+    // An answer to nothing that is open changes nothing.
+    expect(since(first, resolved("call-9"))).toBe(T + 1);
+    // Asked by a clock set back since, it is the earlier. A first with no time leaves it not known.
+    expect(since(first, pending("call-2", true, T - 9))).toBe(T - 9);
+    expect(since(first, pending("call-2", true, null))).toBe(T + 1);
+    expect(since(pending("call-1", true, null), second, resolved("call-1"))).toBeNull();
+    // A turn row ends it.
+    expect(v3([start(), first, end()]).waitingSince).toBeNull();
+    expect(v3([start(), first, start(T + 9)]).waitingSince).toBeNull();
+    expect(v3([start(), first, { kind: "turn-other" }]).waitingSince).toBeNull();
   });
 
   test("forgets every wait at the turn's end and at a new turn's start", () => {

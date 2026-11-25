@@ -64,6 +64,12 @@ import {
   writeLock,
   writeLog,
 } from "@tests/support/adapters/copilot-cli/copilotCliAdapter";
+import {
+  createAnnouncements,
+  createOpenWaits,
+  seeded,
+  watchWaits,
+} from "@tests/support/waits/openWaits";
 
 const T = NOW - 10 * MINUTE;
 
@@ -296,6 +302,146 @@ describe("a session's status", () => {
       status: "needs-you",
       statusSince: NOW - 30 * SECOND,
     });
+  });
+
+  test.each(["a question, then a permission", "a permission, then a question"])(
+    "%s, open together, are one wait, announced once, since the older",
+    async (order) => {
+      const files = memoryFiles();
+      const clock = handClock();
+      writeLog(files, `${sessionStart(T)}${userMessage(T + 1)}${turnStart("0", T + 2)}`);
+      writeLock(files);
+      const watch = watchWaits(copilotCliAdapterFor(files, { now: clock.now }), clock.now);
+      const poll = async (lines: string) => {
+        appendLog(files, lines, { mtimeMs: clock.now() });
+        clock.advance(2 * SECOND);
+        return watch();
+      };
+      const question = () => toolStart("q-1", "ask_user", clock.now());
+      const permission = () => permissionRequested("r-1", clock.now(), { agentId: "agent-1" });
+      const waits = (announced = 0) => ({
+        status: "needs-you",
+        since: NOW + 2 * SECOND,
+        started: announced,
+        stopped: 0,
+      });
+      const questionFirst = order.startsWith("a question");
+
+      expect((await poll("")).status).toBe("working");
+      expect(await poll(questionFirst ? question() : permission())).toEqual(waits(1));
+      expect(await poll(questionFirst ? permission() : question())).toEqual(waits());
+      expect(await poll("")).toEqual(waits());
+      // Only the permission is answered, and the question waits on.
+      expect(await poll(permissionCompleted("r-1", clock.now()))).toEqual(waits());
+      expect(await poll("")).toEqual(waits());
+      expect(await poll(toolEnd("q-1", clock.now()))).toEqual({
+        status: "working",
+        since: null,
+        started: 0,
+        stopped: 1,
+      });
+      // One asked after that is a new wait.
+      const asked = clock.now();
+      expect(await poll(toolStart("q-2", "ask_user", asked))).toEqual({
+        ...waits(1),
+        since: asked,
+      });
+    },
+  );
+
+  test("a question whose end Copilot never wrote goes on showing, and hides nothing asked after it", async () => {
+    const files = memoryFiles();
+    const clock = handClock();
+    writeLog(files, `${sessionStart(T)}${userMessage(T + 1)}${turnStart("0", T + 2)}`);
+    writeLock(files);
+    const watch = watchWaits(copilotCliAdapterFor(files, { now: clock.now }), clock.now);
+    const poll = async (...lines: ((at: number) => string)[]) => {
+      const at = clock.now();
+      appendLog(files, lines.map((line) => line(at)).join(""), { mtimeMs: at });
+      clock.advance(2 * SECOND);
+      return { at, ...(await watch()) };
+    };
+    const shown = (since: number) => ({ status: "needs-you", since, started: 0, stopped: 0 });
+    /** A new wait, since it was asked, told in place of the one that showed. */
+    const told = { status: "needs-you", started: 1, stopped: 1 };
+
+    await poll();
+    const stuck = await poll((at) => toolStart("q-1", "ask_user", at));
+    expect(stuck).toMatchObject({ since: stuck.at, started: 1 });
+    expect(await poll(aborted)).toMatchObject(shown(stuck.at));
+    expect(await poll(userMessage, (at) => turnStart("1", at))).toMatchObject(shown(stuck.at));
+
+    for (const request of ["r-1", "r-2"]) {
+      const asked = await poll((at) => permissionRequested(request, at));
+      expect(asked).toMatchObject({ ...told, since: asked.at });
+      expect(await poll((at) => permissionCompleted(request, at))).toMatchObject(shown(stuck.at));
+    }
+    const question = await poll((at) => toolStart("q-2", "ask_user", at));
+    expect(question).toMatchObject({ ...told, since: question.at });
+    // In a turn of its own, it and a permission are one wait.
+    expect(await poll((at) => permissionRequested("r-3", at))).toMatchObject(shown(question.at));
+  });
+
+  test("agrees with the model of open waits, through answers, waits that pass from one thing to another unseen, a log that cannot be read and restarts", async () => {
+    for (let seed = 1; seed <= 150; seed += 1) {
+      const random = seeded(seed);
+      const files = memoryFiles();
+      const clock = handClock();
+      writeLog(files, `${sessionStart(T)}${userMessage(T + 1)}${turnStart("0", T + 2)}`);
+      writeLock(files);
+      const model = createOpenWaits();
+      const announcements = createAnnouncements();
+      let watch = watchWaits(copilotCliAdapterFor(files, { now: clock.now }), clock.now);
+      let asked = 0;
+      let last = { open: new Map<string, number>(), since: null as number | null };
+      const ask = () => {
+        // Each with an ID of its own, as Copilot gives them.
+        const id = `${random() < 0.5 ? "r" : "q"}-${++asked}`;
+        const at = clock.now();
+        const line = id.startsWith("r")
+          ? permissionRequested(id, at)
+          : toolStart(id, "ask_user", at);
+        appendLog(files, line, { mtimeMs: at });
+        model.ask(id, at);
+      };
+      const answer = () => {
+        const ids = [...model.open.keys()];
+        const id = ids[Math.floor(random() * ids.length)];
+        if (id === undefined) return;
+        const at = clock.now();
+        const line = id.startsWith("r") ? permissionCompleted(id, at) : toolEnd(id, at);
+        appendLog(files, line, { mtimeMs: at });
+        model.answer(id);
+      };
+      for (let polled = 0; polled < 60; polled += 1) {
+        for (let left = Math.floor(random() * 4); left > 0; left -= 1) {
+          clock.advance(1 + Math.floor(random() * 900));
+          if (random() < 0.5) ask();
+          else answer();
+        }
+        const unread = polled > 0 && random() < 0.15;
+        if (unread) files.failOpen(eventsPath());
+        clock.advance(random() < 0.3 ? SECOND / 2 : 2 * SECOND);
+        if (random() < 0.05 && !unread) {
+          watch = watchWaits(copilotCliAdapterFor(files, { now: clock.now }), clock.now);
+          announcements.restart();
+        }
+        // What a log last said stands while it cannot be read.
+        if (!unread) last = { open: new Map(model.open), since: model.since() };
+        // A permission shows once it has been open a second.
+        const shows = [...last.open].some(
+          ([id, at]) => id.startsWith("q") || clock.now() - at >= SECOND,
+        );
+        const told = shows ? last.since : null;
+        const { status, ...shown } = await watch();
+        expect(shown, `seed ${seed}, poll ${polled}`).toEqual({
+          since: told,
+          ...announcements.poll(told),
+        });
+        expect(status).toBe(told === null ? "working" : "needs-you");
+        files.heal(eventsPath());
+      }
+    }
   });
 
   test("a resume without pending work drops the dead turn's wait, and one with it, or that joined it, keeps it", async () => {

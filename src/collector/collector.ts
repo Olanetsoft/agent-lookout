@@ -212,9 +212,10 @@ export interface CollectorOptions {
    * Reads when processes started, to tell a Claude Code session's process from
    * another that has since been given its pid, and again, with nothing
    * remembered, before a session is stopped, to confirm a Qwen Code session's
-   * process before it is given Jump, and on a Mac to tell a Cline or Kimi Code
-   * session's process from another given its pid. Defaults to asking `ps`. Tests
-   * pass their own, so that, with `readProcesses`, the collector runs no `ps`.
+   * process before it is given Jump, and on a Mac to tell a Cline, Kimi Code,
+   * Grok Build, Copilot CLI or Kiro CLI session's process, or a status file's,
+   * from another given its pid. Defaults to asking `ps`. Tests pass their own,
+   * so that, with `readProcesses`, the collector runs no `ps`.
    */
   readProcessStarts?: ReadProcessStarts;
   /**
@@ -677,7 +678,13 @@ export function createCollector(options: CollectorOptions): Collector {
       platform,
       readProcessStarts: options.readProcessStarts,
     }),
-    createStatusFileAdapter({ env: options.env, now, pollIntervalMs: intervalMs }),
+    createStatusFileAdapter({
+      env: options.env,
+      now,
+      pollIntervalMs: intervalMs,
+      platform,
+      readProcessStarts: options.readProcessStarts,
+    }),
   ];
   // How a session in a wait is seen is for the waits alone: the ledger holds
   // it and the history keeps it, and neither shows it in the Events log.

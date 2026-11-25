@@ -106,6 +106,14 @@ export interface CopilotFold {
   settled: Set<string>;
   /** Open `ask_user` calls, by `toolCallId`, with when each began. */
   questions: Map<string, number | null>;
+  /** Those of them from before the main agent's newest turn start, turn end or abort. */
+  passed: Set<string>;
+  /**
+   * When the session began to wait for you, as Copilot wrote it: a permission
+   * request, or a question not in `passed`, has been open ever since. Null
+   * with none open, or when the first had no time.
+   */
+  waitingSince: number | null;
   /** Other open tool calls, by `toolCallId`. */
   tools: Set<string>;
   turn: CopilotMainTurn;
@@ -129,6 +137,8 @@ export function startCopilotFold(): CopilotFold {
     permissions: new Map(),
     settled: new Set(),
     questions: new Map(),
+    passed: new Set(),
+    waitingSince: null,
     tools: new Set(),
     turn: { state: "closed" },
     turnTools: false,
@@ -146,6 +156,7 @@ export function copyCopilotFold(fold: CopilotFold): CopilotFold {
     permissions: new Map(fold.permissions),
     settled: new Set(fold.settled),
     questions: new Map(fold.questions),
+    passed: new Set(fold.passed),
     tools: new Set(fold.tools),
     turn: { ...fold.turn },
     subTurns: new Set(fold.subTurns),
@@ -158,6 +169,7 @@ function dropOpen(fold: CopilotFold): void {
   fold.permissions.clear();
   fold.settled.clear();
   fold.questions.clear();
+  fold.passed.clear();
   fold.tools.clear();
   fold.subTurns.clear();
 }
@@ -173,6 +185,20 @@ function crowded(fold: CopilotFold): boolean {
   fold.unsure = true;
   dropOpen(fold);
   return true;
+}
+
+/**
+ * Notes that the main agent went on, or was stopped. A turn runs its tools
+ * before it ends, so a question still open then may be one whose completion
+ * Copilot never wrote. It stays open, and is no part of a later wait.
+ */
+function passQuestions(fold: CopilotFold): void {
+  for (const call of fold.questions.keys()) fold.passed.add(call);
+}
+
+/** Whether something is open that counts towards `waitingSince`. */
+function waits(fold: CopilotFold): boolean {
+  return fold.permissions.size > 0 || fold.questions.size > fold.passed.size;
 }
 
 const subKey = (sub: string, turn: string) => `${sub}\u0000${turn}`;
@@ -194,6 +220,8 @@ const subKey = (sub: string, turn: string) => `${sub}\u0000${turn}`;
  *   order: a `permission.completed` written before its request closes it
  *   too, and the newest `OPEN_MAX` such completions are kept. One a hook
  *   settled opens nothing.
+ * - A main `turn_start`, the `turn_end` that closes the main turn, or an
+ *   `abort` passes by every question open then.
  * - A `session.task_complete` whose `outcome` says the run ends makes the
  *   open main turn one that asks for nothing more, as an accepted
  *   completion ends the run with the turn that called it. One that does not
@@ -202,6 +230,15 @@ const subKey = (sub: string, turn: string) => `${sub}\u0000${turn}`;
  *   afresh. A gap drops everything open and leaves the main turn not known.
  */
 export function applyCopilotRecord(fold: CopilotFold, record: CopilotRecord): CopilotFold {
+  const waited = waits(fold);
+  takeRecord(fold, record);
+  // One line opens one thing at most, so with nothing open before it the wait is as old as that line.
+  if (!waits(fold)) fold.waitingSince = null;
+  else if (!waited) fold.waitingSince = "at" in record ? record.at : null;
+  return fold;
+}
+
+function takeRecord(fold: CopilotFold, record: CopilotRecord): CopilotFold {
   switch (record.sort) {
     case "start":
       dropOpen(fold);
@@ -234,6 +271,7 @@ export function applyCopilotRecord(fold: CopilotFold, record: CopilotRecord): Co
         if (!crowded(fold)) fold.subTurns.add(subKey(record.sub, record.turn));
         return fold;
       }
+      passQuestions(fold);
       fold.turn = { state: "open", id: record.turn, at: record.at };
       fold.turnTools = false;
       fold.newest = { sort: "turn-start", at: record.at };
@@ -245,6 +283,7 @@ export function applyCopilotRecord(fold: CopilotFold, record: CopilotRecord): Co
       }
       // An end that names another turn than the open one closes nothing.
       if (fold.turn.state === "open" && fold.turn.id !== record.turn) return fold;
+      passQuestions(fold);
       const tools = fold.turn.state === "closed" ? false : fold.turnTools;
       fold.turn = { state: "closed" };
       fold.turnTools = false;
@@ -264,6 +303,7 @@ export function applyCopilotRecord(fold: CopilotFold, record: CopilotRecord): Co
       return fold;
     case "tool-end":
       fold.questions.delete(record.call);
+      fold.passed.delete(record.call);
       fold.tools.delete(record.call);
       return fold;
     case "permission":
@@ -288,6 +328,7 @@ export function applyCopilotRecord(fold: CopilotFold, record: CopilotRecord): Co
       return fold;
     case "abort":
     case "error":
+      if (record.sort === "abort") passQuestions(fold);
       fold.newest = { sort: record.sort, at: record.at };
       return fold;
     case "shutdown":

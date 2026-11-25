@@ -19,6 +19,7 @@ import {
   BUCKET,
   CREATED_AT,
   DAY,
+  HOUR,
   HOME,
   KIRO_HOME,
   LOCKED_AT,
@@ -54,6 +55,12 @@ import {
   writeV2,
   writeV3,
 } from "@tests/support/adapters/kiro-cli/kiroCliAdapter";
+import {
+  createAnnouncements,
+  createOpenWaits,
+  seeded,
+  watchWaits,
+} from "@tests/support/waits/openWaits";
 
 const V3 = v3IdOf(1);
 const V2 = uuidOf(2);
@@ -276,6 +283,120 @@ describe("the Kiro CLI adapter", () => {
       status: "idle",
       statusSince: NOW - 10_000,
     });
+  });
+
+  test("announces two approvals once, and keeps the first one's time until both are answered", async () => {
+    const files = memoryFiles(() => NOW);
+    const clock = handClock(NOW);
+    const paths = writeV3(files, V3, { log: v3TurnStart(NOW - 5 * MINUTE), lock: LOCK });
+    const adapter = kiroCliAdapterFor(files, { now: clock.now });
+    const watch = watchWaits(adapter, clock.now);
+    const poll = async (...rows: string[]) => {
+      clock.advance(2_000);
+      if (rows.length > 0) files.append(paths.log, rows.join(""), { mtimeMs: clock.now() });
+      return watch();
+    };
+    const waits = (since: number, announced = 0) => ({
+      status: "needs-you",
+      since,
+      started: announced,
+      stopped: 0,
+    });
+    expect((await poll()).status).toBe("working");
+    const a = v3Pending("call-A", NOW + 2_000);
+    const b = v3Pending("call-B", NOW + 3_000);
+    expect(await poll(a, b)).toEqual(waits(NOW + 2_000, 1));
+    expect(await poll()).toEqual(waits(NOW + 2_000));
+    expect(await poll(v3Resolved("call-A"))).toEqual(waits(NOW + 2_000));
+    // Asked again while the other waits, and answered.
+    expect(await poll(v3Pending("call-A", NOW + 9_000))).toEqual(waits(NOW + 2_000));
+    expect(await poll(v3Resolved("call-A"))).toEqual(waits(NOW + 2_000));
+    // A run begun now reads the same time from the log.
+    const later = watchWaits(kiroCliAdapterFor(files, { now: clock.now }), clock.now);
+    expect(await later()).toEqual(waits(NOW + 2_000));
+
+    // Answered and asked again between two polls, with nothing else open: a new wait.
+    expect(await poll(v3Resolved("call-B"), v3Pending("call-B", NOW + 13_000))).toEqual({
+      status: "needs-you",
+      since: NOW + 13_000,
+      started: 1,
+      stopped: 1,
+    });
+    expect((await poll(v3Resolved("call-B"))).status).toBe("working");
+  });
+
+  test("a poll that cannot read the log ends the wait it shows, which is announced again with the same time", async () => {
+    const files = memoryFiles(() => NOW);
+    const clock = handClock(NOW);
+    const asked = NOW - MINUTE;
+    const rows = v3TurnStart(NOW - 5 * MINUTE) + v3Pending("call-A", asked);
+    const paths = writeV3(files, V3, { log: rows, lock: LOCK });
+    const watch = watchWaits(kiroCliAdapterFor(files, { now: clock.now }), clock.now);
+    const waits = { status: "needs-you", since: asked };
+    expect(await watch()).toMatchObject(waits);
+    files.append(paths.log, v3Pending("call-B", NOW), { mtimeMs: NOW });
+    files.fail(paths.log);
+    expect(await watch()).toMatchObject({ status: "unknown", stopped: 1 });
+    files.heal(paths.log);
+    expect(await watch()).toEqual({ ...waits, started: 1, stopped: 0 });
+  });
+
+  test("gives a wait no time when its own is before the session began or ahead of the clock", async () => {
+    for (const at of [CREATED_AT - HOUR, NOW + DAY, 0]) {
+      const files = memoryFiles(() => NOW);
+      const rows = v3TurnStart(NOW - 5 * MINUTE) + v3Pending("call-A", at);
+      writeV3(files, V3, { log: rows, lock: LOCK });
+      const { sessions } = await kiroCliAdapterFor(files).poll();
+      expect(sessions).toMatchObject([{ status: "needs-you", statusSince: null }]);
+    }
+  });
+
+  test("agrees with the model of open waits, through answers, calls asked again, turns and restarts, where a file that cannot be read ends the wait", async () => {
+    for (let seed = 1; seed <= 150; seed += 1) {
+      const random = seeded(seed);
+      const pick = <T>(of: readonly T[]) => of[Math.floor(random() * of.length)] as T;
+      const files = memoryFiles(() => NOW);
+      const clock = handClock(NOW);
+      const paths = writeV3(files, V3, { log: v3TurnStart(NOW), lock: LOCK });
+      const model = createOpenWaits();
+      const announcements = createAnnouncements();
+      let watch = watchWaits(kiroCliAdapterFor(files, { now: clock.now }), clock.now);
+      for (let polled = 0; polled < 60; polled += 1) {
+        for (let left = Math.floor(random() * 4); left > 0; left -= 1) {
+          clock.advance(1 + Math.floor(random() * 900));
+          const at = clock.now();
+          const call = pick(["call-A", "call-B", "call-C"]);
+          const step = random();
+          if (step < 0.45) {
+            files.append(paths.log, v3Pending(call, at), { mtimeMs: at });
+            model.ask(call, at);
+          } else if (step < 0.9) {
+            files.append(paths.log, v3Resolved(call, at), { mtimeMs: at });
+            model.answer(call);
+          } else {
+            files.append(paths.log, v3TurnEnd(at) + v3TurnStart(at), { mtimeMs: at });
+            model.clear();
+          }
+        }
+        clock.advance(2_000);
+        const restarts = random() < 0.05;
+        if (restarts) {
+          watch = watchWaits(kiroCliAdapterFor(files, { now: clock.now }), clock.now);
+          announcements.restart();
+        }
+        const unread = random() < 0.1 ? pick([paths.log, paths.header]) : null;
+        if (unread !== null) files.fail(unread);
+        // Such a poll shows no wait, and the next one tells of it again.
+        const since = unread === null ? model.since() : null;
+        const { status, ...shown } = await watch();
+        expect(shown, `seed ${seed}, poll ${polled}`).toEqual({
+          since,
+          ...announcements.poll(since),
+        });
+        expect(status === "needs-you").toBe(since !== null);
+        if (unread !== null) files.heal(unread);
+      }
+    }
   });
 
   test("shows a V2 session working from its newest prompt, never needing you, and idle once a reply has no tool", async () => {

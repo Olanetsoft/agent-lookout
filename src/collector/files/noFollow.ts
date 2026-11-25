@@ -16,9 +16,10 @@ import { lstat, open, type FileHandle } from "node:fs/promises";
  * ordinary file is refused before it is opened, a link with `ELOOP`, as
  * `O_NOFOLLOW` refuses one. Then the file is opened, and
  * unless the open file is that very file, by its disk and its number on that
- * disk, it is closed unread and unwritten, and the open fails: a link put in
- * place of the file between the look and the open is caught that way. A file
- * that was not there, and is made by the open, is looked at once it is made.
+ * disk, it is closed unread and unwritten, and the open fails with `ESTALE`: a
+ * link, or a new file, put in place of the file between the look and the open
+ * is caught that way. A file that was not there, and is made by the open, is
+ * looked at once it is made.
  * Windows keeps no named pipe among files, so nothing there can make an open
  * wait.
  */
@@ -37,6 +38,11 @@ function notOrdinary(): Error {
 function refusal(named: BigIntStats): Error {
   if (!named.isSymbolicLink()) return notOrdinary();
   return Object.assign(new Error("A symbolic link, which is not followed."), { code: "ELOOP" });
+}
+
+/** What opening a name whose file was replaced meanwhile gives. It can work the next time. */
+function replaced(): Error {
+  return Object.assign(notOrdinary(), { code: "ESTALE" });
 }
 
 /** Whether the name holds an ordinary file, and the one that was opened. */
@@ -75,7 +81,7 @@ export async function openWithoutFollowing(
   try {
     const opened = await handle.stat({ bigint: true });
     const named = before ?? (await lstat(file, { bigint: true }));
-    if (!sameFile(named, opened)) throw notOrdinary();
+    if (!sameFile(named, opened)) throw replaced();
     return handle;
   } catch (error) {
     await handle.close();
@@ -101,7 +107,7 @@ export function openWithoutFollowingNow(
   const fd = openSync(file, flags, mode);
   try {
     const named = before ?? lstatSync(file, { bigint: true });
-    if (!sameFile(named, fstatSync(fd, { bigint: true }))) throw notOrdinary();
+    if (!sameFile(named, fstatSync(fd, { bigint: true }))) throw replaced();
     return fd;
   } catch (error) {
     closeSync(fd);

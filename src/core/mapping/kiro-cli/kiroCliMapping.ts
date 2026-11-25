@@ -37,8 +37,6 @@ export type KiroV3Row =
 export interface KiroWait {
   toolCallId: string;
   reason: WaitingReason;
-  /** When the row that asked it was written, as it says. */
-  at: number | null;
 }
 
 /** What a V3 row log says, read in file order. */
@@ -53,13 +51,29 @@ export interface KiroV3Scan {
   turnAt: number | null;
   /** The waits asked since the newest `turn_start` and not answered, oldest first. */
   waits: readonly KiroWait[];
+  /**
+   * When the wait those are part of began, as Kiro wrote it, or null with none:
+   * the session has waited on one thing or another since then. So answering
+   * the older of two does not move it, and a call answered and asked again
+   * with nothing else open begins a new one.
+   */
+  waitingSince: number | null;
   /** A line since the newest turn row could not be read. */
   unreadable: boolean;
 }
 
 /** Where a read of a V3 row log starts: from the file's start, or from somewhere in it. */
 export function startV3Scan(whole: boolean): KiroV3Scan {
-  return { lastTurn: whole ? null : undefined, turnAt: null, waits: [], unreadable: false };
+  return afterTurn(whole ? null : undefined, null);
+}
+
+function afterTurn(lastTurn: KiroV3Scan["lastTurn"], turnAt: number | null): KiroV3Scan {
+  return { lastTurn, turnAt, waits: [], waitingSince: null, unreadable: false };
+}
+
+/** The earlier of two times, the first when either is not known. */
+function earlierOf(first: number | null, next: number | null): number | null {
+  return first !== null && next !== null && next < first ? next : first;
 }
 
 /** Whether a row is a turn row, which a read from the end goes back to and no further. */
@@ -75,25 +89,26 @@ export function isV3TurnRow(row: KiroV3Row): boolean {
 export function foldV3Row(scan: KiroV3Scan, row: KiroV3Row): KiroV3Scan {
   switch (row.kind) {
     case "turn-start":
-      return { lastTurn: "start", turnAt: row.at, waits: [], unreadable: false };
+      return afterTurn("start", row.at);
     case "turn-end":
-      return { lastTurn: "end", turnAt: row.at, waits: [], unreadable: false };
+      return afterTurn("end", row.at);
     case "turn-other":
-      return { lastTurn: "other", turnAt: null, waits: [], unreadable: false };
+      return afterTurn("other", null);
     case "pending": {
       if (scan.lastTurn !== "start") return scan;
       if (scan.waits.some((wait) => wait.toolCallId === row.toolCallId)) return scan;
       const reason: WaitingReason = row.approval ? "permission" : "other";
       return {
         ...scan,
-        waits: [...scan.waits, { toolCallId: row.toolCallId, reason, at: row.at }],
+        waits: [...scan.waits, { toolCallId: row.toolCallId, reason }],
+        // Earlier only when the clock was set back since the first was asked.
+        waitingSince: scan.waits.length === 0 ? row.at : earlierOf(scan.waitingSince, row.at),
       };
     }
-    case "resolved":
-      return {
-        ...scan,
-        waits: scan.waits.filter((wait) => wait.toolCallId !== row.toolCallId),
-      };
+    case "resolved": {
+      const waits = scan.waits.filter((wait) => wait.toolCallId !== row.toolCallId);
+      return { ...scan, waits, waitingSince: waits.length === 0 ? null : scan.waitingSince };
+    }
     case "unreadable":
       return scan.unreadable ? scan : { ...scan, unreadable: true };
     case "other":

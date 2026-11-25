@@ -114,7 +114,7 @@ describe("the status-file source, on a real folder", () => {
     const { poll } = await watch();
     const result = await poll();
     expect(result.health.state).toBe("ok");
-    expect(result.health.watching?.slice(2)).toEqual([
+    expect(result.health.watching?.slice(2, 4)).toEqual([
       { label: "Files read", value: "0" },
       { label: "Files skipped", value: "0" },
     ]);
@@ -163,6 +163,29 @@ describe("the status-file source, on a real folder", () => {
     );
   });
 
+  // `ps` is asked when a process started on a Mac alone.
+  test.runIf(process.platform === "darwin")(
+    "a process that started a day after its file was last written is another program's, until the file is written again",
+    async () => {
+      const { folder, poll, write } = await watch();
+      const other = await runningProcess();
+      const fields = { pid: other.pid, status: "waiting" };
+      await write("night-shift.json", statusFile(fields));
+      const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      await utimes(path.join(folder, "night-shift.json"), yesterday, yesterday);
+
+      const left = await poll();
+      expect(left.sessions).toEqual([]);
+      expect(left.health.detail).toContain(
+        "1 file names a process that has ended, so its session is not shown.",
+      );
+
+      await write("night-shift.json", statusFile(fields));
+      expect((await poll()).sessions).toMatchObject([{ status: "needs-you", alive: true }]);
+      await other.stop();
+    },
+  );
+
   test("a link out of the folder is skipped and counted, and what it points at is never opened", async () => {
     const { parent, folder, poll, calls } = await watch();
     const outside = path.join(parent, "outside.json");
@@ -173,7 +196,7 @@ describe("the status-file source, on a real folder", () => {
     const result = await poll();
 
     expect(result.sessions.map((session) => session.name)).toEqual(["checkout-flow"]);
-    expect(result.health.watching?.slice(2)).toEqual([
+    expect(result.health.watching?.slice(2, 4)).toEqual([
       { label: "Files read", value: "1" },
       { label: "Files skipped", value: "2" },
     ]);
@@ -207,7 +230,7 @@ describe("the status-file source, on a real folder", () => {
 
     // The large file was written last, and takes one of the 200 places.
     expect(result.sessions).toHaveLength(MAX_FILES - 1);
-    expect(result.health.watching?.slice(2)).toEqual([
+    expect(result.health.watching?.slice(2, 4)).toEqual([
       { label: "Files read", value: String(MAX_FILES - 1) },
       { label: "Files skipped", value: "5" },
     ]);
@@ -228,7 +251,7 @@ describe("the status-file source, on a real folder", () => {
     const result = await poll();
 
     expect(result.sessions).toMatchObject([{ name: "billing-webhooks", status: "needs-you" }]);
-    expect(result.health.watching?.slice(2)).toEqual([
+    expect(result.health.watching?.slice(2, 4)).toEqual([
       { label: "Files read", value: String(MAX_FILES) },
       { label: "Files skipped", value: "1" },
     ]);
@@ -496,7 +519,7 @@ for (const runner of RUNNERS) {
             alive: true,
           },
         ]);
-        expect(working.health.watching?.slice(2)).toEqual([
+        expect(working.health.watching?.slice(2, 4)).toEqual([
           { label: "Files read", value: "1" },
           { label: "Files skipped", value: "0" },
         ]);

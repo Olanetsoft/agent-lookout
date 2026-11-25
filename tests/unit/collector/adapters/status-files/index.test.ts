@@ -41,6 +41,8 @@ function setUp(options: Partial<StatusFileAdapterOptions> = {}) {
     now: () => clock.now,
     io: files.io,
     isAlive: (pid) => alive.has(pid),
+    // Where `ps` is never asked, unless a test says otherwise.
+    platform: "linux",
     ...options,
   });
   /** Moves the clock on and polls. */
@@ -62,6 +64,7 @@ function facts(read: number, skipped: number) {
     { label: "Read", value: "every 2 seconds" },
     { label: "Files read", value: String(read) },
     { label: "Files skipped", value: String(skipped) },
+    { label: "Process check", value: "signal 0 alone, every 2 seconds" },
   ];
 }
 
@@ -432,6 +435,108 @@ describe("its sessions", () => {
     );
   });
 
+  test("a session whose process was found gone does not come back when another program gets its process ID, until its file is written again", async () => {
+    const { files, alive, first, poll } = setUp();
+    const file = `${STATUS_DIR}/a.json`;
+    const waiting = statusFile({ status: "waiting", since: NOW - DAY, pid: 200 });
+    put(files, "a.json", waiting, NOW - DAY);
+    put(files, "b.json", statusFile({ name: "done", status: "finished", pid: 201 }), NOW - HOUR);
+    const left = (await first()).sessions;
+    expect(left.map((session) => [session.name, session.alive])).toEqual([["done", false]]);
+
+    // Both IDs go to other programs, and the files stay as they were.
+    alive.add(200).add(201);
+    const reused = await poll();
+    expect(reused.sessions.map((session) => [session.name, session.alive])).toEqual([
+      ["done", false],
+    ]);
+    expect(reused.health.detail).toBe(
+      `${BASE} 1 file names a process that has ended, so its session is not shown.`,
+    );
+
+    // Caught half written it is still the one left behind, and whole it is a session again.
+    files.rewrite(file, waiting.slice(0, 20));
+    expect((await poll()).sessions).toHaveLength(1);
+    files.rewrite(file, statusFile({ status: "waiting", pid: 200 }));
+    expect((await poll()).sessions.map((session) => [session.name, session.alive])).toEqual([
+      ["checkout-flow", true],
+      ["done", false],
+    ]);
+  });
+
+  test("on a Mac, a session whose process ID another program has from the first poll is not shown, and a finished one has no process", async () => {
+    const asked: number[][] = [];
+    const { files, alive, first } = setUp({
+      platform: "darwin",
+      readProcessStarts: async (pids) => {
+        asked.push([...pids]);
+        return new Map(pids.map((pid) => [pid, "Mon Oct  5 11:00:00 2026"]));
+      },
+    });
+    alive.add(100).add(200).add(300);
+    put(files, "a.json", statusFile({ name: "api-rate-limits", pid: 100 }), NOW - MINUTE);
+    put(files, "b.json", statusFile({ name: "left", status: "waiting", pid: 200 }), NOW - DAY);
+    put(files, "c.json", statusFile({ name: "done", status: "failed", pid: 300 }), NOW - 2 * HOUR);
+    const result = await first();
+
+    expect(result.sessions.map((session) => [session.name, session.alive])).toEqual([
+      ["api-rate-limits", true],
+      ["done", false],
+    ]);
+    expect(asked).toEqual([[100, 200, 300]]);
+    expect(result.health.watching).toEqual([
+      ...facts(3, 0).slice(0, 4),
+      { label: "Process check", value: "ps -o pid=,lstart= -p <pids>" },
+      {
+        label: "Process check run",
+        value: "every 30 seconds while a file's process runs, and sooner when another appears",
+      },
+    ]);
+  });
+
+  test("on a Mac, a copy that kept an older time goes by its since, and a copy with none is not shown", async () => {
+    const { files, alive, first } = setUp({
+      platform: "darwin",
+      readProcessStarts: async (pids) =>
+        new Map(pids.map((pid) => [pid, "Mon Oct  5 11:00:00 2026"])),
+    });
+    alive.add(100);
+    const since = NOW - 30 * MINUTE;
+    put(files, "a.json", statusFile({ name: "copy", since, pid: 100 }), NOW - DAY);
+    put(files, "b.json", statusFile({ name: "no-since", pid: 100 }), NOW - DAY);
+    expect((await first()).sessions.map((session) => session.name)).toEqual(["copy"]);
+  });
+
+  test("a file left behind stays so while it cannot be opened, as its process ID goes to another program", async () => {
+    const { files, alive, first, poll } = setUp();
+    put(files, "a.json", statusFile({ status: "waiting", pid: 200 }), NOW - MINUTE);
+    expect((await first()).sessions).toEqual([]);
+    files.failOpen(`${STATUS_DIR}/a.json`);
+    alive.add(200);
+    expect((await poll()).sessions).toEqual([]);
+    files.heal(`${STATUS_DIR}/a.json`);
+    expect((await poll()).sessions).toEqual([]);
+  });
+
+  test("a file left behind stays so while its folder cannot be read, and one that folder then shows was not seen written", async () => {
+    const { files, alive, first, poll } = setUp({
+      platform: "darwin",
+      readProcessStarts: async (pids) =>
+        new Map(pids.map((pid) => [pid, "Mon Oct  5 11:00:00 2026"])),
+    });
+    put(files, "a.json", statusFile({ pid: 200 }), NOW - 30 * MINUTE);
+    expect((await first()).sessions).toEqual([]);
+    for (const code of ["EACCES", "ENOENT"]) {
+      files.fail(STATUS_DIR, code);
+      expect((await poll()).sessions).toEqual([]);
+    }
+    // As a disk that was away: both IDs are another program's by now, started an hour ago.
+    files.heal(STATUS_DIR);
+    put(files, "b.json", statusFile({ pid: 201 }), NOW - DAY);
+    alive.add(200).add(201);
+    expect((await poll()).sessions).toEqual([]);
+  });
+
   test("one that finished or failed is expected to have no process, and stays", async () => {
     const { files, first } = setUp();
     put(files, "a.json", statusFile({ name: "infra-terraform", pid: 300, status: "finished" }));
@@ -674,6 +779,75 @@ describe("a file caught half written", () => {
 
     files.rewrite(`${STATUS_DIR}/a.json`, whole);
     expect((await poll()).sessions[0]?.status).toBe("idle");
+  });
+
+  test("or that cannot be opened or read for a poll, as while another program holds it, keeps it too", async () => {
+    const { files, poll, clock } = setUp();
+    const file = `${STATUS_DIR}/a.json`;
+    files.mkdir(STATUS_DIR);
+    await poll();
+    put(files, "a.json", statusFile({ status: "waiting" }));
+    const before = (await poll()).sessions;
+    const since = clock.now;
+    expect(before).toMatchObject([{ status: "needs-you", statusSince: since }]);
+
+    const { openRegular } = files.io;
+    for (const fail of [
+      () => files.failOpen(file, "EBUSY"),
+      // Replaced as it was opened, on Windows.
+      () => files.failOpen(file, "ESTALE"),
+      () => {
+        files.io.openRegular = async (target) => ({
+          ...(await openRegular(target)),
+          read: () => Promise.reject(new Error("The disk is busy.")),
+        });
+      },
+    ]) {
+      fail();
+      const caught = await poll();
+      expect(caught.sessions).toEqual(before);
+      expect(caught.health.watching).toEqual(facts(1, 0));
+      files.heal(file);
+      files.io.openRegular = openRegular;
+      expect((await poll()).sessions).toEqual(before);
+    }
+
+    files.failOpen(file, "EBUSY");
+    await poll();
+    const still = await poll();
+    expect(still.sessions).toEqual([]);
+    expect(still.health.watching).toEqual(facts(0, 1));
+    expect(files.openHandles()).toBe(0);
+  });
+
+  test("is not one that has become a link, a folder or too large, or has gone: what it said goes at once", async () => {
+    const { files, poll } = setUp();
+    const file = `${STATUS_DIR}/a.json`;
+    const { openRegular } = files.io;
+    const become: [skipped: number, () => void][] = [
+      [1, () => files.special(file)],
+      [1, () => files.failOpen(file, "EISDIR")],
+      // As a folder or a pipe gives on a Mac and on Linux, once it is open.
+      [
+        1,
+        () => {
+          files.io.openRegular = () => Promise.reject(new Error("Not an ordinary file."));
+        },
+      ],
+      [1, () => put(files, "a.json", `${statusFile()}${" ".repeat(MAX_FILE_BYTES)}`)],
+      // It went between the listing and the read.
+      [0, () => files.failOpen(file, "ENOENT")],
+    ];
+    for (const [skipped, change] of become) {
+      put(files, "a.json", statusFile());
+      expect((await poll()).sessions).toHaveLength(1);
+      change();
+      const changed = await poll();
+      expect(changed.sessions).toEqual([]);
+      expect(changed.health.watching).toEqual(facts(0, skipped));
+      files.heal(file);
+      files.io.openRegular = openRegular;
+    }
   });
 
   test("that was never read whole is skipped", async () => {

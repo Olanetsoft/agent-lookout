@@ -2108,6 +2108,11 @@ export function sourcesAt(now: number, filesRead: number, version: string): Sour
         { label: "Read", value: "every 2 seconds" },
         { label: "Files read", value: String(filesRead) },
         { label: "Files skipped", value: "0" },
+        { label: "Process check", value: "ps -o pid=,lstart= -p <pids>" },
+        {
+          label: "Process check run",
+          value: "every 30 seconds while a file's process runs, and sooner when another appears",
+        },
       ],
       capabilities: STATUS_FILE_CAPABILITIES,
       checkedAt,
