@@ -35,7 +35,8 @@ import { sessionName } from "../../core/text.ts";
  * by the workflow run in the check's link: a check of an older run counts beside
  * a newer run's unless it was cancelled, or had finished before the newer run
  * began, as the first of that run's checks to start says. So two runs for one
- * event that overlap both count. The link and the run are not kept. A check that
+ * event that overlap both count. So do two jobs of one run with one name, as a
+ * matrix can have, that overlap. The link and the run are not kept. A check that
  * cannot be read is not counted.
  */
 
@@ -126,33 +127,54 @@ function checkOf(value: unknown): Check | null {
   return null;
 }
 
+/**
+ * Whether `later` is `check` run again in its own workflow run, rather than
+ * another job with its name. A job is run again only once its run has finished,
+ * so one that overlaps it is another job. One with the same times that ended the
+ * same is the job itself, listed again. Of checks that name no run, and after
+ * one that does not say when it finished, the latest is taken.
+ */
+function isRunAgain(check: Check, later: Check): boolean {
+  if (later.run !== check.run) return false;
+  if (check.run === 0) return true;
+  if (check.state === "pending") return false;
+  return (
+    check.finishedAt === Infinity ||
+    check.finishedAt < later.startedAt ||
+    (check.startedAt === later.startedAt &&
+      check.finishedAt === later.finishedAt &&
+      check.state === later.state)
+  );
+}
+
 /** How many checks are in each state, counting only the latest run of each. */
 export function checksOf(rollup: unknown): PullRequestChecks {
-  /** By what tells a check from another, and then by its workflow run. */
-  const latest = new Map<string, Map<number, Check>>();
+  const all = (Array.isArray(rollup) ? rollup : [])
+    .map(checkOf)
+    .filter((check) => check !== null)
+    .sort((a, b) => Number(a.startedAt > b.startedAt) - Number(a.startedAt < b.startedAt));
+  /** By what tells a check from another, each as started or, in one second, as listed. */
+  const named = new Map<string, Check[]>();
   /** When each workflow run began: long ago for one that has not, so it replaces nothing. */
   const began = new Map<number, number>();
-  for (const value of Array.isArray(rollup) ? rollup : []) {
-    const check = checkOf(value);
-    if (check === null) continue;
-    const runs = latest.get(check.key) ?? new Map<number, Check>();
-    latest.set(check.key, runs);
-    const held = runs.get(check.run);
-    if (held === undefined || check.startedAt >= held.startedAt) runs.set(check.run, check);
-    if (check.startedAt > -Infinity) {
-      began.set(check.run, Math.min(began.get(check.run) ?? Infinity, check.startedAt));
+  for (const check of all) {
+    const same = named.get(check.key);
+    if (same === undefined) named.set(check.key, [check]);
+    else same.push(check);
+    if (check.startedAt > -Infinity && !began.has(check.run)) {
+      began.set(check.run, check.startedAt);
     }
   }
-  /** Whether `newer` is the same check run again, so that `older` no longer counts. */
+  /** Whether `newer`, of a newer run, is the same check run again, so that `older` no longer counts. */
   const replaces = (newer: Check, older: Check) =>
     newer.run > older.run &&
     (older.cancelled || older.finishedAt < (began.get(newer.run) ?? -Infinity));
   const counts = { passing: 0, failing: 0, pending: 0 };
-  for (const runs of latest.values()) {
-    const all = [...runs.values()];
-    for (const check of all) {
-      if (!all.some((other) => replaces(other, check))) counts[check.state] += 1;
-    }
+  for (const same of named.values()) {
+    same.forEach((check, at) => {
+      const again = same.slice(at + 1).some((later) => isRunAgain(check, later));
+      if (!again && !same.some((other) => replaces(other, check))) counts[check.state] += 1;
+    });
   }
   return { state: checksStateOf(counts), ...counts };
 }

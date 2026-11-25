@@ -141,7 +141,7 @@ describe("the checks", () => {
     ).toBe("passing");
   });
 
-  describe("in two runs of one workflow", () => {
+  describe("told apart by their workflow run", () => {
     /** A check in workflow run `id`, from and to a minute past 10. */
     const inRun = (
       id: number,
@@ -276,6 +276,41 @@ describe("the checks", () => {
           { ...inRun(101, "", 0, null), status: "QUEUED", startedAt: "0001-01-01T00:00:00Z" },
         ]),
       ).toEqual({ state: "failing", passing: 0, failing: 1, pending: 1 });
+    });
+
+    test("two jobs of one run with one name, as a matrix has, both count when they overlap", () => {
+      const failing = { state: "failing", passing: 1, failing: 1, pending: 0 };
+      const jobs = [inRun(100, "FAILURE", 0, 4), inRun(100, "SUCCESS", 1, 5)];
+      expect(checksOf(jobs)).toEqual(failing);
+      expect(checksOf(jobs.toReversed())).toEqual(failing);
+      // Begun in one second, or as the other ended.
+      expect(checksOf([inRun(100, "FAILURE", 0, 4), inRun(100, "SUCCESS", 0, 5)])).toEqual(failing);
+      expect(checksOf([inRun(100, "FAILURE", 0, 4), inRun(100, "SUCCESS", 4, 5)])).toEqual(failing);
+      // One that began after the other had finished is taken for it run again.
+      const passing = { state: "passing", passing: 1, failing: 0, pending: 0 };
+      expect(checksOf([...jobs, inRun(100, "SUCCESS", 20, 24)])).toEqual(passing);
+      expect(checksOf([inRun(100, "FAILURE", 0, 4), inRun(100, "SUCCESS", 5, 9)])).toEqual(passing);
+      // And one listed twice, as one not run again can be, is one.
+      expect(checksOf([inRun(100, "SUCCESS", 1, 5), inRun(100, "SUCCESS", 1, 5)])).toEqual(passing);
+    });
+
+    test("one job still under way counts beside another that has finished", () => {
+      const pending = { state: "pending", passing: 1, failing: 0, pending: 1 };
+      const queued = {
+        ...inRun(100, "", 0, null),
+        status: "QUEUED",
+        startedAt: "0001-01-01T00:00:00Z",
+      };
+      for (const job of [inRun(100, "", 0, null), inRun(100, "", 2, null), queued]) {
+        expect(checksOf([job, inRun(100, "SUCCESS", 1, 5)])).toEqual(pending);
+        expect(checksOf([inRun(100, "SUCCESS", 1, 5), job])).toEqual(pending);
+      }
+      expect(checksOf([inRun(100, "FAILURE", 0, 4), inRun(100, "", 1, null)])).toEqual({
+        state: "failing",
+        passing: 0,
+        failing: 1,
+        pending: 1,
+      });
     });
 
     test("checks whose links name no workflow run are one check, the latest", () => {
