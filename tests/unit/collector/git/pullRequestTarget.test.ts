@@ -210,6 +210,17 @@ describe("where the branch's pull request is looked for", () => {
       ).toEqual({ repository: { owner: "demo-org", name: "storefront" }, head: "77" });
     });
 
+    test("is that ref alone: another ref of the pull request's, or one that only holds it, is the branch itself", () => {
+      const asked = (merge: string) =>
+        targetOf(branchOf(`	remote = origin\n	merge = ${merge}\n`), "patch-1", base, "main")?.head;
+      expect(asked("refs/pull/077/head")).toBe("77");
+      expect(asked("refs/pull/77/merge")).toBe("patch-1");
+      expect(asked("refs/heads/refs/pull/77/head")).toBe("patch-1");
+      expect(asked("refs/pull/77/head/more")).toBe("patch-1");
+      // The last of two, as git takes it.
+      expect(asked("refs/pull/77/head\n	merge = refs/heads/patch-1")).toBe("patch-1");
+    });
+
     test("is never asked for by its name", () => {
       for (const lines of [
         "	merge = refs/pull/77/head\n",

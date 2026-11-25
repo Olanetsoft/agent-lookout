@@ -24,7 +24,7 @@ const ON: PullRequestsStatusResponse = {
 };
 
 const SENT =
-  "Your own gh sends GitHub the name of each repository and branch it is asked about, with its own login.";
+  "Your own gh sends GitHub the name of each repository and branch it is asked about, or the pull request's number instead of the branch, with its own login.";
 
 test("with nothing set, Settings says pull requests are off and how to turn them on", () => {
   expect(pullRequestsWords(OFF, NOW)).toEqual({

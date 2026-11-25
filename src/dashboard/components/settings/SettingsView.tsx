@@ -459,9 +459,9 @@ interface Sending {
 
 /**
  * Where the person's data goes, as the facts about this copy say it. While gh
- * is asked for pull requests, the names of repositories and branches go to
- * GitHub through it. While gh is missing or signed out nothing goes, and the
- * words say so.
+ * is asked for pull requests, the names of repositories and branches, and the
+ * numbers of pull requests checked out, go to GitHub through it. While gh is
+ * missing or signed out nothing goes, and the words say so.
  */
 function whereDataGoes({ emailing, posting, pushing }: Sending, pullRequests: boolean): string {
   const kinds = [
@@ -478,8 +478,8 @@ function whereDataGoes({ emailing, posting, pushing }: Sending, pullRequests: bo
         : `the ${listOf(kinds)} you set up`;
   if (pullRequests) {
     return sent === null
-      ? "Sent only as repository and branch names, to GitHub through gh"
-      : `Sent only in ${sent}, and repository and branch names to GitHub`;
+      ? "Sent only as repository and branch names and pull request numbers, to GitHub through gh"
+      : `Sent only in ${sent}, and repository and branch names and pull request numbers to GitHub`;
   }
   return sent === null ? "Agent Lookout sends it nowhere" : `Sent only in ${sent}`;
 }

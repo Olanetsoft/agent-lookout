@@ -1949,7 +1949,7 @@ const PULL_REQUESTS_ON: PullRequestsStatusResponse = {
 };
 
 const SENT_TO_GITHUB =
-  "Your own gh sends GitHub the name of each repository and branch it is asked about, with its own login.";
+  "Your own gh sends GitHub the name of each repository and branch it is asked about, or the pull request's number instead of the branch, with its own login.";
 
 test("with nothing set, the Pull requests card says they are off and which setting turns them on, and only reads", async () => {
   const screen = await render(<SettingsView />);
@@ -1979,7 +1979,9 @@ test("with them on, it says where they show, what goes to GitHub and when gh was
     SENT_TO_GITHUB,
     "Last checked at 14:02.",
   ]);
-  expect(yourData(screen)).toBe("Sent only as repository and branch names, to GitHub through gh");
+  expect(yourData(screen)).toBe(
+    "Sent only as repository and branch names and pull request numbers, to GitHub through gh",
+  );
   // gh is in the mono wherever the card and the facts name it.
   const card = screen.getByRole("region", { name: "Pull requests" }).element();
   const asking = card.querySelector('[data-part="asking"]') as HTMLElement;
@@ -2004,7 +2006,7 @@ test("with them and email on, the facts name both", async () => {
   await pullRequestsLines(screen);
   await emailLines(screen);
   expect(yourData(screen)).toBe(
-    "Sent only in the emails you set up, and repository and branch names to GitHub",
+    "Sent only in the emails you set up, and repository and branch names and pull request numbers to GitHub",
   );
 });
 
@@ -2054,7 +2056,9 @@ test("when the last check did not work, the card says so in a note, and still sa
   ]);
   const card = screen.getByRole("region", { name: "Pull requests" }).element();
   expect(card.querySelector('[data-slot="callout"]')).not.toBeNull();
-  expect(yourData(screen)).toBe("Sent only as repository and branch names, to GitHub through gh");
+  expect(yourData(screen)).toBe(
+    "Sent only as repository and branch names and pull request numbers, to GitHub through gh",
+  );
   expect(warmPaint(screen.container)).toEqual([]);
 });
 
