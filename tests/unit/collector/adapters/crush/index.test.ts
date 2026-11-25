@@ -310,8 +310,8 @@ describe("a session", () => {
           channel: PRIVATE_WORDS,
           parts: PRIVATE_WORDS,
           summary_message_id: PRIVATE_WORDS,
-          prompt_tokens: 1234,
-          completion_tokens: 1234,
+          prompt_tokens: 98765432,
+          completion_tokens: 98765432,
           cost: 12.34,
           pid: 41001,
         }),
@@ -321,7 +321,7 @@ describe("a session", () => {
     const printed = JSON.stringify(sessions);
     expect(printed).not.toContain(PRIVATE_TITLE);
     expect(printed).not.toContain(PRIVATE_WORDS);
-    expect(printed).not.toContain("1234");
+    expect(printed).not.toContain("98765432");
     expect(Object.keys(sessions[0]!).sort()).toEqual(
       [
         "cwd",

@@ -309,7 +309,7 @@ describe("a session", () => {
           model_config_json: PRIVATE_WORDS,
           extension_data: PRIVATE_WORDS,
           recipe_json: PRIVATE_WORDS,
-          total_tokens: 1234,
+          total_tokens: 98765432,
           pid: 41001,
         }),
       ]),
@@ -318,7 +318,7 @@ describe("a session", () => {
     const printed = JSON.stringify(sessions);
     expect(printed).not.toContain(PRIVATE_TITLE);
     expect(printed).not.toContain(PRIVATE_WORDS);
-    expect(printed).not.toContain("1234");
+    expect(printed).not.toContain("98765432");
     expect(Object.keys(sessions[0]!).sort()).toEqual(
       [
         "cwd",

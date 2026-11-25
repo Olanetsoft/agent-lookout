@@ -368,7 +368,7 @@ describe.skipIf(sqlite === null)("reading Goose's database with the real sqlite3
       expect(answer).not.toContain(PRIVATE_TITLE);
       expect(answer).not.toContain(PRIVATE_WORDS);
       expect(answer).not.toContain("demo-provider");
-      expect(answer).not.toContain("1234");
+      expect(answer).not.toContain("98765432");
       for (const row of JSON.parse(answer) as Record<string, unknown>[]) {
         expect(Object.keys(row).sort()).toEqual([
           "created_s",

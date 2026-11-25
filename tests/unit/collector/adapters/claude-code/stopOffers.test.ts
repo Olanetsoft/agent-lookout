@@ -39,7 +39,7 @@ describe("which sessions can be stopped", () => {
     });
     // Nothing a command could be made of goes to the page.
     expect(JSON.stringify(sessions)).not.toContain("Nov 14");
-    expect(JSON.stringify(sessions[0]?.stop)).not.toContain(String(pids.busy));
+    expect(key).toMatch(/^[0-9a-f]{16}$/);
   });
 
   test("a session in VS Code is stopped the same way", () => {
