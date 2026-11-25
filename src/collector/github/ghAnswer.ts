@@ -29,8 +29,12 @@ import { sessionName } from "../../core/text.ts";
  * - A commit status, as many other services set: `state` is success, failure
  *   or error, or pending or expected while it has not finished.
  *
- * A check run started again is listed once for each run: only the latest of a
- * name is counted, as gh counts them. One that cannot be read is not counted.
+ * A check run started again is listed once for each run, and only the latest is
+ * counted. A workflow that runs on both `push` and `pull_request` makes two runs
+ * of each check, which are two checks. gh gives no event, so they are told apart
+ * by the workflow run in the check's link: an older run counts beside a newer
+ * one unless it was cancelled, or had finished before the newer one started. The
+ * link and the run are not kept. One that cannot be read is not counted.
  */
 
 /** How one check stands. */
@@ -63,11 +67,38 @@ function textOf(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
-/** One check: what tells it from another, when it started, and how it stands. Null when it cannot be read. */
-function checkOf(value: unknown): { key: string; startedAt: number; state: CheckState } | null {
+/** A time gh printed, or null for none. */
+function timeOf(value: unknown): number | null {
+  const at = Date.parse(textOf(value));
+  return Number.isNaN(at) ? null : at;
+}
+
+/** One check, as gh listed it. */
+interface Check {
+  /** What tells it from another check. */
+  key: string;
+  /** The workflow run it is in, or 0 for one that names none. A newer run has a larger one. */
+  run: number;
+  /** When it started: long ago when it has not, or it was not said. */
+  startedAt: number;
+  /** When it finished: never when it has not, or it was not said. */
+  finishedAt: number;
+  cancelled: boolean;
+  state: CheckState;
+}
+
+/** A GitHub Actions check's page, which names its workflow run. */
+const RUN_PAGE = /^https:\/\/github\.com\/[^/]+\/[^/]+\/actions\/runs\/(\d+)\//;
+
+/** The check, or null when it cannot be read. */
+function checkOf(value: unknown): Check | null {
   if (!isRecord(value)) return null;
-  const startedAt = Date.parse(textOf(value.startedAt));
-  const at = Number.isNaN(startedAt) ? -Infinity : startedAt;
+  const common = {
+    run: 0,
+    startedAt: timeOf(value.startedAt) ?? -Infinity,
+    finishedAt: Infinity,
+    cancelled: false,
+  };
   if (value.__typename === "CheckRun") {
     const status = textOf(value.status);
     const conclusion = textOf(value.conclusion);
@@ -77,30 +108,46 @@ function checkOf(value: unknown): { key: string; startedAt: number; state: Check
     else if (status === "COMPLETED" && RUN_FAILED.has(conclusion)) state = "failing";
     if (state === null) return null;
     return {
+      ...common,
       key: `run\0${textOf(value.workflowName)}\0${textOf(value.name)}`,
-      startedAt: at,
+      run: Number(RUN_PAGE.exec(textOf(value.detailsUrl))?.[1] ?? 0),
+      finishedAt: (state === "pending" ? null : timeOf(value.completedAt)) ?? Infinity,
+      cancelled: conclusion === "CANCELLED",
       state,
     };
   }
   if (value.__typename === "StatusContext") {
     const state = STATUS_STATE[textOf(value.state)];
     if (state === undefined) return null;
-    return { key: `status\0${textOf(value.context)}`, startedAt: at, state };
+    return { ...common, key: `status\0${textOf(value.context)}`, state };
   }
   return null;
 }
 
+/** Whether `newer` is the same check run again, so that `older` no longer counts. */
+function replaces(newer: Check, older: Check): boolean {
+  return newer.run > older.run && (older.cancelled || older.finishedAt < newer.startedAt);
+}
+
 /** How many checks are in each state, counting only the latest run of each. */
 export function checksOf(rollup: unknown): PullRequestChecks {
-  const latest = new Map<string, { startedAt: number; state: CheckState }>();
+  /** By what tells a check from another, and then by its workflow run. */
+  const latest = new Map<string, Map<number, Check>>();
   for (const value of Array.isArray(rollup) ? rollup : []) {
     const check = checkOf(value);
     if (check === null) continue;
-    const held = latest.get(check.key);
-    if (held === undefined || check.startedAt >= held.startedAt) latest.set(check.key, check);
+    const runs = latest.get(check.key) ?? new Map<number, Check>();
+    latest.set(check.key, runs);
+    const held = runs.get(check.run);
+    if (held === undefined || check.startedAt >= held.startedAt) runs.set(check.run, check);
   }
   const counts = { passing: 0, failing: 0, pending: 0 };
-  for (const { state } of latest.values()) counts[state] += 1;
+  for (const runs of latest.values()) {
+    const all = [...runs.values()];
+    for (const check of all) {
+      if (!all.some((other) => replaces(other, check))) counts[check.state] += 1;
+    }
+  }
   return { state: checksStateOf(counts), ...counts };
 }
 

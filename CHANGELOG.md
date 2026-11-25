@@ -12,6 +12,7 @@ Changes that a user of Agent Lookout would notice, newest first.
 - Check for Updates… with the Mac app's window closed opens the window on the Updates card, which shows the answer. Before, it answered in a message, and until that was closed the app did nothing else: it read no session, sent no notification and answered no permission request. The card also says when the latest release has no app for this kind of Mac, which it could not read before. (#488)
 - The menu bar names a session on another computer with that computer, as notifications do: `docs-site on devbox`. Before, it and a session of the same name on this computer looked the same. (#491)
 - An `&` in a session's name, or in what it asks, is drawn in the menu bar as it is written. Before, `R&D` showed as `RD`, and `cd api && npm test` as `cd api & npm test`. (#492)
+- A pull request's failing check is no longer dropped, and shown as passing, when its workflow runs on both `push` and `pull_request` and the other event's run of it passed. The two runs count as two checks. A push run that had finished before the pull request's own run began is still taken for a run of the same check, since `gh` gives no event. (#493)
 
 ## 0.2.31 - 2026-11-25
 

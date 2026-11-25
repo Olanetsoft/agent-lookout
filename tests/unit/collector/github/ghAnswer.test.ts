@@ -137,6 +137,97 @@ describe("the checks", () => {
     ).toEqual({ state: "failing", passing: 1, failing: 1, pending: 0 });
   });
 
+  describe("in two runs of one workflow", () => {
+    /** A check in workflow run `id`, from and to a minute past 10. */
+    const inRun = (
+      id: number,
+      conclusion: string,
+      from: number,
+      to: number | null,
+      name = "unit",
+    ) => ({
+      ...run(
+        name,
+        to === null ? "IN_PROGRESS" : "COMPLETED",
+        conclusion,
+        `2026-10-06T10:${String(from).padStart(2, "0")}:00Z`,
+      ),
+      // gh prints a time that is not set this way.
+      completedAt:
+        to === null ? "0001-01-01T00:00:00Z" : `2026-10-06T10:${String(to).padStart(2, "0")}:00Z`,
+      detailsUrl: `https://github.com/example-org/storefront/actions/runs/${id}/job/${id}1`,
+    });
+
+    test("a push run and a pull request run side by side are two checks", () => {
+      expect(
+        checksOf([
+          inRun(100, "FAILURE", 0, 5),
+          inRun(100, "SUCCESS", 0, 5, "lint"),
+          inRun(101, "SUCCESS", 1, 4),
+          inRun(101, "SUCCESS", 1, 4, "lint"),
+        ]),
+      ).toEqual({ state: "failing", passing: 3, failing: 1, pending: 0 });
+      // Whichever gh lists first, and while the newer has not finished.
+      expect(checksOf([inRun(101, "", 1, null), inRun(100, "FAILURE", 0, 5)])).toEqual({
+        state: "failing",
+        passing: 0,
+        failing: 1,
+        pending: 1,
+      });
+    });
+
+    test("a run begun after the older had finished replaces it, as a title check run again does", () => {
+      expect(checksOf([inRun(200, "FAILURE", 0, 1), inRun(201, "SUCCESS", 20, 21)])).toEqual({
+        state: "passing",
+        passing: 1,
+        failing: 0,
+        pending: 0,
+      });
+      expect(checksOf([inRun(201, "", 20, null), inRun(200, "FAILURE", 0, 1)]).state).toBe(
+        "pending",
+      );
+    });
+
+    test("a run cancelled for a newer one does not count", () => {
+      expect(checksOf([inRun(300, "CANCELLED", 0, 2), inRun(301, "SUCCESS", 1, 6)])).toEqual({
+        state: "passing",
+        passing: 1,
+        failing: 0,
+        pending: 0,
+      });
+      // Nothing replaces the newest.
+      expect(checksOf([inRun(300, "SUCCESS", 0, 1), inRun(301, "CANCELLED", 2, 3)]).state).toBe(
+        "failing",
+      );
+    });
+
+    test("an older run started again replaces no newer run, and counts once", () => {
+      expect(
+        checksOf([
+          inRun(100, "FAILURE", 0, 5),
+          inRun(101, "FAILURE", 1, 4),
+          inRun(100, "SUCCESS", 30, 35),
+        ]),
+      ).toEqual({ state: "failing", passing: 1, failing: 1, pending: 0 });
+    });
+
+    test("a newer run that has not started yet replaces nothing", () => {
+      expect(
+        checksOf([
+          inRun(100, "FAILURE", 0, 5),
+          { ...inRun(101, "", 0, null), status: "QUEUED", startedAt: "0001-01-01T00:00:00Z" },
+        ]),
+      ).toEqual({ state: "failing", passing: 0, failing: 1, pending: 1 });
+    });
+
+    test("checks whose links name no workflow run are one check, the latest", () => {
+      const elsewhere = (check: object) => ({ ...check, detailsUrl: "https://ci.example.com/1" });
+      expect(
+        checksOf([elsewhere(inRun(100, "FAILURE", 0, 5)), elsewhere(inRun(101, "SUCCESS", 1, 4))]),
+      ).toEqual({ state: "passing", passing: 1, failing: 0, pending: 0 });
+    });
+  });
+
   test("a check that cannot be read is not counted", () => {
     expect(
       checksOf([
