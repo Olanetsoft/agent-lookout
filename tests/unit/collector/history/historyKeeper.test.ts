@@ -1,7 +1,11 @@
 import { describe, expect, test } from "vitest";
 
 import { encodeRecord, type HistoryRecord } from "@collector/history/historyFormat";
-import { createHistoryKeeper, type HistoryKeeperOptions } from "@collector/history/historyKeeper";
+import {
+  createHistoryKeeper,
+  MAX_QUEUED_LINES,
+  type HistoryKeeperOptions,
+} from "@collector/history/historyKeeper";
 import type { HistoryPoint, SessionEvent } from "@core/sessions/session";
 import { fakeHistoryFs } from "@tests/support/node/historyFs";
 
@@ -15,7 +19,7 @@ const NOTHING = {
   points: [],
   restarts: [],
   lastAt: null,
-  whole: { waitEvents: [], measured: [], sightings: [] },
+  whole: { marks: [], measured: [] },
 };
 
 const file = (name: string) => `${DIR}/${name}`;
@@ -145,6 +149,73 @@ describe("writing", () => {
     keeper.stop();
   });
 
+  test("a clock set back past midnight goes on in the newest file, and a day or more back in that day's", async () => {
+    const { fs, keeper, setNow } = setUp();
+    const midnight = Date.parse("2026-10-07T00:00:00.000Z");
+    const at = async (moment: number) => {
+      setNow(moment);
+      keeper.addPoint(point(moment));
+      await keeper.flush();
+    };
+    await keeper.restore(LIMITS);
+    keeper.start();
+    await at(midnight - 2_000);
+    await at(midnight + 2_000);
+    await at(midnight - 1_000);
+    await at(midnight + 4_000);
+    await at(midnight - DAY - 1_000);
+    keeper.stop();
+    const points = (name: string) =>
+      (fs.text(file(name)) ?? "")
+        .match(/(?<="point":\[)\d+/g)
+        ?.map((text) => Number(text) - midnight);
+    expect(points("v1-2026-10-06.jsonl")).toEqual([-2_000]);
+    expect(points("v1-2026-10-07.jsonl")).toEqual([2_000, -1_000, 4_000]);
+    expect(points("v1-2026-10-05.jsonl")).toEqual([-DAY - 1_000]);
+  });
+
+  test("after a restart, or with the lock taken again, it goes on in that file too, and begins where the clock went back to", async () => {
+    const midnight = Date.parse("2026-10-07T00:00:00.000Z");
+    const back = midnight - 3_600_000;
+    const { fs, keeper, copy, setNow } = setUp({ now: () => midnight + 1_800_000 });
+    const add = async (to: typeof keeper, moment: number) => {
+      setNow(moment);
+      to.addPoint(point(moment));
+      await to.flush();
+    };
+    await keeper.restore(LIMITS);
+    keeper.start();
+    await add(keeper, midnight + 1_802_000);
+    await add(keeper, back);
+    expect(keeper.since()).toEqual({ at: back, by: "started" });
+    keeper.stop();
+
+    const again = copy(100);
+    await again.restore(LIMITS);
+    expect(again.since()?.at).toBe(back);
+    again.start();
+    await add(again, back + 2_000);
+    fs.removeNow(file("writer.lock"));
+    await add(again, back + 4_000);
+    expect(again.since()?.at).toBe(back);
+    again.stop();
+    expect([...fs.entries.keys()]).toEqual([file("v1-2026-10-07.jsonl")]);
+
+    setNow(midnight + DAY / 2);
+    const later = copy(100);
+    const { points } = await later.restore(LIMITS);
+    expect(points).toHaveLength(4);
+    const since = { at: back, by: "started" };
+    expect(later.since()).toEqual(since);
+    // A copy that reads the file only once it takes the lock.
+    const taking = copy(100);
+    taking.start();
+    fs.removeNow(file("writer.lock"));
+    await taking.flush();
+    expect(taking.since()).toEqual(since);
+    taking.stop();
+  });
+
   test("days more than 8 days past go as soon as this copy writes, and so does the oldest once the files hold 20 MB", async () => {
     const { fs, keeper, setNow } = setUp({ maxBytes: 1_000 });
     fs.folders.add(DIR);
@@ -253,6 +324,234 @@ describe("writing", () => {
     keeper.stop();
   });
 
+  describe("while it cannot be written", () => {
+    const TODAY = file("v1-2026-10-06.jsonl");
+    const pointAt = (seconds: number): HistoryRecord => ({
+      kind: "point",
+      point: point(T0 + seconds * 1_000),
+    });
+    const START: HistoryRecord = { kind: "start", at: T0 };
+
+    test("what was added waits, and is written in order, each once, the start before it", async () => {
+      const { fs, keeper } = setUp();
+      await keeper.restore(LIMITS);
+      const append = fs.append;
+      fs.append = () => Promise.reject(Object.assign(new Error("Full."), { code: "ENOSPC" }));
+      keeper.start();
+      for (const seconds of [2, 4, 6]) {
+        keeper.addPoint(point(T0 + seconds * 1_000));
+        await keeper.flush();
+      }
+      keeper.addEvents([event(T0 + 8_000)]);
+      expect(fs.text(TODAY)).toBeUndefined();
+
+      fs.append = append;
+      await keeper.flush();
+      await keeper.flush();
+      expect(fs.text(TODAY)).toBe(
+        lines(START, pointAt(2), pointAt(4), pointAt(6), {
+          kind: "event",
+          event: event(T0 + 8_000),
+        }),
+      );
+      keeper.stop();
+    });
+
+    test.each([
+      ["the line break before them", 1],
+      ["part of the first", 10],
+      ["two and part of the next", lines(START, pointAt(2)).length + 11],
+      ["all of them", lines(START, pointAt(2), pointAt(4)).length + 1],
+    ])(
+      "a write that stops after %s does not write what reached the file again",
+      async (_, kept) => {
+        const { fs, keeper, copy } = setUp();
+        const before = lines({ kind: "point", point: point(T0 - 60_000) });
+        fs.put(TODAY, before);
+        await keeper.restore(LIMITS);
+        const append = fs.append;
+        fs.append = async (path, text) => {
+          await append(path, text.slice(0, kept));
+          throw Object.assign(new Error("Full."), { code: "ENOSPC" });
+        };
+        keeper.start();
+        keeper.addPoint(point(T0 + 2_000));
+        keeper.addPoint(point(T0 + 4_000));
+        await keeper.flush();
+        fs.append = append;
+        keeper.addPoint(point(T0 + 6_000));
+        await keeper.flush();
+        keeper.stop();
+
+        const whole = (fs.text(TODAY) ?? "").split("\n").filter((line) => line.endsWith("}"));
+        expect(whole.map((line) => `${line}\n`).join("")).toBe(
+          before + lines(START, pointAt(2), pointAt(4), pointAt(6)),
+        );
+        expect(keeper.status().bytes).toBe((fs.text(TODAY) ?? "").length);
+        const restored = await copy(300).restore(LIMITS);
+        expect(restored.points).toHaveLength(4);
+        expect(restored.restarts).toEqual([{ at: T0, lastBefore: T0 - 60_000 }]);
+      },
+    );
+
+    test("the most it holds is kept, and the oldest go", async () => {
+      const { fs, keeper } = setUp();
+      await keeper.restore(LIMITS);
+      keeper.start();
+      await keeper.flush();
+      fs.broken = true;
+      for (let n = 1; n <= MAX_QUEUED_LINES; n += 1) keeper.addPoint(point(T0 + n));
+      await keeper.flush();
+      keeper.addPoint(point(T0 + MAX_QUEUED_LINES + 1));
+      await keeper.flush();
+      fs.broken = false;
+      await keeper.flush();
+      keeper.stop();
+      const kept = written(fs).split("\n").filter(Boolean).slice(1);
+      expect(kept).toHaveLength(MAX_QUEUED_LINES);
+      expect(kept[0]).toContain(`[${T0 + 2},`);
+      expect(kept.at(-1)).toContain(`[${T0 + MAX_QUEUED_LINES + 1},`);
+    });
+
+    test("the start, or the clearing since, is not among the lines that go", async () => {
+      const { fs, keeper } = setUp();
+      await keeper.restore(LIMITS);
+      const append = fs.append;
+      const full = () => Promise.reject(Object.assign(new Error("Full."), { code: "ENOSPC" }));
+      /** More lines than it holds while there is no room, and the first three that reach the file. */
+      const held = async () => {
+        await keeper.flush();
+        for (let n = 1; n <= MAX_QUEUED_LINES + 1; n += 1) keeper.addPoint(point(T0 + n));
+        await keeper.flush();
+        fs.append = append;
+        await keeper.flush();
+        return (fs.text(TODAY) ?? "").split("\n").slice(0, 2).join("\n") + "\n";
+      };
+      const first: HistoryRecord = { kind: "point", point: point(T0 + 2) };
+      fs.append = full;
+      keeper.start();
+      expect(await held()).toBe(lines(START, first));
+
+      fs.append = full;
+      await keeper.clear(() => {});
+      expect(await held()).toBe(lines({ kind: "cleared", at: T0 }, first));
+      keeper.stop();
+    });
+
+    test("what is added while a write fails comes after what that write held", async () => {
+      const { fs, keeper } = setUp();
+      await keeper.restore(LIMITS);
+      keeper.start();
+      await keeper.flush();
+      const append = fs.append;
+      fs.append = () => {
+        fs.append = append;
+        keeper.addPoint(point(T0 + 4_000));
+        return Promise.reject(Object.assign(new Error("Full."), { code: "ENOSPC" }));
+      };
+      keeper.addPoint(point(T0 + 2_000));
+      await keeper.flush();
+      await keeper.flush();
+      keeper.stop();
+      expect((fs.text(TODAY) ?? "").replace("\n\n", "\n")).toBe(
+        lines(START, pointAt(2), pointAt(4)),
+      );
+    });
+
+    test("stopping once a write has failed writes each line once", async () => {
+      const { fs, keeper } = setUp();
+      await keeper.restore(LIMITS);
+      fs.append = () => Promise.reject(Object.assign(new Error("Full."), { code: "ENOSPC" }));
+      keeper.start();
+      keeper.addPoint(point(T0 + 2_000));
+      await keeper.flush();
+      keeper.stop();
+      expect(fs.text(TODAY)).toBe(lines(START, pointAt(2)));
+    });
+
+    test("stopping as a write fails writes each line once", async () => {
+      const { fs, keeper } = setUp();
+      await keeper.restore(LIMITS);
+      const append = fs.append;
+      let fail = (_: Error) => {};
+      let called = () => {};
+      const underWay = new Promise<void>((resolve) => {
+        called = resolve;
+      });
+      fs.append = () => {
+        called();
+        return new Promise((_, reject) => {
+          fail = reject;
+        });
+      };
+      keeper.start();
+      keeper.addPoint(point(T0 + 2_000));
+      await underWay;
+      keeper.stop();
+      fail(Object.assign(new Error("Full."), { code: "ENOSPC" }));
+      fs.append = append;
+      // Started again, as a host can, it holds nothing the stop has written.
+      keeper.start();
+      await keeper.flush();
+      keeper.stop();
+      expect(fs.text(TODAY)).toBe(lines(START, pointAt(2), START));
+    });
+
+    test("a lock that cannot be made is made once it can, and what waited is written", async () => {
+      const { fs, keeper, warnings } = setUp();
+      await keeper.restore(LIMITS);
+      fs.broken = true;
+      keeper.start();
+      keeper.addPoint(point(T0 + 2_000));
+      await keeper.flush();
+      expect(warnings).toEqual([expect.stringContaining("could not write")]);
+      expect(keeper.status()).toMatchObject({ problem: warnings[0], canClear: false });
+
+      fs.broken = false;
+      await keeper.flush();
+      expect(keeper.status()).toMatchObject({ problem: null, canClear: true });
+      expect(fs.text(TODAY)).toBe(lines(START, pointAt(2)));
+      keeper.stop();
+    });
+
+    test("what waits goes when another copy writes meanwhile", async () => {
+      const { fs, keeper, alive } = setUp();
+      await keeper.restore(LIMITS);
+      fs.broken = true;
+      keeper.start();
+      keeper.addPoint(point(T0 + 2_000));
+      await keeper.flush();
+      fs.broken = false;
+      alive.add(200);
+      fs.put(file("writer.lock"), JSON.stringify({ pid: 200, token: "another" }));
+      await keeper.flush();
+      expect(keeper.status().problem).toContain("Another copy");
+      fs.removeNow(file("writer.lock"));
+      await keeper.flush();
+      keeper.stop();
+      expect(written(fs)).toBe("");
+    });
+
+    test("the record of a clearing waits with the rest, before what came after it", async () => {
+      const { fs, keeper } = setUp();
+      await keeper.restore(LIMITS);
+      keeper.start();
+      keeper.addPoint(point(T0 + 2_000));
+      await keeper.flush();
+      const append = fs.append;
+      fs.append = () => Promise.reject(Object.assign(new Error("Full."), { code: "ENOSPC" }));
+      keeper.addPoint(point(T0 + 4_000));
+      await keeper.flush();
+      await keeper.clear(() => {});
+      keeper.addPoint(point(T0 + 6_000));
+      await keeper.flush();
+      fs.append = append;
+      await keeper.flush();
+      keeper.stop();
+      expect(fs.text(TODAY)).toBe(lines({ kind: "cleared", at: T0 }, pointAt(6)));
+    });
+  });
+
   test("a day's file that a crash left ending in half a line goes on from a line of its own", async () => {
     const { fs, keeper, copy } = setUp();
     fs.folders.add(DIR);
@@ -348,7 +647,7 @@ describe("reading back", () => {
     expect(keeper.status()).toMatchObject({ where: "disk", folder: "~/.agent-lookout/history" });
   });
 
-  test("how a session in a wait was seen is written with the rest, and comes back whole, oldest first, beside no other store", async () => {
+  test("how a session in a wait was seen is written with the rest, and comes back whole, as it was added, beside no other store", async () => {
     const { keeper, copy, setNow } = setUp();
     const sighting = {
       sessionId: "opencode:ses_000000000000000000000000a1",
@@ -360,15 +659,39 @@ describe("reading back", () => {
     await keeper.restore(LIMITS);
     keeper.start();
     keeper.addEvents([event(T0)]);
-    keeper.addSightings([lost, sighting]);
+    keeper.addSightings([lost]);
+    keeper.addEvents([event(T0 - 2_000)]);
+    keeper.addSightings([sighting]);
     await keeper.flush();
     keeper.stop();
 
     setNow(T0 + 60_000);
     const again = await copy(2).restore(LIMITS);
-    expect(again.whole.sightings).toEqual([sighting, lost]);
-    expect(again.events).toEqual([event(T0)]);
+    const marks = [{ kind: "start", at: T0 }, event(T0), lost, event(T0 - 2_000), sighting];
+    expect(again.whole.marks).toEqual(marks);
+    expect(again.events).toEqual([event(T0), event(T0 - 2_000)]);
     expect(again.points).toEqual([]);
+  });
+
+  test("a line that is in the files twice, as after a stop during a write, is read once, where it was first", async () => {
+    const { fs, keeper } = setUp();
+    const seen = {
+      sessionId: event(T0).sessionId,
+      sessionName: "demo-project",
+      at: T0 - 4_000,
+      way: "database",
+    };
+    const lost = { ...seen, at: T0 - 2_000, lastSeen: T0 - 4_000 };
+    const records: HistoryRecord[] = [
+      { kind: "start", at: T0 - 6_000 },
+      { kind: "event", event: event(T0 - 4_000) },
+      { kind: "sighting", sighting: seen },
+      { kind: "sighting", sighting: lost },
+    ];
+    fs.put(file("v1-2026-10-06.jsonl"), lines(...records, ...records.slice(0, 3)));
+    const { whole, events } = await keeper.restore(LIMITS);
+    expect(whole.marks).toEqual([records[0], event(T0 - 4_000), seen, lost]);
+    expect(events).toEqual([event(T0 - 4_000)]);
   });
 
   test("a Hermes Agent run's title an earlier version kept is in nothing that comes back, and the file is left as it was", async () => {
@@ -397,8 +720,11 @@ describe("reading back", () => {
 
     const restored = await keeper.restore(LIMITS);
     expect(restored.events.map((each) => each.sessionName)).toEqual([kept.sessionId]);
-    expect(restored.whole.waitEvents.map((each) => each.sessionName)).toEqual([kept.sessionId]);
-    expect(restored.whole.sightings.map((each) => each.sessionName)).toEqual([kept.sessionId]);
+    expect(restored.whole.marks).toMatchObject([
+      { kind: "start" },
+      { sessionName: kept.sessionId, kind: "status-changed" },
+      { sessionName: kept.sessionId, way: "database" },
+    ]);
     expect(JSON.stringify(restored)).not.toContain(prompt);
     expect(written(fs)).toBe(before);
   });
@@ -447,8 +773,13 @@ describe("reading back", () => {
     expect(restored.events).toEqual([idle]);
     expect(restored.points).toEqual([point(T0 - 54_000)]);
     // A move from working to idle is no part of a wait.
-    expect(restored.whole.waitEvents).toEqual([event(T0 - DAY + 2_000), answered]);
-    expect(restored.whole.sightings).toEqual([]);
+    expect(restored.whole.marks).toEqual([
+      { kind: "start", at: T0 - DAY },
+      event(T0 - DAY + 2_000),
+      answered,
+      { kind: "start", at: T0 - 60_000 },
+      { kind: "start", at: T0 - 56_500 },
+    ]);
     expect(restored.whole.measured).toEqual([
       { from: T0 - DAY + 2_000, to: T0 - DAY + 6_000 },
       { from: T0 - 58_000, to: T0 - 58_000 },

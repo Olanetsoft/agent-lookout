@@ -15,7 +15,7 @@ import type {
 } from "@core/sessions/session";
 import { DEFAULT_TIME_RULES, type TimeRules } from "@core/time-rules/timeRules";
 import type { WaitSighting } from "@core/waits/waitSightings";
-import { unendedWaits, waitTotals } from "@core/waits/waitTotals";
+import { isSighting, unendedWaits, waitTotals, type WaitMark } from "@core/waits/waitTotals";
 import { makeSession } from "@tests/fixtures/session";
 
 const T0 = 1_700_000_000_000;
@@ -531,6 +531,28 @@ describe("events after a restart, with history kept from before it", () => {
     expect(events.list()).toHaveLength(3);
   });
 
+  test("what a session was last doing is the last of its events, though the clock was set back before it", async () => {
+    const a = makeSession({ id: "claude-code:a", name: "demo-a", status: "idle" });
+    const { adapter } = scriptedAdapter(result([a]));
+    const { poller, events } = setUp(adapter);
+    poller.resume([
+      kept("claude-code:a", "status-changed", "needs-you", T0 - 60_000),
+      kept("claude-code:a", "status-changed", "idle", T0 - 120_000),
+    ]);
+    await poller.pollOnce();
+    expect(events.list()).toEqual([]);
+  });
+
+  test("a wait in a history from before there were sightings ends with no word of when it was last seen", async () => {
+    const a = makeSession({ id: "claude-code:a", name: "demo-a", status: "idle" });
+    const { adapter } = scriptedAdapter(result([a]));
+    const { poller, events } = setUp(adapter);
+    poller.resume([kept("claude-code:a", "status-changed", "needs-you")]);
+    await poller.pollOnce();
+    expect(events.list()).toMatchObject([{ from: "needs-you", to: "idle" }]);
+    expect(events.list()[0]?.lastSeen).toBeUndefined();
+  });
+
   test("a part the first poll did not read gets no event then, and is compared with the history at its first read", async () => {
     const read = makeSession({ id: "claude-code:read/a", status: "idle" });
     const refused = makeSession({ id: "claude-code:refused/b", status: "working" });
@@ -1010,9 +1032,8 @@ describe("a wait that ends when its agent closes, in a way of reading of its own
   /** What the waits add up to, with every moment since the first poll measured. */
   function totals(events: ReturnType<typeof createEventStore>, now: number, waiting: boolean) {
     const { sevenDays } = waitTotals({
-      events: events.list(),
+      marks: [{ kind: "start", at: T0 }, ...events.list().reverse()],
       measured: [{ from: T0, to: T0 + now }],
-      runStarts: [T0],
       waitingNow: waiting ? [{ id: asking.id, name: asking.name }] : [],
       since: T0,
       now: T0 + now,
@@ -1113,7 +1134,8 @@ describe("a wait whose session leaves every listing", () => {
     return {
       events: createEventStore(),
       sightings: [] as WaitSighting[],
-      runStarts: [] as number[],
+      /** What the waits are worked out from, as it was added. */
+      marks: [] as WaitMark[],
     };
   }
 
@@ -1123,13 +1145,22 @@ describe("a wait whose session leaves every listing", () => {
     vi.setSystemTime(T0 + (steps[0] as [number, AdapterResult])[0]);
     const poller = createPoller({
       adapters: [adapter],
-      events: history.events,
+      events: {
+        ...history.events,
+        add: (events) => {
+          history.events.add(events);
+          history.marks.push(...events);
+        },
+      },
       history: createHistoryStore(),
-      onSightings: (sightings) => history.sightings.push(...sightings),
+      onSightings: (sightings) => {
+        history.sightings.push(...sightings);
+        history.marks.push(...sightings);
+      },
     });
-    const held = history.events.list();
-    poller.resume([...unendedWaits(held), ...held], history.sightings);
-    history.runStarts.push(poller.startedAt);
+    const held = history.events.list().reverse();
+    poller.resume([...unendedWaits(held), ...held], history.marks);
+    history.marks.push({ kind: "start", at: poller.startedAt });
     for (const [after] of steps) {
       vi.setSystemTime(T0 + after);
       await poller.pollOnce();
@@ -1151,10 +1182,8 @@ describe("a wait whose session leaves every listing", () => {
     measured = [{ from: T0, to: T0 + now }],
   ) {
     const { sevenDays } = waitTotals({
-      events: history.events.list(),
+      marks: history.marks,
       measured,
-      sightings: history.sightings,
-      runStarts: history.runStarts,
       waitingNow: waiting ? [{ id: asking.id, name: asking.name }] : [],
       since: T0,
       now: T0 + now,
@@ -1193,6 +1222,152 @@ describe("a wait whose session leaves every listing", () => {
         lastSeen: T0 + MINUTE,
       },
     ]);
+  });
+
+  test("as the history is cleared it says which waits are in sight, and nothing of what they ask", async () => {
+    const { adapter } = scriptedAdapter(
+      main(moved, { ...moved, id: "claude-code:b" }),
+      main({ ...asking, waitingText: "Run: npm test" }, { ...asking, id: "claude-code:b" }),
+      fallback(asking),
+      main({ ...asking, status: "idle" }, { ...asking, id: "claude-code:b" }),
+    );
+    const poller = createPoller({
+      adapters: [adapter],
+      events: createEventStore(),
+      history: createHistoryStore(),
+    });
+    expect(poller.forget()).toEqual([]);
+    await poller.pollOnce();
+    expect(poller.forget()).toEqual([]);
+    await poller.pollOnce();
+    const seen = { sessionId: asking.id, sessionName: "demo-a", at: Date.now(), way: "main" };
+    expect(poller.forget()).toEqual([seen, { ...seen, sessionId: "claude-code:b" }]);
+    await poller.pollOnce();
+    expect(poller.forget()).toEqual([{ ...seen, way: "fallback" }]);
+    await poller.pollOnce();
+    expect(poller.forget()).toEqual([{ ...seen, sessionId: "claude-code:b" }]);
+  });
+
+  test("a wait an earlier run listed counts to the start of the run after it, though the clock was set back past an earlier start", async () => {
+    const history = kept();
+    await run(history, [0, main(moved)], [MINUTE, main(moved)]);
+    await run(
+      history,
+      [MINUTE + 4 * SECOND, main(moved)],
+      // The clock is set back, to before this run began.
+      [50 * SECOND, main(moved)],
+      [52 * SECOND, main(asking)],
+      [80 * SECOND, main(asking)],
+    );
+    await run(history, [90 * SECOND, fallback()], [92 * SECOND, fallback()]);
+    expect(totals(history, 2 * MINUTE, false)).toEqual([38 * SECOND, 0, 1]);
+
+    // Nor does the event of its end say it was last seen at that earlier start.
+    await run(history, [2 * MINUTE, main()]);
+    expect(history.events.list()[0]).toMatchObject({ kind: "ended", lastSeen: T0 + 90 * SECOND });
+  });
+
+  describe("read again only after a restart, in a part not read until then", () => {
+    const at = (since: number): Session => ({ ...asking, statusSince: T0 + since });
+    const notRead: AdapterResult = {
+      ...main(),
+      health: { ...health(), notRead: ["claude-code:"] },
+    };
+    const before: [number, AdapterResult][] = [
+      [0, main(moved)],
+      [MINUTE, main(at(MINUTE))],
+      [2 * MINUTE, main(at(MINUTE))],
+    ];
+
+    test.each<[string, [number, AdapterResult][], number]>([
+      ["lost before the restart", [[3 * MINUTE, notRead]], MINUTE],
+      ["listed as the run stopped", [], 9 * MINUTE],
+    ])(
+      "one %s, with a later status time, is two waits, and the time nobody saw counts for neither",
+      async (_, lostAt, first) => {
+        const history = kept();
+        await run(history, ...before, ...lostAt);
+        await run(
+          history,
+          [10 * MINUTE, notRead],
+          [12 * MINUTE, main(at(11 * MINUTE))],
+          [13 * MINUTE, main(at(11 * MINUTE))],
+        );
+        expect(told(history)).toEqual([began]);
+        expect(totals(history, 14 * MINUTE, true)).toEqual([first + 3 * MINUTE, 3 * MINUTE, 2]);
+      },
+    );
+
+    test("one with the same status time goes on as one", async () => {
+      const history = kept();
+      await run(history, ...before, [3 * MINUTE, notRead]);
+      await run(history, [10 * MINUTE, notRead], [12 * MINUTE, main(at(MINUTE))]);
+      expect(told(history)).toEqual([began]);
+      expect(totals(history, 14 * MINUTE, true)).toEqual([13 * MINUTE, 13 * MINUTE, 1]);
+    });
+  });
+
+  describe("with no event to say it began", () => {
+    const idle: Session = { ...asking, status: "idle" };
+    const found: [number, AdapterResult][] = [
+      [0, fallback(asking)],
+      [10 * SECOND, fallback(asking)],
+      [12 * SECOND, main(idle)],
+      [3 * HOUR, main(idle)],
+    ];
+
+    test("it stops at the last poll that listed it waiting, once another way lists it idle", async () => {
+      const history = kept();
+      await run(history, ...found);
+      expect(totals(history, 3 * HOUR, false)).toEqual([10 * SECOND, 0, 1]);
+      expect(told(history)).toEqual([]);
+      await run(history, [3 * HOUR + MINUTE, main(idle)]);
+      expect(totals(history, 4 * HOUR, false)).toEqual([10 * SECOND, 0, 1]);
+    });
+
+    test("listed waiting again it is one wait, and its end is told as the other way shows it", async () => {
+      const history = kept();
+      const still = fallback({ ...asking, statusSince: null });
+      await run(history, ...found, [4 * HOUR, still], [5 * HOUR, main()]);
+      expect(totals(history, 6 * HOUR, false)).toEqual([4 * HOUR, 0, 1]);
+
+      const other = kept();
+      await run(other, ...found, [4 * HOUR, main()]);
+      expect(told(other)).toEqual([[4 * HOUR, "ended", "needs-you", undefined]]);
+      expect(other.events.list()[0]?.lastSeen).toBe(T0 + 10 * SECOND);
+    });
+
+    test("while a wait an event began goes on, though a fallback lists it working, through a restart too", async () => {
+      const history = kept();
+      await run(history, [0, main(moved)], [MINUTE, main(asking)], [2 * MINUTE, fallback(moved)]);
+      expect(totals(history, HOUR, false)).toEqual([59 * MINUTE, 0, 1]);
+      await run(history, [HOUR, main(asking)], [2 * HOUR, fallback(moved)]);
+      expect(totals(history, 3 * HOUR, false)).toEqual([179 * MINUTE, 0, 1]);
+    });
+
+    test("beside one an event of the same poll began, each goes by its own", async () => {
+      const history = kept();
+      const b = (status: Session["status"]): Session => ({
+        ...asking,
+        id: "claude-code:b",
+        status,
+      });
+      const third = { ...result([moved, b("idle")]), basis: "third" };
+      await run(
+        history,
+        [0, main({ ...asking, status: "finished" })],
+        [MINUTE, fallback(asking, b("needs-you"))],
+        [2 * MINUTE, third],
+      );
+      expect(told(history)).toEqual([[MINUTE, "status-changed", "finished", "needs-you"]]);
+      const lastSeen = history.sightings
+        .filter((sighting) => sighting.at === T0 + 2 * MINUTE)
+        .map((sighting) => [sighting.sessionId, sighting.lastSeen]);
+      expect(lastSeen).toEqual([
+        [asking.id, undefined],
+        ["claude-code:b", T0 + MINUTE],
+      ]);
+    });
   });
 
   test("seen waiting when the main way is back, it is one wait, and the time out of sight counts", async () => {
@@ -1763,6 +1938,30 @@ describe("a wait whose session leaves every listing", () => {
       expect(history.sightings.at(-1)?.lastSeen).toBe(T0 + HOUR);
     });
 
+    test("a wait a whole run could not read stops where that run began, whatever the next finds", async () => {
+      const away: [number, AdapterResult] = [HOUR, result([], "unavailable")];
+      const statusSince = T0 + 90 * MINUTE;
+      for (const back of [fallback(), main(moved), main(), main({ ...asking, statusSince })]) {
+        const history = kept();
+        await run(history, ...lost.slice(0, 3));
+        await run(history, away);
+        await run(history, [2 * HOUR, back]);
+        const measured = [
+          { from: T0, to: T0 + 2 * MINUTE },
+          { from: T0 + HOUR, to: T0 + 110 * MINUTE },
+          { from: T0 + 2 * HOUR, to: T0 + 3 * HOUR },
+        ];
+        // Still waiting, it waits since a time in the run that could not read it.
+        const waiting = back.sessions[0]?.status === "needs-you";
+        expect(totals(history, 3 * HOUR, waiting, measured)).toEqual(
+          waiting ? [81 * MINUTE, 80 * MINUTE, 2] : [MINUTE, 0, 1],
+        );
+        const newest = history.events.list()[0];
+        if (newest?.from === "needs-you") expect(newest.lastSeen).toBe(T0 + HOUR);
+        else if (!waiting) expect(history.sightings.at(-1)?.lastSeen).toBe(T0 + HOUR);
+      }
+    });
+
     test("a wait listed as Agent Lookout stopped is not taken to have ended by a fallback that leaves it out", async () => {
       const history = kept();
       await run(history, ...lost.slice(0, 3));
@@ -1784,7 +1983,7 @@ describe("a wait whose session leaves every listing", () => {
     test("a sighting of an earlier wait says nothing of a later one the history has none for", async () => {
       const history = kept();
       await run(history, ...lost, [HOUR, main(moved)], [2 * HOUR, main(asking)]);
-      history.sightings = history.sightings.filter((sighting) => sighting.at < T0 + HOUR);
+      history.marks = history.marks.filter((mark) => !isSighting(mark) || mark.at < T0 + HOUR);
       await run(history, [3 * HOUR, fallback()]);
       expect(told(history).at(-1)).toEqual([3 * HOUR, "ended", "needs-you", undefined]);
     });
@@ -1792,7 +1991,7 @@ describe("a wait whose session leaves every listing", () => {
     test("a history with nothing of how the wait was seen is read as before", async () => {
       const history = kept();
       await run(history, ...lost);
-      history.sightings = [];
+      history.marks = history.marks.filter((mark) => !isSighting(mark));
       await run(history, [HOUR, fallback()]);
       expect(told(history)).toEqual([began, [HOUR, "ended", "needs-you", undefined]]);
     });

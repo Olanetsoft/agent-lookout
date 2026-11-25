@@ -40,17 +40,19 @@ describe("pollRuns", () => {
 });
 
 describe("addPoll", () => {
-  test("goes on with the newest stretch, starts another after a gap or a start, and passes over a poll from the past", () => {
+  test("goes on with the newest stretch, and starts another after a gap, a start or the clock set back", () => {
     const runs: Span[] = [];
     addPoll(runs, T0);
     addPoll(runs, T0 + 2 * SECOND);
     addPoll(runs, T0 + 20 * SECOND);
     addPoll(runs, T0 + 22 * SECOND, true);
     addPoll(runs, T0 + 10 * SECOND);
+    addPoll(runs, T0 + 12 * SECOND);
     expect(runs).toEqual([
       { from: T0, to: T0 + 2 * SECOND },
       { from: T0 + 20 * SECOND, to: T0 + 20 * SECOND },
       { from: T0 + 22 * SECOND, to: T0 + 22 * SECOND },
+      { from: T0 + 10 * SECOND, to: T0 + 12 * SECOND },
     ]);
   });
 });

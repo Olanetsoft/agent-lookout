@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
+import { createEventStore } from "@collector/eventStore";
 import {
   LAST_MESSAGE_PATH,
   NOTIFICATIONS_HEADER,
@@ -24,6 +25,7 @@ import {
 import { makeSession } from "@tests/fixtures/session";
 
 const T0 = 1_700_000_000_000;
+const DAY = 24 * 60 * 60 * 1000;
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -983,6 +985,21 @@ test("after a restart the page holds what a page loaded then does, the events ke
   stop();
 });
 
+test("after a restart with nothing new to tell, every event the collector kept is held again", async () => {
+  const collector = fakeCollector();
+  collector.events = [event(1, T0 - 9_000)];
+  setApiHost(collector.host);
+  const store = createCollectorStore();
+  const stop = store.subscribe(() => {});
+  await settle();
+
+  collector.startedAt = T0 + 500;
+  await beat();
+  await beat();
+  expect(store.getState().events).toEqual([event(1, T0 - 9_000)]);
+  stop();
+});
+
 test("a restart whose events could not be asked for again is made good on the next beat", async () => {
   const collector = fakeCollector();
   collector.events = [event(1, T0 - 9_000)];
@@ -1209,6 +1226,38 @@ test("a beat that ticks while a poll is still out does not start a second one", 
   await settle();
 
   expect(collector.sessionRequests()).toBe(1);
+  stop();
+});
+
+test("with the collector's clock set back it is sent each event once, however many follow", async () => {
+  const collector = fakeCollector();
+  const events = createEventStore();
+  const sent: string[] = [];
+  setApiHost(async (path, init) => {
+    const url = new URL(path, "http://localhost");
+    if (url.pathname !== "/api/events") return collector.host(path, init);
+    const answer = events.list({ since: Number(url.searchParams.get("since")) });
+    sent.push(...answer.map(({ id }) => id));
+    return json({ events: answer });
+  });
+  events.add([event(0, T0)]);
+  const store = createCollectorStore();
+  const stop = store.subscribe(() => {});
+  await settle();
+
+  const added = ["event-0"];
+  // More than the collector holds, so that it lets the latest of all go.
+  while (added.length < 1_100) {
+    const first = added.length;
+    const more = Array.from({ length: 100 }, (_, n) => event(first + n, T0 - DAY + first + n));
+    events.add(more);
+    added.push(...more.map(({ id }) => id));
+    await beat();
+    await beat();
+  }
+  expect([...sent].sort()).toEqual([...added].sort());
+  expect(store.getState().events).toHaveLength(MAX_EVENTS);
+  expect(store.getState().events[1]?.id).toBe(added.at(-1));
   stop();
 });
 

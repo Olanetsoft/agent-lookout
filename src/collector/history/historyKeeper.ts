@@ -9,12 +9,13 @@ import type {
 import type { HistoryPoint, SessionEvent } from "../../core/sessions/session.ts";
 import { pollRuns, type Span } from "../../core/waits/measured.ts";
 import type { WaitSighting } from "../../core/waits/waitSightings.ts";
-import { isWaitEvent } from "../../core/waits/waitTotals.ts";
+import { isWaitEvent, type WaitMark } from "../../core/waits/waitTotals.ts";
 import type { EventStore } from "../eventStore.ts";
 import type { HistoryStore } from "../historyStore.ts";
 import { nodeHistoryFs, type HistoryFs } from "./historyFiles.ts";
 import {
   byFileOrder,
+  DAY_MS,
   dayEnd,
   dayOf,
   encodeRecord,
@@ -49,8 +50,11 @@ export const FLUSH_INTERVAL_MS = 5_000;
  */
 export const RESTORE_DEADLINE_MS = 10_000;
 
-/** The most lines held back between two writes. A poll adds one line, and a busy one a few more. */
-const MAX_QUEUED_LINES = 50_000;
+/**
+ * The most lines held while they cannot be written, about a day of polls. A
+ * poll adds one line, and a busy one a few more. The oldest go first.
+ */
+export const MAX_QUEUED_LINES = 50_000;
 
 /** The highest number a day's file can have. */
 const MAX_PART = 9_999;
@@ -93,6 +97,7 @@ export interface HistoryKeeperOptions {
 
 /** What the files held, oldest first: as much as the stores in memory take. */
 export interface RestoredHistory {
+  /** In the order they were added, whatever their times, which go back when the clock is set back. */
   events: SessionEvent[];
   points: HistoryPoint[];
   /** Each time Agent Lookout started again, oldest first: the newest 500, from 8 days at most. */
@@ -101,15 +106,11 @@ export interface RestoredHistory {
   lastAt: number | null;
   /**
    * All that the files hold, compactly, for what reads further back than the
-   * stores: every event into or out of needs-you, the stretches the points
-   * cover, broken at each start, and how the sessions in a wait were seen.
-   * `GET /api/waits` is worked out from it.
+   * stores: every start, every event into or out of needs-you and how the
+   * sessions in a wait were seen, as they were added, and the stretches the
+   * points cover, broken at each start. `GET /api/waits` is worked out from it.
    */
-  whole: {
-    waitEvents: SessionEvent[];
-    measured: Span[];
-    sightings: WaitSighting[];
-  };
+  whole: { marks: WaitMark[]; measured: Span[] };
 }
 
 /** How much of what is restored goes into memory: what the stores hold. */
@@ -128,7 +129,8 @@ export type ClearOutcome =
  *
  * - Nothing is written during a poll. What is added waits in memory and is
  *   written every 5 seconds, by another turn of the event loop, and what is
- *   left is written as Agent Lookout stops.
+ *   left is written as Agent Lookout stops. What could not be written, as on a
+ *   full disk, waits for the next beat.
  * - Only what the stores and the waits hold is written: events, points and
  *   how a session in a wait was seen, and when watching started or the history
  *   was cleared. An event or a sighting holds its session's name as the
@@ -178,8 +180,18 @@ export interface HistoryKeeper {
 
 /** A file of this version's format, as the keeper knows it. */
 interface Known extends KeptFile {
-  /** Its first record, or null when it holds none that could be read. */
+  /**
+   * Its first record, at the earliest time it holds, which is a later one's
+   * when the clock was set back. Null when it holds none that could be read.
+   */
   first: { at: number; kind: HistoryRecord["kind"] } | null;
+}
+
+/** Where a file begins, with one more record in it. */
+function withRecord(first: Known["first"], record: HistoryRecord | null): Known["first"] {
+  if (!record) return first;
+  const at = recordAt(record);
+  return first ? { ...first, at: Math.min(first.at, at) } : { at, kind: record.kind };
 }
 
 const BEGINNING: Record<HistoryRecord["kind"], HistoryBeginning> = {
@@ -252,8 +264,12 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
    * to a write the process may end before.
    */
   let writing: { lines: string[] } | null = null;
-  /** When watching started, to be written first by the copy that writes. */
-  let startedAt: number | null = null;
+  /**
+   * When watching started, or the history was cleared since: the line the copy
+   * that writes writes first. It is held apart from the queue, whose oldest
+   * lines go, since waits end by it.
+   */
+  let opening: string | null = null;
   /** The day and part being written to. */
   let target: { day: string; part: number } | null = null;
 
@@ -264,7 +280,7 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
   let failing: string | null = null;
   /** When the history was last cleared by this copy, for as long as its record could not be written. */
   let clearedAt: number | null = null;
-  /** Whether this copy holds the lock, once it has been asked. */
+  /** Whether this copy holds the lock or another does, once asked. Null while the lock cannot be made. */
   let writer: boolean | null = null;
   let running = false;
   let timer: ReturnType<typeof setInterval> | null = null;
@@ -284,7 +300,7 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
     const line = encodeRecord(record);
     if (line.length > MAX_LINE_LENGTH || byteLength(line) > maxFileBytes) return;
     queue.push(line);
-    if (queue.length > MAX_QUEUED_LINES) queue = queue.slice(queue.length - MAX_QUEUED_LINES);
+    queue = newest(queue, MAX_QUEUED_LINES);
   }
 
   /** What reading the folder found: what goes into memory, and the files as they are. */
@@ -297,7 +313,7 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
   /**
    * The records of a file's text this run can take: none written further
    * ahead of the clock than a little, since those would sit after everything
-   * this run records, in stores that are kept in time order.
+   * this run records.
    */
   function recordsIn(text: string, at: number): HistoryRecord[] {
     return parseHistoryText(text).records.filter(
@@ -326,7 +342,7 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
     const notFiles = new Set<string>();
     const events = new Map<string, SessionEvent>();
     const points: HistoryPoint[] = [];
-    const sightings: WaitSighting[] = [];
+    const marks = new Map<string, WaitMark>();
     const starts: number[] = [];
     const times: number[] = [];
     let lastAt: number | null = null;
@@ -354,35 +370,39 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
         continue;
       }
       const records = recordsIn(text, at);
-      const first = records[0];
-      if (first) known.first = { at: recordAt(first), kind: first.kind };
+      known.first = records.reduce(withRecord, null);
       for (const record of records) {
         const recorded = recordAt(record);
         times.push(recorded);
         if (lastAt === null || recorded > lastAt) lastAt = recorded;
-        if (record.kind === "event") events.set(record.event.id, record.event);
-        else if (record.kind === "point") points.push(record.point);
-        else if (record.kind === "sighting") sightings.push(record.sighting);
-        else if (record.kind === "start") starts.push(record.at);
+        // A line written twice is one mark, where it was first.
+        const mark = (held: WaitMark) => marks.set(encodeRecord(record), held);
+        if (record.kind === "event") {
+          events.set(record.event.id, record.event);
+          if (isWaitEvent(record.event)) mark(record.event);
+        } else if (record.kind === "point") points.push(record.point);
+        else if (record.kind === "sighting") mark(record.sighting);
+        else if (record.kind === "start") {
+          starts.push(record.at);
+          mark(record);
+        }
       }
     }
 
-    const allEvents = [...events.values()].sort((a, b) => a.at - b.at);
     points.sort((a, b) => a.at - b.at);
     const allPoints = points.filter((point, index) => point.at !== points[index - 1]?.at);
     return {
       history: {
-        events: newest(allEvents, limits.events),
+        events: newest([...events.values()], limits.events),
         points: newest(allPoints, limits.points),
         restarts: newest(restartsAmong(starts, times), MAX_RESTARTS),
         lastAt,
         whole: {
-          waitEvents: allEvents.filter(isWaitEvent),
+          marks: [...marks.values()],
           measured: pollRuns(
             allPoints.map((point) => point.at),
             starts,
           ),
-          sightings: sightings.sort((a, b) => a.at - b.at),
         },
       },
       found,
@@ -394,8 +414,8 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
   async function firstRecordOf(name: string, size: number): Promise<Known["first"]> {
     if (size === 0 || size > readLimit) return null;
     try {
-      const first = recordsIn(await fs.readRegular(full(name), readLimit), now())[0];
-      return first ? { at: recordAt(first), kind: first.kind } : null;
+      const records = recordsIn(await fs.readRegular(full(name), readLimit), now());
+      return records.reduce(withRecord, null);
     } catch {
       return null;
     }
@@ -441,14 +461,14 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
     }
   }
 
-  /** Goes on in today's newest file, so what is written follows what the files hold. */
+  /**
+   * Goes on in the newest file, so what is written follows what the files hold:
+   * today's, or tomorrow's once the clock has been set back past midnight.
+   */
   function aimAtNewest(): void {
-    const day = dayOf(now());
-    let part = 0;
-    for (const file of files.values()) {
-      if (file.day === day && file.part > part) part = file.part;
-    }
-    target = part > 0 ? { day, part } : null;
+    const days = [dayOf(now()), dayOf(now() + DAY_MS)];
+    target =
+      [...files.values()].sort(byFileOrder).findLast(({ day }) => days.includes(day)) ?? null;
   }
 
   /** Deletes what the age and the cap say must go before `incoming` bytes go to `writingTo`. */
@@ -477,7 +497,9 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
   function* chunks(
     lines: readonly string[],
   ): Generator<{ name: string; text: string; count: number }, void, "written" | "blocked"> {
-    const day = dayOf(now());
+    // A clock set back past midnight goes on in the newest file, so that the
+    // files hold what was written in order.
+    const day = target?.day === dayOf(now() + DAY_MS) ? target.day : dayOf(now());
     let part = target?.day === day ? target.part : 1;
     let index = 0;
     while (index < lines.length && part <= MAX_PART) {
@@ -493,12 +515,15 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
       }
       let text = lead;
       let bytes = lead.length;
+      let first = known?.first ?? null;
       let end = index;
       while (end < lines.length) {
-        const lineBytes = byteLength(lines[end] as string);
+        const line = lines[end] as string;
+        const lineBytes = byteLength(line);
         if (bytes - lead.length + lineBytes > room) break;
-        text += lines[end];
+        text += line;
         bytes += lineBytes;
+        first = withRecord(first, parseRecord(line.trim()));
         end += 1;
       }
       const outcome = yield { name, text, count: end - index };
@@ -507,13 +532,8 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
         part += 1;
         continue;
       }
-      const record = parseRecord((lines[index] as string).trim());
       const parsed = readHistoryFileName(name) as HistoryFileName;
-      files.set(name, {
-        ...parsed,
-        size: size + bytes,
-        first: known?.first ?? (record && { at: recordAt(record), kind: record.kind }),
-      });
+      files.set(name, { ...parsed, size: size + bytes, first });
       touched.add(name);
       target = { day, part };
       index = end;
@@ -533,18 +553,20 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
     }
   }
 
-  async function writeLines(lines: readonly string[]): Promise<boolean> {
-    if (lines.length === 0) return true;
-    const job = { lines: [...lines] };
+  async function writeQueued(): Promise<void> {
+    const first = opening;
+    const lines = takeQueued();
+    if (lines.length === 0) return;
+    const job = { lines };
     writing = job;
     const steps = chunks(lines);
     let step = steps.next("written");
     while (!step.done) {
       // Stopped meanwhile: the stop wrote what was left.
-      if (writing !== job) return false;
+      if (writing !== job) return;
       const { name, text, count } = step.value;
       await prune(name, byteLength(text));
-      if (writing !== job) return false;
+      if (writing !== job) return;
       try {
         await fs.append(full(name), text);
       } catch (error) {
@@ -552,16 +574,26 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
           step = steps.next("blocked");
           continue;
         }
+        const before = files.get(name)?.size ?? 0;
+        await rescan();
+        // Stopped meanwhile: the stop wrote what was left.
+        if (writing !== job) return;
         writing = null;
+        // What it still holds is written first once it can be, but not the
+        // lines that reached the file whole before the write failed.
+        const reached = (files.get(name)?.size ?? 0) - before;
+        const landed = Buffer.from(text).toString("utf8", 0, reached).trimStart().split("\n");
+        const left = job.lines.slice(landed.length - 1);
+        if (left[0] === first) opening = left.shift() ?? null;
+        queue = [...left, ...queue];
         writeFailed();
-        return false;
+        return;
       }
       job.lines = job.lines.slice(count);
       step = steps.next("written");
     }
     writing = null;
     wrote();
-    return true;
   }
 
   function writeLinesNow(lines: readonly string[]): void {
@@ -583,12 +615,11 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
     }
   }
 
-  /** What is waiting, with the start first when this copy has not written it yet. */
+  /** What is waiting, with what is written first before it when this copy has not written it yet. */
   function takeQueued(): string[] {
-    const lines =
-      startedAt === null ? queue : [encodeRecord({ kind: "start", at: startedAt }), ...queue];
+    const lines = opening === null ? queue : [opening, ...queue];
     queue = [];
-    startedAt = null;
+    opening = null;
     return lines;
   }
 
@@ -616,11 +647,18 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
         lock.releaseNow();
         return;
       }
+      if (!holds && !lock.heldByAnother) {
+        // The lock could not be made, as on a full disk.
+        writer = null;
+        writeFailed();
+        return;
+      }
       if (!holds) {
         // Another copy writes what it sees, which is what this one sees too.
         writer = false;
+        failing = null;
         queue = [];
-        startedAt = null;
+        opening = null;
         // What that copy writes and deletes changes what the folder holds,
         // and where the history begins.
         await rescan();
@@ -640,7 +678,7 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
         // Whatever has aged out while nobody was writing goes now.
         await prune(null, 0);
       }
-      await writeLines(takeQueued());
+      await writeQueued();
     }).catch(() => {});
   }
 
@@ -651,7 +689,7 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
         points: [],
         restarts: [],
         lastAt: null,
-        whole: { waitEvents: [], measured: [], sightings: [] },
+        whole: { marks: [], measured: [] },
       };
       if (restored) return none;
       restored = true;
@@ -687,11 +725,11 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
       if (unusable !== null) return;
       // Decided at once, so that a stop that comes before the first beat still
       // writes what was added.
-      writer = lock.takeNow();
+      writer = lock.takeNow() || (lock.heldByAnother ? false : null);
       pruned = false;
       // Only the copy that writes says that watching started: another copy's
       // start is not one the files saw.
-      startedAt = writer ? now() : null;
+      opening = writer === false ? null : encodeRecord({ kind: "start", at: now() });
       void beat();
       timer = setInterval(() => void beat(), flushIntervalMs);
       // The keeper alone should not keep a process alive.
@@ -728,7 +766,7 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
         writeLinesNow(left);
       }
       queue = [];
-      startedAt = null;
+      opening = null;
       writer = null;
       lock.releaseNow();
     },
@@ -779,10 +817,10 @@ export function createHistoryKeeper(options: HistoryKeeperOptions): HistoryKeepe
         }
         const at = now();
         queue = [];
-        startedAt = null;
+        opening = encodeRecord({ kind: "cleared", at });
         clearedAt = at;
         forget();
-        await writeLines([encodeRecord({ kind: "cleared", at })]);
+        await writeQueued();
         return { ok: true, at };
       });
     },

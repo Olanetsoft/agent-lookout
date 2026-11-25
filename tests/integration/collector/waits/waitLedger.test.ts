@@ -4,8 +4,9 @@ import path from "node:path";
 
 import { afterAll, describe, expect, onTestFinished, test, vi } from "vitest";
 
-import type { Adapter } from "@collector/adapters/adapter";
+import type { Adapter, AdapterResult } from "@collector/adapters/adapter";
 import { createCollector } from "@collector/collector";
+import { nodeHistoryFs } from "@collector/history/historyFiles";
 import {
   dayOf,
   encodeRecord,
@@ -14,7 +15,13 @@ import {
   type HistoryRecord,
 } from "@collector/history/historyFormat";
 import type { WaitsResponse } from "@core/api";
-import type { Session, SessionEvent, SessionStatus } from "@core/sessions/session";
+import type {
+  Session,
+  SessionEvent,
+  SessionStatus,
+  SourceId,
+  SourceState,
+} from "@core/sessions/session";
 import { readWaits } from "@dashboard/lib/api/readApi";
 import { makeSession } from "@tests/fixtures/session";
 import { fakeSystemNotifier } from "@tests/support/channels/systemNotifier";
@@ -115,31 +122,46 @@ function threeDays(): HistoryRecord[] {
 /**
  * A collector over a stand-in Claude Code, started as a host starts it, with
  * its history in `dir`, and polled once. The clock stands at `NOW` unless the
- * test moves it. `read` names the way the sessions are read, which a test can
- * change, and `sessions` is read at each poll.
+ * test moves it. `read` names the way the sessions are read, what the source
+ * answers and which parts of it were not read, and whether the disk is full,
+ * which a test can change, and `sessions` is read at each poll. A second source
+ * always answers, and lists none, so time is measured without the first.
  */
 async function startIn(
   dir: string,
   sessions: Session[],
   env: Record<string, string> = {},
   clock = { now: NOW },
-  read: { way?: string } = {},
+  read: { way?: string; state?: SourceState; notRead?: string[]; full?: boolean } = {},
 ) {
-  const adapter: Adapter = {
-    id: "claude-code",
-    label: "Claude Code",
+  const answering = (id: SourceId, answer: () => Omit<AdapterResult, "health">): Adapter => ({
+    id,
+    label: "A source",
     lookingIn: "Looking for sessions in a test.",
-    poll: async () => ({
-      health: { id: "claude-code", label: "Claude Code", state: "ok", checkedAt: clock.now },
-      sessions,
-      ...(read.way !== undefined && { basis: read.way }),
-    }),
-  };
+    poll: async () => {
+      const state = id === "claude-code" ? (read.state ?? "ok") : "ok";
+      const { notRead } = id === "claude-code" ? read : {};
+      const health = { id, label: "A source", state, checkedAt: clock.now, notRead };
+      return { health, ...(state === "ok" ? answer() : { sessions: [] }) };
+    },
+  });
+  const adapter = answering("claude-code", () => ({
+    sessions,
+    ...(read.way !== undefined && { basis: read.way }),
+  }));
   const collector = createCollector({
     version: "9.9.9-test",
-    adapters: [adapter],
+    adapters: [adapter, answering("opencode", () => ({ sessions: [] }))],
     env: { AGENT_LOOKOUT_HISTORY_DIR: dir, AGENT_LOOKOUT_SETTINGS_FILE: NO_SETTINGS_FILE, ...env },
     notifier: fakeSystemNotifier(),
+    historyFs: {
+      ...nodeHistoryFs,
+      append: (file, text) =>
+        read.full
+          ? Promise.reject(Object.assign(new Error("Full."), { code: "ENOSPC" }))
+          : nodeHistoryFs.append(file, text),
+    },
+    warn: () => {},
     now: () => clock.now,
     intervalMs: 1_000_000_000,
   });
@@ -155,7 +177,8 @@ async function startIn(
       await collector.poller.pollOnce();
     }
   };
-  return { port, pollFor, stop: () => collector.stop() };
+  const flush = async () => collector.history?.flush();
+  return { port, pollFor, flush, stop: () => collector.stop() };
 }
 
 /** What the Events log holds of a session, oldest first. */
@@ -253,6 +276,384 @@ describe("a wait whose session a way of reading leaves out, over a history folde
     ]);
     const waits = await waitsFrom(second.port);
     expect(waits.today).toMatchObject({ waitedMs: 10 * MINUTE - 2 * SECOND, openMs: 0, waits: 1 });
+  });
+
+  test("listed again with a later status time it is two waits, and no more after a restart that leaves it out", async () => {
+    const { dir, clock, read, sessions, first } = await lostForTwentyMinutes();
+    read.way = "main";
+    sessions[0] = { ...waiting, statusSince: clock.now - 2 * MINUTE };
+    await first.pollFor(30 * MINUTE);
+    const counted = { waitedMs: 42 * MINUTE - 2 * SECOND, waits: 2 };
+    expect((await waitsFrom(first.port)).today).toMatchObject(counted);
+    first.stop();
+
+    read.way = "fallback";
+    sessions.length = 0;
+    for (const _ of [1, 2]) {
+      clock.now += MINUTE;
+      const later = await startIn(dir, sessions, {}, clock, read);
+      await later.pollFor(MINUTE);
+      expect((await waitsFrom(later.port)).today).toMatchObject({ ...counted, openMs: 0 });
+      later.stop();
+    }
+  });
+});
+
+describe("a wait whose source is away, over a history folder on disk", () => {
+  const waiting = makeSession({ id: id(5), name: "demo-project-5", status: "needs-you" });
+  const busy: Session = { ...waiting, status: "working" };
+
+  /** A minute at work and five of waiting, and then a run of two hours for each state. */
+  async function runs(...states: SourceState[]) {
+    const dir = await tempDir();
+    const clock = { now: at(6, 1) };
+    const read: { state?: SourceState } = {};
+    const sessions = [busy];
+    let run = await startIn(dir, sessions, {}, clock, read);
+    await run.pollFor(MINUTE);
+    sessions[0] = waiting;
+    await run.pollFor(5 * MINUTE + 2 * SECOND);
+    for (read.state of states) {
+      run.stop();
+      clock.now += MINUTE;
+      run = await startIn(dir, sessions, {}, clock, read);
+      await run.pollFor(2 * HOUR);
+    }
+    return { run, read, sessions };
+  }
+
+  test.each(["unavailable", "error"] as const)(
+    "it stays at what it counted over any number of restarts with its source %s, and once it is back and answered",
+    async (state) => {
+      const { run, read, sessions } = await runs(state, state, state);
+      const counted = { waitedMs: 5 * MINUTE, openMs: 0, waits: 1 };
+      const away = await waitsFrom(run.port);
+      expect(away.today).toMatchObject(counted);
+      expect(away.today.measuredMs).toBeGreaterThan(6 * HOUR);
+
+      read.state = "ok";
+      sessions[0] = busy;
+      await run.pollFor(MINUTE);
+      expect((await waitsFrom(run.port)).today).toMatchObject(counted);
+    },
+  );
+
+  test.each([
+    ["the run after it was seen", ["unavailable"]],
+    ["a later one", ["unavailable", "unavailable"]],
+  ] as const)(
+    "with its source read again at last in %s, the Events log's line stops where the count does",
+    async (_, states) => {
+      const { run, read, sessions } = await runs(...states);
+      read.state = "ok";
+      sessions[0] = busy;
+      await run.pollFor(MINUTE);
+      expect((await waitsFrom(run.port)).today).toMatchObject({ waitedMs: 5 * MINUTE, waits: 1 });
+      const { events } = (await request(run.port, "/api/events")).json<{
+        events: SessionEvent[];
+      }>();
+      const [ended, began] = events.filter((event) => event.sessionId === id(5));
+      expect([began?.to, ended?.from]).toEqual(["needs-you", "needs-you"]);
+      // The minute it was stopped is in the line's length, and was not measured.
+      expect((ended?.lastSeen ?? ended?.at ?? 0) - (began?.at ?? 0)).toBe(6 * MINUTE);
+    },
+  );
+
+  test("a source in error in a later run takes nothing from what its waits have counted", async () => {
+    const { run, read } = await runs("ok");
+    const before = await waitsFrom(run.port);
+    expect(before.today).toMatchObject({ waitedMs: 2 * HOUR + 5 * MINUTE, waits: 1 });
+
+    read.state = "error";
+    await run.pollFor(MINUTE);
+    const during = await waitsFrom(run.port);
+    expect(during.today).toMatchObject({ waitedMs: before.today.waitedMs, openMs: 0, waits: 1 });
+
+    read.state = "ok";
+    await run.pollFor(2 * SECOND);
+    expect((await waitsFrom(run.port)).today).toMatchObject({
+      waitedMs: before.today.waitedMs,
+      openMs: before.today.waitedMs,
+      waits: 1,
+    });
+  });
+});
+
+describe("a wait found by a run's first poll, over a history folder on disk", () => {
+  const waiting = makeSession({ id: id(5), name: "demo-project-5", status: "needs-you" });
+
+  /** A run over one evening that found the session waiting, and all it says of that day. */
+  async function evening() {
+    const dir = await tempDir();
+    const clock = { now: at(5, 22) };
+    const sessions = [waiting];
+    const run = await startIn(dir, sessions, {}, clock);
+    await run.pollFor(HOUR);
+    const yesterday = { waitedMs: HOUR, waits: 1, measuredMs: HOUR };
+    expect((await waitsFrom(run.port)).today).toMatchObject(yesterday);
+    run.stop();
+    return { dir, clock, sessions, yesterday };
+  }
+
+  test.each([
+    ["still waiting", waiting, { waitedMs: HOUR + MINUTE, openMs: HOUR + MINUTE, waits: 1 }],
+    ["answered meanwhile", { ...waiting, status: "idle" }, { waitedMs: HOUR, openMs: 0, waits: 1 }],
+    ["gone meanwhile", null, { waitedMs: HOUR, openMs: 0, waits: 1 }],
+  ] as const)("it keeps its time through a restart, %s", async (_, now, counted) => {
+    const { dir, clock, sessions, yesterday } = await evening();
+    sessions.splice(0, 1, ...(now ? [now] : []));
+    clock.now = at(6, 9);
+    const run = await startIn(dir, sessions, {}, clock);
+    await run.pollFor(MINUTE);
+    const { sevenDays } = await waitsFrom(run.port);
+    expect(sevenDays).toMatchObject(counted);
+    expect(sevenDays.days.at(-2)).toMatchObject(yesterday);
+    run.stop();
+
+    // And through another, however long that one goes on.
+    sessions.length = 0;
+    clock.now = at(6, 12);
+    const third = await startIn(dir, sessions, {}, clock);
+    await third.pollFor(HOUR);
+    expect((await waitsFrom(third.port)).sevenDays).toMatchObject({ ...counted, openMs: 0 });
+  });
+
+  test("it stops once another way of reading lists it idle, through a restart too", async () => {
+    const dir = await tempDir();
+    const clock = { now: at(6, 9) };
+    const read = { way: "fallback" };
+    const sessions: Session[] = [waiting];
+    let run = await startIn(dir, sessions, {}, clock, read);
+    await run.pollFor(MINUTE);
+    read.way = "main";
+    sessions[0] = { ...waiting, status: "idle" };
+    for (const _ of [1, 2]) {
+      await run.pollFor(3 * HOUR);
+      const { today } = await waitsFrom(run.port);
+      expect(today).toMatchObject({ waitedMs: MINUTE, openMs: 0, waits: 1 });
+      expect(await eventsOf(run.port, id(5))).toEqual([]);
+      run.stop();
+      clock.now += MINUTE;
+      run = await startIn(dir, sessions, {}, clock, read);
+    }
+  });
+
+  test("listed first by a later poll of the run, it counts from that poll", async () => {
+    const clock = { now: at(6, 9) };
+    const read: { state?: SourceState } = { state: "unavailable" };
+    const run = await startIn(await tempDir(), [waiting], {}, clock, read);
+    await run.pollFor(HOUR);
+    read.state = "ok";
+    await run.pollFor(MINUTE + 2 * SECOND);
+    expect((await waitsFrom(run.port)).today).toMatchObject({ waitedMs: MINUTE, waits: 1 });
+  });
+
+  test("it goes on counting while its source is in error", async () => {
+    const clock = { now: at(6, 9) };
+    const read: { state?: SourceState } = {};
+    const run = await startIn(await tempDir(), [waiting], {}, clock, read);
+    await run.pollFor(HOUR);
+    read.state = "error";
+    await run.pollFor(MINUTE);
+    expect((await waitsFrom(run.port)).today).toMatchObject({ waitedMs: HOUR, waits: 1 });
+  });
+
+  /** Clears the history, as its button in Settings does. */
+  async function clear(port: number) {
+    const cleared = await request(port, "/api/history/clear", {
+      method: "POST",
+      headers: {
+        Origin: `http://localhost:${port}`,
+        "X-Agent-Lookout-Action": "clear-history",
+        "Content-Type": "application/json",
+      },
+      body: "{}",
+    });
+    expect(cleared.status).toBe(200);
+  }
+
+  test("a wait that goes on as the history is cleared counts from then, through a restart too", async () => {
+    const dir = await tempDir();
+    const clock = { now: at(6, 9) };
+    const sessions: Session[] = [{ ...waiting, status: "working" }];
+    const run = await startIn(dir, sessions, {}, clock);
+    sessions[0] = waiting;
+    await run.pollFor(HOUR);
+    await clear(run.port);
+    await run.pollFor(10 * MINUTE);
+    const counted = { waitedMs: 10 * MINUTE - 2 * SECOND, waits: 1 };
+    expect((await waitsFrom(run.port)).today).toMatchObject(counted);
+    run.stop();
+
+    sessions.length = 0;
+    clock.now += MINUTE;
+    const again = await startIn(dir, sessions, {}, clock);
+    await again.pollFor(HOUR);
+    expect((await waitsFrom(again.port)).today).toMatchObject(counted);
+  });
+
+  test("a wait that goes on as the history is cleared stops once another way of reading lists it idle", async () => {
+    const clock = { now: at(6, 9) };
+    const read = { way: "fallback" };
+    const sessions: Session[] = [{ ...waiting, status: "working" }];
+    const run = await startIn(await tempDir(), sessions, {}, clock, read);
+    sessions[0] = waiting;
+    await run.pollFor(MINUTE);
+    await clear(run.port);
+    await run.pollFor(10 * MINUTE);
+    read.way = "main";
+    sessions[0] = { ...waiting, status: "idle" };
+    await run.pollFor(HOUR);
+    const counted = { waitedMs: 10 * MINUTE - 2 * SECOND, openMs: 0, waits: 1 };
+    expect((await waitsFrom(run.port)).today).toMatchObject(counted);
+  });
+
+  test.each([
+    ["a source", { state: "error" as const }, []],
+    ["a part of a source", { notRead: ["claude-code:0"] }, [["appeared", undefined, "idle"]]],
+  ])("what %s not read yet was last doing goes with the history cleared", async (_, away, told) => {
+    const dir = await tempDir();
+    const clock = { now: at(6, 9) };
+    const read: { state?: SourceState; notRead?: string[] } = {};
+    const sessions: Session[] = [{ ...waiting, status: "working" }];
+    const first = await startIn(dir, sessions, {}, clock, read);
+    sessions[0] = waiting;
+    await first.pollFor(MINUTE);
+    first.stop();
+
+    clock.now = at(6, 10);
+    Object.assign(read, away);
+    sessions.length = 0;
+    const run = await startIn(dir, sessions, {}, clock, read);
+    await run.pollFor(MINUTE);
+    await clear(run.port);
+    await run.pollFor(HOUR);
+    read.state = "ok";
+    read.notRead = undefined;
+    sessions[0] = { ...waiting, status: "idle" };
+    await run.pollFor(MINUTE);
+    // A session of a part read at last is new to a history that holds nothing of it.
+    expect(await eventsOf(run.port, id(5))).toEqual(told);
+    expect((await waitsFrom(run.port)).sevenDays).toMatchObject({ waitedMs: 0, waits: 0 });
+  });
+});
+
+describe("the clock set back during a wait", () => {
+  test("is no wait at all, now or after a restart, and an open page is sent each event once", async () => {
+    const dir = await tempDir();
+    const clock = { now: at(6, 9) };
+    const busy = makeSession({ id: id(5), name: "demo-project-5", status: "working" });
+    const sessions: Session[] = [busy];
+    const run = await startIn(dir, sessions, {}, clock);
+    await run.pollFor(HOUR);
+    const page: SessionEvent[] = [];
+    let newestAt = 0;
+    /** A beat of the page, as its store makes one: it asks for what followed the event added last. */
+    const beat = async () => {
+      const response = await request(run.port, `/api/events?since=${newestAt}`);
+      const { events } = response.json<{ events: SessionEvent[] }>();
+      newestAt = events[0]?.at ?? newestAt;
+      page.push(...events);
+    };
+    sessions[0] = { ...busy, status: "needs-you" };
+    await run.pollFor(MINUTE);
+    await beat();
+    expect((await waitsFrom(run.port)).today.waitedMs).toBe(MINUTE - 2 * SECOND);
+
+    clock.now -= 5 * MINUTE + 300;
+    const none = { waitedMs: 0, openMs: 0, waits: 0 };
+    for (const status of ["working", "idle", "working"] as const) {
+      sessions[0] = { ...busy, status };
+      await run.pollFor(4 * SECOND);
+      await beat();
+      expect((await waitsFrom(run.port)).today).toMatchObject(none);
+    }
+    const moves = ["needs-you", "working", "idle", "working"];
+    expect(new Set(page.map((event) => event.to))).toEqual(new Set(moves));
+    expect(page).toHaveLength(moves.length);
+
+    await run.pollFor(HOUR);
+    sessions[0] = { ...busy, status: "idle" };
+    await run.pollFor(2 * SECOND);
+    await beat();
+    expect(page).toHaveLength(moves.length + 1);
+    expect((await waitsFrom(run.port)).today).toMatchObject(none);
+    run.stop();
+
+    clock.now += MINUTE;
+    const again = await startIn(dir, sessions, {}, clock);
+    await again.pollFor(HOUR);
+    expect((await waitsFrom(again.port)).today).toMatchObject(none);
+    expect(await eventsOf(again.port, id(5))).toHaveLength(moves.length + 1);
+  });
+});
+
+describe("a wait as the clock, ahead past midnight, has been put right", () => {
+  test("is one wait through restarts before and after that midnight, told once", async () => {
+    const dir = await tempDir();
+    const clock = { now: at(6, 0, 30) };
+    const busy = makeSession({ id: id(5), name: "demo-project-5", status: "working" });
+    const sessions: Session[] = [busy];
+    const first = await startIn(dir, sessions, {}, clock);
+    await first.pollFor(MINUTE);
+    await first.flush();
+    clock.now = at(5, 23, 1);
+    await first.pollFor(MINUTE);
+    sessions[0] = { ...busy, status: "needs-you" };
+    await first.pollFor(5 * MINUTE + 2 * SECOND);
+    await first.flush();
+    expect((await waitsFrom(first.port)).sevenDays).toMatchObject({ waitedMs: 5 * MINUTE });
+    first.stop();
+
+    clock.now += 4 * SECOND;
+    const second = await startIn(dir, sessions, {}, clock);
+    await second.pollFor(2 * MINUTE);
+    sessions[0] = { ...busy, status: "idle" };
+    await second.pollFor(2 * HOUR);
+    const counted = { waitedMs: 7 * MINUTE + 2 * SECOND, openMs: 0, waits: 1 };
+    expect((await waitsFrom(second.port)).sevenDays).toMatchObject(counted);
+    second.stop();
+
+    clock.now += 4 * SECOND;
+    const third = await startIn(dir, sessions, {}, clock);
+    await third.pollFor(MINUTE);
+    expect((await waitsFrom(third.port)).sevenDays).toMatchObject(counted);
+    expect(await eventsOf(third.port, id(5))).toEqual([
+      ["status-changed", "working", "needs-you"],
+      ["status-changed", "needs-you", "idle"],
+    ]);
+  });
+});
+
+describe("a wait that ends while the disk is full", () => {
+  test("is counted the same after a restart, with its end where it was seen", async () => {
+    const dir = await tempDir();
+    const clock = { now: at(6, 9) };
+    const read = { full: false };
+    const busy = makeSession({ id: id(5), name: "demo-project-5", status: "working" });
+    const sessions: Session[] = [busy];
+    const first = await startIn(dir, sessions, {}, clock, read);
+    sessions[0] = { ...busy, status: "needs-you" };
+    await first.pollFor(MINUTE);
+    await first.flush();
+    read.full = true;
+    sessions[0] = busy;
+    await first.pollFor(MINUTE);
+    await first.flush();
+    read.full = false;
+    await first.pollFor(HOUR);
+    await first.flush();
+    const ended = [
+      ["status-changed", "working", "needs-you"],
+      ["status-changed", "needs-you", "working"],
+    ];
+    const counted = { waitedMs: MINUTE, waits: 1, measuredMs: HOUR + 2 * MINUTE };
+    expect((await waitsFrom(first.port)).today).toMatchObject(counted);
+    first.stop();
+
+    const again = await startIn(dir, sessions, {}, clock, read);
+    expect((await waitsFrom(again.port)).today).toMatchObject(counted);
+    expect(await eventsOf(again.port, id(5))).toEqual(ended);
   });
 });
 

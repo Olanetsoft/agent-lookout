@@ -49,17 +49,14 @@ export function pollRuns(
 
 /**
  * The same stretches with one more poll: the newest goes on to it when it came
- * soon enough after, and a new one begins with it otherwise, or when `fresh`
- * says Agent Lookout started since. Changes `runs` in place.
+ * soon enough after, and a new one begins with it otherwise, as when the clock
+ * was set back, or when `fresh` says Agent Lookout started since. Changes
+ * `runs` in place.
  */
 export function addPoll(runs: Span[], at: number, fresh = false, gapMs: number = POLL_GAP_MS) {
   const run = runs[runs.length - 1];
-  if (run && !fresh && at >= run.to && at - run.to <= gapMs) {
-    run.to = at;
-  } else if (!run || fresh || at > run.to) {
-    // A new stretch. A poll older than the newest held, by a clock that went back, adds none.
-    runs.push({ from: at, to: at });
-  }
+  if (run && !fresh && at >= run.to && at - run.to <= gapMs) run.to = at;
+  else runs.push({ from: at, to: at });
 }
 
 /** Stretches in time order with none overlapping: those that touch or overlap are joined. */

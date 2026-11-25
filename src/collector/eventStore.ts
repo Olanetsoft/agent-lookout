@@ -8,8 +8,10 @@ export interface EventStore {
   /** Appends events in the order they happened. */
   add(events: readonly SessionEvent[]): void;
   /**
-   * Newest first. `since` keeps only events after that time, so a caller that
-   * passes the time of the newest event it holds gets no repeats.
+   * Newest first. `since` keeps only the events added after the one at that
+   * time, whatever theirs are, so a caller that passes the time of the first
+   * event it was last given is given each once, also when the clock is set
+   * back. With none at that time it keeps those later than it.
    */
   list(options?: { since?: number; limit?: number }): SessionEvent[];
   /** Lets every event go, as clearing the history does. */
@@ -31,14 +33,13 @@ export function createEventStore(capacity: number = EVENT_CAPACITY): EventStore 
     },
     list({ since, limit = MAX_EVENTS_PER_RESPONSE } = {}) {
       const cap = Math.max(0, Math.min(Math.floor(limit), MAX_EVENTS_PER_RESPONSE));
-      const newestFirst: SessionEvent[] = [];
-      for (let index = events.length - 1; index >= 0 && newestFirst.length < cap; index -= 1) {
-        const event = events[index] as SessionEvent;
-        // Events are stored in time order, so nothing older than this can match.
-        if (since !== undefined && event.at <= since) break;
-        newestFirst.push(event);
-      }
-      return newestFirst;
+      let held = events.findIndex((event) => event.at === since);
+      while (held >= 0 && events[held]?.at === since) held += 1;
+      const added =
+        since === undefined || held >= 0
+          ? events.slice(Math.max(0, held))
+          : events.filter((event) => event.at > since);
+      return added.slice(Math.max(0, added.length - cap)).reverse();
     },
     clear() {
       events = [];

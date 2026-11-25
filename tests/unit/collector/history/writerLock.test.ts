@@ -156,6 +156,34 @@ test("taken at once, as a copy starts writing, it follows the same rules", () =>
   expect(JSON.parse(left.fs.text(FILE) as string)).toEqual({ pid: 100, token: "aaaa1111" });
 });
 
+test.each(["take", "takeNow"] as const)(
+  "a lock that cannot be made is not one another copy holds, by %s",
+  async (take) => {
+    const { fs, lock, alive } = setUp({ pid: 100, alive: [200] });
+    fs.put(FILE, lockText({ pid: 200, token: "bbbb" }));
+    expect(await lock[take]()).toBe(false);
+    expect(lock.heldByAnother).toBe(true);
+
+    // Its copy has gone, and left it in a folder where nothing can be changed.
+    alive.clear();
+    fs.broken = true;
+    expect(await lock[take]()).toBe(false);
+    expect(lock.heldByAnother).toBe(false);
+
+    alive.add(200);
+    expect(await lock[take]()).toBe(false);
+    expect(lock.heldByAnother).toBe(true);
+    // Let go, with no room for another.
+    fs.entries.clear();
+    expect(await lock[take]()).toBe(false);
+    expect(lock.heldByAnother).toBe(false);
+
+    fs.broken = false;
+    expect(await lock[take]()).toBe(true);
+    expect(lock.heldByAnother).toBe(false);
+  },
+);
+
 test("letting it go deletes the file, at once, so the next copy can take it", async () => {
   const { fs, lock } = setUp({ pid: 100 });
   await lock.take();

@@ -6,6 +6,7 @@ import { createStopRoute } from "./actions/stopRoute.ts";
 import { createActionLimiter, createStopper, type StopperOptions } from "./actions/stopSession.ts";
 import { createStopTargets, stopOff } from "./actions/stopTargets.ts";
 import { createAnswering, type Answering, type AnsweringOptions } from "./answers/answering.ts";
+import type { WaitSighting } from "../core/waits/waitSightings.ts";
 import { unendedWaits } from "../core/waits/waitTotals.ts";
 import type { Adapter } from "./adapters/adapter.ts";
 import { createAntigravityAppAdapter } from "./adapters/antigravity/app/index.ts";
@@ -678,6 +679,12 @@ export function createCollector(options: CollectorOptions): Collector {
     }),
     createStatusFileAdapter({ env: options.env, now, pollIntervalMs: intervalMs }),
   ];
+  // How a session in a wait is seen is for the waits alone: the ledger holds
+  // it and the history keeps it, and neither shows it in the Events log.
+  const addSightings = (sightings: readonly WaitSighting[]) => {
+    keeper?.addSightings(sightings);
+    ledger.addSightings(sightings);
+  };
   const poller = createPoller({
     // Each adapter is told how often it will be polled so that it can say so.
     // The other machines come after this one's own sources.
@@ -686,12 +693,7 @@ export function createCollector(options: CollectorOptions): Collector {
     history,
     intervalMs,
     now,
-    // How a session in a wait is seen is for the waits alone: the ledger holds
-    // it and the history keeps it, and neither shows it in the Events log.
-    onSightings: (sightings) => {
-      keeper?.addSightings(sightings);
-      ledger.addSightings(sightings);
-    },
+    onSightings: addSightings,
     // Every source's sessions alike are given the branch of their folder, and
     // with pull requests on, the branch's pull request, as last learnt.
     // Every snapshot carries the time rules in force, and is stale by them.
@@ -802,6 +804,9 @@ export function createCollector(options: CollectorOptions): Collector {
         ledger.clear();
         restarts = [];
         lastKept = null;
+        // What went is not compared with a source, or a part of one, read only
+        // later, and a wait that goes on is found again.
+        addSightings(poller.forget());
       },
     }),
     historyKept: () => ({
@@ -815,7 +820,6 @@ export function createCollector(options: CollectorOptions): Collector {
         now: now(),
         snapshot: poller.getSnapshot(),
         since,
-        runStarts: [since.at, ...restartsHeld().map((restart) => restart.at), poller.startedAt],
         where: keeper ? "disk" : "memory",
       });
     },
@@ -846,7 +850,7 @@ export function createCollector(options: CollectorOptions): Collector {
   }
 
   function begin(): void {
-    ledger.beginRun();
+    ledger.beginRun(now());
     keeper?.start();
     poller.start();
   }
@@ -874,10 +878,7 @@ export function createCollector(options: CollectorOptions): Collector {
           // Agent Lookout was stopped is recorded at the first poll. A session
           // whose wait began before the newest events held is among them, so
           // its wait is ended by the first poll that finds it answered or gone.
-          poller.resume(
-            [...unendedWaits(kept.whole.waitEvents), ...kept.events],
-            kept.whole.sightings,
-          );
+          poller.resume([...unendedWaits(kept.whole.marks), ...kept.events], kept.whole.marks);
           if (running) begin();
         })
         .catch(() => {

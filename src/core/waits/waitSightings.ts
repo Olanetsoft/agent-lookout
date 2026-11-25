@@ -18,71 +18,16 @@ export interface WaitSighting {
   way: string;
   /**
    * Present when a poll left the session out: the last poll that listed it, or
-   * for one the last run still listed, when this run began.
+   * for one an earlier run still listed, when the run after that began. Also
+   * when a poll listed one in another status, whose wait no event began: the
+   * last poll that listed it waiting.
    */
   lastSeen?: number;
   /**
    * Present when a session out of sight was listed waiting again with a status
    * time later than the last poll that listed it: that time. The wait it was
-   * lost in ended unseen, and this one began then.
+   * lost in ended unseen, and this one began then. Beside `lastSeen` it repeats
+   * what the sighting before it said, and cuts nothing.
    */
   began?: number;
-}
-
-/** Each session's sightings, oldest first. */
-export function sightingsBySession(
-  sightings: readonly WaitSighting[],
-): Map<string, WaitSighting[]> {
-  const bySession = new Map<string, WaitSighting[]>();
-  for (const sighting of [...sightings].sort((a, b) => a.at - b.at)) {
-    const own = bySession.get(sighting.sessionId);
-    if (own) own.push(sighting);
-    else bySession.set(sighting.sessionId, [sighting]);
-  }
-  return bySession;
-}
-
-/**
- * Where a wait from `from` up to `until` lost sight of a session and never saw
- * it again, or null when it did not: the `lastSeen` of its newest sighting.
- * `own` is oldest first.
- */
-export function lastSeenWithin(
-  own: readonly WaitSighting[],
-  from: number,
-  until: number,
-): number | null {
-  let lastSeen: number | null = null;
-  for (const sighting of own) {
-    if (sighting.at >= from && sighting.at < until) lastSeen = sighting.lastSeen ?? null;
-  }
-  return lastSeen;
-}
-
-/**
- * A stretch of waiting from `from` to `to`, cut wherever a sighting says a
- * wait ended unseen and a new one began (`began`): up to the last poll that
- * listed the session, then from that status time. Oldest first, and one
- * stretch when nothing cut it. `own` is oldest first.
- */
-export function waitStretches(
-  own: readonly WaitSighting[],
-  from: number,
-  to: number,
-): { from: number; to: number }[] {
-  const stretches: { from: number; to: number }[] = [];
-  let start = from;
-  let lastSeen: number | null = null;
-  for (const sighting of own) {
-    if (sighting.at < start || sighting.at > to) continue;
-    if (sighting.lastSeen !== undefined) {
-      lastSeen = sighting.lastSeen;
-    } else if (sighting.began !== undefined && lastSeen !== null) {
-      stretches.push({ from: start, to: lastSeen });
-      start = sighting.began;
-      lastSeen = null;
-    }
-  }
-  stretches.push({ from: start, to });
-  return stretches;
 }

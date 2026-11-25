@@ -73,6 +73,8 @@ export interface WriterLock {
   /** Lets it go, at once, as Agent Lookout stops. A file that is another's by now is left alone. */
   releaseNow(): void;
   readonly held: boolean;
+  /** Set when the last try to take the lock found it held, not that it could not be made. */
+  readonly heldByAnother: boolean;
   /**
    * Set when the last try to take the lock found it held by a copy that
    * watches other folders: its history is not this copy's.
@@ -120,6 +122,7 @@ export function createWriterLock(options: WriterLockOptions): WriterLock {
   const sources = options.sources ?? null;
   const content = `${JSON.stringify({ pid, token, ...(sources !== null && { sources }) })}\n`;
   let held = false;
+  let heldByAnother = false;
   let heldByOtherSources = false;
 
   const isOwn = (holder: Holder | null) => holder?.pid === pid && holder.token === token;
@@ -185,6 +188,7 @@ export function createWriterLock(options: WriterLockOptions): WriterLock {
 
   return {
     async take() {
+      heldByAnother = false;
       if (await make()) return true;
       let info: PathInfo;
       try {
@@ -193,7 +197,8 @@ export function createWriterLock(options: WriterLockOptions): WriterLock {
         // Gone in between: another copy let it go.
         return make();
       }
-      if (verdict(info, await holder()) === "leave") return false;
+      heldByAnother = verdict(info, await holder()) === "leave";
+      if (heldByAnother) return false;
       try {
         await fs.remove(file);
       } catch {
@@ -204,6 +209,7 @@ export function createWriterLock(options: WriterLockOptions): WriterLock {
       return make();
     },
     takeNow() {
+      heldByAnother = false;
       if (makeNow()) return true;
       let info: PathInfo;
       try {
@@ -211,7 +217,8 @@ export function createWriterLock(options: WriterLockOptions): WriterLock {
       } catch {
         return makeNow();
       }
-      if (verdict(info, holderNow()) === "leave") return false;
+      heldByAnother = verdict(info, holderNow()) === "leave";
+      if (heldByAnother) return false;
       try {
         fs.removeNow(file);
       } catch {
@@ -251,6 +258,9 @@ export function createWriterLock(options: WriterLockOptions): WriterLock {
     },
     get held() {
       return held;
+    },
+    get heldByAnother() {
+      return heldByAnother;
     },
     get heldByOtherSources() {
       return heldByOtherSources;

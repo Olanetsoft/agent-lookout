@@ -5,7 +5,7 @@ import {
   lstatSync,
   readSync,
   unlinkSync,
-  writeSync,
+  writeFileSync,
   type Stats,
 } from "node:fs";
 import { lstat, lutimes, mkdir, readdir, unlink } from "node:fs/promises";
@@ -36,7 +36,10 @@ export interface HistoryFs {
   append(file: string, text: string): Promise<void>;
   /** The same at once, for the last write as Agent Lookout stops. */
   appendNow(file: string, text: string): void;
-  /** Makes a file that is not there yet, with mode 600. Rejects with `EEXIST` when something is. */
+  /**
+   * Makes a file that is not there yet, with mode 600. Rejects with `EEXIST`
+   * when something is, and leaves none behind when the text cannot be written.
+   */
   create(file: string, text: string): Promise<void>;
   /** The same at once, for the lock. */
   createNow(file: string, text: string): void;
@@ -127,7 +130,10 @@ function writeNow(file: string, flags: number, text: string): void {
   const fd = openWithoutFollowingNow(file, flags, FILE_MODE);
   try {
     if (!fstatSync(fd).isFile()) throw notOrdinary();
-    writeSync(fd, text);
+    writeFileSync(fd, text);
+  } catch (error) {
+    if (flags === CREATE) unlinkSync(file);
+    throw error;
   } finally {
     closeSync(fd);
   }
@@ -138,6 +144,9 @@ async function writeTo(file: string, flags: number, text: string): Promise<void>
   try {
     if (!(await handle.stat()).isFile()) throw notOrdinary();
     await handle.writeFile(text, "utf8");
+  } catch (error) {
+    if (flags === CREATE) await unlink(file);
+    throw error;
   } finally {
     await handle.close();
   }

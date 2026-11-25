@@ -21,7 +21,7 @@ import { messageText } from "@core/text";
 import { isQuietAt } from "@core/time-rules/quietHours";
 import { DEFAULT_TIME_RULES, staleAfterMs, type TimeRules } from "@core/time-rules/timeRules";
 import type { Span } from "@core/waits/measured";
-import { isWaitEvent, waitTotals } from "@core/waits/waitTotals";
+import { waitTotals } from "@core/waits/waitTotals";
 import {
   ANSWERED_STEP,
   MOMENTS,
@@ -433,10 +433,12 @@ export function createFeed(t0: number): Feed {
       const measured = runs
         .map((run) => ({ from: Math.max(run.from, since.at), to: run.to }))
         .filter((run) => run.to > run.from);
+      const starts = [...week.runs.map((run) => run.from), at(WATCHING_SINCE), at(RESUMED_AT)].map(
+        (start) => ({ kind: "start" as const, at: start }),
+      );
       const totals = waitTotals({
-        events: feed.events(shown, clearedAt).filter(isWaitEvent),
+        marks: [...starts, ...feed.events(shown, clearedAt)].sort((a, b) => a.at - b.at),
         measured,
-        runStarts: [...week.runs.map((run) => run.from), at(WATCHING_SINCE), at(RESUMED_AT)],
         waitingNow: snapshot.sessions
           .filter((session) => session.status === "needs-you")
           .map((session) => ({ id: session.id, name: session.name })),
