@@ -10,7 +10,7 @@ import {
   readSync,
   renameSync,
   unlinkSync,
-  writeSync,
+  writeFileSync,
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -245,7 +245,9 @@ export function writeSettingsText(setup: SettingsSetup, text: string): SettingsW
       SETTINGS_FILE_MODE,
     );
     try {
-      writeSync(fd, text);
+      // All of it, or it throws: one write alone can be cut short, as where the
+      // disk fills up, and says so only in the count it gives.
+      writeFileSync(fd, Buffer.from(text));
       // On the disk before it takes the old one's place, so a crash or a
       // power cut leaves the old file or the new one, never an empty one.
       fsyncSync(fd);
