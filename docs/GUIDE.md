@@ -160,7 +160,7 @@ For Claude Code, the time its file was written would make a session busy on one 
 
 Sessions that run in worktrees of one repository often have folder names that say little. The branch says which piece of work each one is. When a session's folder is in a git repository, the Sessions list shows the branch that is checked out under the folder's name, and the Needs you panel after it: `storefront on checkout-flow`. This works the same for every agent.
 
-When no branch is checked out, as in the middle of a rebase or after checking out a commit or a tag, the first seven characters of the commit's ID take the branch's place, such as `3f9a2c1`, set in the typeface used for commands. In the Needs you panel it reads `docs at 3f9a2c1`. A branch too long for its space is cut, and the whole name is shown when you hover over it or move to it with Tab. A session in no repository shows neither.
+When no branch is checked out, as in the middle of a rebase or after checking out a commit or a tag, the first seven characters of the commit's ID take the branch's place, such as `3f9a2c1`, set in the typeface used for commands. In the Needs you panel it reads `docs at 3f9a2c1`. A branch too long for its space is cut, and the whole name is shown when you hover over it or move to it with Tab. A session in no repository shows neither. Nor does one in a repository that uses git's reftable format, as `git init --ref-format=reftable` makes: what is checked out there is not in the files Agent Lookout reads, so the session shows its repository and no branch, and no pull request is looked for.
 
 Agent Lookout reads the branch from the repository's own files, and runs no git command. It reads each session's branch at most every 10 seconds, so after you switch branches the session shows the new one within about 10 seconds. [How it finds sessions](#how-it-finds-sessions) says where it looks.
 
@@ -176,7 +176,7 @@ What counts as one repository:
 - A repository whose git folder is kept apart, made with `git init --separate-git-dir`, and its worktrees.
 - A submodule is a repository of its own, with its worktrees, and so is a repository inside another one's folder. Each is grouped under its own folder's name.
 
-Two repositories whose folders have the same name, in different places, are two groups of that name. A session shows a repository only when it shows a branch or a commit: a folder whose `HEAD` cannot be read is in `No repository`, and so is a worktree whose `commondir`, the file beside its `HEAD` that names its repository, cannot be read, though it shows its branch.
+Two repositories whose folders have the same name, in different places, are two groups of that name. A session shows a repository only when it shows a branch or a commit, or the repository uses git's reftable format: a folder whose `HEAD` cannot be read is in `No repository`, and so is a worktree whose `commondir`, the file beside its `HEAD` that names its repository, cannot be read, though it shows its branch.
 
 On the board, each card names the repository before its folder when the two names differ, as [Board](#board) shows.
 

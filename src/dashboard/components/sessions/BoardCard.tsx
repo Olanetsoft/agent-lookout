@@ -1,4 +1,4 @@
-import type { Session } from "@core/sessions/session";
+import { checkedOut, type Session } from "@core/sessions/session";
 import { Jump, JumpNote } from "@dashboard/components/jump/Jump";
 import { ResumeButton, ResumeNote } from "@dashboard/components/resume/Resume";
 import { Branch } from "@dashboard/components/sessions/Branch";
@@ -62,6 +62,7 @@ export function BoardCard({ session, now, agent }: BoardCardProps) {
   const jump = useJump(session);
   const resume = useResume(session);
   const app = surfaceLabel(session.surface);
+  const git = checkedOut(session.git);
   const repository = repositoryBeside(session);
 
   return (
@@ -137,15 +138,15 @@ export function BoardCard({ session, now, agent }: BoardCardProps) {
               {session.project}
             </span>
           </Tooltip>
-          {session.git && (
+          {git && (
             <>
               {" "}
               <span
                 data-part='git'
                 className='inline-flex max-w-full gap-1 align-top whitespace-nowrap text-ink-muted'
               >
-                <Branch git={session.git} inSentence className='min-w-0' />
-                <ChecksMark git={session.git} />
+                <Branch git={git} inSentence className='min-w-0' />
+                <ChecksMark git={git} />
               </span>
             </>
           )}

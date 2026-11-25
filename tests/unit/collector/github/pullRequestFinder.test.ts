@@ -192,6 +192,12 @@ describe("asking", () => {
         git: { branch: "loose" },
       }),
       makeSession({ id: "status-files:d.json", cwd: null }),
+      // As in git's reftable format, whose branch is not read.
+      makeSession({
+        id: "status-files:e.json",
+        cwd: `${CODE}/storefront`,
+        git: { repository: REPOSITORY },
+      }),
     ]);
     expect(read).toEqual([`${CODE}/storefront/.git main`]);
     expect(asked).toEqual([]);

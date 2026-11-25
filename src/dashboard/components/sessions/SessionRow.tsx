@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, type ReactNode } from "react";
 
-import type { Session } from "@core/sessions/session";
+import { checkedOut, type Session } from "@core/sessions/session";
 import { Jump, JumpNote } from "@dashboard/components/jump/Jump";
 import { ResumeButton, ResumeNote } from "@dashboard/components/resume/Resume";
 import { Branch } from "@dashboard/components/sessions/Branch";
@@ -152,6 +152,7 @@ export function SessionRow({
   const jump = useJump(session);
   const resume = useResume(session);
   const surface = surfaceLabel(session.surface);
+  const git = checkedOut(session.git);
 
   const row = useRef<HTMLTableRowElement>(null);
   /** What in the row has focus, or had it until it was drawn again in another place. */
@@ -371,7 +372,7 @@ export function SessionRow({
               tabIndex={session.cwd ? 0 : undefined}
               className={cn(
                 "block truncate rounded-bar text-ink-secondary",
-                session.git && "leading-tight",
+                git && "leading-tight",
               )}
             >
               {session.project ?? "–"}
@@ -381,13 +382,13 @@ export function SessionRow({
            * Under the folder, the branch has the column's whole width, with the
            * mark of a pull request whose checks are failing after it.
            */}
-          {session.git && (
+          {git && (
             <span
               data-part='git'
               className='flex min-w-0 items-center gap-1 leading-tight text-ink-muted'
             >
-              <Branch git={session.git} className='min-w-0' />
-              <ChecksMark git={session.git} />
+              <Branch git={git} className='min-w-0' />
+              <ChecksMark git={git} />
             </span>
           )}
         </td>

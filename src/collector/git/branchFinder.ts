@@ -1,7 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 
-import type { GitHead, Session } from "../../core/sessions/session.ts";
+import { checkedOut, type GitHead, type Session } from "../../core/sessions/session.ts";
 import { pathsOf, sameFolder } from "../files/paths.ts";
 import { isMissing, nodeIo, type ReadOnlyIo, type FileInfo } from "../files/readOnlyIo.ts";
 import { MAX_GIT_FILE_BYTES, parseCommonDir, parseGitFile, parseHead } from "./gitHead.ts";
@@ -125,13 +125,14 @@ async function headIn(
   // Only a git folder a `.git` file names can be a worktree's.
   const commonDir = kind === "file" ? await commonDirOf(io, gitDir, paths) : null;
   const repository = commonDir === undefined ? null : repositoryOf({ dir, gitDir, commonDir });
-  if (repository === null) return { head, gitFolder: null };
+  if (repository === null) return checkedOut(head) ? { head, gitFolder: null } : null;
   return { head: { ...head, repository }, gitFolder: commonDir ?? gitDir };
 }
 
 /**
  * The branch or commit checked out in the git repository a folder is in, with
- * the repository, or null when it is in none that can be read. Never rejects.
+ * the repository, or the repository alone in git's reftable format, or null
+ * when it is in none that can be read. Never rejects.
  *
  * From the folder up, it looks for `.git` in each folder in turn, without
  * following a link, and the nearest wins, as it does for git. It never looks in

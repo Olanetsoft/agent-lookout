@@ -358,7 +358,9 @@ export interface AnsweringStatus {
 /**
  * Where a session's folder stands in git: the branch it has checked out, or,
  * when it has none checked out, the commit it is on, as the first seven
- * characters of its ID. One or the other, never both.
+ * characters of its ID. One or the other, never both, and neither in a
+ * repository that does not say what is checked out in its `HEAD`, whose
+ * repository comes alone.
  *
  * The collector reads it from the repository's `HEAD` file, for the sessions of
  * every source alike. The branch is cleaned and cut to a length as any text
@@ -377,6 +379,11 @@ export interface GitHead {
    * `AGENT_LOOKOUT_PULL_REQUESTS=on` only: see `PullRequest`.
    */
   pullRequest?: PullRequest;
+}
+
+/** What a session's folder has checked out, or undefined with no branch and no commit to show. */
+export function checkedOut(git: GitHead | undefined): GitHead | undefined {
+  return git?.branch === undefined && git?.commit === undefined ? undefined : git;
 }
 
 /** Where a pull request stands: open, open as a draft, merged, or closed without merging. */
@@ -497,8 +504,8 @@ export interface Session {
   project: string | null;
   /**
    * Present when cwd is in a git repository whose `HEAD` could be read: the
-   * branch or commit, the repository, and with `AGENT_LOOKOUT_PULL_REQUESTS=on`
-   * the branch's pull request. See `GitHead`.
+   * branch or commit, when it says one, the repository, and with
+   * `AGENT_LOOKOUT_PULL_REQUESTS=on` the branch's pull request. See `GitHead`.
    */
   git?: GitHead;
   status: SessionStatus;

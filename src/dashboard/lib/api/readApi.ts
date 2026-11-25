@@ -42,6 +42,7 @@ import {
   SURFACES,
   TERMINAL_APPS,
   WAITING_REASONS,
+  checkedOut,
   isMachineName,
   type AgentCapabilities,
   type AnsweringStatus,
@@ -274,14 +275,16 @@ const REPOSITORY_ID = /^[0-9a-f]{16,64}$/;
 /**
  * What a session's folder has checked out: a branch, as text, or a commit, as
  * an ID, with the repository when that can be read, and a branch's pull
- * request when the collector gives one. Null for anything else, and for both
- * at once. A repository or a pull request that cannot be read leaves the branch.
+ * request when the collector gives one, or the repository alone. Null for
+ * anything else, and for a branch and a commit at once. A repository or a pull
+ * request that cannot be read leaves the branch.
  */
 function readGit(value: unknown): GitHead | null {
   if (!isRecord(value)) return null;
   const head = readHead(value);
   if (head === null) return null;
   const repository = readRepository(value.repository);
+  if (repository === null && checkedOut(head) === undefined) return null;
   const pullRequest = head.branch === undefined ? null : readPullRequest(value.pullRequest);
   return {
     ...head,
@@ -336,6 +339,7 @@ function readPullRequest(value: unknown): PullRequest | null {
 
 function readHead(value: Record<string, unknown>): GitHead | null {
   if (value.commit === undefined) {
+    if (value.branch === undefined) return {};
     const branch = text(value.branch);
     return branch !== null && Array.from(branch).length <= MAX_BRANCH_LENGTH ? { branch } : null;
   }

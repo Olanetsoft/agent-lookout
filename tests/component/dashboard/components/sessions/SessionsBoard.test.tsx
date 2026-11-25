@@ -539,6 +539,15 @@ const IN_WORKTREES: Session[] = [
     cwd: "/Users/example/code/mobile-app",
     project: "mobile-app",
   }),
+  // A worktree in git's reftable format, whose branch is not read.
+  session(4, {
+    name: "search-indexing",
+    status: "idle",
+    statusSince: NOW - 52 * MINUTE,
+    cwd: "/Users/example/code/storefront-search",
+    project: "storefront-search",
+    git: { repository: STOREFRONT },
+  }),
 ];
 
 test.each(["dark", "light"] as const)(
@@ -583,6 +592,12 @@ test.each(["dark", "light"] as const)(
       cardOf(screen.container, "mobile-onboarding").querySelector('[data-part="place"]')
         ?.textContent,
     ).toBe("mobile-app");
+    // With no branch to show, the repository and the folder alone.
+    const search = cardOf(screen.container, "search-indexing").querySelector(
+      '[data-part="place"]',
+    )!;
+    expect(search.textContent).toBe("storefront ·, storefront-search");
+    expect(search.querySelector('[data-part="git"]')).toBeNull();
     expect(warmPaint(screen.container)).toEqual([]);
   },
 );

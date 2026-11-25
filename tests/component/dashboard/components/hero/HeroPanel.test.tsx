@@ -448,6 +448,16 @@ function inRepositories(): Session[] {
       cwd: "/Users/example/code/mobile-app",
       project: "mobile-app",
     }),
+    // In a repository whose branch is not read.
+    session(7, {
+      name: "search-indexing",
+      status: "needs-you",
+      waitingReason: "question",
+      statusSince: NOW - MINUTE / 2,
+      cwd: "/Users/example/code/search",
+      project: "search",
+      git: { repository: { id: "3c1d5e7f90a2b4c6", name: "search" } },
+    }),
   ];
 }
 
@@ -456,7 +466,7 @@ test.each(["dark", "light"] as const)(
   async (theme) => {
     document.documentElement.setAttribute("data-theme", theme);
     const screen = await renderHero({ sessions: inRepositories() });
-    const [lead, docs, mobile] = [
+    const [lead, docs, mobile, search] = [
       ...hero(screen.container).querySelectorAll<HTMLElement>('[data-slot="hero-session"]'),
     ].map((row) => part(row, "place"));
 
@@ -485,6 +495,9 @@ test.each(["dark", "light"] as const)(
     // In no repository, the place is as it always was.
     expect(mobile?.textContent).toBe("mobile-app in Terminal");
     expect(part(mobile!, "git")).toBeNull();
+    // And so in a repository whose branch is not read.
+    expect(search?.textContent).toBe("search in Terminal");
+    expect(part(search!, "git")).toBeNull();
 
     // None of it is warm, and none of it is in the muted ink the hero never uses.
     for (const place of [lead, docs, mobile]) {

@@ -1,6 +1,7 @@
 import { useId, useMemo, type ReactNode } from "react";
 
 import {
+  checkedOut,
   isRemoteSource,
   machineInId,
   type Session,
@@ -198,6 +199,7 @@ function Place({
   className?: string;
 }) {
   const app = surfaceLabel(session.surface);
+  const git = checkedOut(session.git);
   const where = Boolean(session.project) || app !== null;
   if (!where && agent === undefined) return null;
   return (
@@ -216,13 +218,13 @@ function Place({
               {session.project}
             </span>
           </Tooltip>
-          {session.git && (
+          {git && (
             <>
               {" "}
               <span data-part='git'>
                 {/* Cut at the line's width, a branch keeps the line's baseline. */}
                 <Branch
-                  git={session.git}
+                  git={git}
                   inSentence
                   className='inline-block max-w-full align-top font-medium text-ink'
                 />
