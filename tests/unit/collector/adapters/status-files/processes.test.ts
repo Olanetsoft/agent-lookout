@@ -47,10 +47,11 @@ function setUp({ asksPs = true }: { asksPs?: boolean } = {}) {
     write(fileName: string, pid: number, fields: Partial<NamedProcess> = {}) {
       files.set(fileName, { fileName, pid, mtimeMs: clock.now, ...fields });
     },
-    /** Polls, and gives the files whose process still runs. */
-    async poll(afterMs = 2 * SECOND): Promise<string[]> {
+    /** Polls, and gives the files whose process still runs, of all that are listed or of those it read. */
+    async poll(afterMs = 2 * SECOND, read = [...files.keys()]): Promise<string[]> {
       clock.now += afterMs;
-      const found = await processes.running([...files.values()], new Set(files.keys()));
+      const named = [...files.values()].filter(({ fileName }) => read.includes(fileName));
+      const found = await processes.running(named, new Set(files.keys()));
       return [...found];
     },
   };
@@ -171,6 +172,21 @@ describe("a running agent is never taken for another program", () => {
     expect(await poll(30 * SECOND)).toEqual([]);
   });
 
+  test("when its file is not read for a while after the clock passed a start seen ahead of it", async () => {
+    const { running, processes, write, poll } = setUp();
+    running.set(100, NOW + HOUR);
+    write("a.json", 100);
+    expect(await poll()).toEqual(["a.json"]);
+    expect(await poll(2 * HOUR)).toEqual(["a.json"]);
+    // It cannot be opened, or the folder cannot be listed.
+    expect(await poll(2 * SECOND, [])).toEqual([]);
+    expect(await poll()).toEqual(["a.json"]);
+    expect(await poll(HOUR, [])).toEqual([]);
+    processes.notListed();
+    expect(await poll()).toEqual(["a.json"]);
+    expect(await poll(HOUR)).toEqual(["a.json"]);
+  });
+
   test("when the clock is set back while its file is watched", async () => {
     const { clock, running, write, poll } = setUp();
     running.set(100, NOW);
@@ -198,10 +214,27 @@ describe("a running agent is never taken for another program", () => {
     running.set(100, NOW + 2 * MINUTE);
     expect(await poll(MINUTE)).toEqual([]);
 
-    // After a poll that could not list the folder, a file that appears may have been there.
+    // After a poll that could not list the folder, a file that appears may have
+    // been there, and one that changed may have done so under another process.
+    running.set(101, NOW - HOUR);
+    write("changed.json", 101);
+    expect(await poll()).toEqual(["changed.json"]);
     processes.notListed();
     write("shown.json", 100, { mtimeMs: NOW - DAY });
+    write("changed.json", 101, { mtimeMs: NOW - 2 * DAY });
     expect(await poll()).toEqual([]);
+  });
+
+  test("when its file was deleted and made again with an older time", async () => {
+    const { files, running, write, poll } = setUp();
+    running.set(100, NOW - HOUR);
+    write("a.json", 100);
+    expect(await poll()).toEqual(["a.json"]);
+    files.delete("a.json");
+    expect(await poll()).toEqual([]);
+    write("a.json", 100, { mtimeMs: NOW - DAY });
+    expect(await poll()).toEqual(["a.json"]);
+    expect(await poll(HOUR)).toEqual(["a.json"]);
   });
 
   test("when it started long before it wrote, or within the minute after its file's time", async () => {
@@ -226,6 +259,32 @@ describe("how often ps is run", () => {
       [100, 101],
       [100, 101],
     ]);
+  });
+
+  test("once in 30 seconds too while a file can be read on only every other poll", async () => {
+    const { running, ps, write, poll } = setUp();
+    running.set(100, NOW - HOUR);
+    write("a.json", 100);
+    for (let polls = 0; polls < 30; polls += 1) {
+      expect(await poll(2 * SECOND, polls % 2 === 0 ? ["a.json"] : [])).toHaveLength(
+        polls % 2 === 0 ? 1 : 0,
+      );
+    }
+    expect(ps.runs).toEqual([[100], [100]]);
+  });
+
+  test("at once for a process whose ID a file names again after it was found gone", async () => {
+    const { running, ps, write, poll } = setUp();
+    running.set(100, NOW - HOUR);
+    write("a.json", 100);
+    expect(await poll()).toEqual(["a.json"]);
+    running.delete(100);
+    expect(await poll()).toEqual([]);
+    // Another agent, with the ID and the file of the one that stopped.
+    running.set(100, NOW + 5 * SECOND);
+    write("a.json", 100);
+    expect(await poll()).toEqual(["a.json"]);
+    expect(ps.runs).toEqual([[100], [100]]);
   });
 
   test("at once for a process it knows nothing of, for all of them in one run", async () => {

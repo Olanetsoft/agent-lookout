@@ -212,9 +212,10 @@ export interface CollectorOptions {
    * Reads when processes started, to tell a Claude Code session's process from
    * another that has since been given its pid, and again, with nothing
    * remembered, before a session is stopped, to confirm a Qwen Code session's
-   * process before it is given Jump, and on a Mac to tell a Cline or Kimi Code
-   * session's process from another given its pid. Defaults to asking `ps`. Tests
-   * pass their own, so that, with `readProcesses`, the collector runs no `ps`.
+   * process before it is given Jump, and on a Mac to tell a Cline, Kimi Code,
+   * Grok Build, Copilot CLI or Kiro CLI session's process, or a status file's,
+   * from another given its pid. Defaults to asking `ps`. Tests pass their own,
+   * so that, with `readProcesses`, the collector runs no `ps`.
    */
   readProcessStarts?: ReadProcessStarts;
   /**

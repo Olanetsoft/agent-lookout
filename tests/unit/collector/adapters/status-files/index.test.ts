@@ -494,6 +494,30 @@ describe("its sessions", () => {
     ]);
   });
 
+  test("on a Mac, a copy that kept an older time goes by its since, and a copy with none is not shown", async () => {
+    const { files, alive, first } = setUp({
+      platform: "darwin",
+      readProcessStarts: async (pids) =>
+        new Map(pids.map((pid) => [pid, "Mon Oct  5 11:00:00 2026"])),
+    });
+    alive.add(100);
+    const since = NOW - 30 * MINUTE;
+    put(files, "a.json", statusFile({ name: "copy", since, pid: 100 }), NOW - DAY);
+    put(files, "b.json", statusFile({ name: "no-since", pid: 100 }), NOW - DAY);
+    expect((await first()).sessions.map((session) => session.name)).toEqual(["copy"]);
+  });
+
+  test("a file left behind stays so while it cannot be opened, as its process ID goes to another program", async () => {
+    const { files, alive, first, poll } = setUp();
+    put(files, "a.json", statusFile({ status: "waiting", pid: 200 }), NOW - MINUTE);
+    expect((await first()).sessions).toEqual([]);
+    files.failOpen(`${STATUS_DIR}/a.json`);
+    alive.add(200);
+    expect((await poll()).sessions).toEqual([]);
+    files.heal(`${STATUS_DIR}/a.json`);
+    expect((await poll()).sessions).toEqual([]);
+  });
+
   test("a file left behind stays so while its folder cannot be read, and one that folder then shows was not seen written", async () => {
     const { files, alive, first, poll } = setUp({
       platform: "darwin",

@@ -10,7 +10,7 @@ import type { Adapter } from "@collector/adapters/adapter";
 import { findSqlite } from "@collector/adapters/antigravity/app/summaries";
 import { createCodexAdapter, NEEDS_YOU_NOTE } from "@collector/adapters/codex/index";
 import { geminiCliSessionId } from "@collector/adapters/gemini-cli/toSession";
-import { createCollector } from "@collector/collector";
+import { createCollector, type CollectorOptions } from "@collector/collector";
 import type { AskGh } from "@collector/github/gh";
 import type { PullRequestTarget } from "@collector/git/pullRequestTarget";
 import { createSmtpSender } from "@collector/email/smtpSender";
@@ -46,6 +46,7 @@ import { quietFor, quietPhrase } from "@dashboard/lib/sessions/quiet";
 import { feedEntries, ids, pids, registryFile } from "@tests/fixtures/claudeCode";
 import {
   conversationId,
+  lstart,
   replyStep,
   textStep,
   transcriptPath as agyTranscriptPath,
@@ -92,6 +93,7 @@ import {
 import {
   agentMessageLine,
   fixtureSessions,
+  HOUR,
   messageLine,
   metaLine,
   MINUTE,
@@ -155,8 +157,12 @@ vi.mock("@collector/messages/tailReader", async (importOriginal) => {
  * files that is not there unless the test says otherwise, and tmux turned off.
  * Served over real HTTP on a free loopback port.
  */
-async function serve(settings: Record<string, string>) {
+async function serve(
+  settings: Record<string, string>,
+  options: Pick<CollectorOptions, "platform" | "readProcessStarts"> = {},
+) {
   const collector = createCollector({
+    ...options,
     version: "9.9.9-test",
     env: {
       AGENT_LOOKOUT_HISTORY: "off",
@@ -319,6 +325,39 @@ describe("createCollector", () => {
     expect(snapshot.sources[1]).not.toHaveProperty("advice");
     expect(snapshot.sessions).toEqual([]);
   });
+
+  test.each(["darwin", "linux"] as const)(
+    "asks when a status file's process started through the reader it is given, on %s",
+    async (platform) => {
+      const folder = await tempDir();
+      // Last written long before the start it is given for the process with its ID, which is this one.
+      const file = path.join(folder, "night-shift.json");
+      await writeFile(
+        file,
+        JSON.stringify({ agent: "Night Shift", status: "waiting", pid: process.pid }),
+      );
+      await utimes(file, new Date(NOW - 24 * HOUR), new Date(NOW - 24 * HOUR));
+      const asked: (readonly number[])[] = [];
+      const snapshot = await serve(
+        { AGENT_LOOKOUT_CODEX_HOME: await tempDir(), AGENT_LOOKOUT_STATUS_DIR: folder },
+        {
+          platform,
+          readProcessStarts: async (pids) => {
+            asked.push(pids);
+            return new Map(pids.map((pid) => [pid, lstart(NOW - HOUR)]));
+          },
+        },
+      );
+
+      const onMac = platform === "darwin";
+      expect(asked).toEqual(onMac ? [[process.pid]] : []);
+      expect(snapshot.sessions).toHaveLength(onMac ? 0 : 1);
+      const card = snapshot.sources.find((source) => source.id === "status-files");
+      expect(card?.watching?.find(({ label }) => label === "Process check")?.value).toBe(
+        onMac ? "ps -o pid=,lstart= -p <pids>" : "signal 0 alone, every 2 seconds",
+      );
+    },
+  );
 
   test("lists a session from a status file beside the others, with its own agent's name", async () => {
     const folder = path.join(await tempDir(), "sessions");

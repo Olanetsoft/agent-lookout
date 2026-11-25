@@ -19,9 +19,9 @@ import {
  * - On a Mac `ps` says when each process that runs started. An agent that names
  *   its own pid started before it wrote its file, so a process that started
  *   more than a minute after the later of the file's modified time and a
- *   `since` that could be right was given the pid since.
+ *   `since` that could be right is taken to have been given the pid since.
  *
- * That second rule acts only when it is sure, and is not used:
+ * That second rule is not used:
  *
  * - For a process whose start was seen ahead of the clock. A fast clock gave
  *   it, and it says nothing of when, also once the clock has passed it.
@@ -29,6 +29,12 @@ import {
  *   the folder, while the process that ran then has its pid. The times can be
  *   wrong, as of a copy that kept an older time, and the write is not.
  * - For a file whose modified time is before 2020, as of a disk that keeps none.
+ *
+ * It goes by the clock, so it can still be wrong of a file whose write was not
+ * seen: one whose clock was set back by more than a minute between its agent's
+ * start and its last write, or one with no `since` whose modified time is that
+ * far behind, as of a copy or a network disk with a slow clock. Such a file is
+ * taken for one left behind until it is written again.
  *
  * On Linux `ps` works a start out again from the clock each time, and Windows
  * has no `ps`, so there a pid that another program has before its process was
@@ -86,29 +92,31 @@ export function createStatusFileProcesses(options: {
   const { isAlive, readStarts, now } = options;
   const seen = new Map<string, Seen>();
   let lastListed: ReadonlySet<string> | null = null;
-  let starts = new Map<number, Start>();
+  const starts = new Map<number, Start>();
 
   /**
    * Asks when these processes started, all in one run of `ps`, when one was not
    * asked about in the last 30 seconds. It goes by pid, so an agent that writes
    * its file often does not make it run more. A run that says nothing of a
-   * process leaves what was known of it.
+   * process leaves what was known of it, which is kept while a file not found
+   * left behind names the process, whether or not it was read this time.
    */
   async function askStarts(read: ReadProcessStarts, pids: ReadonlySet<number>): Promise<void> {
-    const before = starts;
-    starts = new Map();
-    for (const pid of pids) {
-      const known = before.get(pid);
+    const named = new Set<number>();
+    for (const { pid, gone } of seen.values()) if (!gone) named.add(pid);
+    for (const pid of starts.keys()) if (!named.has(pid)) starts.delete(pid);
+    const due = [...pids].some((pid) => {
+      const known = starts.get(pid);
       // A clock set back counts as time enough.
       const age = known === undefined ? -1 : now() - known.at;
-      if (known !== undefined && age >= 0 && age < START_CHECK_TTL_MS) starts.set(pid, known);
-    }
-    if (starts.size === pids.size) return;
+      return age < 0 || age >= START_CHECK_TTL_MS;
+    });
+    if (!due) return;
 
     const answer = await read([...pids]).catch(() => new Map<number, string>());
     const at = now();
     for (const pid of pids) {
-      const known = before.get(pid);
+      const known = starts.get(pid);
       const startedAt = processStartTime(answer.get(pid) ?? "") ?? known?.startedAt ?? null;
       const wasAhead = known !== undefined && known.ahead && known.startedAt === startedAt;
       starts.set(pid, {
