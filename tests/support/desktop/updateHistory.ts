@@ -45,25 +45,32 @@ export async function playHistory(seed: number, met: Set<string>): Promise<void>
   const world = await makeUpdateWorld();
   const steps: string[] = [];
   const where = () => `seed ${seed}: ${steps.join(", ")}`;
-  /** The folders that were there when the app opened, and how long ago that was. */
-  let found: string[] = [];
+  /** The folders an earlier run left, which stay until the app has run a while, and how long it has. */
+  const left = new Set<string>();
   let openFor = 0;
+  /** Those it was sweeping when it quit. */
+  const swept = new Set<string>();
   let waited = 0;
   /** The version that was ready once things settled, and whether something since may take it away. */
   let kept: string | null = null;
-  let excused = false;
-  let cleared = false;
+  let mayGo = false;
+  /** The newest version that is out, as a check last could have seen it. */
+  let newestOut = "0.2.1";
   /** Whether the test has taken a folder away. */
   let folderWent = false;
+  /** Those of `left` that came after the sweep, as the app quit or while it was not open. */
+  const fresh = new Set<string>();
+  /** The folder the helper was started for. */
+  let handedOver: string | null = null;
 
-  /** Whether the app quit with an install under way. */
-  let handedOver = false;
-
-  const opened = async () => {
-    // What the copy that quit had still to do is done, as its process has ended.
-    await moment(8);
+  const opened = () => {
+    // Its sweep began, and may have been cut short as it quit.
+    if (openFor >= FIRST_CHECK_DELAY_MS) {
+      for (const name of left) if (!fresh.has(name)) swept.add(name);
+      for (const name of swept) left.delete(name);
+    }
+    fresh.clear();
     waited = 0;
-    found = await world.folders();
     openFor = 0;
     kept = null;
     world.updater.start();
@@ -85,6 +92,7 @@ export async function playHistory(seed: number, met: Set<string>): Promise<void>
       expect(update.phase, where()).toBe("installing");
       const version = update.phase === "installing" ? update.version : "";
       if (!folderWent) expect(versionIn(world.helper.replacement), where()).toBe(version);
+      handedOver = path.basename(path.dirname(path.dirname(world.helper.aside)));
     }
   };
 
@@ -93,10 +101,12 @@ export async function playHistory(seed: number, met: Set<string>): Promise<void>
     await vi.waitFor(
       async () => {
         const folders = await world.folders();
+        const before = folders.filter((name) => left.has(name));
+        const going = folders.filter((name) => swept.has(name));
+        const own = folders.length - before.length - going.length;
+        // Nothing of a copy that quit is there but what it handed to the helper.
         if (!world.open) {
-          // Only what a helper that has since given up was handed is left, until the app opens.
-          const own = folders.filter((name) => !found.includes(name));
-          expect(own.length, where()).toBeLessThanOrEqual(handedOver ? 1 : 0);
+          expect(own, where()).toBe(0);
           return;
         }
         const update = phase();
@@ -113,20 +123,24 @@ export async function playHistory(seed: number, met: Set<string>): Promise<void>
           );
         }
         // What an earlier run left is there until this one has run a while, and then not.
-        const left = folders.filter((name) => found.includes(name));
-        expect(left, where()).toEqual(openFor >= FIRST_CHECK_DELAY_MS ? [] : found);
-        const own = folders.length - left.length;
+        const ranAWhile = openFor >= FIRST_CHECK_DELAY_MS;
+        expect(before.length, where()).toBe(ranAWhile ? 0 : left.size);
+        if (ranAWhile) expect(going, where()).toEqual([]);
         const expected = holds + world.heldDownloads.length;
         expect(own, where()).toBeLessThanOrEqual(expected);
         if (!folderWent) expect(own, where()).toBe(expected);
       },
-      { timeout: 1_000, interval: 3 },
+      { timeout: 5_000, interval: 3 },
     );
     if (!world.open) return;
+    if (openFor >= FIRST_CHECK_DELAY_MS) {
+      left.clear();
+      swept.clear();
+    }
     const update = phase();
     const ready = update.phase === "ready" ? update.version : null;
-    const withdrawn = kept !== null && world.latest !== null && patch(world.latest) < patch(kept);
-    if (kept !== null && !excused && !cleared && !withdrawn && world.writable) {
+    const stays = !mayGo && world.writable && patch(newestOut) >= patch(kept ?? "0.2.0");
+    if (kept !== null && stays) {
       expect(ready, where()).not.toBeNull();
       expect(patch(ready ?? ""), where()).toBeGreaterThanOrEqual(patch(kept));
     }
@@ -135,18 +149,18 @@ export async function playHistory(seed: number, met: Set<string>): Promise<void>
     if (update.phase === "downloading" && update.again === true) met.add("downloaded again");
     if (kept !== null && ready !== null && ready !== kept) met.add("a newer one ready");
     kept = ready;
-    excused = false;
-    if (ready === null) cleared = false;
+    if (ready === null) mayGo = false;
   };
 
   const ACTIONS: Record<string, () => void | Promise<void>> = {
     release: () => {
       const newest = Math.max(patch(world.latest ?? "0.2.0"), patch(versionIn(world.bundle)!));
-      world.latest = `0.2.${newest + 1}`;
+      world.latest = newestOut = `0.2.${newest + 1}`;
     },
     withdraw: () => {
-      world.latest = pick([
-        versionIn(world.bundle),
+      mayGo = true;
+      world.latest = newestOut = pick([
+        versionIn(world.bundle)!,
         `0.2.${Math.max(0, patch(world.latest ?? "0.2.0") - 1)}`,
       ]);
     },
@@ -168,38 +182,47 @@ export async function playHistory(seed: number, met: Set<string>): Promise<void>
     "a minute passes": () => pass(60_000),
     "four minutes pass": () => pass(4 * 60_000),
     "the zip goes": async () => {
-      cleared = true;
+      mayGo = true;
       const zip = await world.zip();
       if (zip !== null) await rm(zip, { force: true });
     },
     "the zip is cut short": async () => {
-      cleared = true;
+      mayGo = true;
       const zip = await world.zip();
       if (zip !== null) await truncate(zip, 20).catch(() => {});
     },
     "the folder goes": async () => {
-      cleared = true;
+      mayGo = true;
       const zip = await world.zip();
       if (zip === null) return;
       folderWent = true;
-      found = found.filter((name) => name !== path.basename(path.dirname(zip)));
+      left.delete(path.basename(path.dirname(zip)));
       await rm(path.dirname(zip), { recursive: true, force: true }).catch(() => {});
     },
     install: () => {
-      excused = true;
+      mayGo = true;
       void world.updater.install();
     },
     "install twice": () => {
-      excused = true;
+      mayGo = true;
       void world.updater.install();
       void world.updater.install();
     },
     quit: async () => {
+      safe();
       const version = versionIn(world.bundle);
       const plan = world.helper;
       const update = phase();
       const whole = plan !== null && versionIn(plan.replacement) !== null;
-      handedOver = update.phase === "installing";
+      // The folder is the helper's, also when it has given up by now.
+      const helped = update.phase === "installing" && (plan !== null || waited >= HELPER_WAIT_MS);
+      const there = helped
+        ? (await world.folders()).find((name) => name === handedOver)
+        : undefined;
+      if (there !== undefined) {
+        left.add(there);
+        fresh.add(there);
+      }
       world.quit();
       safe();
       if (plan === null) return;
@@ -210,9 +233,10 @@ export async function playHistory(seed: number, met: Set<string>): Promise<void>
       );
       expect(phase().phase, where()).toBe(opens ? "idle" : "failed");
       met.add(opens ? "installed" : "put back");
-      await opened();
+      opened();
     },
     "where it is changes": () => {
+      mayGo = true;
       world.writable = !world.writable;
     },
     "the helper changes": () => {
@@ -227,7 +251,7 @@ export async function playHistory(seed: number, met: Set<string>): Promise<void>
 
   world.latest = "0.2.1";
   world.downloads = pick(["whole", "hold"]);
-  await opened();
+  opened();
   const length = 8 + Math.floor(random() * 24);
   for (let step = 0; step < length; step += 1) {
     const usual = world.helper !== null && random() < 0.4 ? "quit" : pick(names);
@@ -235,13 +259,13 @@ export async function playHistory(seed: number, met: Set<string>): Promise<void>
     steps.push(name);
     if (name === "open") {
       world.launch();
-      await opened();
+      opened();
     } else if (name === "a crash left something") {
-      await mkdir(path.join(world.data, `agent-lookout-update-crash${step}`), {
-        recursive: true,
-      });
+      left.add(`agent-lookout-update-crash${step}`);
+      fresh.add(`agent-lookout-update-crash${step}`);
+      await mkdir(path.join(world.data, `agent-lookout-update-crash${step}`));
       world.launch();
-      await opened();
+      opened();
     } else {
       await ACTIONS[name]!();
     }
@@ -261,31 +285,33 @@ export async function playHistory(seed: number, met: Set<string>): Promise<void>
   steps.push("the end");
   if (!world.open) {
     world.launch();
-    await opened();
+    opened();
   }
   Object.assign(world, { checks: "answer", downloads: "whole", writable: true });
   Object.assign(world, { helperStarts: true, newOpens: true });
   for (const held of [...world.heldChecks]) held.answer("answer");
   for (const held of [...world.heldDownloads]) held.answer("whole");
-  excused = true;
+  mayGo = true;
   await settled();
   if (phase().phase === "installing") {
-    world.quit();
-    if (!world.open) world.launch();
-    await opened();
+    await ACTIONS.quit!();
+    if (!world.open) {
+      world.launch();
+      opened();
+    }
   }
   const newest = `0.2.${patch(versionIn(world.bundle)!) + 5}`;
   world.latest = newest;
   for (let tries = 0; tries < 3; tries += 1) {
     await world.updater.check();
-    excused = true;
+    mayGo = true;
     await settled();
     if (phase().phase === "ready" && (phase() as { version: string }).version === newest) break;
   }
   expect(phase(), where()).toMatchObject({ phase: "ready", version: newest });
   expect((await world.updater.install()).ok, where()).toBe(true);
-  world.quit();
-  await opened();
+  safe();
+  await ACTIONS.quit!();
   expect(world.updater.status(), where()).toMatchObject({
     version: newest,
     update: { phase: "idle" },

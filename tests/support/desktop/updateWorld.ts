@@ -21,7 +21,7 @@ const APP_ID = "dev.agentlookout.app";
 
 const zipName = (version: string) => `Agent-Lookout-${version}-mac-arm64.zip`;
 
-/** The few bytes a release's zip is here, which `unpack` turns into a bundle. */
+/** The few bytes a release's zip is here, which the stand-in ditto turns into a bundle. */
 const zipBytes = (version: string) => Buffer.from(JSON.stringify({ version }).padEnd(200));
 
 const manifestOf = (version: string) => `version: ${version}
@@ -43,18 +43,6 @@ async function makeBundle(dir: string, version: string): Promise<string> {
   await writeFile(path.join(bundle, "Contents", "MacOS", "Agent Lookout"), version);
   return bundle;
 }
-
-const unpack: RunProgram = async (file, args) => {
-  const [, , zip, into] = args;
-  if (file !== DITTO) return { ok: false };
-  try {
-    const { version } = JSON.parse(await readFile(zip!, "utf8")) as { version: string };
-    await makeBundle(into!, version);
-    return { ok: true, stdout: "" };
-  } catch {
-    return { ok: false };
-  }
-};
 
 /** The version of a bundle that could be opened: it has its Info.plist and its program. */
 export function versionIn(bundle: string): string | null {
@@ -94,6 +82,8 @@ export interface UpdateWorld {
   /** How many checks were made, and how many downloads asked for. */
   looked: number;
   asked: number;
+  /** Called once a zip has been read to be unpacked, before what is in it is written. */
+  unpacking: () => void;
   /** Whether the app can change its own bundle. */
   writable: boolean;
   /** Whether the helper starts, and whether what it opens can be opened. */
@@ -139,6 +129,7 @@ export async function makeUpdateWorld(version = "0.2.0"): Promise<UpdateWorld> {
     heldDownloads: [],
     looked: 0,
     asked: 0,
+    unpacking: () => {},
     writable: true,
     helperStarts: true,
     newOpens: true,
@@ -210,6 +201,19 @@ export async function makeUpdateWorld(version = "0.2.0"): Promise<UpdateWorld> {
       }
       world.launch();
     },
+  };
+
+  const unpack: RunProgram = async (file, args) => {
+    const [, , zip, into] = args;
+    if (file !== DITTO) return { ok: false };
+    try {
+      const { version } = JSON.parse(await readFile(zip!, "utf8")) as { version: string };
+      world.unpacking();
+      await makeBundle(into!, version);
+      return { ok: true, stdout: "" };
+    } catch {
+      return { ok: false };
+    }
   };
 
   const checked = (how: "answer" | "fail"): Fetched<string> => {

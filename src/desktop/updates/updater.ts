@@ -614,17 +614,22 @@ export function createUpdater(options: UpdaterOptions): Updater {
         return refused();
       };
       const unpacked = await unpack(ready);
-      if (stopped) return refused();
-      if ("reason" in unpacked) return fail(unpacked.reason);
       const aside = path.join(ready.folder, "previous", path.basename(bundle));
+      const made = await mkdir(path.dirname(aside)).then(
+        () => true,
+        () => false,
+      );
+      if (stopped) {
+        // What was unpacked after the folder was removed goes too.
+        await folders.remove(ready.folder);
+        return refused();
+      }
+      if ("reason" in unpacked) return fail(unpacked.reason);
       const plan = { pid, bundle, replacement: unpacked.app, aside };
       // Noted before the helper starts, so the copy that opens next knows.
       save({ installingVersion: version });
       handedOver = ready.folder;
-      const started = await mkdir(path.dirname(aside), { recursive: true })
-        .then(() => startHelper(plan, options.startDetached ?? startDetached))
-        .catch(() => false);
-      if (!started) {
+      if (!made || !(await startHelper(plan, options.startDetached ?? startDetached))) {
         handedOver = null;
         save({ installingVersion: null });
         return fail("the helper that replaces the app could not be started");

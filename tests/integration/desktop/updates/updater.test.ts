@@ -201,10 +201,13 @@ const isReady = (updater: SetUp["updater"]) =>
 
 /** The one folder of the updater's, in the app's own folder of user data. */
 async function folderIn(data: string): Promise<string> {
-  const [only, ...others] = await readdir(data);
-  expect(only).toMatch(/^agent-lookout-update-/);
-  expect(others).toEqual([]);
-  return path.join(data, only!);
+  // One it took the place of may still be on its way out.
+  const only = await vi.waitFor(async () => {
+    const names = await readdir(data);
+    expect(names).toEqual([expect.stringMatching(/^agent-lookout-update-/)]);
+    return names[0]!;
+  });
+  return path.join(data, only);
 }
 
 describe("the updater, against a release of the test's own", () => {
@@ -608,6 +611,16 @@ describe("a version that is ready, and a newer one", () => {
     },
   );
 
+  test("quitting while it is unpacked leaves nothing, also of what is written after", async () => {
+    const world = await withOneReady();
+    world.unpacking = () => world.updater.stop();
+    expect((await world.updater.install()).ok).toBe(false);
+    expect(world.helper).toBeNull();
+    expect(world.settings.installingVersion).toBeNull();
+    expect(await world.folders()).toEqual([]);
+    expect(world.log).toEqual([]);
+  });
+
   test("an answer that comes once the app has quit downloads nothing", async () => {
     const world = await withOneReady();
     world.checks = "hold";
@@ -674,6 +687,10 @@ describe("a version that is ready, and a newer one", () => {
         world.now += HOUR;
         vi.advanceTimersByTime(HOUR);
         await moment(5);
+        // What it found is downloaded, or has failed, before the next hour.
+        await vi.waitFor(() =>
+          expect(["checking", "downloading"]).not.toContain(updateIn(world).phase),
+        );
       }
     };
   }
