@@ -45,6 +45,7 @@ describe("readUpdateStatus", () => {
       { phase: "checking" },
       { phase: "up-to-date" },
       { phase: "no-release" },
+      { phase: "not-for-this-mac" },
       { phase: "downloading", version: "0.2.1", notesUrl: NOTES, received: 10, total: 100 },
       {
         phase: "downloading",

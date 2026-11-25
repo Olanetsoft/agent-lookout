@@ -18,8 +18,8 @@ export interface AppMenuOptions {
   openSettings: () => void;
   /**
    * Checks for a newer version of the app now, whether or not the automatic
-   * check is on, and shows the answer: in Settings when the window is open,
-   * and in a dialog when it is not.
+   * check is on, and shows the answer in Settings, opening the window if it is
+   * closed.
    */
   checkForUpdates: () => void;
   /** Opens the guide in the browser. */

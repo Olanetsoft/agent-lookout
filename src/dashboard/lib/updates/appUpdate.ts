@@ -54,6 +54,7 @@ function readPhase(value: unknown): UpdatePhase | null {
     case "checking":
     case "up-to-date":
     case "no-release":
+    case "not-for-this-mac":
       return { phase: value.phase };
     case "downloading":
       return isText(value.version) &&

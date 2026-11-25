@@ -124,7 +124,7 @@ export interface AppUpdateInstallRefused {
 
 /**
  * Why a newer version cannot be installed where this copy runs, and what to
- * do, in the words Settings and the app's own dialog both use.
+ * do, in the words Settings uses.
  */
 export const INSTALL_REFUSAL_WORDS: Record<InstallRefusal, string> = {
   translocated:
