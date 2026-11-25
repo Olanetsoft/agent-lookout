@@ -387,6 +387,14 @@ const IN_REPOSITORIES: Session[] = [
     cwd: "/Users/example/code/mobile-app",
     project: "mobile-app",
   }),
+  session(4, {
+    name: "search-indexing",
+    status: "idle",
+    statusSince: NOW - 52 * MINUTE,
+    cwd: "/Users/example/code/search",
+    project: "search",
+    git: { repository: { id: "3c1d5e7f90a2b4c6", name: "search" } },
+  }),
 ];
 
 test.each(["dark", "light"] as const)(
@@ -430,9 +438,15 @@ test.each(["dark", "light"] as const)(
     // In no repository, the folder alone, as always.
     expect(mobile.querySelector('[data-part="git"]')).toBeNull();
     expect(mobile.querySelector('[data-part="project"]')?.textContent).toBe("mobile-app");
+    // So is one in a repository whose branch is not read.
+    const search = rowOf(screen.container, "search-indexing");
+    expect(search.querySelector('[data-part="git"]')).toBeNull();
+    expect(search.querySelector('[data-part="project"]')?.className).toBe(
+      mobile.querySelector('[data-part="project"]')?.className,
+    );
 
     // The two lines fit the row, so every row is still 44px, and none of it is warm.
-    for (const row of [checkout, docs, mobile]) {
+    for (const row of [checkout, docs, mobile, search]) {
       expect(row.getBoundingClientRect().height).toBe(44);
     }
     expect(warmPaint(screen.container)).toEqual([]);

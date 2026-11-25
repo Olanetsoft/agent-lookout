@@ -80,7 +80,7 @@ export function ghArguments(target: PullRequestTarget): string[] {
 }
 
 /** Settings of gh's own that would make it ask, print colours or debug output, or check for a newer gh. */
-const LEFT_OUT = ["GH_FORCE_TTY", "GH_DEBUG", "DEBUG", "GH_PAGER", "PAGER"];
+const LEFT_OUT = ["GH_FORCE_TTY", "CLICOLOR_FORCE", "GH_DEBUG", "DEBUG", "GH_PAGER", "PAGER"];
 
 /**
  * The environment gh is given: the collector's, so gh finds its own login,

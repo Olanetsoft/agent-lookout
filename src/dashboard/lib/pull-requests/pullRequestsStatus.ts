@@ -30,7 +30,7 @@ export async function fetchPullRequestsStatus(): Promise<PullRequestsStatusRespo
 
 /** Said under the state while gh is asked: what goes to GitHub, and how. */
 const WHAT_IS_SENT =
-  "Your own gh sends GitHub the name of each repository and branch it is asked about, with its own login.";
+  "Your own gh sends GitHub the name of each repository and branch it is asked about, or the pull request's number instead of the branch, with its own login.";
 
 /**
  * Whether gh is asked about branches, so that their names go to GitHub: with

@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { lstat, mkdir, readdir, readFile, stat, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -21,6 +22,31 @@ async function setupIn(dir?: string): Promise<SettingsSetup> {
 }
 
 const modeOf = async (target: string) => (await stat(target)).mode & 0o777;
+
+/** The module itself, for a process of its own. */
+const SETTINGS_FILE_MODULE = new URL(
+  "../../../../src/collector/settings/settingsFile.ts",
+  import.meta.url,
+).href;
+
+const WRITE_IN_CHILD = `
+const { writeSettingsText } = await import(process.argv[1]);
+console.log(JSON.stringify(writeSettingsText(JSON.parse(process.argv[2]), "x".repeat(40_000))));
+`;
+
+/** Whether this Node runs a TypeScript file with its types stripped, as the module is run in a process of its own. */
+function stripsTypes(): boolean {
+  try {
+    const answer = execFileSync(
+      process.execPath,
+      ["--experimental-strip-types", "--print", "process.features.typescript"],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+    );
+    return ["strip", "transform"].includes(answer.trim());
+  } catch {
+    return false;
+  }
+}
 
 describe("where the settings are kept", () => {
   test("in ~/.agent-lookout/settings.json, unless AGENT_LOOKOUT_SETTINGS_FILE names another", () => {
@@ -166,4 +192,32 @@ describe("writeSettingsText", () => {
       problem: "~/blocked/settings.json could not be written, so the change was not saved.",
     });
   });
+
+  // Windows has no limit on a file's size that a process can be given.
+  test.skipIf(process.platform === "win32" || !stripsTypes())(
+    "a write the disk cuts short is a change not saved, and the file stays as it was",
+    async () => {
+      const setup = await setupIn();
+      await mkdir(path.dirname(setup.file));
+      await writeFile(setup.file, '{"timeRules": {}}\n');
+
+      // The system takes the first bytes of a file past the limit, 4 KB or
+      // 8 KB of these 40 KB, as a disk does that fills up part of the way.
+      const answer = execFileSync(
+        "/bin/sh",
+        ["-c", 'ulimit -f 8 && exec "$0" "$@"', process.execPath]
+          .concat("--experimental-strip-types", "--no-warnings", "--input-type=module")
+          .concat("-e", WRITE_IN_CHILD, SETTINGS_FILE_MODULE, JSON.stringify(setup)),
+        { encoding: "utf8" },
+      );
+
+      expect(JSON.parse(answer)).toEqual({
+        ok: false,
+        problem:
+          "~/.agent-lookout/settings.json could not be written, so the change was not saved.",
+      });
+      expect(await readFile(setup.file, "utf8")).toBe('{"timeRules": {}}\n');
+      expect(await readdir(path.dirname(setup.file))).toEqual(["settings.json"]);
+    },
+  );
 });

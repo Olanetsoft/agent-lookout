@@ -191,12 +191,12 @@ describe("where the next one comes up and takes focus as one is pressed", () => 
     expect(pressed()).toEqual(["First"]);
   });
 
-  test("a press some pixels off and most of a second later presses nothing, and one a second after the first presses the next", async () => {
+  test("a press some pixels off and almost half a second later presses nothing, and one a second after the first presses the next", async () => {
     const { button, pressed } = await drawn();
     const [x, y] = middleOf(button("First"));
     const until = clock();
     await pressAt(x, y);
-    await until(650);
+    await until(400);
     await pressAt(x + 12, y + 6);
     expect(pressed()).toEqual(["First"]);
     // Counted from the press that was taken, not from the one that was not.
@@ -230,7 +230,7 @@ describe("where the next one comes up and takes focus as one is pressed", () => 
     button("First").focus();
     const until = clock();
     await userEvent.keyboard("{Enter}");
-    await until(650);
+    await until(400);
     await userEvent.keyboard("{Enter}");
     expect(pressed()).toEqual(["First"]);
     await until(1_300);

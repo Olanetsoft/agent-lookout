@@ -138,6 +138,21 @@ describe("readRemoteSnapshot", () => {
     expect(waiting?.git?.repository?.id).toMatch(/^[0-9a-f]{16,64}$/);
   });
 
+  test("a session there with its repository alone keeps it, and one with nothing that can be read has none", () => {
+    const repository = { id: "0123456789abcdef0123456789abcdef", name: "demo-api" };
+    const gitOf = (git: unknown) =>
+      read({ ...snapshotThere(), sessions: [{ ...waitingThere(), git }] }).sessions[0]?.git;
+    expect(gitOf({ repository })).toEqual({
+      repository: { id: repositoryId(`devbox\n${repository.id}`), name: "demo-api" },
+    });
+    // As an earlier Agent Lookout there sends a repository in git's reftable format.
+    expect(gitOf({ branch: ".invalid", repository })).toEqual(gitOf({ repository }));
+    expect(gitOf({ branch: ".invalid" })).toBeUndefined();
+    expect(gitOf({})).toBeUndefined();
+    expect(gitOf({ repository: { id: "x", name: "demo-api" } })).toBeUndefined();
+    expect(gitOf({ branch: 7, repository })).toBeUndefined();
+  });
+
   test("a session the other machine read from yet another is left out, with that machine's source", () => {
     const relayed = waitingThere({
       id: "remote:gpu:claude-code:1",

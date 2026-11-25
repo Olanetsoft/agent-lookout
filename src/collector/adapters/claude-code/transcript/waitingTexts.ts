@@ -80,12 +80,13 @@ export function createWaitingTextReader(options: WaitingTextReaderOptions): Wait
   async function textFor(session: Session, sessionId: string): Promise<string | undefined> {
     const at = now();
     let wait = kept.get(session.id);
-    // Another wait, or one whose transcript was not found a while ago, is looked for again.
+    // Another wait, or one whose transcript was not found a while ago, or later
+    // than now by a clock that has been set back, is looked for again.
     if (
       wait === undefined ||
       wait.statusSince !== session.statusSince ||
       wait.waitingReason !== session.waitingReason ||
-      (wait.file === null && at - wait.lookedAt >= LOOK_AGAIN_MS)
+      (wait.file === null && (at < wait.lookedAt || at - wait.lookedAt >= LOOK_AGAIN_MS))
     ) {
       const file = await findTranscript(projectsDir, sessionId, session.cwd, io);
       const { statusSince, waitingReason } = session;

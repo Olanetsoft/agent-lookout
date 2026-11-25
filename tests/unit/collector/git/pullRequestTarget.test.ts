@@ -128,6 +128,125 @@ describe("where the branch's pull request is looked for", () => {
     );
   });
 
+  describe("checked out from a fork that is no remote", () => {
+    const branchOf = (lines: string) => config(`${ORIGIN}[branch "patch-1"]\n${lines}`);
+
+    test.each([
+      [
+        "gh pr checkout",
+        `	remote = https://github.com/demo-user/storefront.git
+	pushRemote = https://github.com/demo-user/storefront.git
+	merge = refs/heads/patch-1
+`,
+      ],
+      ["git push -u <address>", "	remote = git@github.com:demo-user/storefront.git\n"],
+      [
+        "a push remote alone",
+        "	remote = origin\n	pushRemote = ssh://git@github.com/demo-user/storefront\n",
+      ],
+    ])("%s leaves an address, and it is asked for as owner:branch", (_, lines) => {
+      expect(targetOf(branchOf(lines), "patch-1", base, "main")).toEqual({
+        repository: STOREFRONT,
+        head: "demo-user:patch-1",
+      });
+    });
+
+    test("a fork with the base's own owner is asked for as owner:branch too", () => {
+      const address = "https://github.com/Example-Org/storefront-fork.git";
+      for (const lines of [
+        `	remote = ${address}\n	pushRemote = ${address}\n	merge = refs/heads/patch-1\n`,
+        `	remote = fork\n[remote "fork"]\n	url = ${address}\n`,
+      ]) {
+        expect(targetOf(branchOf(lines), "patch-1", base, "main"), lines).toEqual({
+          repository: STOREFRONT,
+          head: "Example-Org:patch-1",
+        });
+      }
+    });
+
+    test("a user name and a token in the address are not kept", () => {
+      const target = targetOf(
+        branchOf("	remote = https://demo-user:example-token@github.com/demo-user/storefront.git\n"),
+        "patch-1",
+        base,
+        "main",
+      );
+      expect(target).toEqual({ repository: STOREFRONT, head: "demo-user:patch-1" });
+    });
+
+    test("the base repository's own address, another host's and a folder are the branch itself", () => {
+      for (const remote of [
+        "https://github.com/Example-Org/Storefront.git",
+        "https://gitlab.com/demo-user/storefront.git",
+        "/Users/example/code/storefront.git",
+        ".",
+      ]) {
+        expect(
+          targetOf(branchOf(`	remote = ${remote}\n`), "patch-1", base, "main")?.head,
+          remote,
+        ).toBe("patch-1");
+      }
+    });
+
+    test("a remote of that name wins over the name read as an address", () => {
+      const named = `[remote "https://github.com/demo-user/storefront.git"]
+	url = https://github.com/example-org/storefront.git
+`;
+      const read = branchOf(`	remote = https://github.com/demo-user/storefront.git\n${named}`);
+      expect(targetOf(read, "patch-1", base, "main")?.head).toBe("patch-1");
+    });
+  });
+
+  describe("checked out as a pull request's own ref", () => {
+    const branchOf = (lines: string) => config(`${ORIGIN}[branch "patch-1"]\n${lines}`);
+
+    test("is asked for by its number, in the repository the ref is in", () => {
+      expect(
+        targetOf(
+          branchOf("	remote = origin\n	pushRemote = origin\n	merge = refs/pull/77/head\n"),
+          "patch-1",
+          base,
+          "main",
+        ),
+      ).toEqual({ repository: STOREFRONT, head: "77" });
+      // Whatever the branch is pushed to, and whichever repository is the base.
+      expect(
+        targetOf(
+          branchOf(`	remote = https://github.com/demo-org/storefront.git
+	pushRemote = origin
+	merge = refs/pull/77/head
+`),
+          "patch-1",
+          base,
+          "main",
+        ),
+      ).toEqual({ repository: { owner: "demo-org", name: "storefront" }, head: "77" });
+    });
+
+    test("is that ref alone: another ref of the pull request's, or one that only holds it, is the branch itself", () => {
+      const asked = (merge: string) =>
+        targetOf(branchOf(`	remote = origin\n	merge = ${merge}\n`), "patch-1", base, "main")?.head;
+      expect(asked("refs/pull/077/head")).toBe("77");
+      expect(asked("refs/pull/77/merge")).toBe("patch-1");
+      expect(asked("refs/heads/refs/pull/77/head")).toBe("patch-1");
+      expect(asked("refs/pull/77/head/more")).toBe("patch-1");
+      // The last of two, as git takes it.
+      expect(asked("refs/pull/77/head\n	merge = refs/heads/patch-1")).toBe("patch-1");
+    });
+
+    test("is never asked for by its name", () => {
+      for (const lines of [
+        "	merge = refs/pull/77/head\n",
+        "	remote = .\n	merge = refs/pull/77/head\n",
+        "	remote = https://gitlab.com/example-org/storefront.git\n	merge = refs/pull/77/head\n",
+        "	remote = origin\n	merge = refs/pull/0/head\n",
+        "	remote = origin\n	merge = refs/pull/99999999999999999999/head\n",
+      ]) {
+        expect(targetOf(branchOf(lines), "patch-1", base, "main"), lines).toBeNull();
+      }
+    });
+  });
+
   test("none for the default branch, as the remote's HEAD names it", () => {
     expect(targetOf(config(ORIGIN), "develop", base, "develop")).toBeNull();
     // With the remote's HEAD naming another, main is a branch like any other.

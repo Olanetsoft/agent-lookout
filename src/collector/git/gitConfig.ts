@@ -5,7 +5,7 @@
  *
  * - each remote's name and first `url`, in the order the file has them, and
  *   the `gh-resolved` that `gh repo set-default` writes beside one;
- * - each branch's `remote` and `pushRemote`;
+ * - each branch's `remote`, `pushRemote` and `merge`;
  * - `remote.pushDefault`.
  *
  * It reads the file as git does: `[section]` and `[section "subsection"]`
@@ -27,8 +27,11 @@ export interface GitRemote {
 }
 
 export interface GitBranch {
+  /** A remote's name, or an address where git was given one. */
   remote?: string;
   pushRemote?: string;
+  /** What it was checked out from there: `refs/heads/<branch>`, or a pull request's own ref. */
+  merge?: string;
 }
 
 export interface GitConfig {
@@ -243,6 +246,7 @@ export function parseGitConfig(text: string): GitConfig | null {
       config.branches.set(subsection, branch);
       if (key === "remote") branch.remote = value;
       if (key === "pushremote") branch.pushRemote = value;
+      if (key === "merge") branch.merge = value;
     }
   }
   return config;

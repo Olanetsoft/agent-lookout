@@ -704,6 +704,12 @@ describe("a version that is ready, and a newer one", () => {
         world.helperStarts = true;
       };
     },
+    "the app and its own folder of data are on different disks": async (world) => {
+      world.apart = true;
+      return () => {
+        world.apart = false;
+      };
+    },
     // Nowhere to put the old app.
     "the helper that replaces the app could not be started: no folder": async (world) => {
       await writeFile(path.join(path.dirname((await world.zip())!), "previous"), "in the way");

@@ -181,6 +181,18 @@ describe("in the menu bar", () => {
     expect(tray()?.menu?.labels[1]).toBe("checkout-flow · 2m 00s");
   });
 
+  test("a poll makes the menu again after the clock is set back, so its times are not left as they were", () => {
+    const { bar, tray, tick } = setUp();
+    bar.start();
+    bar.update(snapshot(waiting("checkout-flow", NOW - 2 * 60 * 60_000)));
+    expect(tray()?.menu?.labels[1]).toBe("checkout-flow · 2h 00m");
+    tray()?.told.splice(0);
+    tick(-60 * 60_000);
+    bar.update(snapshot(waiting("checkout-flow", NOW - 2 * 60 * 60_000)));
+    expect(tray()?.told).toEqual(["menu"]);
+    expect(tray()?.menu?.labels[1]).toBe("checkout-flow · 1h 00m");
+  });
+
   test("the times are those of the moment the pointer comes over the icon", () => {
     const { bar, tray, tick } = setUp();
     bar.start();
@@ -262,6 +274,18 @@ describe("while the menu is open", () => {
     bar.update(snapshot(waiting("docs", NOW - 5_000)));
     expect(tray()?.menu).not.toBe(open);
     expect(tray()?.menu?.labels[1]).toMatch(/^docs/);
+  });
+
+  test("or once the clock is set back by more than that", () => {
+    const { bar, tray, tick } = setUp();
+    bar.start();
+    bar.update(snapshot(waiting("checkout-flow", NOW - 60_000, { ask: heldAsk("npm test") })));
+    const open = tray()?.menu as FakeMenu;
+    open.open();
+    open.openSubmenu("checkout-flow").leave();
+    tick(-60 * 60_000);
+    bar.update(snapshot(waiting("docs", NOW - 5_000)));
+    expect(tray()?.menu).not.toBe(open);
   });
 
   test("a click on an item says the whole menu has closed, though only a submenu's closing was told", () => {

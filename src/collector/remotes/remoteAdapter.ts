@@ -223,7 +223,8 @@ export function createRemoteAdapter(options: RemoteAdapterOptions): Adapter {
    */
   function connecting(at: number): AdapterResult {
     if (problem === null) {
-      connectingSince ??= at;
+      // Counted afresh when the clock has been set back.
+      connectingSince = Math.min(connectingSince ?? at, at);
       if (at - connectingSince < stillConnectingMs) {
         return result(
           "searching",

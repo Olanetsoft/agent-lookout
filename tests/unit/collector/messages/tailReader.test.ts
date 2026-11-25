@@ -4,6 +4,7 @@ import {
   ANSWER_AGAIN_MS,
   createTailLimits,
   createTailReader,
+  KEEP_MS,
   MAX_KEPT,
   READS_PER_SECOND,
   type TailReaderOptions,
@@ -95,6 +96,54 @@ describe("the reader every agent's last messages share", () => {
     prompt.clock.advance(ANSWER_AGAIN_MS);
     await prompt.reader.read("agent:1");
     expect(prompt.looked).toEqual(["missing", "missing"]);
+  });
+
+  describe("after the clock is set back", () => {
+    const HOUR = 60 * 60_000;
+
+    test("an answer made before is not given again", async () => {
+      const { clock, files, reader } = setUp();
+      reader.keep(new Map([["agent:1", "first"]]));
+      expect(text(await reader.read("agent:1"))).toBe("from the first");
+      clock.advance(-HOUR);
+      files.append(FIRST, "and more\n");
+      expect(text(await reader.read("agent:1"))).toBe("and more");
+      // Nor with the details left open meanwhile.
+      clock.advance(ANSWER_AGAIN_MS);
+      files.append(FIRST, "and the rest\n");
+      expect(text(await reader.read("agent:1"))).toBe("and the rest");
+    });
+
+    test("a transcript not found is looked for again", async () => {
+      const { clock, looked, reader } = setUp({ lookAgainMs: 10_000 });
+      reader.keep(new Map([["agent:1", "missing"]]));
+      await reader.read("agent:1");
+      clock.advance(-HOUR);
+      await reader.read("agent:1");
+      expect(looked).toEqual(["missing", "missing"]);
+    });
+
+    test("what is kept is dropped by the next poll", async () => {
+      const { clock, reader } = setUp();
+      const listed = new Map([["agent:1", "first"]]);
+      reader.keep(listed);
+      await reader.read("agent:1");
+      clock.advance(-HOUR);
+      reader.keep(listed);
+      expect(reader.size).toBe(0);
+    });
+
+    test("with no poll either, it is dropped 15 seconds after it was last asked for", async () => {
+      const drops: { run: () => void; ms: number }[] = [];
+      const { clock, reader } = setUp({ later: (run, ms) => void drops.push({ run, ms }) });
+      reader.keep(new Map([["agent:1", "first"]]));
+      await reader.read("agent:1");
+      expect(drops.map((drop) => drop.ms)).toEqual([KEEP_MS]);
+      clock.advance(KEEP_MS - HOUR);
+      drops.shift()?.run();
+      expect(reader.size).toBe(0);
+      expect(drops).toEqual([]);
+    });
   });
 
   test(`readers that share limits read at most ${READS_PER_SECOND} transcripts a second and keep at most ${MAX_KEPT} sessions, all together`, async () => {

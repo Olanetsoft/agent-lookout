@@ -371,7 +371,7 @@ export function createCollectorStore(options: CollectorStoreOptions = {}): Colle
         const problemKind = known?.kind ?? "no-answer";
         let phase: CollectorPhase;
         if (next.snapshot !== null && next.lastOkAt !== null) {
-          phase = now() - next.lastOkAt > STALE_AFTER_MS ? "stalled" : next.phase;
+          phase = Math.abs(now() - next.lastOkAt) > STALE_AFTER_MS ? "stalled" : next.phase;
         } else {
           phase = failures >= FAILURES_BEFORE_UNREACHABLE ? "unreachable" : "connecting";
         }

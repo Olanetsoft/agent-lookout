@@ -17,6 +17,7 @@ import {
   SOURCE_STATES,
   SURFACES,
   WAITING_REASONS,
+  checkedOut,
   type AgentCapabilities,
   type Capability,
   type CapabilityCell,
@@ -28,6 +29,7 @@ import {
 import { cut, MAX_NAME_LENGTH, sessionName, waitingText } from "../../core/text.ts";
 import { plausibleTime } from "../../core/time.ts";
 import { tokenCountsOf } from "../../core/tokens/tokenCounts.ts";
+import { REFTABLE_BRANCH } from "../git/gitHead.ts";
 import { repositoryId } from "../git/repository.ts";
 
 /** The most sessions taken from one machine. Far more than one person runs. */
@@ -209,7 +211,7 @@ const REPOSITORY_ID = /^[0-9a-f]{16,64}$/;
  * The branch or commit the other machine read, with its repository given an
  * id of this machine's own: a hash of the machine's name and the id it sent,
  * so a repository there is never grouped with one here that happens to have
- * the same path.
+ * the same path. Or the repository alone, when it read neither.
  */
 function readGit(value: unknown, machine: string): GitHead | undefined {
   if (!isRecord(value)) return undefined;
@@ -218,10 +220,13 @@ function readGit(value: unknown, machine: string): GitHead | undefined {
     if (value.branch !== undefined || typeof value.commit !== "string") return undefined;
     if (!COMMIT_ID.test(value.commit)) return undefined;
     head = { commit: value.commit };
-  } else {
+  } else if (value.branch !== undefined) {
     const branch = cut(value.branch, MAX_NAME_LENGTH);
     if (branch === undefined) return undefined;
-    head = { branch };
+    // What an Agent Lookout of 0.2.31 or before sends of a repository in git's reftable format.
+    head = branch === REFTABLE_BRANCH ? {} : { branch };
+  } else {
+    head = {};
   }
   const repository = value.repository;
   if (isRecord(repository) && typeof repository.id === "string") {
@@ -230,7 +235,7 @@ function readGit(value: unknown, machine: string): GitHead | undefined {
       head.repository = { id: repositoryId(`${machine}\n${repository.id}`), name };
     }
   }
-  return head;
+  return head.repository || checkedOut(head) ? head : undefined;
 }
 
 /**

@@ -434,6 +434,26 @@ describe("a .git file, as in a worktree or a submodule", () => {
     expect(files.openHandles()).toBe(0);
   });
 
+  test("in git's reftable format the main folder and its worktree have their repository, and no branch", async () => {
+    const files = memoryFiles();
+    const reftable = "ref: refs/heads/.invalid\n";
+    repository(files, `${CODE}/storefront`, reftable);
+    files.write(`${CODE}/storefront/.git/reftable/tables.list`, "0x000000000001.ref\n");
+    const gitDir = worktreeIn(files, `${CODE}/storefront/.git`, "checkout", reftable);
+    files.write(`${CODE}/storefront-checkout/.git`, `gitdir: ${gitDir}\n`);
+
+    const alone = { repository: inRepository(`${CODE}/storefront`) };
+    expect(await find(files, `${CODE}/storefront`)).toEqual(alone);
+    expect(await find(files, `${CODE}/storefront-checkout`)).toEqual(alone);
+    // The tables are not read.
+    expect(files.opened().filter((file) => file.includes("reftable"))).toEqual([]);
+
+    // With no repository to show either, there is nothing.
+    files.remove(`${gitDir}/commondir`);
+    files.write(`${gitDir}/commondir`, "");
+    expect(await find(files, `${CODE}/storefront-checkout`)).toBeNull();
+  });
+
   test.each([
     ["names a folder that is not there", "gitdir: ../nowhere\n"],
     ["says something else", "ref: refs/heads/main\n"],
@@ -644,6 +664,25 @@ describe("the finder", () => {
     const later = await finder.annotate(sessions);
     expect(later.map((session) => session.git?.branch)).toEqual(["checkout-flow", "checkout-flow"]);
     expect(files.opened()).toHaveLength(2);
+  });
+
+  test("after the clock is set back, a folder is read again at the next poll", async () => {
+    const files = memoryFiles();
+    repository(files, `${CODE}/storefront`, "ref: refs/heads/main\n");
+    const { finder, clock } = finderFor(files);
+    const sessions = [at(1, `${CODE}/storefront`)];
+    await finder.annotate(sessions);
+
+    files.rewrite(`${CODE}/storefront/.git/HEAD`, "ref: refs/heads/checkout-flow\n");
+    clock.advance(-60 * 60_000);
+    expect((await finder.annotate(sessions))[0]?.git?.branch).toBe("checkout-flow");
+    // And then every 10 seconds, as before.
+    clock.advance(BRANCH_READ_MS - 1);
+    await finder.annotate(sessions);
+    expect(files.opened()).toHaveLength(2);
+    clock.advance(1);
+    await finder.annotate(sessions);
+    expect(files.opened()).toHaveLength(3);
   });
 
   test("a repository made after a session began is found at the next read", async () => {

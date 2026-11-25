@@ -89,6 +89,8 @@ export function useTimeRules(
   useEffect(() => {
     if (followed === undefined || followedAt === undefined) return;
     if (answered.current === null || pending.current > 0) return;
+    // An answer dated later than now is from before the clock was set back.
+    answeredAt.current = Math.min(answeredAt.current, Date.now());
     if (followedAt <= answeredAt.current || same(followed, answered.current)) return;
     answered.current = followed;
     latest.current = followed;

@@ -156,7 +156,7 @@ export function createDesktopAnswers(options: DesktopAnswersOptions): DesktopAns
 
   function forMenu(snapshot: SessionsSnapshot): MenuBarSnapshot {
     const { sessions, sources } = served(snapshot);
-    if (note !== null && now() - note.at >= MENU_NOTE_MS) note = null;
+    if (note !== null && Math.abs(now() - note.at) >= MENU_NOTE_MS) note = null;
     return { sessions, sources, note: note?.text ?? null };
   }
 

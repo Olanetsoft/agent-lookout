@@ -16,7 +16,9 @@ import { MAX_NAME_LENGTH, sessionName } from "../../core/text.ts";
  *
  * Each is one short line. Anything else in them is no answer: a file that says
  * something else, says it on more than one line, or is over the size limit
- * gives no branch, or no repository, and is never guessed at.
+ * gives no branch, or no repository, and is never guessed at. A repository in
+ * git's reftable format keeps what is checked out in tables that are not read,
+ * and its `HEAD` names `refs/heads/.invalid`, which no branch can be called.
  */
 
 /** The largest of any of the files that is read. A larger one is not read, and gives nothing. */
@@ -39,6 +41,9 @@ const COMMIT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 /** Where `HEAD` names the branch checked out. */
 const BRANCH_REF = "refs/heads/";
 
+/** The branch the `HEAD` file of a repository in git's reftable format names, which none can be called. */
+export const REFTABLE_BRANCH = ".invalid";
+
 /** The file's one line, without the line break git ends it with, or null when it has more. */
 function oneLine(content: string): string | null {
   const line = content.replace(/\r?\n$/, "");
@@ -47,14 +52,16 @@ function oneLine(content: string): string | null {
 
 /**
  * What a `HEAD` file says is checked out: the branch, or the short ID of the
- * commit when no branch is. Null for anything else, such as a reference
- * outside `refs/heads/`, an ID that is not one, or text that is not git's.
+ * commit when no branch is, or neither, `{}`, in the reftable format. Null for
+ * anything else, such as a reference outside `refs/heads/`, an ID that is not
+ * one, or text that is not git's.
  */
 export function parseHead(content: string): GitHead | null {
   const line = oneLine(content);
   if (line === null) return null;
   if (line.startsWith("ref:")) {
     const ref = line.slice("ref:".length).trim();
+    if (ref === `${BRANCH_REF}${REFTABLE_BRANCH}`) return {};
     if (!ref.startsWith(BRANCH_REF)) return null;
     const branch = sessionName(ref.slice(BRANCH_REF.length));
     return branch === undefined ? null : { branch };

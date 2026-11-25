@@ -902,6 +902,25 @@ test("when the collector stops answering, the last data stays and is called stal
   stop();
 });
 
+test("data last read before the clock was set back is called stale too, when the collector stops answering", async () => {
+  const collector = fakeCollector();
+  setApiHost(collector.host);
+  const store = createCollectorStore();
+  const stop = store.subscribe(() => {});
+  await settle();
+
+  collector.up = false;
+  vi.setSystemTime(T0 - 60 * 60_000);
+  await beat();
+  expect(store.getState().phase).toBe("stalled");
+  expect(store.getState().snapshot?.sessions).toHaveLength(1);
+
+  collector.up = true;
+  await beat();
+  expect(store.getState().phase).toBe("live");
+  stop();
+});
+
 test("events are asked for since the newest one held, and merged newest first", async () => {
   const collector = fakeCollector();
   collector.events = [event(1, T0 - 9_000), event(2, T0 - 4_000)];

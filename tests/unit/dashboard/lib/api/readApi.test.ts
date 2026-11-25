@@ -212,12 +212,14 @@ test.each([
   expect(read && "git" in read).toBe(false);
 });
 
-test("the repository a folder belongs to is read as it was sent, with its branch or its commit", () => {
+test("the repository a folder belongs to is read as it was sent, with its branch or its commit, or alone", () => {
   const repository = { id: "9aaa5f0ab35a5f84", name: "storefront" };
   for (const git of [
     { branch: "checkout-flow", repository },
     { commit: "3f9a2c1", repository },
     { branch: "main", repository: { id: "7ba69a8b81747824", name: "<b>docs</b>" } },
+    // In git's reftable format, whose branch is not read.
+    { repository },
   ]) {
     const sent = makeSession({ git });
     expect(readSession(JSON.parse(JSON.stringify(sent)))).toEqual(sent);
@@ -302,13 +304,25 @@ test("a commit has no pull request", () => {
   expect(read?.git).toEqual({ commit: "3f9a2c1" });
 });
 
-test("a repository with no branch or commit is no git at all", () => {
+test("a repository with a branch or a commit that cannot be read is no git at all", () => {
+  const repository = { id: "9aaa5f0ab35a5f84", name: "storefront" };
+  for (const git of [
+    { branch: 7, repository },
+    { commit: "checkout", repository },
+    { branch: "main", commit: "3f9a2c1", repository },
+  ]) {
+    const read = readSession({ ...makeSession(), git });
+    expect(read && "git" in read).toBe(false);
+  }
+});
+
+test("a repository alone has no pull request", () => {
+  const repository = { id: "9aaa5f0ab35a5f84", name: "storefront" };
   const read = readSession({
     ...makeSession(),
-    git: { repository: { id: "9aaa5f0ab35a5f84", name: "storefront" } },
+    git: { repository, pullRequest: PULL_REQUEST },
   });
-
-  expect(read && "git" in read).toBe(false);
+  expect(read?.git).toEqual({ repository });
 });
 
 test("when the agent last wrote is read as it was sent, and is none when it is not a number", () => {
